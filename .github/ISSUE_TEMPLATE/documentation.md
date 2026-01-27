@@ -2,7 +2,7 @@
 name: Documentation
 about: Write or update framework documentation with clear scope, acceptance criteria,
   and required examples.
-title: "[Docs] <Epic/Area> — <short description>"
+title: "[Milestone][Docs] StoryName (A1) — Short Description"
 labels: documentation
 assignees: KevMP
 
