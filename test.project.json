@@ -1,0 +1,20 @@
+{
+  "name": "KRF-Tests",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": {
+        "$className": "Folder",
+        "KRF": {
+          "$path": "src"
+        }
+      },
+      "DevPackages": {
+        "$path": "DevPackages"
+      },
+      "Tests": {
+        "$path": "tests"
+      }
+    }
+  }
+}

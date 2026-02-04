@@ -1,0 +1,13 @@
+# Project place file
+/roblox-rpg-framework.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+# Roblox place files, no diffs
+/*.rbxl
+
+sourcemap.json
+
+DevPackages
