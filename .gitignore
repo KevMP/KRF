@@ -11,3 +11,6 @@
 sourcemap.json
 
 DevPackages
+
+# NPM
+node_modules

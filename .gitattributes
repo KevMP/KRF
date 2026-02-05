@@ -1,0 +1,14 @@
+# Keep git hooks LF (bash/sh-friendly)
+.husky/* text eol=lf
+
+# Keep config files stable
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+* text=auto eol=lf
+
+.husky/* text eol=lf
+
+*.lua text eol=lf
+*.luau text eol=lf
