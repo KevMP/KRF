@@ -1,0 +1,16 @@
+name: _lint
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@4
+      - uses: CompeyDev/setup-rokit@v0.1.2
+      - uses: actions/setup-node@v4
+
+      - run: npm ci
+      - run: npm format:check
+      - run: stylua --check src tests
