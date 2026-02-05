@@ -5,4 +5,4 @@ on:
 
 jobs:
   lint:
-    uses: .github/workflows/_lint.yml
+    uses: ./.github/workflows/_lint.yml
