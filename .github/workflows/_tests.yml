@@ -10,6 +10,9 @@ jobs:
   tests:
     runs-on: windows-latest
 
+    env:
+      ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+
     defaults:
       run:
         shell: pwsh
@@ -26,19 +29,19 @@ jobs:
           rojo build test.project.json -o build\TestPlace.rbxlx
 
       - name: Require ROBLOSECURITY for Studio tests
-        if: ${{ secrets.ROBLOSECURITY == '' }}
+        if: ${{ env.ROBLOSECURITY == '' }}
         run: |
           Write-Error "ROBLOSECURITY not set; cannot run Studio/Jest tests in CI."
           exit 1
 
       - name: Install Roblox Studio (requires ROBLOSECURITY)
-        if: ${{ secrets.ROBLOSECURITY != '' }}
+        if: ${{ env.ROBLOSECURITY != '' }}
         uses: OrbitalOwen/roblox-win-installer-action@1.1
         with:
           cookie: ${{ secrets.ROBLOSECURITY }}
           token: ${{ github.token }}
 
       - name: Run Jest Lua via run-in-roblox
-        if: ${{ secrets.ROBLOSECURITY != '' }}
+        if: ${{ env.ROBLOSECURITY != '' }}
         run: |
           run-in-roblox --place build\TestPlace.rbxlx --script tests\run-tests.luau
