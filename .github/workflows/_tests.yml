@@ -12,6 +12,7 @@ jobs:
 
     env:
       ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
     defaults:
       run:
