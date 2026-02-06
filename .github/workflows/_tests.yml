@@ -24,9 +24,7 @@ jobs:
         run: rokit install --no-trust-check
 
       - name: Build Test place
-        run: |
-          New-Item -ItemType Directory -Force build | Out-Null
-          rojo build test.project.json -o build\TestPlace.rbxlx
+        run: rojo build test.project.json -o TestPlace.rbxlx
 
       - name: Require ROBLOSECURITY for Studio tests
         if: ${{ env.ROBLOSECURITY == '' }}
@@ -44,4 +42,4 @@ jobs:
       - name: Run Jest Lua via run-in-roblox
         if: ${{ env.ROBLOSECURITY != '' }}
         run: |
-          run-in-roblox --place build\TestPlace.rbxlx --script tests\run-tests.luau
+          run-in-roblox --place TestPlace.rbxlx --script tests\run-tests.luau
