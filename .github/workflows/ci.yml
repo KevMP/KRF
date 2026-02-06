@@ -6,3 +6,7 @@ on:
 jobs:
   lint:
     uses: ./.github/workflows/_lint.yml
+  run-tests:
+    uses: ./.github/workflows/_tests.yml
+    secrets:
+      ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
