@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local runCLI = require(ReplicatedStorage.DevPackages.Jest).runCLI
 
 local processServiceExists, ProcessService = pcall(function()
+	-- selene: allow(incorrect_standard_library_use)
 	return game:GetService("ProcessService")
 end)
 
