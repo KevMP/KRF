@@ -1,0 +1,31 @@
+--!strict
+--[[
+Actor Contract
+- Stable actor.id (internal correlation id)
+- actor.model may be nil
+- actor.enabled defaults to false
+- Controllers: Set/Get/Remove with no overwrite
+- Stored controllers must support Destroy() for consistent teardown
+]]
+local ActorTypes = {}
+
+export type ActorBase = {
+	model: Model?,
+	enabled: boolean,
+}
+
+export type Controller = {
+	Destroy: (self: Controller) -> (),
+}
+
+export type ActorApi = {
+	GetId: (self: ActorApi) -> string,
+
+	SetController: (self: ActorApi, key: string, controller: Controller) -> boolean,
+	GetController: (self: ActorApi, key: string) -> Controller?,
+	RemoveController: (self: Actor, key: string) -> Controller?,
+}
+
+export type Actor = ActorBase & ActorApi
+
+return ActorTypes
