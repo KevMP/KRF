@@ -49,7 +49,7 @@ jobs:
         run: selene src tests
 
       - name: Build test place (Rojo)
-        run: rojo build test.project.json -o dist.rbxlx
+        run: rojo build test.project.json -o dist.rbxl
 
       - name: Upload place and run tests
-        run: python3 scripts/upload_and_run_task.py dist.rbxlx "$TEST_TASK_FILE"
+        run: python3 scripts/upload_and_run_task.py dist.rbxl "$TEST_TASK_FILE"
