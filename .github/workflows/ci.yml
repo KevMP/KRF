@@ -1,13 +1,55 @@
 name: CI
 
-on:
-  push:
-  workflow_dispatch:
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  lint:
-    uses: ./.github/workflows/_lint.yml
-  run-tests:
-    uses: ./.github/workflows/_tests.yml
-    secrets:
-      ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+  checks:
+    runs-on: ubuntu-latest
+
+    # Avoid overlapping tasks against the same test place
+    concurrency:
+      group: oc-tests-${{ github.ref }}
+      cancel-in-progress: false
+
+    env:
+      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+      ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_TEST_UNIVERSE_ID }}
+      ROBLOX_PLACE_ID: ${{ vars.ROBLOX_TEST_PLACE_ID }}
+      TEST_TASK_FILE: tests/run-tests.luau
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-${{ runner.os }}-${{ hashFiles('rokit.toml') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Install packages (Wally)
+        run: wally install
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Prettier check
+        run: npm run format:check
+
+      - name: StyLua check
+        run: stylua --check src tests
+
+      - name: Selene lint
+        run: selene src tests
+
+      - name: Build test place (Rojo)
+        run: rojo build test.project.json -o dist.rbxlx
+
+      - name: Upload place and run tests
+        run: python3 scripts/upload_and_run_task.py dist.rbxlx "$TEST_TASK_FILE"

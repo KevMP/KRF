@@ -8,17 +8,21 @@ end)
 
 local status, result = runCLI(ReplicatedStorage.Packages, {
 	verbose = false,
-	ci = false,
+	ci = true,
 }, { ReplicatedStorage.Tests }):awaitStatus()
 
-if status == "Resolved" and result.results.numFailedTestSuites == 0 and result.results.numFailedTests == 0 then
+local failed = status ~= "Resolved" or result.results.numFailedTestSuites ~= 0 or result.results.numFailedTests ~= 0
+
+if failed then
+	if processServiceExists then
+		ProcessService:ExitAsync(1)
+	else
+		error("Jest failed (ProcessService unavailable)")
+	end
+else
 	if processServiceExists then
 		ProcessService:ExitAsync(0)
 	end
-end
-
-if processServiceExists then
-	ProcessService:ExitAsync(1)
 end
 
 return nil
