@@ -148,13 +148,10 @@ def run_luau_task(universe_id, place_id, place_version, script_file):
     parsed = parse_jest_summary(logs)
     passed = (state == "COMPLETE")
     icon = "✅" if passed else "❌"
-
+    
     md = (
         "## KRF CI — Open Cloud Tests\n"
         f"{icon} **Result:** `{state}`\n\n"
-        f"- **Universe:** `{universe_id}`\n"
-        f"- **Place:** `{place_id}`\n"
-        f"- **Uploaded version:** `{place_version}`\n"
     )
 
     if parsed["failed_suites"] is not None and parsed["total_suites"] is not None:
