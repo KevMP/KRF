@@ -2,6 +2,12 @@
   "name": "KRF-Tests",
   "tree": {
     "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$properties": {
+        "LoadStringEnabled": true
+      }
+    },
     "ReplicatedStorage": {
       "Packages": {
         "$className": "Folder",
