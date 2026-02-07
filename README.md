@@ -1,4 +1,3 @@
-```md
 # Kevin’s Framework (KRF)
 
 ## Prerequisites
@@ -30,5 +29,4 @@ Run the test script:
 
 ```powershell
 .\scripts\test.ps1
-```
 ```
