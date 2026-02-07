@@ -1,4 +1,4 @@
-# Kevin’s Framework (KRF)
+# Kevin’s Roblox Framework (KRF)
 
 ## Prerequisites
 - Rokit installed
