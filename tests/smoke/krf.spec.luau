@@ -1,8 +1,8 @@
-local JestGlobals = require(game.ReplicatedStorage.DevPackages.JestGlobals)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it = JestGlobals.it
 local expect = JestGlobals.expect
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 it("mounts KRF package + expected folders", function()
 	local Packages = ReplicatedStorage:WaitForChild("Packages")
