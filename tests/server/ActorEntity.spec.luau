@@ -1,9 +1,11 @@
 --!strict
-local JestGlobals = require(game.ReplicatedStorage.DevPackages.JestGlobals)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it = JestGlobals.it
 local expect = JestGlobals.expect
 
-local ActorEntity = require(game.ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
+local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 
 it("returns a stable id and ignores external id field writes", function()
 	local actor: ActorEntity.Actor = ActorEntity.new()
