@@ -8,7 +8,7 @@ local expect = JestGlobals.expect
 local ActorRegistry = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRegistry)
 local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 
-it("bind -> lookup by model & id works", function()
+it("BindModel returns true and indexes actor by model and id", function()
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 
@@ -23,7 +23,7 @@ it("bind -> lookup by model & id works", function()
 	model:Destroy()
 end)
 
-it("unbind removes both indexes and lookup returns nil", function()
+it("UnbindModel returns true and clears model/id lookups and actor.model", function()
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 
@@ -37,7 +37,7 @@ it("unbind removes both indexes and lookup returns nil", function()
 	model:Destroy()
 end)
 
-it("duplicate model bind returns false with ModelAlreadyRegistered and does not override", function()
+it("BindModel rejects a different actor for an already-registered model (no overwrite)", function()
 	local actorA: ActorEntity.Actor = ActorEntity.new()
 	local actorB: ActorEntity.Actor = ActorEntity.new()
 
@@ -57,7 +57,7 @@ it("duplicate model bind returns false with ModelAlreadyRegistered and does not 
 	model:Destroy()
 end)
 
-it("actor gets cleaned up when model is destroyed", function()
+it("Auto-cleanup unbinds when the bound model is destroyed (model/id lookups cleared)", function()
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 
@@ -71,7 +71,7 @@ it("actor gets cleaned up when model is destroyed", function()
 	expect(actor.model).toBeNil()
 end)
 
-it("actor gets cleaned up when model parent is set to nil", function()
+it("Auto-cleanup unbinds when the bound model is removed from the DataModel (Parent=nil)", function()
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 
