@@ -10,7 +10,7 @@ ActorEntity.__index = ActorEntity
 
 function ActorEntity.new(model: Model?): Actor
 	local controllers: { [string]: Controller } = {}
-	local id = HttpService:GenerateGUID(false)
+	local id: string = HttpService:GenerateGUID(false)
 
 	local actor = setmetatable({ model = model, enabled = false }, ActorEntity)
 
@@ -31,7 +31,7 @@ function ActorEntity.new(model: Model?): Actor
 	end
 
 	function actor:RemoveController(key: string): Controller?
-		local controller = self:GetController(key)
+		local controller: Controller? = self:GetController(key)
 		controllers[key] = nil
 		return controller
 	end

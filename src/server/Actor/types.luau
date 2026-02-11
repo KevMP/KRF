@@ -28,4 +28,11 @@ export type ActorApi = {
 
 export type Actor = ActorBase & ActorApi
 
+export type ActorRegistry = {
+	GetActorById: (actorId: string) -> Actor?,
+	GetActorByModel: (actorModel: Model) -> Actor?,
+	BindModel: (actor: Actor, model: Model) -> (boolean, string?),
+	UnbindModel: (actor: Actor) -> boolean,
+}
+
 return ActorTypes
