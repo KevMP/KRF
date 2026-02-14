@@ -35,4 +35,13 @@ export type ActorRegistry = {
 	UnbindModel: (actor: Actor) -> boolean,
 }
 
+export type RegisterActorOpts = {
+	ownerUserId: number?, -- reserved for future Networking/Input ownership semantics
+}
+
+export type ActorRuntime = {
+	RegisterActor: (model: Model, opts: RegisterActorOpts) -> (Actor?, string?),
+	OnActorRegistered: () -> (),
+}
+
 return ActorTypes
