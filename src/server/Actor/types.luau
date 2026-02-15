@@ -7,6 +7,8 @@ Actor Contract
 - Controllers: Set/Get/Remove with no overwrite
 - Stored controllers must support Destroy() for consistent teardown
 ]]
+local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
+
 local ActorTypes = {}
 
 export type ActorBase = {
@@ -40,8 +42,10 @@ export type RegisterActorOpts = {
 }
 
 export type ActorRuntime = {
-	RegisterActor: (model: Model, opts: RegisterActorOpts) -> (Actor?, string?),
-	OnActorRegistered: () -> (),
+	RegisterActor: (model: Model, opts: RegisterActorOpts?) -> (Actor?, string?),
+	OnActorRegistered: SignalTypes.Event<Actor>,
+	AttachControllers: (actor: Actor) -> (boolean, string?),
+	DetachAllControllers: (actor: Actor) -> (),
 }
 
 return ActorTypes
