@@ -1,3 +1,2 @@
 std = "roblox"
-[config]
-ignore = ["src/shared/Signal/GoodSignal.luau"]
+exclude  = ["src/shared/Signal/GoodSignal.luau"]
