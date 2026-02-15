@@ -26,6 +26,14 @@ function ActorEntity.new(model: Model?): Actor
 		return true
 	end
 
+	function actor:GetControllerKeys(): { string }
+		local keys: { string } = {}
+		for key, _ in controllers do
+			table.insert(keys, key)
+		end
+		return keys
+	end
+
 	function actor:GetController(key: string): Controller?
 		return controllers[key]
 	end

@@ -6,6 +6,7 @@ export type Actor = Types.Actor
 type ActorBindingRecord = {
 	actor: Actor,
 	model: Model,
+	modelGoneFired: boolean,
 	connections: { RBXScriptConnection },
 }
 
@@ -34,6 +35,29 @@ function cleanUpActorBindingRecord(bindingRecord: ActorBindingRecord)
 	end
 
 	table.clear(bindingRecord.connections)
+end
+
+local modelGoneHandler: ((Actor, string) -> ())? = nil
+
+local function handleModelGone(bindingRecord: ActorBindingRecord)
+	if bindingRecord.modelGoneFired then
+		return
+	end
+	bindingRecord.modelGoneFired = true
+
+	if modelGoneHandler then
+		local ok: boolean, err: any = pcall(modelGoneHandler, bindingRecord.actor, "ModelGone")
+		if not ok then
+			warn("ModelGone handler failed: ", err)
+			cleanUpActorBindingRecord(bindingRecord) --fallback guarantee
+		end
+	else
+		cleanUpActorBindingRecord(bindingRecord)
+	end
+end
+
+function ActorRegistry.SetModelGoneHandler(handler: ((Actor, string) -> ())?)
+	modelGoneHandler = handler
 end
 
 function ActorRegistry.GetActorById(actorId: string): Actor?
@@ -88,6 +112,7 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 		local newRecord: ActorBindingRecord = {
 			actor = actor,
 			model = model,
+			modelGoneFired = false,
 			connections = {},
 		}
 		bindingRecord = newRecord
@@ -98,12 +123,13 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 	actor.model = model
 
 	local destroyingConn: RBXScriptConnection = model.Destroying:Connect(function()
-		cleanUpActorBindingRecord(bindingRecord)
+		--here we want to call some sort of opts.ModelDestrying which will call unbind, if no opts then proceed with calling cleanupactorbinding record
+		handleModelGone(bindingRecord)
 	end)
 
 	local ancestryChangedConn: RBXScriptConnection = model:GetPropertyChangedSignal("Parent"):Connect(function()
 		if model.Parent == nil then
-			cleanUpActorBindingRecord(bindingRecord)
+			handleModelGone(bindingRecord)
 		end
 	end)
 

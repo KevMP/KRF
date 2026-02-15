@@ -24,6 +24,7 @@ export type ActorApi = {
 	GetId: (self: ActorApi) -> string,
 
 	SetController: (self: ActorApi, key: string, controller: Controller) -> boolean,
+	GetControllerKeys: (self: ActorApi) -> { string },
 	GetController: (self: ActorApi, key: string) -> Controller?,
 	RemoveController: (self: Actor, key: string) -> Controller?,
 }
@@ -35,6 +36,9 @@ export type ActorRegistry = {
 	GetActorByModel: (actorModel: Model) -> Actor?,
 	BindModel: (actor: Actor, model: Model) -> (boolean, string?),
 	UnbindModel: (actor: Actor) -> boolean,
+	-- Installed by ActorRuntime to avoid require cycles.
+	-- Pass nil to clear (optional but nice for tests).
+	SetModelGoneHandler: (handler: ((actor: Actor, reason: string) -> ())?) -> (),
 }
 
 export type RegisterActorOpts = {
@@ -43,9 +47,14 @@ export type RegisterActorOpts = {
 
 export type ActorRuntime = {
 	RegisterActor: (model: Model, opts: RegisterActorOpts?) -> (Actor?, string?),
-	OnActorRegistered: SignalTypes.Event<Actor>,
+	UnregisterActor: (actor: Actor, reason: string?) -> (boolean, string?),
 	AttachControllers: (actor: Actor) -> (boolean, string?),
 	DetachAllControllers: (actor: Actor) -> (),
+
+	--events
+	OnActorRegistered: SignalTypes.Event<Actor>,
+	OnActorUnregistering: SignalTypes.Event<Actor, string?>,
+	OnActorUnregistered: SignalTypes.Event<Actor, string?>,
 }
 
 return ActorTypes
