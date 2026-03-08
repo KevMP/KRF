@@ -12,10 +12,10 @@ const config: Config = {
   },
 
   url: 'https://kevmp.github.io',
-  baseUrl: '/roblox-rpg-framework/',
+  baseUrl: '/KRF/',
 
   organizationName: 'KevMP',
-  projectName: 'roblox-rpg-framework',
+  projectName: 'KRF',
 
   onBrokenLinks: 'throw',
 
