@@ -65,11 +65,6 @@ const config: Config = {
           label: 'Learn KRF',
         },
         {
-          to: '/api',
-          label: 'API',
-          position: 'left',
-        },
-        {
           href: 'https://github.com/KevMP/roblox-rpg-framework',
           label: 'GitHub',
           position: 'right',
