@@ -57,6 +57,6 @@ With a stable runtime foundation and ready assets, developers should be able to 
 
 If you are new to KRF, start with the runtime docs:
 
-- [Actor Runtime](runtime/actor-runtime)
+--adding soon
 
 Additional guides and higher-level learning content will be added as the framework grows.
