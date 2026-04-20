@@ -28,6 +28,11 @@ local NonPositiveMaxStacksCataloge: unknown = require(TagTestUtils.NonPositiveMa
 local NonIntegerMaxStacksCataloge: unknown = require(TagTestUtils.NonIntegerMaxStacksCatalog)
 local MaxStacksWithoutStackDuplicateBehaviorCataloge: unknown =
 	require(TagTestUtils.MaxStacksWithoutStackDuplicateBehaviorCatalog)
+local ValidPropertyModifierCataloge: unknown = require(TagTestUtils.ValidPropertyModifierCatalog)
+local MixedPropertyModifierModeCataloge: unknown = require(TagTestUtils.MixedPropertyModifierModeCatalog)
+local MixedSetMultiplyPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMultiplyPropertyModifierCatalog)
+local MixedSetMinPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMinPropertyModifierCatalog)
+local MixedSetMaxPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMaxPropertyModifierCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
@@ -121,9 +126,38 @@ it("TagRegistry.Load enforces maxStacks validation rules", function()
 	expect(maxStacksWithoutStackDuplicateBehaviorReason).toBe("TagMaxStacksRequiresStackDuplicateBehavior")
 end)
 
-it("TagRegistry.Load accepts valid property modifier shapes in override and normal modifier modes", function() end)
+it("TagRegistry.Load accepts valid property modifier shapes in override and normal modifier modes", function()
+	TagRegistry._resetForTests()
 
-it("TagRegistry.Load rejects property entries that mix override and normal modifier fields", function() end)
+	local validPropertyModifierLoaded: boolean, validPropertyModifierReason: string? =
+		TagRegistry.Load(ValidPropertyModifierCataloge)
+	expect(validPropertyModifierLoaded).toBe(true)
+	expect(validPropertyModifierReason).toBeNil()
+end)
+
+it("TagRegistry.Load rejects property entries that mix override and normal modifier fields", function()
+	TagRegistry._resetForTests()
+
+	local mixedPropertyModifierModeLoaded: boolean, mixedPropertyModifierModeReason: string? =
+		TagRegistry.Load(MixedPropertyModifierModeCataloge)
+	expect(mixedPropertyModifierModeLoaded).toBe(false)
+	expect(mixedPropertyModifierModeReason).toBe("TagPropertyModifierSetCannotBeCombined")
+
+	local mixedSetMultiplyPropertyModifierLoaded: boolean, mixedSetMultiplyPropertyModifierReason: string? =
+		TagRegistry.Load(MixedSetMultiplyPropertyModifierCataloge)
+	expect(mixedSetMultiplyPropertyModifierLoaded).toBe(false)
+	expect(mixedSetMultiplyPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
+
+	local mixedSetMinPropertyModifierLoaded: boolean, mixedSetMinPropertyModifierReason: string? =
+		TagRegistry.Load(MixedSetMinPropertyModifierCataloge)
+	expect(mixedSetMinPropertyModifierLoaded).toBe(false)
+	expect(mixedSetMinPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
+
+	local mixedSetMaxPropertyModifierLoaded: boolean, mixedSetMaxPropertyModifierReason: string? =
+		TagRegistry.Load(MixedSetMaxPropertyModifierCataloge)
+	expect(mixedSetMaxPropertyModifierLoaded).toBe(false)
+	expect(mixedSetMaxPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
+end)
 
 it("TagRegistry.Load rejects non-numeric property modifier values", function() end)
 
