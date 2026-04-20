@@ -1,4 +1,6 @@
 --!strict
+local RunService = game:GetService("RunService")
+
 local RegistryTypes = require(script.Parent.types)
 local TagValidator = require(script.Parent.TagValidator)
 
@@ -53,6 +55,16 @@ end
 
 function TagRegistry.IsLoaded(): boolean
 	return isLoaded
+end
+
+function TagRegistry._resetForTests(): ()
+	if not RunService:IsStudio() then
+		error("TagRegistry._resetForTests can only be called in Studio")
+	end
+
+	isLoaded = false
+	definitionsById = {}
+	orderedDefinitions = {}
 end
 
 return TagRegistry

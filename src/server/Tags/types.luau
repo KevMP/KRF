@@ -30,6 +30,7 @@ export type TagRegistry = {
 	GetAll: () -> { TagDefinition },
 	GetAllById: () -> { [string]: TagDefinition },
 	IsLoaded: () -> boolean,
+	_resetForTests: () -> (),
 }
 
 return RegistryTypes
