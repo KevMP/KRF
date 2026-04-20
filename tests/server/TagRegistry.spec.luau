@@ -39,6 +39,12 @@ local NonNumericMultiplyPropertyModifierCataloge: unknown =
 	require(TagTestUtils.NonNumericMultiplyPropertyModifierCatalog)
 local NonNumericMinPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMinPropertyModifierCatalog)
 local NonNumericMaxPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMaxPropertyModifierCatalog)
+local NonTablePropertiesCataloge: unknown = require(TagTestUtils.NonTablePropertiesCatalog)
+local NonStringPropertyNameCataloge: unknown = require(TagTestUtils.NonStringPropertyNameCatalog)
+local EmptyPropertyNameCataloge: unknown = require(TagTestUtils.EmptyPropertyNameCatalog)
+local NonTablePropertyModifierCataloge: unknown = require(TagTestUtils.NonTablePropertyModifierCatalog)
+local UnknownPropertyModifierFieldCataloge: unknown = require(TagTestUtils.UnknownPropertyModifierFieldCatalog)
+local EmptyPropertyModifierCataloge: unknown = require(TagTestUtils.EmptyPropertyModifierCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
@@ -194,7 +200,39 @@ it("TagRegistry.Load rejects non-numeric property modifier values", function()
 	expect(nonNumericMaxPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 end)
 
-it("TagRegistry.Load rejects unknown or malformed property modifier metadata", function() end)
+it("TagRegistry.Load rejects unknown or malformed property modifier metadata", function()
+	TagRegistry._resetForTests()
+
+	local nonTablePropertiesLoaded: boolean, nonTablePropertiesReason: string? =
+		TagRegistry.Load(NonTablePropertiesCataloge)
+	expect(nonTablePropertiesLoaded).toBe(false)
+	expect(nonTablePropertiesReason).toBe("TagPropertiesMustBeTable")
+
+	local nonStringPropertyNameLoaded: boolean, nonStringPropertyNameReason: string? =
+		TagRegistry.Load(NonStringPropertyNameCataloge)
+	expect(nonStringPropertyNameLoaded).toBe(false)
+	expect(nonStringPropertyNameReason).toBe("TagPropertyNameMustBeString")
+
+	local emptyPropertyNameLoaded: boolean, emptyPropertyNameReason: string? =
+		TagRegistry.Load(EmptyPropertyNameCataloge)
+	expect(emptyPropertyNameLoaded).toBe(false)
+	expect(emptyPropertyNameReason).toBe("TagPropertyNameCannotBeEmpty")
+
+	local nonTablePropertyModifierLoaded: boolean, nonTablePropertyModifierReason: string? =
+		TagRegistry.Load(NonTablePropertyModifierCataloge)
+	expect(nonTablePropertyModifierLoaded).toBe(false)
+	expect(nonTablePropertyModifierReason).toBe("TagPropertyModifierMustBeTable")
+
+	local unknownPropertyModifierFieldLoaded: boolean, unknownPropertyModifierFieldReason: string? =
+		TagRegistry.Load(UnknownPropertyModifierFieldCataloge)
+	expect(unknownPropertyModifierFieldLoaded).toBe(false)
+	expect(unknownPropertyModifierFieldReason).toBe("TagPropertyModifierFieldInvalid")
+
+	local emptyPropertyModifierLoaded: boolean, emptyPropertyModifierReason: string? =
+		TagRegistry.Load(EmptyPropertyModifierCataloge)
+	expect(emptyPropertyModifierLoaded).toBe(false)
+	expect(emptyPropertyModifierReason).toBe("TagPropertyModifierCannotBeEmpty")
+end)
 
 it("TagRegistry.Load failure does not partially commit catalog state", function() end)
 
