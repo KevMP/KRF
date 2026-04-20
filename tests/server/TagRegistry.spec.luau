@@ -33,6 +33,12 @@ local MixedPropertyModifierModeCataloge: unknown = require(TagTestUtils.MixedPro
 local MixedSetMultiplyPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMultiplyPropertyModifierCatalog)
 local MixedSetMinPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMinPropertyModifierCatalog)
 local MixedSetMaxPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMaxPropertyModifierCatalog)
+local NonNumericSetPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericSetPropertyModifierCatalog)
+local NonNumericAddPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericAddPropertyModifierCatalog)
+local NonNumericMultiplyPropertyModifierCataloge: unknown =
+	require(TagTestUtils.NonNumericMultiplyPropertyModifierCatalog)
+local NonNumericMinPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMinPropertyModifierCatalog)
+local NonNumericMaxPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMaxPropertyModifierCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
@@ -159,7 +165,34 @@ it("TagRegistry.Load rejects property entries that mix override and normal modif
 	expect(mixedSetMaxPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
 end)
 
-it("TagRegistry.Load rejects non-numeric property modifier values", function() end)
+it("TagRegistry.Load rejects non-numeric property modifier values", function()
+	TagRegistry._resetForTests()
+
+	local nonNumericSetPropertyModifierLoaded: boolean, nonNumericSetPropertyModifierReason: string? =
+		TagRegistry.Load(NonNumericSetPropertyModifierCataloge)
+	expect(nonNumericSetPropertyModifierLoaded).toBe(false)
+	expect(nonNumericSetPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
+
+	local nonNumericAddPropertyModifierLoaded: boolean, nonNumericAddPropertyModifierReason: string? =
+		TagRegistry.Load(NonNumericAddPropertyModifierCataloge)
+	expect(nonNumericAddPropertyModifierLoaded).toBe(false)
+	expect(nonNumericAddPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
+
+	local nonNumericMultiplyPropertyModifierLoaded: boolean, nonNumericMultiplyPropertyModifierReason: string? =
+		TagRegistry.Load(NonNumericMultiplyPropertyModifierCataloge)
+	expect(nonNumericMultiplyPropertyModifierLoaded).toBe(false)
+	expect(nonNumericMultiplyPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
+
+	local nonNumericMinPropertyModifierLoaded: boolean, nonNumericMinPropertyModifierReason: string? =
+		TagRegistry.Load(NonNumericMinPropertyModifierCataloge)
+	expect(nonNumericMinPropertyModifierLoaded).toBe(false)
+	expect(nonNumericMinPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
+
+	local nonNumericMaxPropertyModifierLoaded: boolean, nonNumericMaxPropertyModifierReason: string? =
+		TagRegistry.Load(NonNumericMaxPropertyModifierCataloge)
+	expect(nonNumericMaxPropertyModifierLoaded).toBe(false)
+	expect(nonNumericMaxPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
+end)
 
 it("TagRegistry.Load rejects unknown or malformed property modifier metadata", function() end)
 

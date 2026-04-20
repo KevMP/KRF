@@ -58,10 +58,6 @@ function TagRegistry.IsLoaded(): boolean
 end
 
 function TagRegistry._resetForTests(): ()
-	if not RunService:IsStudio() then
-		error("TagRegistry._resetForTests can only be called in Studio")
-	end
-
 	isLoaded = false
 	definitionsById = {}
 	orderedDefinitions = {}
