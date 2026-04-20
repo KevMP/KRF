@@ -17,6 +17,8 @@ local MixedTagCataloge: unknown = require(TagTestUtils.MixedTagCatalog)
 local MissingTagIdCataloge: unknown = require(TagTestUtils.MissingTagIdCatalog)
 local EmptyTagIdCataloge: unknown = require(TagTestUtils.EmptyTagIdCatalog)
 local DuplicateTagIdCataloge: unknown = require(TagTestUtils.DuplicateTagIdCatalog)
+local InvalidDuplicateBehaviorCataloge: unknown = require(TagTestUtils.InvalidDuplicateBehaviorCatalog)
+local InvalidVisibilityCataloge: unknown = require(TagTestUtils.InvalidVisibilityCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	local minimalLoaded: boolean, minimalReason: string? = TagRegistry.Load(MinimalValidCataloge)
@@ -46,7 +48,19 @@ it("TagRegistry.Load rejects tag definitions with missing, empty, or duplicate i
 	expect(duplicateIdReason).toBe("TagIdAlreadyRegistered")
 end)
 
-it("TagRegistry.Load rejects invalid duplicateBehavior and visibility values", function() end)
+it("TagRegistry.Load rejects invalid duplicateBehavior and visibility values", function()
+	TagRegistry._resetForTests()
+
+	local invalidDuplicateBehaviorLoaded: boolean, invalidDuplicateBehaviorReason: string? =
+		TagRegistry.Load(InvalidDuplicateBehaviorCataloge)
+	expect(invalidDuplicateBehaviorLoaded).toBe(false)
+	expect(invalidDuplicateBehaviorReason).toBe("TagDuplicateBehaviorInvalid")
+
+	local invalidVisibilityLoaded: boolean, invalidVisibilityReason: string? =
+		TagRegistry.Load(InvalidVisibilityCataloge)
+	expect(invalidVisibilityLoaded).toBe(false)
+	expect(invalidVisibilityReason).toBe("TagVisibilityInvalid")
+end)
 
 it("TagRegistry.Load rejects invalid defaultDuration and tickInterval values", function() end)
 
