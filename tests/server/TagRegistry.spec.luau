@@ -19,8 +19,14 @@ local EmptyTagIdCataloge: unknown = require(TagTestUtils.EmptyTagIdCatalog)
 local DuplicateTagIdCataloge: unknown = require(TagTestUtils.DuplicateTagIdCatalog)
 local InvalidDuplicateBehaviorCataloge: unknown = require(TagTestUtils.InvalidDuplicateBehaviorCatalog)
 local InvalidVisibilityCataloge: unknown = require(TagTestUtils.InvalidVisibilityCatalog)
+local NonNumericDefaultDurationCataloge: unknown = require(TagTestUtils.NonNumericDefaultDurationCatalog)
+local NonPositiveDefaultDurationCataloge: unknown = require(TagTestUtils.NonPositiveDefaultDurationCatalog)
+local NonNumericTickIntervalCataloge: unknown = require(TagTestUtils.NonNumericTickIntervalCatalog)
+local NonPositiveTickIntervalCataloge: unknown = require(TagTestUtils.NonPositiveTickIntervalCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
+	TagRegistry._resetForTests()
+
 	local minimalLoaded: boolean, minimalReason: string? = TagRegistry.Load(MinimalValidCataloge)
 	expect(minimalLoaded).toBe(true)
 	expect(minimalReason).toBeNil()
@@ -62,7 +68,29 @@ it("TagRegistry.Load rejects invalid duplicateBehavior and visibility values", f
 	expect(invalidVisibilityReason).toBe("TagVisibilityInvalid")
 end)
 
-it("TagRegistry.Load rejects invalid defaultDuration and tickInterval values", function() end)
+it("TagRegistry.Load rejects invalid defaultDuration and tickInterval values", function()
+	TagRegistry._resetForTests()
+
+	local nonNumericDefaultDurationLoaded: boolean, nonNumericDefaultDurationReason: string? =
+		TagRegistry.Load(NonNumericDefaultDurationCataloge)
+	expect(nonNumericDefaultDurationLoaded).toBe(false)
+	expect(nonNumericDefaultDurationReason).toBe("TagDefaultDurationMustBeNumber")
+
+	local nonPositiveDefaultDurationLoaded: boolean, nonPositiveDefaultDurationReason: string? =
+		TagRegistry.Load(NonPositiveDefaultDurationCataloge)
+	expect(nonPositiveDefaultDurationLoaded).toBe(false)
+	expect(nonPositiveDefaultDurationReason).toBe("TagDefaultDurationMustBePositive")
+
+	local nonNumericTickIntervalLoaded: boolean, nonNumericTickIntervalReason: string? =
+		TagRegistry.Load(NonNumericTickIntervalCataloge)
+	expect(nonNumericTickIntervalLoaded).toBe(false)
+	expect(nonNumericTickIntervalReason).toBe("TagTickIntervalMustBeNumber")
+
+	local nonPositiveTickIntervalLoaded: boolean, nonPositiveTickIntervalReason: string? =
+		TagRegistry.Load(NonPositiveTickIntervalCataloge)
+	expect(nonPositiveTickIntervalLoaded).toBe(false)
+	expect(nonPositiveTickIntervalReason).toBe("TagTickIntervalMustBePositive")
+end)
 
 it("TagRegistry.Load enforces maxStacks validation rules", function() end)
 
