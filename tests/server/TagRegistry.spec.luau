@@ -45,6 +45,7 @@ local EmptyPropertyNameCataloge: unknown = require(TagTestUtils.EmptyPropertyNam
 local NonTablePropertyModifierCataloge: unknown = require(TagTestUtils.NonTablePropertyModifierCatalog)
 local UnknownPropertyModifierFieldCataloge: unknown = require(TagTestUtils.UnknownPropertyModifierFieldCatalog)
 local EmptyPropertyModifierCataloge: unknown = require(TagTestUtils.EmptyPropertyModifierCatalog)
+local PartiallyInvalidTagCataloge: unknown = require(TagTestUtils.PartiallyInvalidTagCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
@@ -234,7 +235,21 @@ it("TagRegistry.Load rejects unknown or malformed property modifier metadata", f
 	expect(emptyPropertyModifierReason).toBe("TagPropertyModifierCannotBeEmpty")
 end)
 
-it("TagRegistry.Load failure does not partially commit catalog state", function() end)
+it("TagRegistry.Load failure does not partially commit catalog state", function()
+	TagRegistry._resetForTests()
+
+	local partiallyInvalidLoaded: boolean, partiallyInvalidReason: string? =
+		TagRegistry.Load(PartiallyInvalidTagCataloge)
+	expect(partiallyInvalidLoaded).toBe(false)
+	expect(partiallyInvalidReason).toBe("TagVisibilityInvalid")
+
+	expect(TagRegistry.IsLoaded()).toBe(false)
+	expect(TagRegistry.Get("Status.Rooted")).toBeNil()
+	expect(TagRegistry.Get("Status.Hidden")).toBeNil()
+	expect(#TagRegistry.GetAll()).toBe(0)
+	expect(TagRegistry.GetAllById()["Status.Rooted"]).toBeNil()
+	expect(TagRegistry.GetAllById()["Status.Hidden"]).toBeNil()
+end)
 
 it("TagRegistry.IsLoaded reflects registry state before and after successful load", function() end)
 
