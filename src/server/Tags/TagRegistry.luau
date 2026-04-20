@@ -21,7 +21,7 @@ function TagRegistry.Load(definitions: { TagDefinition }): (boolean, string?)
 	local stagedOrderedDefinitions: { TagDefinition } = {}
 
 	for _, definition: TagDefinition in definitions do
-		local isvalid: boolean, reason: string? = TagValidator.ValidateTagDefinition(definition, definitionsById)
+		local isvalid: boolean, reason: string? = TagValidator.ValidateTagDefinition(definition, stagedDefinitionsById)
 
 		if not isvalid then
 			return false, reason

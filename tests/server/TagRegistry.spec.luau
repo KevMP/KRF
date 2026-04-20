@@ -14,6 +14,9 @@ local TagRegistry: TagRegistry = require(KRF.server.Tags.TagRegistry)
 local TagTestUtils: Folder = script.Parent.Utils.Tags
 local MinimalValidCataloge: unknown = require(TagTestUtils.MinimalTagCatalog)
 local MixedTagCataloge: unknown = require(TagTestUtils.MixedTagCatalog)
+local MissingTagIdCataloge: unknown = require(TagTestUtils.MissingTagIdCatalog)
+local EmptyTagIdCataloge: unknown = require(TagTestUtils.EmptyTagIdCatalog)
+local DuplicateTagIdCataloge: unknown = require(TagTestUtils.DuplicateTagIdCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	local minimalLoaded: boolean, minimalReason: string? = TagRegistry.Load(MinimalValidCataloge)
@@ -27,7 +30,21 @@ it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata ca
 	expect(mixedReason).toBeNil()
 end)
 
-it("TagRegistry.Load rejects tag definitions with missing, empty, or duplicate ids", function() end)
+it("TagRegistry.Load rejects tag definitions with missing, empty, or duplicate ids", function()
+	TagRegistry._resetForTests()
+
+	local missingIdLoaded: boolean, missingIdReason: string? = TagRegistry.Load(MissingTagIdCataloge)
+	expect(missingIdLoaded).toBe(false)
+	expect(missingIdReason).toBe("TagIdMissing")
+
+	local emptyIdLoaded: boolean, emptyIdReason: string? = TagRegistry.Load(EmptyTagIdCataloge)
+	expect(emptyIdLoaded).toBe(false)
+	expect(emptyIdReason).toBe("TagIdCannotBeEmpty")
+
+	local duplicateIdLoaded: boolean, duplicateIdReason: string? = TagRegistry.Load(DuplicateTagIdCataloge)
+	expect(duplicateIdLoaded).toBe(false)
+	expect(duplicateIdReason).toBe("TagIdAlreadyRegistered")
+end)
 
 it("TagRegistry.Load rejects invalid duplicateBehavior and visibility values", function() end)
 
