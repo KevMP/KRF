@@ -23,6 +23,11 @@ local NonNumericDefaultDurationCataloge: unknown = require(TagTestUtils.NonNumer
 local NonPositiveDefaultDurationCataloge: unknown = require(TagTestUtils.NonPositiveDefaultDurationCatalog)
 local NonNumericTickIntervalCataloge: unknown = require(TagTestUtils.NonNumericTickIntervalCatalog)
 local NonPositiveTickIntervalCataloge: unknown = require(TagTestUtils.NonPositiveTickIntervalCatalog)
+local NonNumericMaxStacksCataloge: unknown = require(TagTestUtils.NonNumericMaxStacksCatalog)
+local NonPositiveMaxStacksCataloge: unknown = require(TagTestUtils.NonPositiveMaxStacksCatalog)
+local NonIntegerMaxStacksCataloge: unknown = require(TagTestUtils.NonIntegerMaxStacksCatalog)
+local MaxStacksWithoutStackDuplicateBehaviorCataloge: unknown =
+	require(TagTestUtils.MaxStacksWithoutStackDuplicateBehaviorCatalog)
 
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
@@ -92,7 +97,29 @@ it("TagRegistry.Load rejects invalid defaultDuration and tickInterval values", f
 	expect(nonPositiveTickIntervalReason).toBe("TagTickIntervalMustBePositive")
 end)
 
-it("TagRegistry.Load enforces maxStacks validation rules", function() end)
+it("TagRegistry.Load enforces maxStacks validation rules", function()
+	TagRegistry._resetForTests()
+
+	local nonNumericMaxStacksLoaded: boolean, nonNumericMaxStacksReason: string? =
+		TagRegistry.Load(NonNumericMaxStacksCataloge)
+	expect(nonNumericMaxStacksLoaded).toBe(false)
+	expect(nonNumericMaxStacksReason).toBe("TagMaxStacksMustBeNumber")
+
+	local nonPositiveMaxStacksLoaded: boolean, nonPositiveMaxStacksReason: string? =
+		TagRegistry.Load(NonPositiveMaxStacksCataloge)
+	expect(nonPositiveMaxStacksLoaded).toBe(false)
+	expect(nonPositiveMaxStacksReason).toBe("TagMaxStacksMustBePositive")
+
+	local nonIntegerMaxStacksLoaded: boolean, nonIntegerMaxStacksReason: string? =
+		TagRegistry.Load(NonIntegerMaxStacksCataloge)
+	expect(nonIntegerMaxStacksLoaded).toBe(false)
+	expect(nonIntegerMaxStacksReason).toBe("TagMaxStacksMustBeInteger")
+
+	local maxStacksWithoutStackDuplicateBehaviorLoaded: boolean, maxStacksWithoutStackDuplicateBehaviorReason: string? =
+		TagRegistry.Load(MaxStacksWithoutStackDuplicateBehaviorCataloge)
+	expect(maxStacksWithoutStackDuplicateBehaviorLoaded).toBe(false)
+	expect(maxStacksWithoutStackDuplicateBehaviorReason).toBe("TagMaxStacksRequiresStackDuplicateBehavior")
+end)
 
 it("TagRegistry.Load accepts valid property modifier shapes in override and normal modifier modes", function() end)
 
