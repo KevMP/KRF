@@ -251,7 +251,23 @@ it("TagRegistry.Load failure does not partially commit catalog state", function(
 	expect(TagRegistry.GetAllById()["Status.Hidden"]).toBeNil()
 end)
 
-it("TagRegistry.IsLoaded reflects registry state before and after successful load", function() end)
+it("TagRegistry.IsLoaded reflects registry state before and after successful load", function()
+	TagRegistry._resetForTests()
+
+	expect(TagRegistry.IsLoaded()).toBe(false)
+	expect(TagRegistry.Get("Status.Rooted")).toBeNil()
+	expect(#TagRegistry.GetAll()).toBe(0)
+	expect(TagRegistry.GetAllById()["Status.Rooted"]).toBeNil()
+
+	local loaded: boolean, reason: string? = TagRegistry.Load(MinimalValidCataloge)
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	expect(TagRegistry.IsLoaded()).toBe(true)
+
+	expect(TagRegistry.Get("Status.Rooted")).toBe(MinimalValidCataloge[1])
+	expect(TagRegistry.GetAll()[1]).toBe(MinimalValidCataloge[1])
+	expect(TagRegistry.GetAllById()["Status.Rooted"]).toBe(MinimalValidCataloge[1])
+end)
 
 it("TagRegistry.Get returns the registered definition for known ids and nil for unknown ids", function() end)
 
