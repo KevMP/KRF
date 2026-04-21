@@ -269,7 +269,19 @@ it("TagRegistry.IsLoaded reflects registry state before and after successful loa
 	expect(TagRegistry.GetAllById()["Status.Rooted"]).toBe(MinimalValidCataloge[1])
 end)
 
-it("TagRegistry.Get returns the registered definition for known ids and nil for unknown ids", function() end)
+it("TagRegistry.Get returns the registered definition for known ids and nil for unknown ids", function()
+	TagRegistry._resetForTests()
+
+	local loaded: boolean, reason: string? = TagRegistry.Load(MixedTagCataloge)
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+
+	expect(TagRegistry.Get("Status.Stunned")).toBe(MixedTagCataloge[1])
+	expect(TagRegistry.Get("Buff.Sprint")).toBe(MixedTagCataloge[2])
+	expect(TagRegistry.Get("Status.OnFire")).toBe(MixedTagCataloge[3])
+	expect(TagRegistry.Get("Buff.Armored")).toBe(MixedTagCataloge[4])
+	expect(TagRegistry.Get("Status.Unknown")).toBeNil()
+end)
 
 it("TagRegistry.GetAll returns every registered definition in deterministic order", function() end)
 it("TagRegistry rejects a second load after a successful startup load", function() end)
