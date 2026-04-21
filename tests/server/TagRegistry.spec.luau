@@ -283,6 +283,62 @@ it("TagRegistry.Get returns the registered definition for known ids and nil for 
 	expect(TagRegistry.Get("Status.Unknown")).toBeNil()
 end)
 
-it("TagRegistry.GetAll returns every registered definition in deterministic order", function() end)
-it("TagRegistry rejects a second load after a successful startup load", function() end)
-it("TagRegistry read surfaces remain stable after load and do not expose mutable registry state", function() end)
+it("TagRegistry.GetAll returns every registered definition in deterministic order", function()
+	TagRegistry._resetForTests()
+
+	local loaded: boolean, reason: string? = TagRegistry.Load(MixedTagCataloge)
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+
+	local allDefinitions = TagRegistry.GetAll()
+	expect(#allDefinitions).toBe(4)
+	expect(allDefinitions[1]).toBe(MixedTagCataloge[1])
+	expect(allDefinitions[2]).toBe(MixedTagCataloge[2])
+	expect(allDefinitions[3]).toBe(MixedTagCataloge[3])
+	expect(allDefinitions[4]).toBe(MixedTagCataloge[4])
+end)
+
+it("TagRegistry rejects a second load after a successful startup load", function()
+	TagRegistry._resetForTests()
+
+	local firstLoaded: boolean, firstReason: string? = TagRegistry.Load(MinimalValidCataloge)
+	expect(firstLoaded).toBe(true)
+	expect(firstReason).toBeNil()
+
+	local secondLoaded: boolean, secondReason: string? = TagRegistry.Load(MixedTagCataloge)
+	expect(secondLoaded).toBe(false)
+	expect(secondReason).toBe("TagDefinitionsAlreadyLoded")
+end)
+
+it("TagRegistry read surfaces remain stable after load and do not expose mutable registry state", function()
+	TagRegistry._resetForTests()
+
+	local loaded: boolean, reason: string? = TagRegistry.Load(MixedTagCataloge)
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+
+	local allDefinitions = TagRegistry.GetAll()
+	local allDefinitionsById = TagRegistry.GetAllById()
+
+	local mutateAllDefinitionsSucceeded: boolean = pcall(function()
+		table.insert(allDefinitions, MinimalValidCataloge[1])
+	end)
+	expect(mutateAllDefinitionsSucceeded).toBe(false)
+
+	local mutateAllDefinitionsByIdSucceeded: boolean = pcall(function()
+		allDefinitionsById["Status.Rooted"] = MinimalValidCataloge[1]
+	end)
+	expect(mutateAllDefinitionsByIdSucceeded).toBe(false)
+
+	expect(#TagRegistry.GetAll()).toBe(4)
+	expect(TagRegistry.GetAll()[1]).toBe(MixedTagCataloge[1])
+	expect(TagRegistry.GetAll()[2]).toBe(MixedTagCataloge[2])
+	expect(TagRegistry.GetAll()[3]).toBe(MixedTagCataloge[3])
+	expect(TagRegistry.GetAll()[4]).toBe(MixedTagCataloge[4])
+	expect(TagRegistry.Get("Status.Rooted")).toBeNil()
+	expect(TagRegistry.GetAllById()["Status.Rooted"]).toBeNil()
+	expect(TagRegistry.GetAllById()["Status.Stunned"]).toBe(MixedTagCataloge[1])
+	expect(TagRegistry.GetAllById()["Buff.Sprint"]).toBe(MixedTagCataloge[2])
+	expect(TagRegistry.GetAllById()["Status.OnFire"]).toBe(MixedTagCataloge[3])
+	expect(TagRegistry.GetAllById()["Buff.Armored"]).toBe(MixedTagCataloge[4])
+end)
