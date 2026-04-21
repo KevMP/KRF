@@ -1,6 +1,4 @@
 --!strict
-local RunService = game:GetService("RunService")
-
 local RegistryTypes = require(script.Parent.types)
 local TagValidator = require(script.Parent.TagValidator)
 
