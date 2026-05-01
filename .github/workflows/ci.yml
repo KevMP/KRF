@@ -39,14 +39,8 @@ jobs:
       - name: Install Node deps
         run: npm ci
 
-      - name: Prettier check
-        run: npm run format:check
-
-      - name: StyLua check
-        run: stylua --check src tests
-
-      - name: Selene lint
-        run: selene src tests
+      - name: Lint checks
+        run: npm run test:lint
 
       - name: Build test place (Rojo)
         run: rojo build test.project.json -o dist.rbxl
