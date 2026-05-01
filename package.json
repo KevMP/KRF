@@ -8,13 +8,12 @@
   },
   "scripts": {
     "prepare": "husky",
-    "precommit": "lint-staged",
-    "format": "stylua . && prettier --write .",
-    "format:check": "prettier --check ."
+    "test:lint": "stylua --check src tests && selene src tests",
+    "test:unit": "powershell -ExecutionPolicy Bypass -File .\\scripts\\test.ps1",
+    "test": "npm run test:lint && npm run test:unit"
   },
   "lint-staged": {
-    "*.{lua,luau}": "stylua",
-    "*.{json,md,yml,yaml}": "prettier --write"
+    "*.{lua,luau}": "stylua"
   },
   "repository": {
     "type": "git",
@@ -32,7 +31,6 @@
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "prettier": "^3.8.1"
+    "lint-staged": "^16.2.7"
   }
 }
