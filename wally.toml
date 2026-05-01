@@ -7,3 +7,4 @@ realm = "shared"
 [dev-dependencies]
 Jest = "jsdotlua/jest@3.10.0"
 JestGlobals = "jsdotlua/jest-globals@3.10.0"
+roblox-coverage = "evilbocchi/roblox-coverage@0.1.1"

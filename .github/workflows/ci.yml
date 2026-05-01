@@ -47,3 +47,7 @@ jobs:
 
       - name: Upload place and run tests
         run: python3 -u scripts/upload_and_run_task.py dist.rbxl "$TEST_TASK_FILE"
+
+      - name: Generate coverage reports
+        if: always() && hashFiles('coverage/coverage-final.json') != ''
+        run: npm run coverage
