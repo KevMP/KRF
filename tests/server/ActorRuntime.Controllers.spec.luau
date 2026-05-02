@@ -4,7 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-
 local ActorTypes = require(ReplicatedStorage.Packages.KRF.server.Actor.types)
 local ControllerTypes = require(ReplicatedStorage.Packages.KRF.server.Controller.types)
 
@@ -115,6 +114,120 @@ it("ActorRuntime.AttachControllers rolls back controllers attached in the curren
 	ControllerRegistry._ResetForTests()
 end)
 
+it("ActorRuntime.AttachControllers returns the ordering failure from ControllerRegistry", function()
+	ControllerRegistry._ResetForTests()
+
+	local actor: Actor = ActorEntity.new()
+
+	local originalResolveOrder: ({ string }) -> ({ string }?, string?) = ControllerRegistry.ResolveOrder
+
+	local function run()
+		ControllerRegistry.ResolveOrder = function(_keys: { string }): ({ string }?, string?)
+			return nil, "CyclicDependency"
+		end
+
+		local okAttach: boolean, attachReason: string? = ActorRuntime.AttachControllers(actor)
+		expect(okAttach).toBe(false)
+		expect(attachReason).toBe("CyclicDependency")
+	end
+
+	local success: boolean, errorMessage: any = pcall(run)
+	ControllerRegistry.ResolveOrder = originalResolveOrder
+	ControllerRegistry._ResetForTests()
+
+	if not success then
+		error(errorMessage)
+	end
+end)
+
+it("ActorRuntime.AttachControllers rejects a controller key that disappears before lookup", function()
+	ControllerRegistry._ResetForTests()
+
+	local actor: Actor = ActorEntity.new()
+	local originalGetAutoAttachKeys: () -> { string } = ControllerRegistry.GetAutoAttachKeys
+	local originalResolveOrder: ({ string }) -> ({ string }?, string?) = ControllerRegistry.ResolveOrder
+	local originalGet: (string) -> ControllerDef? = ControllerRegistry.Get
+
+	local function run()
+		ControllerRegistry.GetAutoAttachKeys = function(): { string }
+			return { "Ghost" }
+		end
+
+		ControllerRegistry.ResolveOrder = function(_keys: { string }): ({ string }?, string?)
+			return { "Ghost" }, nil
+		end
+
+		ControllerRegistry.Get = function(_key: string): ControllerDef?
+			return nil
+		end
+
+		local okAttach: boolean, attachReason: string? = ActorRuntime.AttachControllers(actor)
+		expect(okAttach).toBe(false)
+		expect(attachReason).toBe("UnknownControllerKey:Ghost")
+		expect(actor:GetController("Ghost")).toBeNil()
+	end
+
+	local success: boolean, errorMessage: any = pcall(run)
+	ControllerRegistry.GetAutoAttachKeys = originalGetAutoAttachKeys
+	ControllerRegistry.ResolveOrder = originalResolveOrder
+	ControllerRegistry.Get = originalGet
+	ControllerRegistry._ResetForTests()
+
+	if not success then
+		error(errorMessage)
+	end
+end)
+
+it("ActorRuntime.AttachControllers rejects a factory that does not create a controller", function()
+	ControllerRegistry._ResetForTests()
+
+	local actor: Actor = ActorEntity.new()
+
+	local controllerDefA: ControllerDef = {
+		key = "A",
+		autoAttach = true,
+		factory = function(_actor: Actor): Controller
+			return nil :: any
+		end,
+	}
+
+	local okReg: boolean, regReason: string? = ControllerRegistry.Register(controllerDefA)
+	expect(okReg).toBe(true)
+	expect(regReason).toBeNil()
+
+	local okAttach: boolean, attachReason: string? = ActorRuntime.AttachControllers(actor)
+	expect(okAttach).toBe(false)
+	expect(attachReason).toBe("FactoryDidNotCreateController:A")
+	expect(actor:GetController("A")).toBeNil()
+
+	ControllerRegistry._ResetForTests()
+end)
+
+it("ActorRuntime.AttachControllers rejects a controller that does not satisfy the destroy contract", function()
+	ControllerRegistry._ResetForTests()
+
+	local actor: Actor = ActorEntity.new()
+
+	local controllerDefA: ControllerDef = {
+		key = "A",
+		autoAttach = true,
+		factory = function(_actor: Actor): Controller
+			return {} :: any
+		end,
+	}
+
+	local okReg: boolean, regReason: string? = ControllerRegistry.Register(controllerDefA)
+	expect(okReg).toBe(true)
+	expect(regReason).toBeNil()
+
+	local okAttach: boolean, attachReason: string? = ActorRuntime.AttachControllers(actor)
+	expect(okAttach).toBe(false)
+	expect(attachReason).toBe("ControllerContractNotObliged:A")
+	expect(actor:GetController("A")).toBeNil()
+
+	ControllerRegistry._ResetForTests()
+end)
+
 it("ActorRuntime.DetachAllControllers destroys and removes all controllers", function()
 	local actor: Actor = ActorEntity.new()
 
@@ -165,4 +278,45 @@ it("ActorRuntime.DetachAllControllers is idempotent", function()
 
 	expect(actor:GetController("A")).toBeNil()
 	expect(destroyCount).toBe(1)
+end)
+
+it("ActorRuntime.DetachAllControllers still removes controllers when Destroy errors", function()
+	local actor: Actor = ActorEntity.new()
+
+	local destroyCountA: number = 0
+	local destroyCountB: number = 0
+
+	local controllerA: Controller = {
+		Destroy = function()
+			destroyCountA += 1
+			error("destroy boom")
+		end,
+	}
+
+	local controllerB: Controller = {
+		Destroy = function()
+			destroyCountB += 1
+		end,
+	}
+
+	local function run()
+		local okA: boolean = actor:SetController("A", controllerA)
+		local okB: boolean = actor:SetController("B", controllerB)
+
+		expect(okA).toBe(true)
+		expect(okB).toBe(true)
+
+		ActorRuntime.DetachAllControllers(actor)
+
+		expect(actor:GetController("A")).toBeNil()
+		expect(actor:GetController("B")).toBeNil()
+		expect(destroyCountA).toBe(1)
+		expect(destroyCountB).toBe(1)
+	end
+
+	local success: boolean, errorMessage: any = pcall(run)
+
+	if not success then
+		error(errorMessage)
+	end
 end)
