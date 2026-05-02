@@ -108,6 +108,19 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 
 	if existingBindingRecord ~= nil then
 		bindingRecord = existingBindingRecord
+
+		if byModel[bindingRecord.model] == bindingRecord then
+			byModel[bindingRecord.model] = nil
+		end
+
+		for _, conn: RBXScriptConnection in bindingRecord.connections do
+			conn:Disconnect()
+		end
+
+		table.clear(bindingRecord.connections)
+		bindingRecord.actor = actor
+		bindingRecord.model = model
+		bindingRecord.modelGoneFired = false
 	else
 		local newRecord: ActorBindingRecord = {
 			actor = actor,

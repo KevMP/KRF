@@ -7,6 +7,11 @@ local expect = JestGlobals.expect
 
 local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 
+local function sortStrings(values: { string }): { string }
+	table.sort(values)
+	return values
+end
+
 it("returns a stable id and ignores external id field writes", function()
 	local actor: ActorEntity.Actor = ActorEntity.new()
 
@@ -35,6 +40,13 @@ it("defaults enabled to false and allows deterministic toggling", function()
 	expect(actor.enabled).toBe(false)
 end)
 
+it("preserves the provided model reference", function()
+	local model = Instance.new("Model")
+	local actor: ActorEntity.Actor = ActorEntity.new(model)
+
+	expect(actor.model).toBe(model)
+end)
+
 it("sets, gets, and removes controllers by key", function()
 	local actor: ActorEntity.Actor = ActorEntity.new()
 	local controller1: ActorEntity.Controller = {
@@ -61,6 +73,7 @@ it("rejects controller overwrite until removed", function()
 	expect(actor:GetController("controller1")).toBe(controller1)
 
 	expect(actor:RemoveController("controller1")).toBe(controller1)
+	expect(actor:RemoveController("controller1")).toBe(nil)
 
 	expect(actor:SetController("controller1", controller2)).toBe(true)
 end)
@@ -78,4 +91,20 @@ it("removing one controller does not affect other controllers", function()
 
 	expect(actor:GetController("controller1")).toBe(nil)
 	expect(actor:GetController("controller2")).toBe(controller2)
+end)
+
+it("returns the registered controller keys and updates them after removal", function()
+	local actor: ActorEntity.Actor = ActorEntity.new()
+	local controller1: ActorEntity.Controller = { Destroy = function(_self) end }
+	local controller2: ActorEntity.Controller = { Destroy = function(_self) end }
+
+	expect(actor:GetControllerKeys()).toEqual({})
+
+	expect(actor:SetController("controller1", controller1)).toBe(true)
+	expect(actor:SetController("controller2", controller2)).toBe(true)
+	expect(sortStrings(actor:GetControllerKeys())).toEqual({ "controller1", "controller2" })
+
+	actor:RemoveController("controller1")
+
+	expect(actor:GetControllerKeys()).toEqual({ "controller2" })
 end)

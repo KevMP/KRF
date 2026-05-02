@@ -251,6 +251,28 @@ it("ControllerRegistry.ResolveOrder rejects dependencies outside the requested s
 	ControllerRegistry._ResetForTests()
 end)
 
+it("ControllerRegistry.ResolveOrder returns a stable error when a dependency was never registered", function()
+	ControllerRegistry._ResetForTests()
+
+	local controllerDefA: ControllerDef = {
+		key = "A",
+		factory = FactoryNoop,
+		dependsOn = { "Missing" },
+	}
+
+	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
+
+	expect(okA).toBe(true)
+	expect(reasonA).toBeNil()
+
+	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "A" })
+
+	expect(orderedKeys).toBeNil()
+	expect(resolveReason).toBe("MissingDependency:A->Missing")
+
+	ControllerRegistry._ResetForTests()
+end)
+
 it("ControllerRegistry.GetAutoAttachKeys respects default attachment and preserves registration order", function()
 	ControllerRegistry._ResetForTests()
 
