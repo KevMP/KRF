@@ -9,8 +9,8 @@
   "scripts": {
     "prepare": "husky",
     "test:lint": "stylua --check src tests && selene src tests",
-    "test:unit": "powershell -ExecutionPolicy Bypass -File .\\scripts\\test.ps1 && npm run coverage",
-    "coverage:prepare": "node .\\scripts\\prepare-nyc-coverage.cjs",
+    "test:unit": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1 && npm run coverage",
+    "coverage:prepare": "node ./scripts/prepare-nyc-coverage.cjs",
     "coverage:report": "npx nyc report",
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
