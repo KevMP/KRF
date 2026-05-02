@@ -3,6 +3,11 @@
 registry = "test"
 
 [[package]]
+name = "evilbocchi/roblox-coverage"
+version = "0.1.1"
+dependencies = []
+
+[[package]]
 name = "jsdotlua/boolean"
 version = "1.2.7"
 dependencies = [["number", "jsdotlua/number@1.2.7"]]
@@ -245,4 +250,4 @@ dependencies = [["collections", "jsdotlua/collections@1.2.7"]]
 [[package]]
 name = "kevin/roblox-rpg-framework"
 version = "0.1.0"
-dependencies = [["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"]]
+dependencies = [["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"], ["roblox-coverage", "evilbocchi/roblox-coverage@0.1.1"]]
