@@ -11,6 +11,7 @@ local it: ItFn = JestGlobals.it
 local expect: any = JestGlobals.expect
 
 local SignalTypes = require(ReplicatedStorage.Packages.KRF.shared.Signal.types)
+local GoodSignal: any = require(ReplicatedStorage.Packages.KRF.shared.Signal.GoodSignal)
 
 type Connection = SignalTypes.Connection
 type Event<T...> = SignalTypes.Event<T...>
@@ -53,6 +54,10 @@ it("new() returns a strict Signal surface (invalid member access throws)", funct
 	expect(function()
 		local _: any = sigAny.NotARealMember
 	end).toThrow()
+
+	expect(function()
+		sigAny.NotARealMember = true
+	end).toThrow()
 end)
 
 it("wrapEvent() returns a strict Event surface (no Fire/DisconnectAll/Destroy)", function()
@@ -78,6 +83,40 @@ it("wrapEvent() returns a strict Event surface (no Fire/DisconnectAll/Destroy)",
 
 	expect(function()
 		local _: any = eventAny.NotARealMember
+	end).toThrow()
+
+	expect(function()
+		eventAny.NotARealMember = true
+	end).toThrow()
+end)
+
+it("raw GoodSignal surfaces reject invalid member access and assignment", function()
+	local rawSignal: any = GoodSignal.new()
+	local connection: any = rawSignal:Connect(function() end)
+	local connectionClass: any = getmetatable(connection)
+
+	expect(function()
+		local _: any = rawSignal.NotARealMember
+	end).toThrow()
+
+	expect(function()
+		local _: any = GoodSignal.NotARealMember
+	end).toThrow()
+
+	expect(function()
+		GoodSignal.NotARealMember = true
+	end).toThrow()
+
+	expect(function()
+		local _: any = connection.NotARealMember
+	end).toThrow()
+
+	expect(function()
+		local _: any = connectionClass.NotARealMember
+	end).toThrow()
+
+	expect(function()
+		connectionClass.NotARealMember = true
 	end).toThrow()
 end)
 
@@ -119,6 +158,31 @@ it("Connect() returns a Connection with Disconnect(), and Disconnect() prevents 
 	expect(count).toBe(0)
 end)
 
+it("Disconnect() is stable when called again after a non-head connection was already removed", function()
+	local signal: Signal<> = SignalModule.new()
+	local event: Event<> = SignalModule.wrapEvent(signal)
+
+	local tailCount: number = 0
+	local headCount: number = 0
+
+	local tailConnection: Connection = event:Connect(function()
+		tailCount += 1
+	end)
+
+	local _headConnection: Connection = event:Connect(function()
+		headCount += 1
+	end)
+
+	tailConnection:Disconnect()
+	tailConnection:Disconnect()
+
+	signal:Fire()
+	pump(2)
+
+	expect(headCount).toBe(1)
+	expect(tailCount).toBe(0)
+end)
+
 it("Once() handler runs exactly once across multiple fires", function()
 	local signal: Signal<> = SignalModule.new()
 	local event: Event<> = SignalModule.wrapEvent(signal)
@@ -134,6 +198,22 @@ it("Once() handler runs exactly once across multiple fires", function()
 	pump(3)
 
 	expect(count).toBe(1)
+end)
+
+it("Once() does not run if its connection was disconnected before the first fire", function()
+	local signal: Signal<> = SignalModule.new()
+	local event: Event<> = SignalModule.wrapEvent(signal)
+
+	local count: number = 0
+	local connection: Connection = event:Once(function()
+		count += 1
+	end)
+
+	connection:Disconnect()
+	signal:Fire()
+	pump(2)
+
+	expect(count).toBe(0)
 end)
 
 it("Multiple Event wrappers over the same Signal all receive fires", function()
@@ -288,6 +368,32 @@ it("Disconnect during Fire: a handler can disconnect a later handler before it r
 	expect(bRan).toBe(false)
 end)
 
+it("Disconnect during Fire can unlink a tail handler after traversing intermediate nodes", function()
+	local signal: Signal<> = SignalModule.new()
+	local event: Event<> = SignalModule.wrapEvent(signal)
+
+	local tailRan: boolean = false
+	local middleRan: boolean = false
+
+	local tailConnection: Connection = event:Connect(function()
+		tailRan = true
+	end)
+
+	local _middleConnection: Connection = event:Connect(function()
+		middleRan = true
+	end)
+
+	local _headConnection: Connection = event:Connect(function()
+		tailConnection:Disconnect()
+	end)
+
+	signal:Fire()
+	pump(2)
+
+	expect(middleRan).toBe(true)
+	expect(tailRan).toBe(false)
+end)
+
 it("Connect during Fire: new connections should not run until the next Fire", function()
 	local signal: Signal<> = SignalModule.new()
 	local event: Event<> = SignalModule.wrapEvent(signal)
@@ -361,5 +467,56 @@ it("wrapEvent() rejects non-Signal values and destroyed signals", function()
 
 	expect(function()
 		SignalModule.wrapEvent(sig)
+	end).toThrow()
+end)
+
+it("Signal methods work directly on the Signal surface without wrapEvent", function()
+	local signal: Signal<number> = SignalModule.new()
+
+	local connectCount: number = 0
+	local onceCount: number = 0
+	local waitedValue: number? = nil
+
+	local _connected: Connection = signal:Connect(function(_value: number)
+		connectCount += 1
+	end)
+
+	local _onceConnection: Connection = signal:Once(function(_value: number)
+		onceCount += 1
+	end)
+
+	task.spawn(function()
+		local value: number = signal:Wait()
+		waitedValue = value
+	end)
+
+	pump(1)
+
+	signal:Fire(10)
+	signal:Fire(20)
+
+	local ok: boolean = waitUntil(function(): boolean
+		return waitedValue ~= nil
+	end, 30)
+
+	expect(ok).toBe(true)
+	expect(connectCount).toBe(2)
+	expect(onceCount).toBe(1)
+	expect(waitedValue).toBe(10)
+end)
+
+it("Signal and Event methods reject invalid receivers", function()
+	local signal: Signal<> = SignalModule.new()
+	local event: Event<> = SignalModule.wrapEvent(signal)
+
+	local signalConnect: any = (signal :: any).Connect
+	local eventConnect: any = (event :: any).Connect
+
+	expect(function()
+		signalConnect({}, function() end)
+	end).toThrow()
+
+	expect(function()
+		eventConnect({}, function() end)
 	end).toThrow()
 end)
