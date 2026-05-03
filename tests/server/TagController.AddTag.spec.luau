@@ -328,10 +328,10 @@ it("Destroy clears active tag state and remains a no-op when called again", func
 	expect(#controllerInternal._activeTagsById["Status.Rooted"]).toBe(1)
 
 	controller:Destroy()
-	local firstRemainingKey = next(controllerInternal._activeTagsById)
+	local firstRemainingKey: string? = next(controllerInternal._activeTagsById)
 	expect(firstRemainingKey).toBeNil()
 
 	controller:Destroy()
-	local secondRemainingKey = next(controllerInternal._activeTagsById)
+	local secondRemainingKey: string? = next(controllerInternal._activeTagsById)
 	expect(secondRemainingKey).toBeNil()
 end)
