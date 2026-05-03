@@ -31,7 +31,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
-          editUrl: 'https://github.com/KevMP/roblox-rpg-framework/edit/main/docs-site/',
+          editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
         },
         blog: false,
         theme: {
@@ -65,7 +65,7 @@ const config: Config = {
           label: 'Learn KRF',
         },
         {
-          href: 'https://github.com/KevMP/roblox-rpg-framework',
+          href: 'https://github.com/KevMP/KRF',
           label: 'GitHub',
           position: 'right',
         },
@@ -102,7 +102,7 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/KevMP/roblox-rpg-framework',
+              href: 'https://github.com/KevMP/KRF',
             },
             {
               label: 'Discord',
