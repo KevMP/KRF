@@ -103,6 +103,11 @@ local function FireTagRefreshed(self: TagControllerInternal, tagId: string): ()
 	self.TagChangedSignal:Fire(self._actor, tagId)
 end
 
+local function FireTagRemoved(self: TagControllerInternal, tagId: string): ()
+	self.TagRemovedSignal:Fire(self._actor, tagId)
+	self.TagChangedSignal:Fire(self._actor, tagId)
+end
+
 function TagController.new(actor: ActorTypes.Actor): TagController
 	local TagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 	local TagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
@@ -193,6 +198,19 @@ function TagController.AddTag(self: TagControllerInternal, tagId: string, option
 
 	table.insert(ensuredStackInstances, CreateTagInstance(self, tagId, resolvedDuration))
 	FireTagAdded(self, tagId)
+
+	return true, nil
+end
+
+function TagController.RemoveTag(self: TagControllerInternal, tagId: string): (boolean, string?)
+	local activeInstances: { TagInstanceRecord }? = self._activeTagsById[tagId]
+
+	if activeInstances == nil or #activeInstances == 0 then
+		return false, "TagNotActive"
+	end
+
+	self._activeTagsById[tagId] = nil
+	FireTagRemoved(self, tagId)
 
 	return true, nil
 end
