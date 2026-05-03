@@ -93,6 +93,22 @@ local function SelectStackRefreshTarget(instances: { TagInstanceRecord }): TagIn
 	return selectedInstance
 end
 
+local function SelectOldestAppliedInstanceIndex(instances: { TagInstanceRecord }): number
+	local selectedIndex: number = 1
+	local selectedInstance: TagInstanceRecord = instances[selectedIndex]
+
+	for index: number = 2, #instances do
+		local candidateInstance: TagInstanceRecord = instances[index]
+
+		if candidateInstance.appliedOrder < selectedInstance.appliedOrder then
+			selectedIndex = index
+			selectedInstance = candidateInstance
+		end
+	end
+
+	return selectedIndex
+end
+
 local function FireTagAdded(self: TagControllerInternal, tagId: string): ()
 	self.TagAddedSignal:Fire(self._actor, tagId)
 	self.TagChangedSignal:Fire(self._actor, tagId)
@@ -210,6 +226,26 @@ function TagController.RemoveTag(self: TagControllerInternal, tagId: string): (b
 	end
 
 	self._activeTagsById[tagId] = nil
+	FireTagRemoved(self, tagId)
+
+	return true, nil
+end
+
+function TagController.RemoveSingleTag(self: TagControllerInternal, tagId: string): (boolean, string?)
+	local activeInstances: { TagInstanceRecord }? = self._activeTagsById[tagId]
+
+	if activeInstances == nil or #activeInstances == 0 then
+		return false, "TagNotActive"
+	end
+
+	if #activeInstances == 1 then
+		self._activeTagsById[tagId] = nil
+		FireTagRemoved(self, tagId)
+		return true, nil
+	end
+
+	local removeIndex: number = SelectOldestAppliedInstanceIndex(activeInstances)
+	table.remove(activeInstances, removeIndex)
 	FireTagRemoved(self, tagId)
 
 	return true, nil

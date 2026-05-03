@@ -14,19 +14,6 @@ local TagTypes = require(KRF.server.Tags.types)
 
 type TagDefinition = TagTypes.TagDefinition
 
-type TagInstanceRecord = {
-	tagId: string,
-	duration: number?,
-	remainingDuration: number?,
-	appliedOrder: number,
-}
-
-type TagControllerInternal = {
-	_activeTagsById: {
-		[string]: { TagInstanceRecord },
-	},
-}
-
 local TestCatalog: { TagDefinition } = {
 	{
 		id = "Status.Rooted",
@@ -55,9 +42,13 @@ local function createController()
 	return controller, actor
 end
 
+local function getActiveTagsById(controller: unknown): any
+	return ((controller :: unknown) :: any)._activeTagsById
+end
+
 it("RemoveTag removes all active instances of a stacked tag", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 
 	local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", { duration = 8 })
 	expect(firstAdded).toBe(true)
@@ -70,13 +61,13 @@ it("RemoveTag removes all active instances of a stacked tag", function()
 	local thirdAdded: boolean, thirdReason: string? = controller:AddTag("Buff.Sprint", { duration = 2 })
 	expect(thirdAdded).toBe(true)
 	expect(thirdReason).toBeNil()
-	expect(#controllerInternal._activeTagsById["Buff.Sprint"]).toBe(3)
+	expect(#activeTagsById["Buff.Sprint"]).toBe(3)
 
 	local removed: boolean, removeReason: string? = controller:RemoveTag("Buff.Sprint")
 
 	expect(removed).toBe(true)
 	expect(removeReason).toBeNil()
-	expect(controllerInternal._activeTagsById["Buff.Sprint"]).toBeNil()
+	expect(activeTagsById["Buff.Sprint"]).toBeNil()
 end)
 
 it("RemoveTag returns false with TagNotActive when the tag is not active", function()

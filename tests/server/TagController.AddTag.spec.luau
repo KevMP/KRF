@@ -14,19 +14,6 @@ local TagTypes = require(KRF.server.Tags.types)
 
 type TagDefinition = TagTypes.TagDefinition
 
-type TagInstanceRecord = {
-	tagId: string,
-	duration: number?,
-	remainingDuration: number?,
-	appliedOrder: number,
-}
-
-type TagControllerInternal = {
-	_activeTagsById: {
-		[string]: { TagInstanceRecord },
-	},
-}
-
 local TestCatalog: { TagDefinition } = {
 	{
 		id = "Status.Rooted",
@@ -70,6 +57,10 @@ local function createController()
 	return controller, actor
 end
 
+local function getActiveTagsById(controller: unknown): any
+	return ((controller :: unknown) :: any)._activeTagsById
+end
+
 it("returns false with a stable error when AddTag receives an unknown tag id", function()
 	local controller = createController()
 
@@ -81,7 +72,6 @@ end)
 
 it("creates a first active instance and fires added then changed for an Ignore tag", function()
 	local controller, actor = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
 	local eventOrder: { string } = {}
 
 	controller.OnTagAdded:Connect(function(changedActor, changedTagId)
@@ -97,18 +87,19 @@ it("creates a first active instance and fires added then changed for an Ignore t
 	end)
 
 	local added: boolean, reason: string? = controller:AddTag("Status.Rooted")
+	local activeTagsById = getActiveTagsById(controller)
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
 	expect(eventOrder).toEqual({ "added", "changed" })
-	expect(#controllerInternal._activeTagsById["Status.Rooted"]).toBe(1)
-	expect(controllerInternal._activeTagsById["Status.Rooted"][1].duration).toBeNil()
-	expect(controllerInternal._activeTagsById["Status.Rooted"][1].remainingDuration).toBeNil()
+	expect(#activeTagsById["Status.Rooted"]).toBe(1)
+	expect(activeTagsById["Status.Rooted"][1].duration).toBeNil()
+	expect(activeTagsById["Status.Rooted"][1].remainingDuration).toBeNil()
 end)
 
 it("uses explicit duration over default duration when AddTag creates a new instance", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 
 	local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
 		duration = 9,
@@ -116,25 +107,25 @@ it("uses explicit duration over default duration when AddTag creates a new insta
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].duration).toBe(9)
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].remainingDuration).toBe(9)
+	expect(activeTagsById["Status.Stunned"][1].duration).toBe(9)
+	expect(activeTagsById["Status.Stunned"][1].remainingDuration).toBe(9)
 end)
 
 it("uses the tag default duration when AddTag is called without an explicit duration", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 
 	local added: boolean, reason: string? = controller:AddTag("Status.Stunned")
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].duration).toBe(1.5)
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].remainingDuration).toBe(1.5)
+	expect(activeTagsById["Status.Stunned"][1].duration).toBe(1.5)
+	expect(activeTagsById["Status.Stunned"][1].remainingDuration).toBe(1.5)
 end)
 
 it("leaves Ignore tags unchanged and fires no mutation events on reapply", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 	local eventCount: number = 0
 
 	controller.OnTagAdded:Connect(function()
@@ -155,12 +146,12 @@ it("leaves Ignore tags unchanged and fires no mutation events on reapply", funct
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventCount).toBe(2)
-	expect(#controllerInternal._activeTagsById["Status.Rooted"]).toBe(1)
+	expect(#activeTagsById["Status.Rooted"]).toBe(1)
 end)
 
 it("refreshes an existing Refresh tag instead of creating a second instance", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 	local eventOrder: { string } = {}
 
 	controller.OnTagRefreshed:Connect(function()
@@ -183,14 +174,14 @@ it("refreshes an existing Refresh tag instead of creating a second instance", fu
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventOrder).toEqual({ "refreshed", "changed" })
-	expect(#controllerInternal._activeTagsById["Status.Stunned"]).toBe(1)
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].duration).toBe(4)
-	expect(controllerInternal._activeTagsById["Status.Stunned"][1].remainingDuration).toBe(4)
+	expect(#activeTagsById["Status.Stunned"]).toBe(1)
+	expect(activeTagsById["Status.Stunned"][1].duration).toBe(4)
+	expect(activeTagsById["Status.Stunned"][1].remainingDuration).toBe(4)
 end)
 
 it("fires refreshed then changed when an indefinite Refresh tag is reapplied", function()
 	local controller, actor = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 	local eventOrder: { string } = {}
 	local rootedRefreshDefinition: TagDefinition = {
 		id = "Status.RootedRefresh",
@@ -225,9 +216,9 @@ it("fires refreshed then changed when an indefinite Refresh tag is reapplied", f
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventOrder).toEqual({ "refreshed", "changed" })
-	expect(#controllerInternal._activeTagsById["Status.RootedRefresh"]).toBe(1)
-	expect(controllerInternal._activeTagsById["Status.RootedRefresh"][1].duration).toBeNil()
-	expect(controllerInternal._activeTagsById["Status.RootedRefresh"][1].remainingDuration).toBeNil()
+	expect(#activeTagsById["Status.RootedRefresh"]).toBe(1)
+	expect(activeTagsById["Status.RootedRefresh"][1].duration).toBeNil()
+	expect(activeTagsById["Status.RootedRefresh"][1].remainingDuration).toBeNil()
 end)
 
 it("prefers refreshing a finite stack instance over an indefinite one at maxStacks", function()
@@ -239,7 +230,7 @@ it("prefers refreshing a finite stack instance over an indefinite one at maxStac
 
 	local actor = ActorEntity.new()
 	local controller = TagController.new(actor)
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 
 	local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.StackIndefinite")
 	expect(firstAdded).toBe(true)
@@ -253,7 +244,7 @@ it("prefers refreshing a finite stack instance over an indefinite one at maxStac
 	expect(refreshed).toBe(true)
 	expect(refreshReason).toBeNil()
 
-	local instances = controllerInternal._activeTagsById["Buff.StackIndefinite"]
+	local instances = activeTagsById["Buff.StackIndefinite"]
 	expect(#instances).toBe(2)
 	expect(instances[1].duration).toBeNil()
 	expect(instances[1].remainingDuration).toBeNil()
@@ -263,7 +254,7 @@ end)
 
 it("refreshes the lowest-remaining oldest stack instance when reapplied at maxStacks", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
+	local activeTagsById = getActiveTagsById(controller)
 
 	local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", { duration = 8 })
 	expect(firstAdded).toBe(true)
@@ -277,7 +268,7 @@ it("refreshes the lowest-remaining oldest stack instance when reapplied at maxSt
 	expect(thirdAdded).toBe(true)
 	expect(thirdReason).toBeNil()
 
-	local beforeRefreshInstances = controllerInternal._activeTagsById["Buff.Sprint"]
+	local beforeRefreshInstances = activeTagsById["Buff.Sprint"]
 	expect(#beforeRefreshInstances).toBe(3)
 	expect(beforeRefreshInstances[1].appliedOrder).toBe(0)
 	expect(beforeRefreshInstances[2].appliedOrder).toBe(1)
@@ -290,7 +281,7 @@ it("refreshes the lowest-remaining oldest stack instance when reapplied at maxSt
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
 
-	local afterRefreshInstances = controllerInternal._activeTagsById["Buff.Sprint"]
+	local afterRefreshInstances = activeTagsById["Buff.Sprint"]
 	expect(#afterRefreshInstances).toBe(3)
 	expect(afterRefreshInstances[1].duration).toBe(8)
 	expect(afterRefreshInstances[2].duration).toBe(10)
@@ -299,9 +290,39 @@ it("refreshes the lowest-remaining oldest stack instance when reapplied at maxSt
 	expect(afterRefreshInstances[3].duration).toBe(3)
 end)
 
+it("uses oldest applied order as the tie-breaker when equal remaining durations are stored out of order", function()
+	local controller = createController()
+	local activeTagsById = getActiveTagsById(controller)
+
+	local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", { duration = 3 })
+	expect(firstAdded).toBe(true)
+	expect(firstReason).toBeNil()
+
+	local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.Sprint", { duration = 3 })
+	expect(secondAdded).toBe(true)
+	expect(secondReason).toBeNil()
+
+	local thirdAdded: boolean, thirdReason: string? = controller:AddTag("Buff.Sprint", { duration = 3 })
+	expect(thirdAdded).toBe(true)
+	expect(thirdReason).toBeNil()
+
+	activeTagsById["Buff.Sprint"][1].appliedOrder = 5
+	activeTagsById["Buff.Sprint"][2].appliedOrder = 4
+	activeTagsById["Buff.Sprint"][3].appliedOrder = 0
+
+	local refreshed: boolean, refreshReason: string? = controller:AddTag("Buff.Sprint", { duration = 10 })
+
+	expect(refreshed).toBe(true)
+	expect(refreshReason).toBeNil()
+	expect(activeTagsById["Buff.Sprint"][1].duration).toBe(3)
+	expect(activeTagsById["Buff.Sprint"][2].duration).toBe(3)
+	expect(activeTagsById["Buff.Sprint"][3].duration).toBe(10)
+	expect(activeTagsById["Buff.Sprint"][3].remainingDuration).toBe(10)
+end)
+
 it("returns false with a stable error when stack tag instance initialization does not persist", function()
 	local controller = createController()
-	local controllerInternal = controller :: any
+	local controllerInternal = (controller :: unknown) :: any
 
 	controllerInternal._activeTagsById = setmetatable({}, {
 		__index = function()
@@ -320,18 +341,17 @@ end)
 
 it("Destroy clears active tag state and remains a no-op when called again", function()
 	local controller = createController()
-	local controllerInternal: TagControllerInternal = controller :: any
 
 	local added: boolean, reason: string? = controller:AddTag("Status.Rooted")
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
-	expect(#controllerInternal._activeTagsById["Status.Rooted"]).toBe(1)
+	expect(#getActiveTagsById(controller)["Status.Rooted"]).toBe(1)
 
 	controller:Destroy()
-	local firstRemainingKey: string? = next(controllerInternal._activeTagsById)
+	local firstRemainingKey: string? = next(getActiveTagsById(controller))
 	expect(firstRemainingKey).toBeNil()
 
 	controller:Destroy()
-	local secondRemainingKey: string? = next(controllerInternal._activeTagsById)
+	local secondRemainingKey: string? = next(getActiveTagsById(controller))
 	expect(secondRemainingKey).toBeNil()
 end)
