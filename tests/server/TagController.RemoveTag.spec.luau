@@ -102,3 +102,22 @@ it("fires removed then changed when RemoveTag succeeds", function()
 	expect(removeReason).toBeNil()
 	expect(eventOrder).toEqual({ "removed", "changed" })
 end)
+
+it("does not fire mutation events when RemoveTag is called for a non-active tag", function()
+	local controller = createController()
+	local eventCount: number = 0
+
+	controller.OnTagRemoved:Connect(function()
+		eventCount += 1
+	end)
+
+	controller.OnTagChanged:Connect(function()
+		eventCount += 1
+	end)
+
+	local removed: boolean, removeReason: string? = controller:RemoveTag("Status.Rooted")
+
+	expect(removed).toBe(false)
+	expect(removeReason).toBe("TagNotActive")
+	expect(eventCount).toBe(0)
+end)
