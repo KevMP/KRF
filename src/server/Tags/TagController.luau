@@ -7,257 +7,234 @@ local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
 local TagTypes = require(script.Parent.types)
 local TagRegistry = require(script.Parent.TagRegistry)
+local TagControllerEventUtils = require(script.Parent.TagControllerEventUtils)
+local TagControllerInstanceUtils = require(script.Parent.TagControllerInstanceUtils)
 
 export type TagController = TagTypes.TagController
 export type AddTagOptions = TagTypes.AddTagOptions
 export type TagDefinition = TagTypes.TagDefinition
 
-type TagInstanceRecord = {
+type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
+type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryContext
+type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
+type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
+type ActiveTagSortRecord = {
 	tagId: string,
-	duration: number?,
-	remainingDuration: number?,
-	appliedOrder: number,
+	stackCount: number,
+	oldestAppliedOrder: number,
 }
 
-type TagControllerInternal = TagController & {
-	_actor: ActorTypes.Actor,
-	_destroyed: boolean,
+local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
+	local oldestAppliedOrder: number = instances[1].appliedOrder
 
-	_activeTagsById: { [string]: { TagInstanceRecord } },
-	_nextAppliedOrder: number,
+	for index: number = 2, #instances do
+		local instance: TagInstanceRecord = instances[index]
 
-	TagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
-	TagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
-	TagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
-	TagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
-}
+		if instance.appliedOrder < oldestAppliedOrder then
+			oldestAppliedOrder = instance.appliedOrder
+		end
+	end
+
+	return oldestAppliedOrder
+end
 
 local TagController = {}
-TagController.__index = TagController
-
-local function ResolveDuration(tagDefinition: TagTypes.TagDefinition, options: AddTagOptions?): number?
-	if options ~= nil and options.duration ~= nil then
-		return options.duration
-	end
-
-	if tagDefinition.defaultDuration ~= nil then
-		return tagDefinition.defaultDuration
-	end
-
-	return nil
-end
-
-local function CreateTagInstance(self: TagControllerInternal, tagId: string, duration: number?): TagInstanceRecord
-	local instance: TagInstanceRecord = {
-		tagId = tagId,
-		duration = duration,
-		remainingDuration = duration,
-		appliedOrder = self._nextAppliedOrder,
-	}
-
-	self._nextAppliedOrder += 1
-
-	return instance
-end
-
-local function RefreshTagInstance(instance: TagInstanceRecord, duration: number?): ()
-	instance.duration = duration
-	instance.remainingDuration = duration
-end
-
-local function GetLowestComparableRemainingDuration(instance: TagInstanceRecord): number
-	if instance.remainingDuration == nil then
-		return math.huge
-	end
-
-	return instance.remainingDuration
-end
-
-local function SelectStackRefreshTarget(instances: { TagInstanceRecord }): TagInstanceRecord
-	local selectedInstance: TagInstanceRecord = instances[1]
-
-	for index: number = 2, #instances do
-		local candidateInstance: TagInstanceRecord = instances[index]
-		local candidateRemainingDuration: number = GetLowestComparableRemainingDuration(candidateInstance)
-		local selectedRemainingDuration: number = GetLowestComparableRemainingDuration(selectedInstance)
-
-		if candidateRemainingDuration < selectedRemainingDuration then
-			selectedInstance = candidateInstance
-		elseif candidateRemainingDuration == selectedRemainingDuration then
-			if candidateInstance.appliedOrder < selectedInstance.appliedOrder then
-				selectedInstance = candidateInstance
-			end
-		end
-	end
-
-	return selectedInstance
-end
-
-local function SelectOldestAppliedInstanceIndex(instances: { TagInstanceRecord }): number
-	local selectedIndex: number = 1
-	local selectedInstance: TagInstanceRecord = instances[selectedIndex]
-
-	for index: number = 2, #instances do
-		local candidateInstance: TagInstanceRecord = instances[index]
-
-		if candidateInstance.appliedOrder < selectedInstance.appliedOrder then
-			selectedIndex = index
-			selectedInstance = candidateInstance
-		end
-	end
-
-	return selectedIndex
-end
-
-local function FireTagAdded(self: TagControllerInternal, tagId: string): ()
-	self.TagAddedSignal:Fire(self._actor, tagId)
-	self.TagChangedSignal:Fire(self._actor, tagId)
-end
-
-local function FireTagRefreshed(self: TagControllerInternal, tagId: string): ()
-	self.TagRefreshedSignal:Fire(self._actor, tagId)
-	self.TagChangedSignal:Fire(self._actor, tagId)
-end
-
-local function FireTagRemoved(self: TagControllerInternal, tagId: string): ()
-	self.TagRemovedSignal:Fire(self._actor, tagId)
-	self.TagChangedSignal:Fire(self._actor, tagId)
-end
 
 function TagController.new(actor: ActorTypes.Actor): TagController
-	local TagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
-	local TagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
-	local TagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
-	local TagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
+	local tagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
+	local tagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
+	local tagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
+	local tagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 
-	local self: TagControllerInternal = setmetatable({
-		OnTagAdded = SignalModule.wrapEvent(TagAddedSignal),
-		OnTagRemoved = SignalModule.wrapEvent(TagRemovedSignal),
-		OnTagRefreshed = SignalModule.wrapEvent(TagRefreshedSignal),
-		OnTagChanged = SignalModule.wrapEvent(TagChangedSignal),
+	local activeTagsById: { [string]: { TagInstanceRecord } } = {}
+	local nextAppliedOrder: number = 0
+	local destroyed: boolean = false
 
-		_actor = actor,
-		_destroyed = false,
+	local factoryContext: TagInstanceFactoryContext = {
+		nextAppliedOrder = nextAppliedOrder,
+	}
 
-		_activeTagsById = {},
-		_nextAppliedOrder = 0,
+	local eventContext = {
+		actor = actor,
+		tagAddedSignal = tagAddedSignal,
+		tagRemovedSignal = tagRemovedSignal,
+		tagRefreshedSignal = tagRefreshedSignal,
+		tagChangedSignal = tagChangedSignal,
+	}
 
-		TagAddedSignal = TagAddedSignal,
-		TagRemovedSignal = TagRemovedSignal,
-		TagRefreshedSignal = TagRefreshedSignal,
-		TagChangedSignal = TagChangedSignal,
-	}, TagController) :: any
+	local self = {
+		OnTagAdded = SignalModule.wrapEvent(tagAddedSignal),
+		OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal),
+		OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal),
+		OnTagChanged = SignalModule.wrapEvent(tagChangedSignal),
+	}
 
-	return self
-end
+	function self.AddTag(_self, tagId: string, options: AddTagOptions?): (boolean, string?)
+		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
 
-function TagController.AddTag(self: TagControllerInternal, tagId: string, options: AddTagOptions?): (boolean, string?)
-	local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
+		if tagDefinition == nil then
+			return false, "UnknownTagId:" .. tagId
+		end
 
-	if tagDefinition == nil then
-		return false, "UnknownTagId:" .. tagId
-	end
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
+		local resolvedDuration: number? = TagControllerInstanceUtils.ResolveDuration(tagDefinition, options)
 
-	local activeInstances: { TagInstanceRecord }? = self._activeTagsById[tagId]
-	local resolvedDuration: number? = ResolveDuration(tagDefinition, options)
+		if tagDefinition.duplicateBehavior == "Ignore" then
+			if activeInstances ~= nil and #activeInstances > 0 then
+				return true, nil
+			end
 
-	if tagDefinition.duplicateBehavior == "Ignore" then
-		local existingInstances: { TagInstanceRecord }? = activeInstances
-
-		if existingInstances ~= nil and #existingInstances > 0 then
+			activeTagsById[tagId] =
+				{ TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration) }
+			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
 
-		local createdInstances: { TagInstanceRecord } = { CreateTagInstance(self, tagId, resolvedDuration) }
-		self._activeTagsById[tagId] = createdInstances
-		FireTagAdded(self, tagId)
-		return true, nil
-	end
+		if tagDefinition.duplicateBehavior == "Refresh" then
+			if activeInstances ~= nil and #activeInstances > 0 then
+				TagControllerInstanceUtils.RefreshTagInstance(activeInstances[1], resolvedDuration)
+				TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
+				return true, nil
+			end
 
-	if tagDefinition.duplicateBehavior == "Refresh" then
-		local existingInstances: { TagInstanceRecord }? = activeInstances
-
-		if existingInstances ~= nil and #existingInstances > 0 then
-			RefreshTagInstance(existingInstances[1], resolvedDuration)
-			FireTagRefreshed(self, tagId)
+			activeTagsById[tagId] =
+				{ TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration) }
+			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
 
-		local createdInstances: { TagInstanceRecord } = { CreateTagInstance(self, tagId, resolvedDuration) }
-		self._activeTagsById[tagId] = createdInstances
-		FireTagAdded(self, tagId)
+		local stackInstances: { TagInstanceRecord }? = activeInstances
+
+		if stackInstances == nil then
+			activeTagsById[tagId] = {}
+			stackInstances = activeTagsById[tagId]
+		end
+
+		if stackInstances == nil then
+			return false, "TagActiveInstancesInitFailed:" .. tagId
+		end
+
+		local maxStacks: number? = tagDefinition.maxStacks
+		local isAtMaxStacks: boolean = maxStacks ~= nil and #stackInstances >= maxStacks
+
+		if isAtMaxStacks then
+			local refreshTarget: TagInstanceRecord = TagControllerInstanceUtils.SelectStackRefreshTarget(stackInstances)
+			TagControllerInstanceUtils.RefreshTagInstance(refreshTarget, resolvedDuration)
+			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
+			return true, nil
+		end
+
+		table.insert(
+			stackInstances,
+			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
+		)
+		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
+
 		return true, nil
 	end
 
-	local stackInstances: { TagInstanceRecord }? = activeInstances
+	function self.RemoveTag(_self, tagId: string): (boolean, string?)
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 
-	if stackInstances == nil then
-		self._activeTagsById[tagId] = {}
-		stackInstances = self._activeTagsById[tagId]
-	end
+		if activeInstances == nil or #activeInstances == 0 then
+			return false, "TagNotActive"
+		end
 
-	if stackInstances == nil then
-		return false, "TagActiveInstancesInitFailed:" .. tagId
-	end
+		activeTagsById[tagId] = nil
+		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
-	local ensuredStackInstances: { TagInstanceRecord } = stackInstances
-
-	local maxStacks: number? = tagDefinition.maxStacks
-	local isAtMaxStacks: boolean = maxStacks ~= nil and #ensuredStackInstances >= maxStacks
-
-	if isAtMaxStacks then
-		local refreshTarget: TagInstanceRecord = SelectStackRefreshTarget(ensuredStackInstances)
-		RefreshTagInstance(refreshTarget, resolvedDuration)
-		FireTagRefreshed(self, tagId)
 		return true, nil
 	end
 
-	table.insert(ensuredStackInstances, CreateTagInstance(self, tagId, resolvedDuration))
-	FireTagAdded(self, tagId)
+	function self.RemoveSingleTag(_self, tagId: string): (boolean, string?)
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 
-	return true, nil
-end
+		if activeInstances == nil or #activeInstances == 0 then
+			return false, "TagNotActive"
+		end
 
-function TagController.RemoveTag(self: TagControllerInternal, tagId: string): (boolean, string?)
-	local activeInstances: { TagInstanceRecord }? = self._activeTagsById[tagId]
+		if #activeInstances == 1 then
+			activeTagsById[tagId] = nil
+			TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
+			return true, nil
+		end
 
-	if activeInstances == nil or #activeInstances == 0 then
-		return false, "TagNotActive"
-	end
+		local removeIndex: number = TagControllerInstanceUtils.SelectOldestAppliedInstanceIndex(activeInstances)
+		table.remove(activeInstances, removeIndex)
+		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
-	self._activeTagsById[tagId] = nil
-	FireTagRemoved(self, tagId)
-
-	return true, nil
-end
-
-function TagController.RemoveSingleTag(self: TagControllerInternal, tagId: string): (boolean, string?)
-	local activeInstances: { TagInstanceRecord }? = self._activeTagsById[tagId]
-
-	if activeInstances == nil or #activeInstances == 0 then
-		return false, "TagNotActive"
-	end
-
-	if #activeInstances == 1 then
-		self._activeTagsById[tagId] = nil
-		FireTagRemoved(self, tagId)
 		return true, nil
 	end
 
-	local removeIndex: number = SelectOldestAppliedInstanceIndex(activeInstances)
-	table.remove(activeInstances, removeIndex)
-	FireTagRemoved(self, tagId)
-
-	return true, nil
-end
-
-function TagController.Destroy(self: TagControllerInternal): ()
-	if self._destroyed then
-		return
+	function self.HasTag(_self, tagId: string): boolean
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
+		return activeInstances ~= nil and #activeInstances > 0
 	end
 
-	self._destroyed = true
-	self._activeTagsById = {}
+	function self.GetActiveTags(_self): { ActiveTagSnapshot }
+		local activeTags: { ActiveTagSortRecord } = {}
+
+		for tagId: string, instances: { TagInstanceRecord } in activeTagsById do
+			if #instances > 0 then
+				table.insert(activeTags, {
+					tagId = tagId,
+					stackCount = #instances,
+					oldestAppliedOrder = GetOldestAppliedOrder(instances),
+				})
+			end
+		end
+
+		table.sort(activeTags, function(left: ActiveTagSortRecord, right: ActiveTagSortRecord)
+			if left.oldestAppliedOrder == right.oldestAppliedOrder then
+				return left.tagId < right.tagId
+			end
+
+			return left.oldestAppliedOrder < right.oldestAppliedOrder
+		end)
+
+		local snapshots: { ActiveTagSnapshot } = {}
+
+		for _, activeTag in activeTags do
+			table.insert(snapshots, {
+				tagId = activeTag.tagId,
+				stackCount = activeTag.stackCount,
+			})
+		end
+
+		return snapshots
+	end
+
+	function self.GetTagInstances(_self, tagId: string): { TagInstanceSnapshot }
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
+
+		if activeInstances == nil or #activeInstances == 0 then
+			return {}
+		end
+
+		local snapshots: { TagInstanceSnapshot } = {}
+
+		for _, instance: TagInstanceRecord in activeInstances do
+			table.insert(snapshots, {
+				tagId = instance.tagId,
+				duration = instance.duration,
+				remainingDuration = instance.remainingDuration,
+				appliedOrder = instance.appliedOrder,
+			})
+		end
+
+		return snapshots
+	end
+
+	function self.Destroy(_self): ()
+		if destroyed then
+			return
+		end
+
+		destroyed = true
+		activeTagsById = {}
+	end
+
+	return self :: TagController
 end
 
 return TagController
