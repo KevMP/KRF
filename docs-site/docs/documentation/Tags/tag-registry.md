@@ -88,6 +88,12 @@ This lets games define shared modifier language beyond KRF's built in movement p
 
 The registry validates the modifier shape for these properties the same way it does for built in ones. What a custom property means, and which systems respond to it, is defined by the rest of the game or framework runtime.
 
+## Related concepts
+
+`TagRegistry` defines tag meaning. `TagController` owns active tag state on a live actor.
+
+Read [Tag Runtime](./tag-runtime) when you need to apply, refresh, stack, query, or remove tags during gameplay.
+
 ## Example catalog
 
 ```lua
