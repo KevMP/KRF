@@ -46,10 +46,11 @@ If controller attach fails, the runtime detaches any controllers attached in tha
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ActorRuntime = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
-local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
+
+type Actor = ActorRuntime.Actor
 
 local function onCharacterAdded(character: Model): ()
-	local actor: ActorEntity.Actor?, reason: string? = ActorRuntime.RegisterActor(character)
+	local actor: Actor?, reason: string? = ActorRuntime.RegisterActor(character)
 
 	if actor == nil then
 		warn(("Failed to register actor: %s"):format(reason or "unknown"))
@@ -86,9 +87,10 @@ Unregistration is idempotent. Calling it again returns failure with `AlreadyUnre
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ActorRuntime = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
-local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 
-local function cleanupActor(actor: ActorEntity.Actor): ()
+type Actor = ActorRuntime.Actor
+
+local function cleanupActor(actor: Actor): ()
 	local ok: boolean, reason: string? = ActorRuntime.UnregisterActor(actor, "Despawn")
 
 	if not ok then
