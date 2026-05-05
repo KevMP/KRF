@@ -16,12 +16,17 @@ export type TagDefinition = TagTypes.TagDefinition
 
 type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
 type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryContext
+type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
 type ActiveTagSortRecord = {
 	tagId: string,
 	stackCount: number,
 	oldestAppliedOrder: number,
+}
+type ActiveTagsById = { [string]: { TagInstanceRecord } }
+type TagControllerModule = {
+	new: (actor: ActorTypes.Actor) -> TagController,
 }
 
 local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
@@ -38,7 +43,7 @@ local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
 	return oldestAppliedOrder
 end
 
-local TagController = {}
+local TagController: TagControllerModule = {} :: TagControllerModule
 
 function TagController.new(actor: ActorTypes.Actor): TagController
 	local tagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
@@ -46,15 +51,14 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local tagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 	local tagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 
-	local activeTagsById: { [string]: { TagInstanceRecord } } = {}
-	local nextAppliedOrder: number = 0
+	local activeTagsById: ActiveTagsById = {}
 	local destroyed: boolean = false
 
 	local factoryContext: TagInstanceFactoryContext = {
-		nextAppliedOrder = nextAppliedOrder,
+		nextAppliedOrder = 0,
 	}
 
-	local eventContext = {
+	local eventContext: TagControllerEventContext = {
 		actor = actor,
 		tagAddedSignal = tagAddedSignal,
 		tagRemovedSignal = tagRemovedSignal,
@@ -62,12 +66,12 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagChangedSignal = tagChangedSignal,
 	}
 
-	local self = {
-		OnTagAdded = SignalModule.wrapEvent(tagAddedSignal),
-		OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal),
-		OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal),
-		OnTagChanged = SignalModule.wrapEvent(tagChangedSignal),
-	}
+	local self: TagController = {} :: TagController
+
+	self.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
+	self.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
+	self.OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal)
+	self.OnTagChanged = SignalModule.wrapEvent(tagChangedSignal)
 
 	function self.AddTag(_self, tagId: string, options: AddTagOptions?): (boolean, string?)
 		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
@@ -234,7 +238,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		activeTagsById = {}
 	end
 
-	return self :: TagController
+	return self
 end
 
 return TagController
