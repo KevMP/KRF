@@ -7,33 +7,46 @@ type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
 local TagControllerStepUtils = {}
 
 TagControllerStepUtils.SetTimedInstanceByControllerRecord = function(
-	TimedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
 	controller: TagController,
 	record: TagInstanceRecord
 ): ()
-	if not TimedInstancesByController[controller] then
-		TimedInstancesByController[controller] = {}
+	if not timedInstancesByController[controller] then
+		timedInstancesByController[controller] = {}
 	end
 
-	if not table.find(TimedInstancesByController[controller], record) then
-		table.insert(TimedInstancesByController[controller], record)
+	if not table.find(timedInstancesByController[controller], record) then
+		table.insert(timedInstancesByController[controller], record)
 	end
 end
 
 TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
-	TimedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
 	controller: TagController,
 	record: TagInstanceRecord
 ): ()
-	if not TimedInstancesByController[controller] then
+	if not timedInstancesByController[controller] then
 		return
 	end
 
-	local recordIndex: number? = table.find(TimedInstancesByController[controller], record)
+	local recordIndex: number? = table.find(timedInstancesByController[controller], record)
 
 	if recordIndex then
-		table.remove(TimedInstancesByController[controller], recordIndex)
+		table.remove(timedInstancesByController[controller], recordIndex)
 	end
+
+	if #timedInstancesByController[controller] == 0 then
+		timedInstancesByController[controller] = nil
+	end
+end
+
+TagControllerStepUtils.ClearTimedInstancesForController = function(
+	timedInstancesByController: {
+		[TagController]: { TagInstanceRecord },
+	},
+	controller: TagController
+): ()
+	timedInstancesByController[controller] = nil
 end
 
 TagControllerStepUtils.TryAddTimedInstance = function(
@@ -59,4 +72,5 @@ TagControllerStepUtils.ReconcileTimedInstance = function(
 		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, controller, record)
 	end
 end
+
 return TagControllerStepUtils
