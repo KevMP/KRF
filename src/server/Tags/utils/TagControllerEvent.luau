@@ -1,5 +1,5 @@
 --!strict
-local serverFolder = script.Parent.Parent
+local serverFolder = script.Parent.Parent.Parent
 local SignalFolder = serverFolder.Parent.shared.Signal
 
 local ActorTypes = require(serverFolder.Actor.types)

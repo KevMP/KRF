@@ -59,6 +59,7 @@ export type TagController = ControllerTypes.Controller & {
 	OnTagRemoved: SignalTypes.Event<ActorTypes.Actor, string>,
 	OnTagRefreshed: SignalTypes.Event<ActorTypes.Actor, string>,
 	OnTagChanged: SignalTypes.Event<ActorTypes.Actor, string>,
+	OnTagExpired: SignalTypes.Event<ActorTypes.Actor, string>,
 
 	-- mutations
 	AddTag: (self: TagController, tagId: string, options: AddTagOptions?) -> (boolean, string?),

@@ -1,5 +1,5 @@
 --!strict
-local TagTypes = require(script.Parent.types)
+local TagTypes = require(script.Parent.Parent.types)
 
 export type AddTagOptions = TagTypes.AddTagOptions
 export type TagDefinition = TagTypes.TagDefinition

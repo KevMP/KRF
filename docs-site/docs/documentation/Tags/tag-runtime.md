@@ -29,7 +29,6 @@ KRF tracks active tags per actor, not globally. Two actors may both have `Status
 
 * defining the tag catalog
 * validating tag definitions
-* expiring tags over time
 * deciding what a tag means in UI, combat, or movement systems
 * cross-actor queries
 
