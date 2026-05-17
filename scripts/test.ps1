@@ -14,9 +14,15 @@ if (-not $CoverageOutput) { $CoverageOutput = "coverage/coverage-final.json" }
 
 $CoverageStartMarker = "__KRF_COVERAGE_START__"
 $CoverageEndMarker = "__KRF_COVERAGE_END__"
+$RobloxPluginsDirectory = Join-Path $env:LOCALAPPDATA "Roblox\Plugins"
 
 Write-Host "Fixing Roblox Studio content path..."
 & "$PSScriptRoot\fix-studio-path.ps1"
+
+if (-not (Test-Path -LiteralPath $RobloxPluginsDirectory)) {
+	Write-Host "Creating Roblox plugins directory..."
+	New-Item -ItemType Directory -Force -Path $RobloxPluginsDirectory | Out-Null
+}
 
 Write-Host "Building place -> $PlaceFile"
 rojo build $ProjectFile -o $PlaceFile
