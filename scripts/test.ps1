@@ -30,6 +30,7 @@ rojo build $ProjectFile -o $PlaceFile
 Write-Host "Running tests..."
 $runOutput = run-in-roblox --place $PlaceFile --script $TestScript 2>&1
 $exitCode = $LASTEXITCODE
+$coverageLines = [System.Collections.Generic.List[string]]::new()
 
 if ($runOutput) {
 	$printingCoverageBlock = $false
@@ -46,24 +47,26 @@ if ($runOutput) {
 			continue
 		}
 
+		if ($printingCoverageBlock) {
+			$coverageLines.Add($text)
+			continue
+		}
+
 		if (-not $printingCoverageBlock) {
 			Write-Host $text
 		}
 	}
 }
 
-$joinedOutput = ($runOutput | ForEach-Object { $_.ToString() }) -join "`n"
-$coveragePattern = [regex]::Escape($CoverageStartMarker) + "`r?`n(?<json>\{.*?\})`r?`n" + [regex]::Escape($CoverageEndMarker)
-$coverageMatch = [regex]::Match($joinedOutput, $coveragePattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-if ($coverageMatch.Success) {
+if ($coverageLines.Count -gt 0) {
 	$coverageDirectory = Split-Path -Parent $CoverageOutput
 	if ($coverageDirectory) {
 		New-Item -ItemType Directory -Force -Path $coverageDirectory | Out-Null
 	}
 
 	$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-	[System.IO.File]::WriteAllText($CoverageOutput, $coverageMatch.Groups["json"].Value, $utf8NoBom)
+	$coverageJson = $coverageLines -join ""
+	[System.IO.File]::WriteAllText($CoverageOutput, $coverageJson, $utf8NoBom)
 	Write-Host "Coverage report written -> $CoverageOutput"
 } else {
 	Write-Warning "Coverage markers were not found in test output."
