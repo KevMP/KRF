@@ -51,6 +51,7 @@ export type TagInstanceSnapshot = {
 export type ActiveTagSnapshot = {
 	tagId: string,
 	stackCount: number,
+	remainingDuration: number?,
 }
 
 export type TagController = ControllerTypes.Controller & {

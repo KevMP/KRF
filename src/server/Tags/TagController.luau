@@ -30,6 +30,7 @@ type ActiveTagSortRecord = {
 	tagId: string,
 	stackCount: number,
 	oldestAppliedOrder: number,
+	remainingDuration: number?,
 }
 type ActiveTagsById = { [string]: { TagInstanceRecord } }
 type TagControllerModule = {
@@ -111,6 +112,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		if tagDefinition == nil then
 			return false, "UnknownTagId:" .. tagId
+		end
+
+		if options ~= nil and options.duration ~= nil and options.duration <= 0 then
+			return false, "TagDurationMustBePositive"
 		end
 
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
@@ -249,6 +254,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 					tagId = tagId,
 					stackCount = #instances,
 					oldestAppliedOrder = GetOldestAppliedOrder(instances),
+					remainingDuration = TagControllerInstanceUtils.GetLongestRemainingDuration(instances),
 				})
 			end
 		end
@@ -267,6 +273,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			table.insert(snapshots, {
 				tagId = activeTag.tagId,
 				stackCount = activeTag.stackCount,
+				remainingDuration = activeTag.remainingDuration,
 			})
 		end
 

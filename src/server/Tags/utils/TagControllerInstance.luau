@@ -58,6 +58,22 @@ local function GetLowestComparableRemainingDuration(instance: TagInstanceRecord)
 	return instance.remainingDuration
 end
 
+function TagControllerInstanceUtils.GetLongestRemainingDuration(instances: { TagInstanceRecord }): number?
+	local longestRemainingDuration: number? = nil
+
+	for _, instance: TagInstanceRecord in instances do
+		local remainingDuration: number? = instance.remainingDuration
+
+		if remainingDuration ~= nil then
+			if longestRemainingDuration == nil or remainingDuration > longestRemainingDuration then
+				longestRemainingDuration = remainingDuration
+			end
+		end
+	end
+
+	return longestRemainingDuration
+end
+
 function TagControllerInstanceUtils.SelectStackRefreshTarget(instances: { TagInstanceRecord }): TagInstanceRecord
 	local selectedInstance: TagInstanceRecord = instances[1]
 
