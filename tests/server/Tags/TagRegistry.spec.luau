@@ -11,7 +11,7 @@ type TagRegistry = RegistryTypes.TagRegistry
 
 local TagRegistry: TagRegistry = require(KRF.server.Tags.TagRegistry)
 
-local TagTestUtils: Folder = script.Parent.Utils.Tags
+local TagTestUtils: Folder = script.Parent.Parent.Utils.Tags
 local MinimalValidCataloge: unknown = require(TagTestUtils.MinimalTagCatalog)
 local MixedTagCataloge: unknown = require(TagTestUtils.MixedTagCatalog)
 local MissingTagIdCataloge: unknown = require(TagTestUtils.MissingTagIdCatalog)
