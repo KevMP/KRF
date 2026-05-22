@@ -1,27 +1,40 @@
 local TagTypes = require(script.Parent.Parent.types)
 local TagControllerInstanceUtils = require(script.Parent.Parent.utils.TagControllerInstance)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
 type TagController = TagTypes.TagController
 type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
+type Actor = ActorTypes.Actor
+
+export type TimedControllerEntry = {
+	instances: { TagInstanceRecord },
+	actor: Actor,
+}
 
 local TagControllerStepUtils = {}
 
 TagControllerStepUtils.SetTimedInstanceByControllerRecord = function(
-	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: TimedControllerEntry },
 	controller: TagController,
+	actor: Actor,
 	record: TagInstanceRecord
 ): ()
 	if not timedInstancesByController[controller] then
-		timedInstancesByController[controller] = {}
+		timedInstancesByController[controller] = {
+			instances = {},
+			actor = actor,
+		}
+	else
+		timedInstancesByController[controller].actor = actor
 	end
 
-	if not table.find(timedInstancesByController[controller], record) then
-		table.insert(timedInstancesByController[controller], record)
+	if not table.find(timedInstancesByController[controller].instances, record) then
+		table.insert(timedInstancesByController[controller].instances, record)
 	end
 end
 
 TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
-	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: TimedControllerEntry },
 	controller: TagController,
 	record: TagInstanceRecord
 ): ()
@@ -29,20 +42,20 @@ TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
 		return
 	end
 
-	local recordIndex: number? = table.find(timedInstancesByController[controller], record)
+	local recordIndex: number? = table.find(timedInstancesByController[controller].instances, record)
 
 	if recordIndex then
-		table.remove(timedInstancesByController[controller], recordIndex)
+		table.remove(timedInstancesByController[controller].instances, recordIndex)
 	end
 
-	if #timedInstancesByController[controller] == 0 then
+	if #timedInstancesByController[controller].instances == 0 then
 		timedInstancesByController[controller] = nil
 	end
 end
 
 TagControllerStepUtils.ClearTimedInstancesForController = function(
 	timedInstancesByController: {
-		[TagController]: { TagInstanceRecord },
+		[TagController]: TimedControllerEntry,
 	},
 	controller: TagController
 ): ()
@@ -50,27 +63,42 @@ TagControllerStepUtils.ClearTimedInstancesForController = function(
 end
 
 TagControllerStepUtils.TryAddTimedInstance = function(
-	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: TimedControllerEntry },
 	controller: TagController,
+	actor: Actor,
 	record: TagInstanceRecord
 ): ()
 	if record.remainingDuration == nil then
 		return
 	end
 
-	TagControllerStepUtils.SetTimedInstanceByControllerRecord(timedInstancesByController, controller, record)
+	TagControllerStepUtils.SetTimedInstanceByControllerRecord(timedInstancesByController, controller, actor, record)
 end
 
 TagControllerStepUtils.ReconcileTimedInstance = function(
-	timedInstancesByController: { [TagController]: { TagInstanceRecord } },
+	timedInstancesByController: { [TagController]: TimedControllerEntry },
 	controller: TagController,
+	actor: Actor,
 	record: TagInstanceRecord
 ): ()
 	if not record.remainingDuration then
 		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, controller, record)
 	else
-		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, controller, record)
+		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, controller, actor, record)
 	end
+end
+
+TagControllerStepUtils.StepTagInstance = function(tagRecord: TagInstanceRecord, deltaTime: number): boolean
+	local remainingDuration: number? = tagRecord.remainingDuration
+
+	if remainingDuration == nil then
+		return false
+	end
+
+	local nextRemainingDuration: number = remainingDuration - deltaTime
+	tagRecord.remainingDuration = nextRemainingDuration
+
+	return nextRemainingDuration <= 0
 end
 
 return TagControllerStepUtils

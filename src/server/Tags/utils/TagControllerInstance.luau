@@ -3,7 +3,6 @@ local TagTypes = require(script.Parent.Parent.types)
 
 export type AddTagOptions = TagTypes.AddTagOptions
 export type TagDefinition = TagTypes.TagDefinition
-
 export type TagInstanceRecord = {
 	tagId: string,
 	duration: number?,

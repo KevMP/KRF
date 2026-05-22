@@ -22,6 +22,10 @@ type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryCo
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
+type TimedControllerEntry = TagControllerStepUtils.TimedControllerEntry
+type InternalTagController = TagController & {
+	_expireTimedInstance: (self: InternalTagController, tagRecord: TagInstanceRecord) -> boolean,
+}
 type ActiveTagSortRecord = {
 	tagId: string,
 	stackCount: number,
@@ -36,7 +40,7 @@ type TagControllerModule = {
 
 local HeartBeatConnection: RBXScriptConnection? = nil
 
-local timedInstancesByController: { [TagController]: { TagInstanceRecord } } = {}
+local timedInstancesByController: { [TagController]: TimedControllerEntry } = {}
 
 local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
 	local oldestAppliedOrder: number = instances[1].appliedOrder
@@ -74,9 +78,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagRemovedSignal = tagRemovedSignal,
 		tagRefreshedSignal = tagRefreshedSignal,
 		tagChangedSignal = tagChangedSignal,
+		tagExpiredSignal = tagExpiredSignal,
 	}
 
-	local self: TagController = {} :: TagController
+	local self: InternalTagController = {} :: InternalTagController
 
 	self.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
 	self.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
@@ -102,7 +107,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, instance)
+			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
@@ -110,7 +115,12 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if tagDefinition.duplicateBehavior == "Refresh" then
 			if activeInstances ~= nil and #activeInstances > 0 then
 				TagControllerInstanceUtils.RefreshTagInstance(activeInstances[1], resolvedDuration)
-				TagControllerStepUtils.ReconcileTimedInstance(timedInstancesByController, self, activeInstances[1])
+				TagControllerStepUtils.ReconcileTimedInstance(
+					timedInstancesByController,
+					self,
+					actor,
+					activeInstances[1]
+				)
 				TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
 				return true, nil
 			end
@@ -118,7 +128,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, instance)
+			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
@@ -140,7 +150,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if isAtMaxStacks then
 			local refreshTarget: TagInstanceRecord = TagControllerInstanceUtils.SelectStackRefreshTarget(stackInstances)
 			TagControllerInstanceUtils.RefreshTagInstance(refreshTarget, resolvedDuration)
-			TagControllerStepUtils.ReconcileTimedInstance(timedInstancesByController, self, refreshTarget)
+			TagControllerStepUtils.ReconcileTimedInstance(timedInstancesByController, self, actor, refreshTarget)
 			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
 			return true, nil
 		end
@@ -148,7 +158,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		local instance: TagInstanceRecord =
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 		table.insert(stackInstances, instance)
-		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, instance)
+		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
 		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		return true, nil
 	end
@@ -269,10 +279,66 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		activeTagsById = {}
 	end
 
-	return self
+	function self._expireTimedInstance(_self, tagRecord: TagInstanceRecord): boolean
+		if destroyed then
+			return false
+		end
+
+		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagRecord.tagId]
+
+		if activeInstances == nil or #activeInstances == 0 then
+			return false
+		end
+
+		local removeIndex: number? = table.find(activeInstances, tagRecord)
+
+		if removeIndex == nil then
+			return false
+		end
+
+		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, self, tagRecord)
+
+		if #activeInstances == 1 then
+			activeTagsById[tagRecord.tagId] = nil
+		else
+			table.remove(activeInstances, removeIndex)
+		end
+
+		TagControllerEventUtils.FireTagExpired(eventContext, tagRecord.tagId)
+		return true
+	end
+
+	return self :: TagController
 end
 
-function TagController.Step(deltaTime: number) end
+function TagController.Step(deltaTime: number)
+	if deltaTime <= 0 then
+		return
+	end
+
+	for controller: TagController, timedControllerEntry: TimedControllerEntry in timedInstancesByController do
+		if not timedControllerEntry.actor.enabled then
+			continue
+		end
+
+		local steppedInstances: { TagInstanceRecord } = table.clone(timedControllerEntry.instances)
+		local expiredInstances: { TagInstanceRecord } = {}
+
+		for _, tagRecord: TagInstanceRecord in steppedInstances do
+			local expired: boolean = TagControllerStepUtils.StepTagInstance(tagRecord, deltaTime)
+
+			if expired then
+				table.insert(expiredInstances, tagRecord)
+			end
+		end
+
+		local internalController: InternalTagController = controller :: InternalTagController
+
+		for _, tagRecord: TagInstanceRecord in expiredInstances do
+			internalController:_expireTimedInstance(tagRecord)
+		end
+	end
+end
 
 function TagController._setAutomaticSteppingEnabledForTests(enabled: boolean)
 	if enabled == true and not HeartBeatConnection then
