@@ -38,9 +38,28 @@ type TagControllerModule = {
 	_setAutomaticSteppingEnabledForTests: (enabled: boolean) -> (),
 }
 
+local TagController: TagControllerModule = {} :: TagControllerModule
 local HeartBeatConnection: RBXScriptConnection? = nil
+local automaticSteppingEnabled: boolean = true
 
 local timedInstancesByController: { [TagController]: TimedControllerEntry } = {}
+
+local function UpdateHeartbeatConnection(): ()
+	local hasTimedControllers: boolean = next(timedInstancesByController) ~= nil
+
+	if automaticSteppingEnabled and hasTimedControllers then
+		if HeartBeatConnection == nil then
+			HeartBeatConnection = RunService.Heartbeat:Connect(TagController.Step)
+		end
+
+		return
+	end
+
+	if HeartBeatConnection ~= nil then
+		HeartBeatConnection:Disconnect()
+		HeartBeatConnection = nil
+	end
+end
 
 local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
 	local oldestAppliedOrder: number = instances[1].appliedOrder
@@ -55,8 +74,6 @@ local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
 
 	return oldestAppliedOrder
 end
-
-local TagController: TagControllerModule = {} :: TagControllerModule
 
 function TagController.new(actor: ActorTypes.Actor): TagController
 	local tagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
@@ -108,6 +125,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
 			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
@@ -121,6 +139,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 					actor,
 					activeInstances[1]
 				)
+				UpdateHeartbeatConnection()
 				TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
 				return true, nil
 			end
@@ -129,6 +148,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
 			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
 		end
@@ -151,6 +171,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local refreshTarget: TagInstanceRecord = TagControllerInstanceUtils.SelectStackRefreshTarget(stackInstances)
 			TagControllerInstanceUtils.RefreshTagInstance(refreshTarget, resolvedDuration)
 			TagControllerStepUtils.ReconcileTimedInstance(timedInstancesByController, self, actor, refreshTarget)
+			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
 			return true, nil
 		end
@@ -159,6 +180,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 		table.insert(stackInstances, instance)
 		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+		UpdateHeartbeatConnection()
 		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		return true, nil
 	end
@@ -173,6 +195,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		for _, instance: TagInstanceRecord in activeInstances do
 			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, self, instance)
 		end
+		UpdateHeartbeatConnection()
 		activeTagsById[tagId] = nil
 		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
@@ -192,6 +215,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 				self,
 				activeInstances[1]
 			)
+			UpdateHeartbeatConnection()
 			activeTagsById[tagId] = nil
 			TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 			return true, nil
@@ -204,6 +228,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			self,
 			activeInstances[removeIndex]
 		)
+		UpdateHeartbeatConnection()
 		table.remove(activeInstances, removeIndex)
 		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
@@ -276,6 +301,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		destroyed = true
 		TagControllerStepUtils.ClearTimedInstancesForController(timedInstancesByController, self)
+		UpdateHeartbeatConnection()
 		activeTagsById = {}
 	end
 
@@ -297,6 +323,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, self, tagRecord)
+		UpdateHeartbeatConnection()
 
 		if #activeInstances == 1 then
 			activeTagsById[tagRecord.tagId] = nil
@@ -341,15 +368,8 @@ function TagController.Step(deltaTime: number)
 end
 
 function TagController._setAutomaticSteppingEnabledForTests(enabled: boolean)
-	if enabled == true and not HeartBeatConnection then
-		HeartBeatConnection = RunService.Heartbeat:Connect(TagController.Step)
-	end
-
-	if enabled == false and HeartBeatConnection then
-		HeartBeatConnection:Disconnect()
-	end
+	automaticSteppingEnabled = enabled
+	UpdateHeartbeatConnection()
 end
-
-HeartBeatConnection = RunService.Heartbeat:Connect(TagController.Step)
 
 return TagController
