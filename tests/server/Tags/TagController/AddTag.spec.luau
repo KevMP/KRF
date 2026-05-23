@@ -160,6 +160,32 @@ it("uses explicit duration over default duration when AddTag creates a new insta
 	})
 end)
 
+it("returns false with a stable error when AddTag receives an explicit zero duration", function()
+	local controller = createController()
+
+	local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
+		duration = 0,
+	})
+
+	expect(added).toBe(false)
+	expect(reason).toBe("TagDurationMustBePositive")
+	expect(controller:HasTag("Status.Stunned")).toBe(false)
+	expect(controller:GetTagInstances("Status.Stunned")).toEqual({})
+end)
+
+it("returns false with a stable error when AddTag receives an explicit negative duration", function()
+	local controller = createController()
+
+	local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
+		duration = -5,
+	})
+
+	expect(added).toBe(false)
+	expect(reason).toBe("TagDurationMustBePositive")
+	expect(controller:HasTag("Status.Stunned")).toBe(false)
+	expect(controller:GetTagInstances("Status.Stunned")).toEqual({})
+end)
+
 it("uses the tag default duration when AddTag is called without an explicit duration", function()
 	local controller = createController()
 

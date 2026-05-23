@@ -46,6 +46,8 @@
       "text-summary",
       "text"
     ],
+    "all": true,
+    "per-file": true,
     "branches": 90,
     "functions": 90,
     "lines": 90,
