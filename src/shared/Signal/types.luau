@@ -18,19 +18,20 @@ local SignalTypes = {}
 export type Handler<T...> = (T...) -> ()
 
 export type Connection = {
-	Disconnect: (self: Connection) -> (),
+	-- Public `self` is intentionally loose to avoid recursive hover expansion.
+	Disconnect: (any) -> (),
 }
 
 export type Event<T...> = {
-	Connect: (self: Event<T...>, fn: Handler<T...>) -> Connection,
-	Once: (self: Event<T...>, fn: Handler<T...>) -> Connection,
-	Wait: (self: Event<T...>) -> T...,
+	Connect: (any, fn: Handler<T...>) -> Connection,
+	Once: (any, fn: Handler<T...>) -> Connection,
+	Wait: (any) -> T...,
 }
 
 export type Signal<T...> = Event<T...> & {
-	Fire: (self: Signal<T...>, T...) -> (),
-	DisconnectAll: (self: Signal<T...>) -> (),
-	Destroy: (self: Signal<T...>) -> (),
+	Fire: (any, T...) -> (),
+	DisconnectAll: (any) -> (),
+	Destroy: (any) -> (),
 }
 
 export type New = <T...>() -> Signal<T...>

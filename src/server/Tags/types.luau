@@ -2,7 +2,6 @@
 local serverFolder = script.Parent.Parent
 
 local ActorTypes = require(serverFolder.Actor.types)
-local ControllerTypes = require(serverFolder.Controller.types)
 local SignalTypes = require(serverFolder.Parent.shared.Signal.types)
 
 local TagTypes = {}
@@ -54,7 +53,9 @@ export type ActiveTagSnapshot = {
 	remainingDuration: number?,
 }
 
-export type TagController = ControllerTypes.Controller & {
+export type TagController = {
+	Destroy: (any) -> (),
+
 	-- events
 	OnTagAdded: SignalTypes.Event<ActorTypes.Actor, string>,
 	OnTagRemoved: SignalTypes.Event<ActorTypes.Actor, string>,
@@ -63,14 +64,14 @@ export type TagController = ControllerTypes.Controller & {
 	OnTagExpired: SignalTypes.Event<ActorTypes.Actor, string>,
 
 	-- mutations
-	AddTag: (self: TagController, tagId: string, options: AddTagOptions?) -> (boolean, string?),
-	RemoveTag: (self: TagController, tagId: string) -> (boolean, string?),
-	RemoveSingleTag: (self: TagController, tagId: string) -> (boolean, string?),
+	AddTag: (any, tagId: string, options: AddTagOptions?) -> (boolean, string?),
+	RemoveTag: (any, tagId: string) -> (boolean, string?),
+	RemoveSingleTag: (any, tagId: string) -> (boolean, string?),
 
 	-- queries
-	HasTag: (self: TagController, tagId: string) -> boolean,
-	GetActiveTags: (self: TagController) -> { ActiveTagSnapshot },
-	GetTagInstances: (self: TagController, tagId: string) -> { TagInstanceSnapshot },
+	HasTag: (any, tagId: string) -> boolean,
+	GetActiveTags: (any) -> { ActiveTagSnapshot },
+	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
 }
 
 return TagTypes
