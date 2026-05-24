@@ -501,7 +501,7 @@ it("prefers refreshing a finite stack instance over an indefinite one at maxStac
 	expect(refreshed).toBe(true)
 	expect(refreshReason).toBeNil()
 
-	expect(controller:GetTagInstances("Buff.StackIndefinite")).toEqual({
+	local expectedInstances: { TagInstanceSnapshot } = {
 		{
 			tagId = "Buff.StackIndefinite",
 			duration = nil,
@@ -514,7 +514,8 @@ it("prefers refreshing a finite stack instance over an indefinite one at maxStac
 			remainingDuration = 9,
 			appliedOrder = 1,
 		},
-	})
+	}
+	expect(controller:GetTagInstances("Buff.StackIndefinite")).toEqual(expectedInstances)
 end)
 
 it("fires added then changed for each Stack apply while below maxStacks", function()
@@ -687,14 +688,15 @@ it("no expiry or removal occurs merely because duration metadata exists", functi
 	task.wait(0.1)
 
 	expect(controller:HasTag("Status.Stunned")).toBe(true)
-	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
+	local expectedInstances: { TagInstanceSnapshot } = {
 		{
 			tagId = "Status.Stunned",
 			duration = 0.05,
 			remainingDuration = 0.05,
 			appliedOrder = 0,
 		},
-	})
+	}
+	expect(controller:GetTagInstances("Status.Stunned")).toEqual(expectedInstances)
 end)
 
 it("Destroy clears active tag state and remains a no-op when called again", function()

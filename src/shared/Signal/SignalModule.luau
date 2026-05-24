@@ -13,8 +13,8 @@ type _State = {
 	destroyed: boolean,
 }
 
-local _stateBySignal = setmetatable({}, { __mode = "k" }) :: { [any]: _State }
-local _stateByEvent = setmetatable({}, { __mode = "k" }) :: { [any]: _State }
+local _stateBySignal: { [any]: _State } = setmetatable({}, { __mode = "k" }) :: any
+local _stateByEvent: { [any]: _State } = setmetatable({}, { __mode = "k" }) :: any
 
 local function _getStateForSignal(self: any): _State
 	local st = _stateBySignal[self]

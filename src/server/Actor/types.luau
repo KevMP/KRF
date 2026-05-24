@@ -17,16 +17,18 @@ export type ActorBase = {
 }
 
 export type Controller = {
-	Destroy: (self: Controller) -> (),
+	-- `self` is intentionally loose here to keep public controller hovers concise.
+	Destroy: (any) -> (),
 }
 
 export type ActorApi = {
-	GetId: (self: ActorApi) -> string,
+	-- Public `self` is intentionally loose to keep actor method hovers readable.
+	GetId: (any) -> string,
 
-	SetController: (self: ActorApi, key: string, controller: Controller) -> boolean,
-	GetControllerKeys: (self: ActorApi) -> { string },
-	GetController: (self: ActorApi, key: string) -> Controller?,
-	RemoveController: (self: Actor, key: string) -> Controller?,
+	SetController: (any, key: string, controller: Controller) -> boolean,
+	GetControllerKeys: (any) -> { string },
+	GetController: (any, key: string) -> Controller?,
+	RemoveController: (any, key: string) -> Controller?,
 }
 
 export type Actor = ActorBase & ActorApi

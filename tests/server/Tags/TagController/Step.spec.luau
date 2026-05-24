@@ -11,7 +11,7 @@ local TagController = require(KRF.server.Tags.TagController)
 local TagRegistry = require(KRF.server.Tags.TagRegistry)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
-local TagTestUtils: Folder = script.Parent.Parent.Parent.Utils.Tags
+local TagTestUtils: any = script.Parent.Parent.Parent.Utils.Tags
 
 type Actor = ActorTypes.Actor
 type TagDefinition = TagTypes.TagDefinition
