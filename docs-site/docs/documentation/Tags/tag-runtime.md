@@ -1,6 +1,6 @@
 # Tag Runtime
 
-`TagController` is KRF's runtime surface for applying and removing tags on a live actor.
+`TagController` is KRF's runtime surface for managing tags on a live actor.
 
 `TagRegistry` defines what a tag means. `TagController` answers the next question: which of those tags are active on this actor right now?
 
@@ -29,7 +29,6 @@ KRF tracks active tags per actor, not globally. Two actors may both have `Status
 
 * defining the tag catalog
 * validating tag definitions
-* expiring tags over time
 * deciding what a tag means in UI, combat, or movement systems
 * cross-actor queries
 
@@ -51,6 +50,23 @@ Reapplying a tag depends on its duplicate behavior:
 
 If a stacked tag is reapplied at `maxStacks`, KRF refreshes an existing stack instead of creating a new one.
 
+## Timed tags
+
+If a tag resolves to a duration, KRF treats it as a timed tag.
+
+Timed tags count down during gameplay and expire when their remaining time runs out.
+
+Duration can come from either source:
+
+* `options.duration` when the caller applies the tag explicitly
+* `defaultDuration` on the tag definition when no explicit duration is provided
+
+If neither exists, the tag is indefinite and does not expire just because time passes.
+
+Reapplying a `Refresh` tag resets that tag's duration to the newly resolved value. It does not extend the time that was already left.
+
+For stacked tags, each active instance keeps its own remaining time.
+
 ## Removing tags
 
 KRF exposes two different removal intents because stacked tags need both:
@@ -62,6 +78,12 @@ For stacked tags, `RemoveSingleTag` removes the oldest applied active instance f
 
 If the tag is not active, both removal calls fail with `TagNotActive` and do not fire mutation events.
 
+Manual removal is distinct from timed expiry:
+
+* `RemoveTag` and `RemoveSingleTag` fire removal semantics
+* automatic timeout fires expiry semantics
+* manual removal does not emit `OnTagExpired`
+
 ## Querying active state
 
 There are two common query shapes:
@@ -69,7 +91,9 @@ There are two common query shapes:
 * `HasTag(tagId)` answers whether the actor currently has at least one active instance.
 * `GetActiveTags()` returns one entry per active tag id with aggregate `stackCount`.
 
-Use `GetTagInstances(tagId)` when a system needs per-instance details such as duration metadata or applied order for a stacked tag.
+For timed tags, `GetActiveTags()` surfaces the longest remaining duration still active for that tag id. This gives other systems a stable per-tag summary even when multiple timed stacks are active.
+
+Use `GetTagInstances(tagId)` when a system needs per-instance details such as exact remaining duration or applied order for a stacked tag.
 
 ## Event contract
 
@@ -80,6 +104,7 @@ Event order is stable:
 * a successful add fires `OnTagAdded` and then `OnTagChanged`
 * a successful refresh fires `OnTagRefreshed` and then `OnTagChanged`
 * a successful removal fires `OnTagRemoved` and then `OnTagChanged`
+* a timed expiry fires `OnTagExpired` and then `OnTagChanged`
 
 Failed mutations do not fire these events.
 
@@ -131,6 +156,8 @@ end
 * Treating tag definitions as active tag state. `TagRegistry` defines tags, but `TagController` owns per-actor runtime state.
 * Using remove-all semantics when only one stack should be consumed. Use `RemoveSingleTag` when the gameplay rule is "spend one stack."
 * Expecting `GetActiveTags()` to return one entry per stack instance. It returns one aggregated entry per active tag id.
+* Treating refresh as time extension. A refresh resets the chosen instance to the newly resolved duration.
+* Listening only for `OnTagRemoved` when a timed effect must react to timeout. Time-based expiry uses `OnTagExpired`.
 
 ## Related concepts
 

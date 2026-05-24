@@ -160,6 +160,32 @@ it("uses explicit duration over default duration when AddTag creates a new insta
 	})
 end)
 
+it("returns false with a stable error when AddTag receives an explicit zero duration", function()
+	local controller = createController()
+
+	local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
+		duration = 0,
+	})
+
+	expect(added).toBe(false)
+	expect(reason).toBe("TagDurationMustBePositive")
+	expect(controller:HasTag("Status.Stunned")).toBe(false)
+	expect(controller:GetTagInstances("Status.Stunned")).toEqual({})
+end)
+
+it("returns false with a stable error when AddTag receives an explicit negative duration", function()
+	local controller = createController()
+
+	local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
+		duration = -5,
+	})
+
+	expect(added).toBe(false)
+	expect(reason).toBe("TagDurationMustBePositive")
+	expect(controller:HasTag("Status.Stunned")).toBe(false)
+	expect(controller:GetTagInstances("Status.Stunned")).toEqual({})
+end)
+
 it("uses the tag default duration when AddTag is called without an explicit duration", function()
 	local controller = createController()
 
@@ -388,12 +414,12 @@ it("GetActiveTags returns aggregated entries rather than one entry per stack ins
 	expect(thirdAdded).toBe(true)
 	expect(thirdReason).toBeNil()
 
-	expect(controller:GetActiveTags()).toEqual({
-		{
-			tagId = "Buff.Sprint",
-			stackCount = 3,
-		},
-	})
+	local activeTags: { ActiveTagSnapshot } = controller:GetActiveTags()
+
+	expect(#activeTags).toBe(1)
+	expect(activeTags[1].tagId).toBe("Buff.Sprint")
+	expect(activeTags[1].stackCount).toBe(3)
+	expect(activeTags[1].remainingDuration).toBe(8)
 end)
 
 it("GetActiveTags preserves oldest-applied tag ordering across different active tags", function()
@@ -413,20 +439,18 @@ it("GetActiveTags preserves oldest-applied tag ordering across different active 
 	expect(sprintAdded).toBe(true)
 	expect(sprintReason).toBeNil()
 
-	expect(controller:GetActiveTags()).toEqual({
-		{
-			tagId = "Status.Rooted",
-			stackCount = 1,
-		},
-		{
-			tagId = "Status.Stunned",
-			stackCount = 1,
-		},
-		{
-			tagId = "Buff.Sprint",
-			stackCount = 1,
-		},
-	})
+	local activeTags: { ActiveTagSnapshot } = controller:GetActiveTags()
+
+	expect(#activeTags).toBe(3)
+	expect(activeTags[1].tagId).toBe("Status.Rooted")
+	expect(activeTags[1].stackCount).toBe(1)
+	expect(activeTags[1].remainingDuration).toBeNil()
+	expect(activeTags[2].tagId).toBe("Status.Stunned")
+	expect(activeTags[2].stackCount).toBe(1)
+	expect(activeTags[2].remainingDuration).toBe(1.5)
+	expect(activeTags[3].tagId).toBe("Buff.Sprint")
+	expect(activeTags[3].stackCount).toBe(1)
+	expect(activeTags[3].remainingDuration).toBe(8)
 end)
 
 it("GetTagInstances returns detailed instances for an active tag", function()
@@ -622,12 +646,12 @@ it("allows uncapped Stack tags to keep creating new active instances", function(
 	expect(thirdAdded).toBe(true)
 	expect(thirdReason).toBeNil()
 
-	expect(controller:GetActiveTags()).toEqual({
-		{
-			tagId = "Buff.Endurance",
-			stackCount = 3,
-		},
-	})
+	local activeTags: { ActiveTagSnapshot } = controller:GetActiveTags()
+
+	expect(#activeTags).toBe(1)
+	expect(activeTags[1].tagId).toBe("Buff.Endurance")
+	expect(activeTags[1].stackCount).toBe(3)
+	expect(activeTags[1].remainingDuration).toBe(12)
 	expect(controller:GetTagInstances("Buff.Endurance")).toEqual({
 		{
 			tagId = "Buff.Endurance",

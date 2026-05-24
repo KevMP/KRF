@@ -1,9 +1,8 @@
 --!strict
-local TagTypes = require(script.Parent.types)
+local TagTypes = require(script.Parent.Parent.types)
 
 export type AddTagOptions = TagTypes.AddTagOptions
 export type TagDefinition = TagTypes.TagDefinition
-
 export type TagInstanceRecord = {
 	tagId: string,
 	duration: number?,
@@ -57,6 +56,22 @@ local function GetLowestComparableRemainingDuration(instance: TagInstanceRecord)
 	end
 
 	return instance.remainingDuration
+end
+
+function TagControllerInstanceUtils.GetLongestRemainingDuration(instances: { TagInstanceRecord }): number?
+	local longestRemainingDuration: number? = nil
+
+	for _, instance: TagInstanceRecord in instances do
+		local remainingDuration: number? = instance.remainingDuration
+
+		if remainingDuration ~= nil then
+			if longestRemainingDuration == nil or remainingDuration > longestRemainingDuration then
+				longestRemainingDuration = remainingDuration
+			end
+		end
+	end
+
+	return longestRemainingDuration
 end
 
 function TagControllerInstanceUtils.SelectStackRefreshTarget(instances: { TagInstanceRecord }): TagInstanceRecord

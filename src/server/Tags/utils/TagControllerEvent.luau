@@ -1,5 +1,5 @@
 --!strict
-local serverFolder = script.Parent.Parent
+local serverFolder = script.Parent.Parent.Parent
 local SignalFolder = serverFolder.Parent.shared.Signal
 
 local ActorTypes = require(serverFolder.Actor.types)
@@ -11,6 +11,7 @@ export type TagControllerEventContext = {
 	tagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
 	tagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
 	tagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
+	tagExpiredSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
 }
 
 local TagControllerEventUtils = {}
@@ -27,6 +28,11 @@ end
 
 function TagControllerEventUtils.FireTagRemoved(self: TagControllerEventContext, tagId: string): ()
 	self.tagRemovedSignal:Fire(self.actor, tagId)
+	self.tagChangedSignal:Fire(self.actor, tagId)
+end
+
+function TagControllerEventUtils.FireTagExpired(self: TagControllerEventContext, tagId: string): ()
+	self.tagExpiredSignal:Fire(self.actor, tagId)
 	self.tagChangedSignal:Fire(self.actor, tagId)
 end
 

@@ -394,6 +394,30 @@ it("Disconnect during Fire can unlink a tail handler after traversing intermedia
 	expect(tailRan).toBe(false)
 end)
 
+it("raw GoodSignal skips stale disconnected nodes that remain linked in the handler list", function()
+	local rawSignal: any = GoodSignal.new()
+
+	local staleRan: boolean = false
+	local liveRan: boolean = false
+
+	local staleConnection: any = rawSignal:Connect(function()
+		staleRan = true
+	end)
+
+	local _liveConnection: any = rawSignal:Connect(function()
+		liveRan = true
+	end)
+
+	-- Simulate a stale disconnected node that is still reachable from the current list.
+	staleConnection._connected = false
+
+	rawSignal:Fire()
+	pump(2)
+
+	expect(liveRan).toBe(true)
+	expect(staleRan).toBe(false)
+end)
+
 it("Connect during Fire: new connections should not run until the next Fire", function()
 	local signal: Signal<> = SignalModule.new()
 	local event: Event<> = SignalModule.wrapEvent(signal)
@@ -417,6 +441,25 @@ it("Connect during Fire: new connections should not run until the next Fire", fu
 	end, 30)
 	expect(ok).toBe(true)
 end)
+
+it(
+	"Once() still delivers an already-fired callback if the returned connection is disconnected before the queued callback runs",
+	function()
+		local signal: Signal<> = SignalModule.new()
+		local event: Event<> = SignalModule.wrapEvent(signal)
+
+		local count: number = 0
+		local connection: Connection = event:Once(function()
+			count += 1
+		end)
+
+		signal:Fire()
+		connection:Disconnect()
+		pump(2)
+
+		expect(count).toBe(1)
+	end
+)
 
 it("Destroy() makes Signal inert and disables existing Event surfaces", function()
 	local sig: Signal<> = SignalModule.new()

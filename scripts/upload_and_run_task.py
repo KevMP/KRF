@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import ssl
 import sys
 import time
@@ -14,29 +13,54 @@ ROBLOX_API_KEY = os.environ["ROBLOX_API_KEY"]
 ROBLOX_UNIVERSE_ID = os.environ["ROBLOX_UNIVERSE_ID"]
 ROBLOX_PLACE_ID = os.environ["ROBLOX_PLACE_ID"]
 COVERAGE_OUTPUT = Path("coverage/coverage-final.json")
-COVERAGE_PATTERN = re.compile(
-    r"__KRF_COVERAGE_START__\r?\n(?P<json>\{.*?\})\r?\n__KRF_COVERAGE_END__",
-    re.DOTALL,
-)
+COVERAGE_START_MARKER = "__KRF_COVERAGE_START__"
+COVERAGE_END_MARKER = "__KRF_COVERAGE_END__"
 
 def read_file(file_path):
     with open(file_path, "rb") as file:
         return file.read()
 
+def extract_coverage_payload(logs: str):
+    lines = logs.splitlines()
+    coverage_lines = []
+    stripped_lines = []
+    capturing_coverage = False
+    found_markers = False
+
+    for line in lines:
+        if line == COVERAGE_START_MARKER:
+            capturing_coverage = True
+            found_markers = True
+            stripped_lines.append("[coverage] Captured Istanbul payload from Roblox test run.")
+            continue
+
+        if line == COVERAGE_END_MARKER:
+            capturing_coverage = False
+            continue
+
+        if capturing_coverage:
+            coverage_lines.append(line)
+            continue
+
+        stripped_lines.append(line)
+
+    if not found_markers:
+        return None, logs
+
+    return "".join(coverage_lines), "\n".join(stripped_lines)
+
 def strip_coverage_payload(logs: str) -> str:
-    return COVERAGE_PATTERN.sub(
-        "[coverage] Captured Istanbul payload from Roblox test run.",
-        logs,
-    )
+    _, stripped_logs = extract_coverage_payload(logs)
+    return stripped_logs
 
 def write_coverage_report(logs: str) -> None:
-    match = COVERAGE_PATTERN.search(logs)
-    if not match:
+    coverage_payload, _ = extract_coverage_payload(logs)
+    if not coverage_payload:
         print("Coverage markers not found in Luau logs")
         return
 
     COVERAGE_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    COVERAGE_OUTPUT.write_text(match.group("json"), encoding="utf-8")
+    COVERAGE_OUTPUT.write_text(coverage_payload, encoding="utf-8")
     print(f"Coverage report written to {COVERAGE_OUTPUT}")
 
 def upload_place(binary_path, universe_id, place_id, do_publish=False):
