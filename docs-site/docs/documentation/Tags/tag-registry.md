@@ -47,6 +47,8 @@ A stun may define duration and movement overrides. A sprint buff may define move
 
 KRF keeps those definitions in one catalog so the rest of the runtime can reason about them consistently.
 
+`TagRegistry` only defines that timing metadata. The live countdown and expiry behavior belongs to `TagController` at runtime.
+
 ## Property modifier modes
 
 A property entry affects a numeric property in one of two ways.
