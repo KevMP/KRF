@@ -8,13 +8,14 @@
   },
   "scripts": {
     "prepare": "husky",
+    "typecheck": "node ./scripts/typecheck.cjs",
     "test:lint": "stylua --check src tests && selene src tests",
     "test:unit": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1 && npm run coverage",
     "coverage:prepare": "node ./scripts/prepare-nyc-coverage.cjs",
     "coverage:report": "npx nyc report",
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
-    "test": "npm run test:lint && npm run test:unit"
+    "test": "npm run test:lint && npm run typecheck && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": "stylua"

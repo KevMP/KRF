@@ -9,6 +9,7 @@
 /*.rbxl
 
 sourcemap.json
+.typecheck/
 
 DevPackages
 

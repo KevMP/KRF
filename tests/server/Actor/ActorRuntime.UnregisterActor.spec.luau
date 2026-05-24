@@ -50,7 +50,7 @@ it("UnregisterActor unbinds after controller cleanup (model destroyed during Det
 		expect(actor.enabled).toBe(false)
 	end
 
-	local success: boolean, errorMessage: any = pcall(run, nil)
+	local success: boolean, errorMessage: any = pcall(run)
 
 	-- ALWAYS restore, even if the test failed inside run()
 	ActorRuntime.DetachAllControllers = originalDetach
@@ -151,7 +151,7 @@ it("UnregisterActor destroys and removes all controllers", function()
 		expect(registeredActor:GetController("B")).toBeNil()
 	end
 
-	local success: boolean, errorMessage: any = pcall(run, nil)
+	local success: boolean, errorMessage: any = pcall(run)
 
 	ActorRuntime.AttachControllers = originalAttach
 	model:Destroy()
@@ -222,7 +222,7 @@ it("UnregisterActor is idempotent (second call does no work)", function()
 		expect(unbindCalls).toBe(1)
 	end
 
-	local success: boolean, errorMessage: any = pcall(run, nil)
+	local success: boolean, errorMessage: any = pcall(run)
 
 	if unregisteringConnection then
 		unregisteringConnection:Disconnect()
@@ -322,7 +322,7 @@ it("UnregisterActor ordering: Unregistering fires before cleanup + unbind; Unreg
 		expect(unregisteredReason).toBe(reasonValue)
 	end
 
-	local success: boolean, errorMessage: any = pcall(run, nil)
+	local success: boolean, errorMessage: any = pcall(run)
 
 	if unregisteringConnection then
 		unregisteringConnection:Disconnect()
@@ -443,7 +443,7 @@ it("ModelGone triggers full teardown via ActorRuntime (reason=ModelGone)", funct
 		expect(ActorRegistry.GetActorByModel(model)).toBeNil()
 	end
 
-	local success: boolean, errorMessage: any = pcall(run, nil)
+	local success: boolean, errorMessage: any = pcall(run)
 	cleanup()
 
 	if not success then

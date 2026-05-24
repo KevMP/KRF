@@ -17,7 +17,7 @@ local VALID_VISIBILITIES = table.freeze({
 	ClientVisible = true,
 })
 
-local VALID_PROPERTY_MODIFIER_KEYS = table.freeze({
+local VALID_PROPERTY_MODIFIER_KEYS: { [string]: boolean } = table.freeze({
 	set = true,
 	add = true,
 	multiply = true,
@@ -153,8 +153,9 @@ local function ValidatePropertyModifier(modifier: PropertyModifier): (boolean, s
 	end
 
 	local hasAnyModifierField: boolean = false
+	local modifierTable: { [string]: any } = modifier :: any
 
-	for modifierKey: string, modifierValue: any in modifier do
+	for modifierKey: string, modifierValue: any in modifierTable do
 		if not VALID_PROPERTY_MODIFIER_KEYS[modifierKey] then
 			return false, "TagPropertyModifierFieldInvalid"
 		end
@@ -200,7 +201,7 @@ local function ValidateTagProperties(tagDefinition: TagDefinition): (boolean, st
 		local isModifierValid: boolean, modifierFailReason: string? = ValidatePropertyModifier(modifier)
 
 		if not isModifierValid then
-			return false, modifierFailReason
+			return false, modifierFailReason :: string
 		end
 	end
 

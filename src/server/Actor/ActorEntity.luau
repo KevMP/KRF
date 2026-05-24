@@ -44,7 +44,7 @@ function ActorEntity.new(model: Model?): Actor
 		return controller
 	end
 
-	return actor :: Actor
+	return (actor :: any) :: Actor
 end
 
 return ActorEntity
