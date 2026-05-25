@@ -6,7 +6,7 @@ type TagController = TagTypes.TagController
 type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
 type Actor = ActorTypes.Actor
 
-export type TimedControllerEntry = {
+export type AdvancingControllerEntry = {
 	instances: { TagInstanceRecord },
 	actor: Actor,
 }
@@ -14,56 +14,56 @@ export type TimedControllerEntry = {
 local TagControllerStepUtils = {}
 
 TagControllerStepUtils.SetTimedInstanceByControllerRecord = function(
-	timedInstancesByController: { [TagController]: TimedControllerEntry },
+	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
 	controller: TagController,
 	actor: Actor,
 	record: TagInstanceRecord
 ): ()
-	if not timedInstancesByController[controller] then
-		timedInstancesByController[controller] = {
+	if not advancingInstancesByController[controller] then
+		advancingInstancesByController[controller] = {
 			instances = {},
 			actor = actor,
 		}
 	else
-		timedInstancesByController[controller].actor = actor
+		advancingInstancesByController[controller].actor = actor
 	end
 
-	if not table.find(timedInstancesByController[controller].instances, record) then
-		table.insert(timedInstancesByController[controller].instances, record)
+	if not table.find(advancingInstancesByController[controller].instances, record) then
+		table.insert(advancingInstancesByController[controller].instances, record)
 	end
 end
 
 TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
-	timedInstancesByController: { [TagController]: TimedControllerEntry },
+	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
 	controller: TagController,
 	record: TagInstanceRecord
 ): ()
-	if not timedInstancesByController[controller] then
+	if not advancingInstancesByController[controller] then
 		return
 	end
 
-	local recordIndex: number? = table.find(timedInstancesByController[controller].instances, record)
+	local recordIndex: number? = table.find(advancingInstancesByController[controller].instances, record)
 
 	if recordIndex then
-		table.remove(timedInstancesByController[controller].instances, recordIndex)
+		table.remove(advancingInstancesByController[controller].instances, recordIndex)
 	end
 
-	if #timedInstancesByController[controller].instances == 0 then
-		timedInstancesByController[controller] = nil
+	if #advancingInstancesByController[controller].instances == 0 then
+		advancingInstancesByController[controller] = nil
 	end
 end
 
 TagControllerStepUtils.ClearTimedInstancesForController = function(
-	timedInstancesByController: {
-		[TagController]: TimedControllerEntry,
+	advancingInstancesByController: {
+		[TagController]: AdvancingControllerEntry,
 	},
 	controller: TagController
 ): ()
-	timedInstancesByController[controller] = nil
+	advancingInstancesByController[controller] = nil
 end
 
 TagControllerStepUtils.TryAddTimedInstance = function(
-	timedInstancesByController: { [TagController]: TimedControllerEntry },
+	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
 	controller: TagController,
 	actor: Actor,
 	record: TagInstanceRecord
@@ -72,19 +72,19 @@ TagControllerStepUtils.TryAddTimedInstance = function(
 		return
 	end
 
-	TagControllerStepUtils.SetTimedInstanceByControllerRecord(timedInstancesByController, controller, actor, record)
+	TagControllerStepUtils.SetTimedInstanceByControllerRecord(advancingInstancesByController, controller, actor, record)
 end
 
 TagControllerStepUtils.ReconcileTimedInstance = function(
-	timedInstancesByController: { [TagController]: TimedControllerEntry },
+	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
 	controller: TagController,
 	actor: Actor,
 	record: TagInstanceRecord
 ): ()
 	if not record.remainingDuration then
-		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, controller, record)
+		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, controller, record)
 	else
-		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, controller, actor, record)
+		TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, controller, actor, record)
 	end
 end
 

@@ -22,7 +22,7 @@ type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryCo
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
-type TimedControllerEntry = TagControllerStepUtils.TimedControllerEntry
+type TimedControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
 type InternalTagController = TagController & {
 	_expireTimedInstance: (self: InternalTagController, tagRecord: TagInstanceRecord) -> boolean,
 }
@@ -43,10 +43,10 @@ local TagController: TagControllerModule = {} :: TagControllerModule
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
 
-local timedInstancesByController: { [TagController]: TimedControllerEntry } = {}
+local advancingInstancesByController: { [TagController]: TimedControllerEntry } = {}
 
 local function UpdateHeartbeatConnection(): ()
-	local hasTimedControllers: boolean = next(timedInstancesByController) ~= nil
+	local hasTimedControllers: boolean = next(advancingInstancesByController) ~= nil
 
 	if automaticSteppingEnabled and hasTimedControllers then
 		if HeartBeatConnection == nil then
@@ -129,7 +129,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+			TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
@@ -139,7 +139,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			if activeInstances ~= nil and #activeInstances > 0 then
 				TagControllerInstanceUtils.RefreshTagInstance(activeInstances[1], resolvedDuration)
 				TagControllerStepUtils.ReconcileTimedInstance(
-					timedInstancesByController,
+					advancingInstancesByController,
 					self,
 					actor,
 					activeInstances[1]
@@ -152,7 +152,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+			TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
@@ -175,7 +175,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if isAtMaxStacks then
 			local refreshTarget: TagInstanceRecord = TagControllerInstanceUtils.SelectStackRefreshTarget(stackInstances)
 			TagControllerInstanceUtils.RefreshTagInstance(refreshTarget, resolvedDuration)
-			TagControllerStepUtils.ReconcileTimedInstance(timedInstancesByController, self, actor, refreshTarget)
+			TagControllerStepUtils.ReconcileTimedInstance(advancingInstancesByController, self, actor, refreshTarget)
 			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
 			return true, nil
@@ -184,7 +184,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		local instance: TagInstanceRecord =
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 		table.insert(stackInstances, instance)
-		TagControllerStepUtils.TryAddTimedInstance(timedInstancesByController, self, actor, instance)
+		TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
 		UpdateHeartbeatConnection()
 		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		return true, nil
@@ -198,7 +198,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		for _, instance: TagInstanceRecord in activeInstances do
-			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, self, instance)
+			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, self, instance)
 		end
 		UpdateHeartbeatConnection()
 		activeTagsById[tagId] = nil
@@ -216,7 +216,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		if #activeInstances == 1 then
 			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(
-				timedInstancesByController,
+				advancingInstancesByController,
 				self,
 				activeInstances[1]
 			)
@@ -229,7 +229,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		local removeIndex: number = TagControllerInstanceUtils.SelectOldestAppliedInstanceIndex(activeInstances)
 
 		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(
-			timedInstancesByController,
+			advancingInstancesByController,
 			self,
 			activeInstances[removeIndex]
 		)
@@ -307,7 +307,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		destroyed = true
-		TagControllerStepUtils.ClearTimedInstancesForController(timedInstancesByController, self)
+		TagControllerStepUtils.ClearTimedInstancesForController(advancingInstancesByController, self)
 		UpdateHeartbeatConnection()
 		activeTagsById = {}
 	end
@@ -329,7 +329,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			return false
 		end
 
-		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(timedInstancesByController, self, tagRecord)
+		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, self, tagRecord)
 		UpdateHeartbeatConnection()
 
 		if #activeInstances == 1 then
@@ -350,7 +350,7 @@ function TagController.Step(deltaTime: number)
 		return
 	end
 
-	for controller: TagController, timedControllerEntry: TimedControllerEntry in timedInstancesByController do
+	for controller: TagController, timedControllerEntry: TimedControllerEntry in advancingInstancesByController do
 		if not timedControllerEntry.actor.enabled then
 			continue
 		end
