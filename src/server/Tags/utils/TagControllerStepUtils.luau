@@ -1,9 +1,10 @@
 local TagTypes = require(script.Parent.Parent.types)
-local TagControllerInstanceUtils = require(script.Parent.Parent.utils.TagControllerInstance)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
+local TagControllerInstanceUtils = require(script.Parent.Parent.utils.TagControllerInstance)
 
 type TagController = TagTypes.TagController
 type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
+type TagDefinition = TagTypes.TagDefinition
 type Actor = ActorTypes.Actor
 
 export type AdvancingControllerEntry = {
@@ -11,10 +12,55 @@ export type AdvancingControllerEntry = {
 	actor: Actor,
 }
 
+export type StepTagInstanceResult = {
+	shouldTick: boolean,
+	shouldExpire: boolean,
+}
+
 local TagControllerStepUtils = {}
 
-TagControllerStepUtils.SetTimedInstanceByControllerRecord = function(
-	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
+local function NeedsAdvancement(record: TagInstanceRecord): boolean
+	return record.remainingDuration ~= nil or record.remainingToNextTick ~= nil
+end
+
+local function AdvanceTicking(tagRecord: TagInstanceRecord, deltaTime: number, tagDefinition: TagDefinition?): boolean
+	local remainingToNextTick: number? = tagRecord.remainingToNextTick
+
+	if remainingToNextTick == nil then
+		return false
+	end
+
+	local nextRemainingToNextTick: number = remainingToNextTick - deltaTime
+	tagRecord.remainingToNextTick = nextRemainingToNextTick
+
+	if nextRemainingToNextTick > 0 then
+		return false
+	end
+
+	if tagDefinition ~= nil and tagDefinition.tickInterval ~= nil then
+		tagRecord.remainingToNextTick = tagDefinition.tickInterval
+	end
+
+	return true
+end
+
+local function AdvanceDuration(tagRecord: TagInstanceRecord, deltaTime: number): boolean
+	local remainingDuration: number? = tagRecord.remainingDuration
+
+	if remainingDuration == nil then
+		return false
+	end
+
+	local nextRemainingDuration: number = remainingDuration - deltaTime
+	tagRecord.remainingDuration = nextRemainingDuration
+
+	return nextRemainingDuration <= 0
+end
+
+TagControllerStepUtils.SetAdvancingInstanceByControllerRecord = function(
+	advancingInstancesByController: {
+		[TagController]: AdvancingControllerEntry,
+	},
 	controller: TagController,
 	actor: Actor,
 	record: TagInstanceRecord
@@ -33,8 +79,10 @@ TagControllerStepUtils.SetTimedInstanceByControllerRecord = function(
 	end
 end
 
-TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
-	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
+TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord = function(
+	advancingInstancesByController: {
+		[TagController]: AdvancingControllerEntry,
+	},
 	controller: TagController,
 	record: TagInstanceRecord
 ): ()
@@ -53,7 +101,7 @@ TagControllerStepUtils.RemoveTimedInstanceByControllerRecord = function(
 	end
 end
 
-TagControllerStepUtils.ClearTimedInstancesForController = function(
+TagControllerStepUtils.ClearAdvancingInstancesForController = function(
 	advancingInstancesByController: {
 		[TagController]: AdvancingControllerEntry,
 	},
@@ -62,17 +110,22 @@ TagControllerStepUtils.ClearTimedInstancesForController = function(
 	advancingInstancesByController[controller] = nil
 end
 
-TagControllerStepUtils.TryAddTimedInstance = function(
+TagControllerStepUtils.TryAddAdvancingInstance = function(
 	advancingInstancesByController: { [TagController]: AdvancingControllerEntry },
 	controller: TagController,
 	actor: Actor,
 	record: TagInstanceRecord
 ): ()
-	if record.remainingDuration == nil then
+	if not NeedsAdvancement(record) then
 		return
 	end
 
-	TagControllerStepUtils.SetTimedInstanceByControllerRecord(advancingInstancesByController, controller, actor, record)
+	TagControllerStepUtils.SetAdvancingInstanceByControllerRecord(
+		advancingInstancesByController,
+		controller,
+		actor,
+		record
+	)
 end
 
 TagControllerStepUtils.ReconcileTimedInstance = function(
@@ -81,24 +134,26 @@ TagControllerStepUtils.ReconcileTimedInstance = function(
 	actor: Actor,
 	record: TagInstanceRecord
 ): ()
-	if not record.remainingDuration then
-		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, controller, record)
+	if not NeedsAdvancement(record) then
+		TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
+			advancingInstancesByController,
+			controller,
+			record
+		)
 	else
-		TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, controller, actor, record)
+		TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, controller, actor, record)
 	end
 end
 
-TagControllerStepUtils.StepTagInstance = function(tagRecord: TagInstanceRecord, deltaTime: number): boolean
-	local remainingDuration: number? = tagRecord.remainingDuration
-
-	if remainingDuration == nil then
-		return false
-	end
-
-	local nextRemainingDuration: number = remainingDuration - deltaTime
-	tagRecord.remainingDuration = nextRemainingDuration
-
-	return nextRemainingDuration <= 0
+TagControllerStepUtils.StepTagInstance = function(
+	tagRecord: TagInstanceRecord,
+	deltaTime: number,
+	tagDefinition: TagDefinition?
+): StepTagInstanceResult
+	return {
+		shouldTick = AdvanceTicking(tagRecord, deltaTime, tagDefinition),
+		shouldExpire = AdvanceDuration(tagRecord, deltaTime),
+	}
 end
 
 return TagControllerStepUtils

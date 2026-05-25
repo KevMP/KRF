@@ -7,12 +7,17 @@ export type TagInstanceRecord = {
 	tagId: string,
 	duration: number?,
 	remainingDuration: number?,
+	remainingToNextTick: number?,
 	appliedOrder: number,
 }
 
 export type TagInstanceFactoryContext = {
 	nextAppliedOrder: number,
 }
+
+type TagRegistry = TagTypes.TagRegistry
+
+local TagCatalogue: TagRegistry = require(script.Parent.Parent.TagRegistry)
 
 local TagControllerInstanceUtils = {}
 
@@ -33,12 +38,18 @@ function TagControllerInstanceUtils.CreateTagInstance(
 	tagId: string,
 	duration: number?
 ): TagInstanceRecord
+	local tagDefinition: TagDefinition? = TagCatalogue.Get(tagId)
+
 	local instance: TagInstanceRecord = {
 		tagId = tagId,
 		duration = duration,
 		remainingDuration = duration,
 		appliedOrder = context.nextAppliedOrder,
 	}
+
+	if tagDefinition and tagDefinition.tickInterval then
+		instance.remainingToNextTick = tagDefinition.tickInterval
+	end
 
 	context.nextAppliedOrder += 1
 

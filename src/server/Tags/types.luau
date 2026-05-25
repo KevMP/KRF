@@ -23,7 +23,7 @@ export type TagDefinition = {
 	duplicateBehavior: "Stack" | "Refresh" | "Ignore",
 	maxStacks: number?,
 	visibility: TagVisibility,
-	onTick: ((ActorTypes.Actor) -> ())?,
+	onTick: ((ActorTypes.Actor, number) -> ())?,
 	properties: { [string]: PropertyModifier }?,
 }
 

@@ -76,6 +76,329 @@ local function runWithManualStepping(callback: () -> ())
 	end
 end
 
+it("runs onTick before expiry using the controller actor and step delta", function()
+	runWithManualStepping(function()
+		local eventOrder: { string } = {}
+		local hookActors: { Actor } = {}
+		local hookDeltas: { number } = {}
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.OnFire",
+				defaultDuration = 1,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(tickActor: Actor, tickDeltaTime: number): ()
+					table.insert(eventOrder, "hook")
+					table.insert(hookActors, tickActor)
+					table.insert(hookDeltas, tickDeltaTime)
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType, actor: Actor = createControllerWithCatalog(tickCatalog)
+
+		local added: boolean, reason: string? = controller:AddTag("Status.OnFire")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		local changedCount: number = 0
+
+		controller.OnTagExpired:Connect(function()
+			table.insert(eventOrder, "expired")
+		end)
+
+		controller.OnTagChanged:Connect(function()
+			changedCount += 1
+			table.insert(eventOrder, "changed")
+		end)
+
+		TagController.Step(1)
+
+		expect(#hookActors).toBe(1)
+		expect(#hookDeltas).toBe(1)
+		expect(hookActors[1]).toBe(actor)
+		expect(hookDeltas[1]).toBe(1)
+		expect(changedCount).toBe(1)
+		expect(eventOrder).toEqual({ "hook", "expired", "changed" })
+	end)
+end)
+
+it("does not tick before one full interval elapses", function()
+	runWithManualStepping(function()
+		local tickCount: number = 0
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.Scorched",
+				defaultDuration = 5,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					tickCount += 1
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+
+		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		TagController.Step(0.99)
+
+		expect(tickCount).toBe(0)
+		expect(controller:HasTag("Status.Scorched")).toBe(true)
+		controller:Destroy()
+	end)
+end)
+
+it("fires at most one tick per instance in a single advancement pass", function()
+	runWithManualStepping(function()
+		local tickCount: number = 0
+		local tickDeltas: { number } = {}
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.Scorched",
+				defaultDuration = 10,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, deltaTime: number): ()
+					tickCount += 1
+					table.insert(tickDeltas, deltaTime)
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+
+		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		TagController.Step(3.5)
+
+		expect(tickCount).toBe(1)
+		expect(tickDeltas).toEqual({ 3.5 })
+		controller:Destroy()
+	end)
+end)
+
+it("does not fire OnTagChanged when a tick occurs without any other mutation", function()
+	runWithManualStepping(function()
+		local tickCount: number = 0
+		local changedCount: number = 0
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.Scorched",
+				defaultDuration = 5,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					tickCount += 1
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+
+		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		controller.OnTagChanged:Connect(function()
+			changedCount += 1
+		end)
+
+		TagController.Step(1)
+
+		expect(tickCount).toBe(1)
+		expect(changedCount).toBe(0)
+		expect(controller:HasTag("Status.Scorched")).toBe(true)
+		controller:Destroy()
+	end)
+end)
+
+it("never ticks a timed tag definition that does not define tickInterval", function()
+	runWithManualStepping(function()
+		local changedCount: number = 0
+		local controller = createController()
+
+		local added: boolean, reason: string? = controller:AddTag("Status.Stunned")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		controller.OnTagChanged:Connect(function()
+			changedCount += 1
+		end)
+
+		TagController.Step(1)
+
+		expect(changedCount).toBe(0)
+		expect(controller:HasTag("Status.Stunned")).toBe(true)
+		controller:Destroy()
+	end)
+end)
+
+it("preserves elapsed tick progress when a Refresh tag is reapplied", function()
+	runWithManualStepping(function()
+		local tickCount: number = 0
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.BurningRefresh",
+				defaultDuration = 5,
+				tickInterval = 2,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					tickCount += 1
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+
+		local added: boolean, reason: string? = controller:AddTag("Status.BurningRefresh")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		TagController.Step(1.25)
+
+		local refreshed: boolean, refreshReason: string? = controller:AddTag("Status.BurningRefresh", {
+			duration = 4,
+		})
+		expect(refreshed).toBe(true)
+		expect(refreshReason).toBeNil()
+
+		TagController.Step(0.5)
+		expect(tickCount).toBe(0)
+
+		TagController.Step(0.25)
+		expect(tickCount).toBe(1)
+	end)
+end)
+
+it("lets stacked timed instances tick independently when only one crosses the boundary", function()
+	runWithManualStepping(function()
+		local tickCount: number = 0
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Buff.BurningStacks",
+				defaultDuration = 5,
+				tickInterval = 1,
+				duplicateBehavior = "Stack",
+				maxStacks = 3,
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					tickCount += 1
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+
+		local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.BurningStacks")
+		expect(firstAdded).toBe(true)
+		expect(firstReason).toBeNil()
+
+		TagController.Step(0.5)
+
+		local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.BurningStacks")
+		expect(secondAdded).toBe(true)
+		expect(secondReason).toBeNil()
+
+		TagController.Step(0.75)
+
+		expect(tickCount).toBe(1)
+		expect(controller:HasTag("Buff.BurningStacks")).toBe(true)
+		expect(#controller:GetTagInstances("Buff.BurningStacks")).toBe(2)
+		controller:Destroy()
+	end)
+end)
+
+it("isolates onTick failures so advancement still completes", function()
+	runWithManualStepping(function()
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.UnstableTick",
+				defaultDuration = 1,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					error("tick boom")
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+		local expiredCount: number = 0
+
+		local added: boolean, reason: string? = controller:AddTag("Status.UnstableTick")
+		expect(added).toBe(true)
+		expect(reason).toBeNil()
+
+		controller.OnTagExpired:Connect(function()
+			expiredCount += 1
+		end)
+
+		local stepped: boolean, failureReason: unknown = pcall(function()
+			TagController.Step(1)
+		end)
+
+		expect(stepped).toBe(true)
+		expect(failureReason).toBeNil()
+		expect(expiredCount).toBe(1)
+		expect(controller:HasTag("Status.UnstableTick")).toBe(false)
+	end)
+end)
+
+it("skips a later due tick when an earlier tick removes that tag in the same pass", function()
+	runWithManualStepping(function()
+		local firstHookCount: number = 0
+		local secondHookCount: number = 0
+		local controllerRef: TagControllerType? = nil
+		local tickCatalog: { TagDefinition } = {
+			{
+				id = "Status.FirstTick",
+				defaultDuration = 5,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					firstHookCount += 1
+					local controller: TagControllerType = controllerRef :: TagControllerType
+					local removed: boolean, removeReason: string? = controller:RemoveTag("Status.SecondTick")
+					expect(removed).toBe(true)
+					expect(removeReason).toBeNil()
+				end,
+			} :: TagDefinition,
+			{
+				id = "Status.SecondTick",
+				defaultDuration = 5,
+				tickInterval = 1,
+				duplicateBehavior = "Refresh",
+				visibility = "ClientVisible",
+				onTick = function(_actor: Actor, _deltaTime: number): ()
+					secondHookCount += 1
+				end,
+			} :: TagDefinition,
+		}
+		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
+		controllerRef = controller
+
+		local firstAdded: boolean, firstReason: string? = controller:AddTag("Status.FirstTick")
+		expect(firstAdded).toBe(true)
+		expect(firstReason).toBeNil()
+
+		local secondAdded: boolean, secondReason: string? = controller:AddTag("Status.SecondTick")
+		expect(secondAdded).toBe(true)
+		expect(secondReason).toBeNil()
+
+		TagController.Step(1)
+
+		expect(firstHookCount).toBe(1)
+		expect(secondHookCount).toBe(0)
+		expect(controller:HasTag("Status.SecondTick")).toBe(false)
+	end)
+end)
+
 it("ignores non-positive advancement deltas without mutating timed state or firing events", function()
 	runWithManualStepping(function()
 		local controller = createController()

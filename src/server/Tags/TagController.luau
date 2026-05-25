@@ -10,6 +10,7 @@ local TagRegistry = require(script.Parent.TagRegistry)
 local TagControllerEventUtils = require(script.Parent.utils.TagControllerEvent)
 local TagControllerInstanceUtils = require(script.Parent.utils.TagControllerInstance)
 local TagControllerStepUtils = require(script.Parent.utils.TagControllerStepUtils)
+local TagControllerTickUtils = require(script.Parent.utils.TagControllerTickUtils)
 
 local RunService: RunService = game:GetService("RunService")
 
@@ -22,8 +23,11 @@ type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryCo
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
-type TimedControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
+type ActiveTagsById = { [string]: { TagInstanceRecord } }
+type AdvancingControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
+type StepTagInstanceResult = TagControllerStepUtils.StepTagInstanceResult
 type InternalTagController = TagController & {
+	_activeTagsById: ActiveTagsById,
 	_expireTimedInstance: (self: InternalTagController, tagRecord: TagInstanceRecord) -> boolean,
 }
 type ActiveTagSortRecord = {
@@ -32,7 +36,6 @@ type ActiveTagSortRecord = {
 	oldestAppliedOrder: number,
 	remainingDuration: number?,
 }
-type ActiveTagsById = { [string]: { TagInstanceRecord } }
 type TagControllerModule = {
 	new: (actor: ActorTypes.Actor) -> TagController,
 	Step: (deltaTime: number) -> (),
@@ -43,7 +46,7 @@ local TagController: TagControllerModule = {} :: TagControllerModule
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
 
-local advancingInstancesByController: { [TagController]: TimedControllerEntry } = {}
+local advancingInstancesByController: { [TagController]: AdvancingControllerEntry } = {}
 
 local function UpdateHeartbeatConnection(): ()
 	local hasTimedControllers: boolean = next(advancingInstancesByController) ~= nil
@@ -76,6 +79,25 @@ local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
 	return oldestAppliedOrder
 end
 
+local function FindActiveTagInstance(
+	activeTagsById: ActiveTagsById,
+	tagRecord: TagInstanceRecord
+): ({ TagInstanceRecord }?, number?)
+	local activeInstances: { TagInstanceRecord }? = activeTagsById[tagRecord.tagId]
+
+	if activeInstances == nil or #activeInstances == 0 then
+		return nil, nil
+	end
+
+	local recordIndex: number? = table.find(activeInstances, tagRecord)
+
+	if recordIndex == nil then
+		return nil, nil
+	end
+
+	return activeInstances, recordIndex
+end
+
 function TagController.new(actor: ActorTypes.Actor): TagController
 	local tagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 	local tagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
@@ -100,6 +122,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	}
 
 	local self: InternalTagController = {} :: InternalTagController
+	self._activeTagsById = activeTagsById
 
 	self.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
 	self.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
@@ -129,7 +152,8 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
+			self._activeTagsById = activeTagsById
+			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
@@ -152,7 +176,8 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			activeTagsById[tagId] = { instance }
-			TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
+			self._activeTagsById = activeTagsById
+			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 			return true, nil
@@ -163,6 +188,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if stackInstances == nil then
 			activeTagsById[tagId] = {}
 			stackInstances = activeTagsById[tagId]
+			self._activeTagsById = activeTagsById
 		end
 
 		if stackInstances == nil then
@@ -184,7 +210,8 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		local instance: TagInstanceRecord =
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 		table.insert(stackInstances, instance)
-		TagControllerStepUtils.TryAddTimedInstance(advancingInstancesByController, self, actor, instance)
+		self._activeTagsById = activeTagsById
+		TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 		UpdateHeartbeatConnection()
 		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		return true, nil
@@ -198,10 +225,15 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		for _, instance: TagInstanceRecord in activeInstances do
-			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, self, instance)
+			TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
+				advancingInstancesByController,
+				self,
+				instance
+			)
 		end
 		UpdateHeartbeatConnection()
 		activeTagsById[tagId] = nil
+		self._activeTagsById = activeTagsById
 		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
 		return true, nil
@@ -215,26 +247,28 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		if #activeInstances == 1 then
-			TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(
+			TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
 				advancingInstancesByController,
 				self,
 				activeInstances[1]
 			)
 			UpdateHeartbeatConnection()
 			activeTagsById[tagId] = nil
+			self._activeTagsById = activeTagsById
 			TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 			return true, nil
 		end
 
 		local removeIndex: number = TagControllerInstanceUtils.SelectOldestAppliedInstanceIndex(activeInstances)
 
-		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(
+		TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
 			advancingInstancesByController,
 			self,
 			activeInstances[removeIndex]
 		)
 		UpdateHeartbeatConnection()
 		table.remove(activeInstances, removeIndex)
+		self._activeTagsById = activeTagsById
 		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
 
 		return true, nil
@@ -307,9 +341,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		destroyed = true
-		TagControllerStepUtils.ClearTimedInstancesForController(advancingInstancesByController, self)
+		TagControllerStepUtils.ClearAdvancingInstancesForController(advancingInstancesByController, self)
 		UpdateHeartbeatConnection()
 		activeTagsById = {}
+		self._activeTagsById = activeTagsById
 	end
 
 	function self._expireTimedInstance(_self, tagRecord: TagInstanceRecord): boolean
@@ -317,19 +352,18 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			return false
 		end
 
-		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagRecord.tagId]
+		local activeInstances: { TagInstanceRecord }?, removeIndex: number? =
+			FindActiveTagInstance(self._activeTagsById, tagRecord)
 
-		if activeInstances == nil or #activeInstances == 0 then
+		if activeInstances == nil or removeIndex == nil then
 			return false
 		end
 
-		local removeIndex: number? = table.find(activeInstances, tagRecord)
-
-		if removeIndex == nil then
-			return false
-		end
-
-		TagControllerStepUtils.RemoveTimedInstanceByControllerRecord(advancingInstancesByController, self, tagRecord)
+		TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
+			advancingInstancesByController,
+			self,
+			tagRecord
+		)
 		UpdateHeartbeatConnection()
 
 		if #activeInstances == 1 then
@@ -337,6 +371,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		else
 			table.remove(activeInstances, removeIndex)
 		end
+		self._activeTagsById = activeTagsById
 
 		TagControllerEventUtils.FireTagExpired(eventContext, tagRecord.tagId)
 		return true
@@ -350,23 +385,47 @@ function TagController.Step(deltaTime: number)
 		return
 	end
 
-	for controller: TagController, timedControllerEntry: TimedControllerEntry in advancingInstancesByController do
-		if not timedControllerEntry.actor.enabled then
+	for controller: TagController, advancingControllerEntry: AdvancingControllerEntry in advancingInstancesByController do
+		if not advancingControllerEntry.actor.enabled then
 			continue
 		end
 
-		local steppedInstances: { TagInstanceRecord } = table.clone(timedControllerEntry.instances)
+		local steppedInstances: { TagInstanceRecord } = table.clone(advancingControllerEntry.instances)
+		local dueTickRecords: { { tagRecord: TagInstanceRecord, tagDefinition: TagDefinition } } = {}
 		local expiredInstances: { TagInstanceRecord } = {}
+		local internalController: InternalTagController = controller :: InternalTagController
 
 		for _, tagRecord: TagInstanceRecord in steppedInstances do
-			local expired: boolean = TagControllerStepUtils.StepTagInstance(tagRecord, deltaTime)
+			local tagDefinition: TagDefinition? = TagRegistry.Get(tagRecord.tagId)
+			local stepResult: StepTagInstanceResult =
+				TagControllerStepUtils.StepTagInstance(tagRecord, deltaTime, tagDefinition)
 
-			if expired then
+			if stepResult.shouldTick and tagDefinition ~= nil then
+				table.insert(dueTickRecords, {
+					tagRecord = tagRecord,
+					tagDefinition = tagDefinition,
+				})
+			end
+
+			if stepResult.shouldExpire then
 				table.insert(expiredInstances, tagRecord)
 			end
 		end
 
-		local internalController: InternalTagController = controller :: InternalTagController
+		for _, dueTickRecord in dueTickRecords do
+			local activeInstances: { TagInstanceRecord }?, recordIndex: number? =
+				FindActiveTagInstance(internalController._activeTagsById, dueTickRecord.tagRecord)
+
+			if activeInstances == nil or recordIndex == nil then
+				continue
+			end
+
+			TagControllerTickUtils.FireProtectedOnTick(
+				dueTickRecord.tagDefinition,
+				advancingControllerEntry.actor,
+				deltaTime
+			)
+		end
 
 		for _, tagRecord: TagInstanceRecord in expiredInstances do
 			internalController:_expireTimedInstance(tagRecord)
