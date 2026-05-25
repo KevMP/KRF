@@ -38,7 +38,7 @@ return {
 		tickInterval = 1,
 		duplicateBehavior = "Refresh",
 		visibility = "ClientVisible",
-		onTick = function(_actor): ()
+		onTick = function(_actor, _deltaTime): ()
 			return
 		end,
 		properties = {
