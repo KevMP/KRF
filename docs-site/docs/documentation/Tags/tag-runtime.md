@@ -67,6 +67,12 @@ Reapplying a `Refresh` tag resets that tag's duration to the newly resolved valu
 
 For stacked tags, each active instance keeps its own remaining time.
 
+If a tag definition provides `tickInterval` and `onTick`, KRF runs `onTick` while that tag instance stays active, even when the tag has no duration.
+
+:::warning Keep `onTick` fast
+`onTick` runs synchronously during tag stepping. Slow work or yielding code can stall other tag updates on that frame.
+:::
+
 ## Removing tags
 
 KRF exposes two different removal intents because stacked tags need both:

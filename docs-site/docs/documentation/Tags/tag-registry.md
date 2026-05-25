@@ -43,11 +43,13 @@ That meaning usually falls into a few buckets:
 
 Not every tag uses every part of that surface.
 
-A stun may define duration and movement overrides. A sprint buff may define movement modifiers. A ticking damage effect may define duration, tick cadence, and periodic behavior.
+A stun may define duration and movement overrides. A sprint buff may define movement modifiers. A ticking damage effect may define duration, tick cadence, and periodic behavior. It may also tick indefinitely when it has `tickInterval` and `onTick` but no duration.
 
 KRF keeps those definitions in one catalog so the rest of the runtime can reason about them consistently.
 
 `TagRegistry` only defines that timing metadata. The live countdown and expiry behavior belongs to `TagController` at runtime.
+
+If a tag uses `onTick`, treat it like lightweight gameplay logic. KRF runs it synchronously during tag stepping, so avoid slow work or yielding there.
 
 ## Property modifier modes
 
@@ -141,7 +143,7 @@ local TagDefinitions: { TagTypes.TagDefinition } = {
 		tickInterval = 1,
 		duplicateBehavior = "Refresh",
 		visibility = "ClientVisible",
-		onTick = function(actor: ActorTypes.Actor): ()
+		onTick = function(actor: ActorTypes.Actor, _deltaTime: number): ()
 			print(actor)
 		end,
 		properties = {
