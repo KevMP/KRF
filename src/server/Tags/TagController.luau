@@ -43,6 +43,8 @@ type TagControllerModule = {
 }
 
 local TagController: TagControllerModule = {} :: TagControllerModule
+local TagControllerMetatable = TagController :: any
+TagControllerMetatable.__index = TagController
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
 
@@ -121,16 +123,16 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagExpiredSignal = tagExpiredSignal,
 	}
 
-	local self: InternalTagController = {} :: InternalTagController
-	self._activeTagsById = activeTagsById
+	local controller = setmetatable({} :: InternalTagController, TagController :: any)
+	controller._activeTagsById = activeTagsById
 
-	self.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
-	self.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
-	self.OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal)
-	self.OnTagChanged = SignalModule.wrapEvent(tagChangedSignal)
-	self.OnTagExpired = SignalModule.wrapEvent(tagExpiredSignal)
+	controller.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
+	controller.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
+	controller.OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal)
+	controller.OnTagChanged = SignalModule.wrapEvent(tagChangedSignal)
+	controller.OnTagExpired = SignalModule.wrapEvent(tagExpiredSignal)
 
-	function self.AddTag(_self, tagId: string, options: AddTagOptions?): (boolean, string?)
+	function controller:AddTag(tagId: string, options: AddTagOptions?): (boolean, string?)
 		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
 
 		if tagDefinition == nil then
@@ -217,7 +219,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return true, nil
 	end
 
-	function self.RemoveTag(_self, tagId: string): (boolean, string?)
+	function controller:RemoveTag(tagId: string): (boolean, string?)
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 
 		if activeInstances == nil or #activeInstances == 0 then
@@ -239,7 +241,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return true, nil
 	end
 
-	function self.RemoveSingleTag(_self, tagId: string): (boolean, string?)
+	function controller:RemoveSingleTag(tagId: string): (boolean, string?)
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 
 		if activeInstances == nil or #activeInstances == 0 then
@@ -274,12 +276,12 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return true, nil
 	end
 
-	function self.HasTag(_self, tagId: string): boolean
+	function controller:HasTag(tagId: string): boolean
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 		return activeInstances ~= nil and #activeInstances > 0
 	end
 
-	function self.GetActiveTags(_self): { ActiveTagSnapshot }
+	function controller:GetActiveTags(): { ActiveTagSnapshot }
 		local activeTags: { ActiveTagSortRecord } = {}
 
 		for tagId: string, instances: { TagInstanceRecord } in activeTagsById do
@@ -314,7 +316,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return snapshots
 	end
 
-	function self.GetTagInstances(_self, tagId: string): { TagInstanceSnapshot }
+	function controller:GetTagInstances(tagId: string): { TagInstanceSnapshot }
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
 
 		if activeInstances == nil or #activeInstances == 0 then
@@ -335,7 +337,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return snapshots
 	end
 
-	function self.Destroy(_self): ()
+	function controller:Destroy(): ()
 		if destroyed then
 			return
 		end
@@ -347,7 +349,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		self._activeTagsById = activeTagsById
 	end
 
-	function self._expireTimedInstance(_self, tagRecord: TagInstanceRecord): boolean
+	function controller:_expireTimedInstance(tagRecord: TagInstanceRecord): boolean
 		if destroyed then
 			return false
 		end
@@ -377,7 +379,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		return true
 	end
 
-	return self :: TagController
+	return controller :: TagController
 end
 
 function TagController.Step(deltaTime: number)
