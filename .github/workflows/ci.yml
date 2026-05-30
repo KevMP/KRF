@@ -38,6 +38,9 @@ jobs:
 
       - name: Install Node deps
         run: npm ci
+      
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Lint checks
         run: npm run test:lint
