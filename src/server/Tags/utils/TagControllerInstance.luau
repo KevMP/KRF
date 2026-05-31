@@ -14,6 +14,9 @@ export type TagInstanceRecord = {
 export type TagInstanceFactoryContext = {
 	nextAppliedOrder: number,
 }
+export type ActiveTagsById = {
+	[string]: { TagInstanceRecord },
+}
 
 type TagRegistry = TagTypes.TagRegistry
 
@@ -119,6 +122,39 @@ function TagControllerInstanceUtils.SelectOldestAppliedInstanceIndex(instances: 
 	end
 
 	return selectedIndex
+end
+
+function TagControllerInstanceUtils.GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
+	local oldestAppliedOrder: number = instances[1].appliedOrder
+
+	for index: number = 2, #instances do
+		local instance: TagInstanceRecord = instances[index]
+
+		if instance.appliedOrder < oldestAppliedOrder then
+			oldestAppliedOrder = instance.appliedOrder
+		end
+	end
+
+	return oldestAppliedOrder
+end
+
+function TagControllerInstanceUtils.FindActiveTagInstance(
+	activeTagsById: ActiveTagsById,
+	tagRecord: TagInstanceRecord
+): ({ TagInstanceRecord }?, number?)
+	local activeInstances: { TagInstanceRecord }? = activeTagsById[tagRecord.tagId]
+
+	if activeInstances == nil or #activeInstances == 0 then
+		return nil, nil
+	end
+
+	local recordIndex: number? = table.find(activeInstances, tagRecord)
+
+	if recordIndex == nil then
+		return nil, nil
+	end
+
+	return activeInstances, recordIndex
 end
 
 return TagControllerInstanceUtils
