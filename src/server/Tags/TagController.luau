@@ -43,8 +43,6 @@ type TagControllerModule = {
 }
 
 local TagController: TagControllerModule = {} :: TagControllerModule
-local TagControllerMetatable = TagController :: any
-TagControllerMetatable.__index = TagController
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
 
@@ -123,7 +121,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagExpiredSignal = tagExpiredSignal,
 	}
 
-	local controller = setmetatable({} :: InternalTagController, TagController :: any)
+	local controller: InternalTagController = {} :: InternalTagController
 	controller._activeTagsById = activeTagsById
 
 	controller.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
