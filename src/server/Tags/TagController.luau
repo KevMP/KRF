@@ -20,10 +20,10 @@ export type TagDefinition = TagTypes.TagDefinition
 
 type TagInstanceRecord = TagControllerInstanceUtils.TagInstanceRecord
 type TagInstanceFactoryContext = TagControllerInstanceUtils.TagInstanceFactoryContext
+type ActiveTagsById = TagControllerInstanceUtils.ActiveTagsById
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
-type ActiveTagsById = { [string]: { TagInstanceRecord } }
 type AdvancingControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
 type StepTagInstanceResult = TagControllerStepUtils.StepTagInstanceResult
 type InternalTagController = TagController & {
@@ -43,8 +43,6 @@ type TagControllerModule = {
 }
 
 local TagController: TagControllerModule = {} :: TagControllerModule
-local TagControllerMetatable = TagController :: any
-TagControllerMetatable.__index = TagController
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
 
@@ -65,39 +63,6 @@ local function UpdateHeartbeatConnection(): ()
 		HeartBeatConnection:Disconnect()
 		HeartBeatConnection = nil
 	end
-end
-
-local function GetOldestAppliedOrder(instances: { TagInstanceRecord }): number
-	local oldestAppliedOrder: number = instances[1].appliedOrder
-
-	for index: number = 2, #instances do
-		local instance: TagInstanceRecord = instances[index]
-
-		if instance.appliedOrder < oldestAppliedOrder then
-			oldestAppliedOrder = instance.appliedOrder
-		end
-	end
-
-	return oldestAppliedOrder
-end
-
-local function FindActiveTagInstance(
-	activeTagsById: ActiveTagsById,
-	tagRecord: TagInstanceRecord
-): ({ TagInstanceRecord }?, number?)
-	local activeInstances: { TagInstanceRecord }? = activeTagsById[tagRecord.tagId]
-
-	if activeInstances == nil or #activeInstances == 0 then
-		return nil, nil
-	end
-
-	local recordIndex: number? = table.find(activeInstances, tagRecord)
-
-	if recordIndex == nil then
-		return nil, nil
-	end
-
-	return activeInstances, recordIndex
 end
 
 function TagController.new(actor: ActorTypes.Actor): TagController
@@ -123,7 +88,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagExpiredSignal = tagExpiredSignal,
 	}
 
-	local controller = setmetatable({} :: InternalTagController, TagController :: any)
+	local controller: InternalTagController = {} :: InternalTagController
 	controller._activeTagsById = activeTagsById
 
 	controller.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
@@ -289,7 +254,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 				table.insert(activeTags, {
 					tagId = tagId,
 					stackCount = #instances,
-					oldestAppliedOrder = GetOldestAppliedOrder(instances),
+					oldestAppliedOrder = TagControllerInstanceUtils.GetOldestAppliedOrder(instances),
 					remainingDuration = TagControllerInstanceUtils.GetLongestRemainingDuration(instances),
 				})
 			end
@@ -355,7 +320,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		local activeInstances: { TagInstanceRecord }?, removeIndex: number? =
-			FindActiveTagInstance(self._activeTagsById, tagRecord)
+			TagControllerInstanceUtils.FindActiveTagInstance(self._activeTagsById, tagRecord)
 
 		if activeInstances == nil or removeIndex == nil then
 			return false
@@ -416,7 +381,10 @@ function TagController.Step(deltaTime: number)
 
 		for _, dueTickRecord in dueTickRecords do
 			local activeInstances: { TagInstanceRecord }?, recordIndex: number? =
-				FindActiveTagInstance(internalController._activeTagsById, dueTickRecord.tagRecord)
+				TagControllerInstanceUtils.FindActiveTagInstance(
+					internalController._activeTagsById,
+					dueTickRecord.tagRecord
+				)
 
 			if activeInstances == nil or recordIndex == nil then
 				continue
