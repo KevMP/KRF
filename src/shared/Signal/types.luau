@@ -34,7 +34,14 @@ export type Signal<T...> = Event<T...> & {
 	Destroy: (any) -> (),
 }
 
+export type OwnedSignals = {
+	Destroy: (any) -> (),
+	WithDeferredDestroy: (any, callback: () -> ()) -> (),
+}
+
 export type New = <T...>() -> Signal<T...>
 export type WrapEvent = <T...>(signal: Signal<T...>) -> Event<T...>
+export type AnySignal = Signal<...any>
+export type OwnedSignalsNew = (signals: { AnySignal }) -> OwnedSignals
 
 return SignalTypes
