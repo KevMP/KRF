@@ -717,3 +717,21 @@ it("Destroy clears active tag state and remains a no-op when called again", func
 	expect(controller:GetActiveTags()).toEqual({})
 	expect(controller:GetTagInstances("Status.Rooted")).toEqual({})
 end)
+
+it("Destroy tears down owned event surfaces", function()
+	local controller = createController()
+
+	controller:Destroy()
+
+	expect(function()
+		controller.OnTagAdded:Connect(function() end)
+	end).toThrow()
+
+	expect(function()
+		controller.OnTagChanged:Connect(function() end)
+	end).toThrow()
+
+	expect(function()
+		controller.OnTagExpired:Wait()
+	end).toThrow()
+end)
