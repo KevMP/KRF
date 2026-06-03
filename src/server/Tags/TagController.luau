@@ -5,6 +5,7 @@ local SignalFolder = serverFolder.Parent.shared.Signal
 local ActorTypes = require(serverFolder.Actor.types)
 local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
+local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local TagTypes = require(script.Parent.types)
 local TagRegistry = require(script.Parent.TagRegistry)
 local TagControllerEventUtils = require(script.Parent.utils.TagControllerEvent)
@@ -71,6 +72,13 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local tagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 	local tagChangedSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
 	local tagExpiredSignal: SignalTypes.Signal<ActorTypes.Actor, string> = SignalModule.new()
+	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
+		tagAddedSignal,
+		tagRemovedSignal,
+		tagRefreshedSignal,
+		tagChangedSignal,
+		tagExpiredSignal,
+	})
 
 	local activeTagsById: ActiveTagsById = {}
 	local destroyed: boolean = false
@@ -81,6 +89,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 	local eventContext: TagControllerEventContext = {
 		actor = actor,
+		ownedSignals = ownedSignals,
 		tagAddedSignal = tagAddedSignal,
 		tagRemovedSignal = tagRemovedSignal,
 		tagRefreshedSignal = tagRefreshedSignal,
@@ -312,6 +321,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		UpdateHeartbeatConnection()
 		activeTagsById = {}
 		self._activeTagsById = activeTagsById
+		ownedSignals:Destroy()
 	end
 
 	function controller:_expireTimedInstance(tagRecord: TagInstanceRecord): boolean

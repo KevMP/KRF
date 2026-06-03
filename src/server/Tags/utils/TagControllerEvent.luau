@@ -7,6 +7,7 @@ local SignalTypes = require(SignalFolder.types)
 
 export type TagControllerEventContext = {
 	actor: ActorTypes.Actor,
+	ownedSignals: SignalTypes.OwnedSignals,
 	tagAddedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
 	tagRemovedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
 	tagRefreshedSignal: SignalTypes.Signal<ActorTypes.Actor, string>,
@@ -16,24 +17,32 @@ export type TagControllerEventContext = {
 
 local TagControllerEventUtils = {}
 
-function TagControllerEventUtils.FireTagAdded(self: TagControllerEventContext, tagId: string): ()
-	self.tagAddedSignal:Fire(self.actor, tagId)
-	self.tagChangedSignal:Fire(self.actor, tagId)
+function TagControllerEventUtils.FireTagAdded(eventContext: TagControllerEventContext, tagId: string): ()
+	eventContext.ownedSignals:WithDeferredDestroy(function()
+		eventContext.tagAddedSignal:Fire(eventContext.actor, tagId)
+		eventContext.tagChangedSignal:Fire(eventContext.actor, tagId)
+	end)
 end
 
-function TagControllerEventUtils.FireTagRefreshed(self: TagControllerEventContext, tagId: string): ()
-	self.tagRefreshedSignal:Fire(self.actor, tagId)
-	self.tagChangedSignal:Fire(self.actor, tagId)
+function TagControllerEventUtils.FireTagRefreshed(eventContext: TagControllerEventContext, tagId: string): ()
+	eventContext.ownedSignals:WithDeferredDestroy(function()
+		eventContext.tagRefreshedSignal:Fire(eventContext.actor, tagId)
+		eventContext.tagChangedSignal:Fire(eventContext.actor, tagId)
+	end)
 end
 
-function TagControllerEventUtils.FireTagRemoved(self: TagControllerEventContext, tagId: string): ()
-	self.tagRemovedSignal:Fire(self.actor, tagId)
-	self.tagChangedSignal:Fire(self.actor, tagId)
+function TagControllerEventUtils.FireTagRemoved(eventContext: TagControllerEventContext, tagId: string): ()
+	eventContext.ownedSignals:WithDeferredDestroy(function()
+		eventContext.tagRemovedSignal:Fire(eventContext.actor, tagId)
+		eventContext.tagChangedSignal:Fire(eventContext.actor, tagId)
+	end)
 end
 
-function TagControllerEventUtils.FireTagExpired(self: TagControllerEventContext, tagId: string): ()
-	self.tagExpiredSignal:Fire(self.actor, tagId)
-	self.tagChangedSignal:Fire(self.actor, tagId)
+function TagControllerEventUtils.FireTagExpired(eventContext: TagControllerEventContext, tagId: string): ()
+	eventContext.ownedSignals:WithDeferredDestroy(function()
+		eventContext.tagExpiredSignal:Fire(eventContext.actor, tagId)
+		eventContext.tagChangedSignal:Fire(eventContext.actor, tagId)
+	end)
 end
 
 return TagControllerEventUtils

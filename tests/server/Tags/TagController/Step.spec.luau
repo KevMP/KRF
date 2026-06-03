@@ -806,6 +806,7 @@ it("skips a later expired record cleanly when an earlier expiry destroys the con
 	runWithManualStepping(function()
 		local controller = createController()
 		local expiredTagIds: { string } = {}
+		local changedTagIds: { string } = {}
 
 		local stunnedAdded: boolean, stunnedReason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
@@ -824,9 +825,14 @@ it("skips a later expired record cleanly when an earlier expiry destroys the con
 			controller:Destroy()
 		end)
 
+		controller.OnTagChanged:Connect(function(_actor, changedTagId)
+			table.insert(changedTagIds, changedTagId)
+		end)
+
 		TagController.Step(1)
 
 		expect(#expiredTagIds).toBe(1)
+		expect(changedTagIds).toEqual({ "Status.Stunned" })
 		expect(#controller:GetActiveTags()).toBe(0)
 		expect(#controller:GetTagInstances("Status.Stunned")).toBe(0)
 		expect(#controller:GetTagInstances("Buff.Sprint")).toBe(0)
