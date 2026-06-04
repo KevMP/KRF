@@ -6,6 +6,7 @@ local PropertyTypes = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
+local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 
 export type PropertyController = PropertyTypes.PropertyController
 type Actor = ActorTypes.Actor
@@ -35,6 +36,11 @@ function PropertyController.new(actor: Actor): PropertyController
 	local OnBasePropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local OnResolvedPropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local OnPropertyChangedSignal: SignalTypes.Signal<PropertyTypes.PropertyChange> = SignalModule.new()
+	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
+		OnBasePropertyChangedSignal,
+		OnResolvedPropertyChangedSignal,
+		OnPropertyChangedSignal,
+	})
 
 	function controller:SetBaseProperty(propertyName: string, value: number): (boolean, string?)
 		if typeof(value) ~= "number" then
@@ -49,16 +55,18 @@ function PropertyController.new(actor: Actor): PropertyController
 				resolvedValue = value,
 			}
 
-			OnBasePropertyChangedSignal:Fire(actor, propertyName, nil, value)
-			OnResolvedPropertyChangedSignal:Fire(actor, propertyName, nil, value)
-			OnPropertyChangedSignal:Fire({
-				actor = actor,
-				propertyName = propertyName,
-				oldBaseValue = nil,
-				newBaseValue = value,
-				oldResolvedValue = nil,
-				newResolvedValue = value,
-			})
+			ownedSignals:WithDeferredDestroy(function()
+				OnBasePropertyChangedSignal:Fire(actor, propertyName, nil, value)
+				OnResolvedPropertyChangedSignal:Fire(actor, propertyName, nil, value)
+				OnPropertyChangedSignal:Fire({
+					actor = actor,
+					propertyName = propertyName,
+					oldBaseValue = nil,
+					newBaseValue = value,
+					oldResolvedValue = nil,
+					newResolvedValue = value,
+				})
+			end)
 			return true, nil
 		end
 
@@ -72,16 +80,18 @@ function PropertyController.new(actor: Actor): PropertyController
 		propertyRecord.baseValue = value
 		propertyRecord.resolvedValue = value
 
-		OnBasePropertyChangedSignal:Fire(actor, propertyName, previousBaseValue, value)
-		OnResolvedPropertyChangedSignal:Fire(actor, propertyName, previousResolvedValue, value)
-		OnPropertyChangedSignal:Fire({
-			actor = actor,
-			propertyName = propertyName,
-			oldBaseValue = previousBaseValue,
-			newBaseValue = value,
-			oldResolvedValue = previousResolvedValue,
-			newResolvedValue = value,
-		})
+		ownedSignals:WithDeferredDestroy(function()
+			OnBasePropertyChangedSignal:Fire(actor, propertyName, previousBaseValue, value)
+			OnResolvedPropertyChangedSignal:Fire(actor, propertyName, previousResolvedValue, value)
+			OnPropertyChangedSignal:Fire({
+				actor = actor,
+				propertyName = propertyName,
+				oldBaseValue = previousBaseValue,
+				newBaseValue = value,
+				oldResolvedValue = previousResolvedValue,
+				newResolvedValue = value,
+			})
+		end)
 
 		return true, nil
 	end
@@ -123,9 +133,7 @@ function PropertyController.new(actor: Actor): PropertyController
 		end
 
 		destroyed = true
-		OnBasePropertyChangedSignal:Destroy()
-		OnResolvedPropertyChangedSignal:Destroy()
-		OnPropertyChangedSignal:Destroy()
+		ownedSignals:Destroy()
 	end
 
 	controller.OnBasePropertyChanged = SignalModule.wrapEvent(OnBasePropertyChangedSignal)
