@@ -58,6 +58,7 @@ With a stable runtime foundation and ready assets, developers should be able to 
 If you are new to KRF, start with the runtime docs:
 
 * [Actor Runtime](./documentation/Actor/actor-runtime)
+* [Property Runtime](./documentation/Property/property-runtime)
 * [Tag Registry](./documentation/Tags/tag-registry)
 * [Tag Runtime](./documentation/Tags/tag-runtime)
 
