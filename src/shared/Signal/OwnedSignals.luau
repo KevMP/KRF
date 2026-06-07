@@ -1,18 +1,21 @@
 --!strict
 local SignalTypes = require(script.Parent.types)
 
-type AnySignal = SignalTypes.AnySignal
 type OwnedSignals = SignalTypes.OwnedSignals
+
+export type OwnedSignal = {
+	Destroy: (any) -> (),
+}
 
 local OwnedSignals = {}
 
-function OwnedSignals.new(signals: { AnySignal }): OwnedSignals
+function OwnedSignals.new(signals: { OwnedSignal }): OwnedSignals
 	local ownedSignals: OwnedSignals = {} :: OwnedSignals
 
 	local signalsDestroyed: boolean = false
 	local destroyRequested: boolean = false
 	local deferredDestroyDepth: number = 0
-	local ownedSignalsList: { AnySignal } = table.clone(signals)
+	local ownedSignalsList: { OwnedSignal } = table.clone(signals)
 
 	local function destroySignals(): ()
 		if signalsDestroyed then
@@ -21,7 +24,7 @@ function OwnedSignals.new(signals: { AnySignal }): OwnedSignals
 
 		signalsDestroyed = true
 
-		for _, signal: AnySignal in ipairs(ownedSignalsList) do
+		for _, signal: OwnedSignal in ipairs(ownedSignalsList) do
 			signal:Destroy()
 		end
 

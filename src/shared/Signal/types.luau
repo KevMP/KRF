@@ -41,7 +41,5 @@ export type OwnedSignals = {
 
 export type New = <T...>() -> Signal<T...>
 export type WrapEvent = <T...>(signal: Signal<T...>) -> Event<T...>
-export type AnySignal = Signal<...any>
-export type OwnedSignalsNew = (signals: { AnySignal }) -> OwnedSignals
 
 return SignalTypes

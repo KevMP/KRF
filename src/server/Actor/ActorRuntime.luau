@@ -14,6 +14,7 @@ export type ControllerDef = ControllerTypes.ControllerDef
 local ActorRegistry: ActorTypes.ActorRegistry = require(script.Parent.ActorRegistry)
 local ActorEntity = require(script.Parent.ActorEntity)
 local SignalModule = require(SignalFolder.SignalModule)
+local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ControllerRegistry = require(script.Parent.Parent.Controller.ControllerRegistry)
 
 local ActorRuntime = {} :: ActorRuntime
@@ -26,6 +27,11 @@ local ActorUnregisteringEvent: SignalTypes.Event<Actor, string?> = SignalModule.
 
 local ActorUnregisteredSignal: SignalTypes.Signal<Actor, string?> = SignalModule.new()
 local ActorUnregisteredEvent: SignalTypes.Event<Actor, string?> = SignalModule.wrapEvent(ActorUnregisteredSignal)
+local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
+	ActorRegisteredSignal,
+	ActorUnregisteringSignal,
+	ActorUnregisteredSignal,
+})
 
 local function DestroyController(controllerKey: string, controller: Controller): ()
 	local ok: boolean, err: any = pcall((controller :: any).Destroy, controller, nil)
@@ -48,7 +54,9 @@ function ActorRuntime.RegisterActor(model: Model, _opts: RegisterActorOpts?): (A
 		end
 
 		actor.enabled = true
-		ActorRegisteredSignal:Fire(actor)
+		ownedSignals:WithDeferredDestroy(function()
+			ActorRegisteredSignal:Fire(actor)
+		end)
 		return actor, nil
 	else
 		return nil, reason
@@ -61,10 +69,12 @@ function ActorRuntime.UnregisterActor(actor: Actor, reason: string?): (boolean, 
 	end
 
 	actor.enabled = false
-	ActorUnregisteringSignal:Fire(actor, reason)
-	ActorRuntime.DetachAllControllers(actor)
-	ActorRegistry.UnbindModel(actor)
-	ActorUnregisteredSignal:Fire(actor, reason)
+	ownedSignals:WithDeferredDestroy(function()
+		ActorUnregisteringSignal:Fire(actor, reason)
+		ActorRuntime.DetachAllControllers(actor)
+		ActorRegistry.UnbindModel(actor)
+		ActorUnregisteredSignal:Fire(actor, reason)
+	end)
 
 	return true, nil
 end

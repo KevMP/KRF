@@ -9,11 +9,10 @@ local it = JestGlobals.it
 local expect = JestGlobals.expect
 
 local SignalTypes = require(ReplicatedStorage.Packages.KRF.shared.Signal.types)
-local OwnedSignalsModule: { new: SignalTypes.OwnedSignalsNew } =
-	require(ReplicatedStorage.Packages.KRF.shared.Signal.OwnedSignals)
+local OwnedSignalsModule = require(ReplicatedStorage.Packages.KRF.shared.Signal.OwnedSignals)
 
-type AnySignal = SignalTypes.AnySignal
 type OwnedSignals = SignalTypes.OwnedSignals
+type OwnedSignal = OwnedSignalsModule.OwnedSignal
 
 type FakeSignal = {
 	name: string,
@@ -39,10 +38,10 @@ it("Destroy() destroys every owned signal exactly once", function()
 	local thirdSignal: FakeSignal = createFakeSignal("third")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		firstSignal :: any,
-		secondSignal :: any,
-		thirdSignal :: any,
-	} :: { AnySignal })
+		firstSignal,
+		secondSignal,
+		thirdSignal,
+	} :: { OwnedSignal })
 
 	ownedSignals:Destroy()
 
@@ -56,9 +55,9 @@ it("Destroy() is idempotent when called more than once", function()
 	local secondSignal: FakeSignal = createFakeSignal("second")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		firstSignal :: any,
-		secondSignal :: any,
-	} :: { AnySignal })
+		firstSignal,
+		secondSignal,
+	} :: { OwnedSignal })
 
 	ownedSignals:Destroy()
 	ownedSignals:Destroy()
@@ -73,9 +72,9 @@ it("WithDeferredDestroy defers physical destruction until the callback finishes"
 	local secondSignal: FakeSignal = createFakeSignal("second")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		firstSignal :: any,
-		secondSignal :: any,
-	} :: { AnySignal })
+		firstSignal,
+		secondSignal,
+	} :: { OwnedSignal })
 
 	local destroyCallsObservedInsideCallback: number = -1
 
@@ -97,9 +96,9 @@ it("nested WithDeferredDestroy calls wait for the outermost callback before flus
 	local secondSignal: FakeSignal = createFakeSignal("second")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		firstSignal :: any,
-		secondSignal :: any,
-	} :: { AnySignal })
+		firstSignal,
+		secondSignal,
+	} :: { OwnedSignal })
 
 	ownedSignals:WithDeferredDestroy(function()
 		ownedSignals:WithDeferredDestroy(function()
@@ -122,9 +121,9 @@ it("WithDeferredDestroy unwinds depth and flushes pending destroy before rethrow
 	local secondSignal: FakeSignal = createFakeSignal("second")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		firstSignal :: any,
-		secondSignal :: any,
-	} :: { AnySignal })
+		firstSignal,
+		secondSignal,
+	} :: { OwnedSignal })
 
 	local success: boolean, errorMessage: any = pcall(function()
 		ownedSignals:WithDeferredDestroy(function()
@@ -144,8 +143,8 @@ it("WithDeferredDestroy errors after signals have already been destroyed", funct
 	local fakeSignal: FakeSignal = createFakeSignal("only")
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new({
-		fakeSignal :: any,
-	} :: { AnySignal })
+		fakeSignal,
+	} :: { OwnedSignal })
 
 	ownedSignals:Destroy()
 
@@ -169,15 +168,15 @@ it("new() clones the input array so later mutations do not change which signals 
 	local secondSignal: FakeSignal = createFakeSignal("second")
 	local replacementSignal: FakeSignal = createFakeSignal("replacement")
 
-	local sourceSignals: { AnySignal } = {
-		firstSignal :: any,
-		secondSignal :: any,
+	local sourceSignals: { OwnedSignal } = {
+		firstSignal,
+		secondSignal,
 	}
 
 	local ownedSignals: OwnedSignals = OwnedSignalsModule.new(sourceSignals)
 
 	table.clear(sourceSignals)
-	table.insert(sourceSignals, replacementSignal :: any)
+	table.insert(sourceSignals, replacementSignal)
 
 	ownedSignals:Destroy()
 
