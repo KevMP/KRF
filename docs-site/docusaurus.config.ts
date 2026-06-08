@@ -28,16 +28,44 @@ const config: Config = {
     [
       'classic',
       {
-        docs: {
-          sidebarPath: './sidebars.ts',
-          routeBasePath: '/',
-          editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
-        },
+        docs: false,
         blog: false,
         theme: {
           customCss: './src/css/custom.css',
         },
       } satisfies Preset.Options,
+    ],
+  ],
+
+  plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        path: 'docs/documentation',
+        routeBasePath: '/',
+        sidebarPath: './sidebars.ts',
+        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
+      },
+    ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'learn',
+        path: 'docs/learn',
+        routeBasePath: 'learn',
+        sidebarPath: './sidebarsLearn.ts',
+        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
+      },
+    ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'api',
+        path: 'docs/api',
+        routeBasePath: 'api',
+        sidebarPath: './sidebarsApi.ts',
+        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
+      },
     ],
   ],
 
@@ -61,8 +89,16 @@ const config: Config = {
         {
           type: 'docSidebar',
           sidebarId: 'learnSidebar',
+          docsPluginId: 'learn',
           position: 'left',
           label: 'Learn KRF',
+        },
+        {
+          type: 'docSidebar',
+          sidebarId: 'apiSidebar',
+          docsPluginId: 'api',
+          position: 'left',
+          label: 'API',
         },
         {
           href: 'https://github.com/KevMP/KRF',
@@ -94,6 +130,15 @@ const config: Config = {
             {
               label: 'Getting Started',
               to: '/learn/intro',
+            },
+          ],
+        },
+        {
+          title: 'API',
+          items: [
+            {
+              label: 'Actor Runtime',
+              to: '/api/Actor/actor-runtime',
             },
           ],
         },
