@@ -14,6 +14,7 @@ local TagControllerStepUtils = require(script.Parent.utils.TagControllerStepUtil
 local TagControllerTickUtils = require(script.Parent.utils.TagControllerTickUtils)
 
 local RunService: RunService = game:GetService("RunService")
+local automaticStepIntervalSeconds: number = 0.1
 
 export type TagController = TagTypes.TagController
 export type AddTagOptions = TagTypes.AddTagOptions
@@ -46,6 +47,7 @@ type TagControllerModule = {
 local TagController: TagControllerModule = {} :: TagControllerModule
 local HeartBeatConnection: RBXScriptConnection? = nil
 local automaticSteppingEnabled: boolean = true
+local automaticStepAccumulatorSeconds: number = 0
 
 local advancingInstancesByController: { [TagController]: AdvancingControllerEntry } = {}
 
@@ -54,11 +56,23 @@ local function UpdateHeartbeatConnection(): ()
 
 	if automaticSteppingEnabled and hasTimedControllers then
 		if HeartBeatConnection == nil then
-			HeartBeatConnection = RunService.Heartbeat:Connect(TagController.Step)
+			automaticStepAccumulatorSeconds = 0
+			HeartBeatConnection = RunService.Heartbeat:Connect(function(deltaTime: number)
+				automaticStepAccumulatorSeconds += deltaTime
+
+				if automaticStepAccumulatorSeconds < automaticStepIntervalSeconds then
+					return
+				end
+
+				TagController.Step(automaticStepIntervalSeconds)
+				automaticStepAccumulatorSeconds -= automaticStepIntervalSeconds
+			end)
 		end
 
 		return
 	end
+
+	automaticStepAccumulatorSeconds = 0
 
 	if HeartBeatConnection ~= nil then
 		HeartBeatConnection:Disconnect()
