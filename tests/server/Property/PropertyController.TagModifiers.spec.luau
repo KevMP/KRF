@@ -109,6 +109,64 @@ it("recomputes built-in WalkSpeed on tag add and fires resolved then umbrella ev
 	destroyControllers(tagController, propertyController)
 end)
 
+it("recomputes resolved WalkSpeed from active normal modifiers when the base value is written", function()
+	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
+		createControllerWithCatalog(ValidPropertyModifierCatalog)
+	local eventOrder: { string } = {}
+	local baseOldValue: number? = nil
+	local baseNewValue: number? = nil
+	local resolvedOldValue: number? = nil
+	local resolvedNewValue: number? = nil
+	local umbrellaPayload: PropertyChange? = nil
+
+	tagController:AddTag("Buff.Sprint")
+
+	local baseConnection = propertyController.OnBasePropertyChanged:Connect(
+		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+			table.insert(eventOrder, "base")
+			expect(eventActor).toBe(actor)
+			expect(propertyName).toBe("WalkSpeed")
+			baseOldValue = oldValue
+			baseNewValue = newValue
+		end
+	)
+	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
+		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+			table.insert(eventOrder, "resolved")
+			expect(eventActor).toBe(actor)
+			expect(propertyName).toBe("WalkSpeed")
+			resolvedOldValue = oldValue
+			resolvedNewValue = newValue
+		end
+	)
+	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
+		table.insert(eventOrder, "umbrella")
+		umbrellaPayload = change
+	end)
+
+	local setOk: boolean, setReason: string? = propertyController:SetBaseProperty("WalkSpeed", 20)
+
+	expect(setOk).toBe(true)
+	expect(setReason).toBeNil()
+	expect(eventOrder).toEqual({ "base", "resolved", "umbrella" })
+	expect(propertyController:GetBaseProperty("WalkSpeed")).toBe(20)
+	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBeCloseTo(29.9, 5)
+	expect(baseOldValue).toBe(16)
+	expect(baseNewValue).toBe(20)
+	expect(resolvedOldValue).toBeCloseTo(25.3, 5)
+	expect(resolvedNewValue).toBeCloseTo(29.9, 5)
+	expect(umbrellaPayload).never.toBeNil()
+	expect((umbrellaPayload :: PropertyChange).oldBaseValue).toBe(16)
+	expect((umbrellaPayload :: PropertyChange).newBaseValue).toBe(20)
+	expect((umbrellaPayload :: PropertyChange).oldResolvedValue).toBeCloseTo(25.3, 5)
+	expect((umbrellaPayload :: PropertyChange).newResolvedValue).toBeCloseTo(29.9, 5)
+
+	baseConnection:Disconnect()
+	resolvedConnection:Disconnect()
+	umbrellaConnection:Disconnect()
+	destroyControllers(tagController, propertyController)
+end)
+
 it("recomputes built-in WalkSpeed and JumpPower from active set modifiers", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(MixedTagCatalog)
@@ -119,6 +177,83 @@ it("recomputes built-in WalkSpeed and JumpPower from active set modifiers", func
 	expect(addReason).toBeNil()
 	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBe(0)
 	expect(propertyController:GetResolvedProperty("JumpPower")).toBe(0)
+
+	destroyControllers(tagController, propertyController)
+end)
+
+it(
+	"fires base and umbrella events without a resolved event when an active set keeps the final value unchanged",
+	function()
+		local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
+			createControllerWithCatalog(ValidPropertyModifierCatalog)
+		local eventOrder: { string } = {}
+		local baseOldValue: number? = nil
+		local baseNewValue: number? = nil
+		local resolvedEventCount: number = 0
+		local umbrellaPayload: PropertyChange? = nil
+
+		tagController:AddTag("Status.Stunned")
+
+		local baseConnection = propertyController.OnBasePropertyChanged:Connect(
+			function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+				table.insert(eventOrder, "base")
+				expect(eventActor).toBe(actor)
+				expect(propertyName).toBe("WalkSpeed")
+				baseOldValue = oldValue
+				baseNewValue = newValue
+			end
+		)
+		local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
+			resolvedEventCount += 1
+		end)
+		local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
+			table.insert(eventOrder, "umbrella")
+			umbrellaPayload = change
+		end)
+
+		local setOk: boolean, setReason: string? = propertyController:SetBaseProperty("WalkSpeed", 24)
+
+		expect(setOk).toBe(true)
+		expect(setReason).toBeNil()
+		expect(eventOrder).toEqual({ "base", "umbrella" })
+		expect(resolvedEventCount).toBe(0)
+		expect(propertyController:GetBaseProperty("WalkSpeed")).toBe(24)
+		expect(propertyController:GetResolvedProperty("WalkSpeed")).toBe(0)
+		expect(baseOldValue).toBe(16)
+		expect(baseNewValue).toBe(24)
+		expect(umbrellaPayload).never.toBeNil()
+		expect((umbrellaPayload :: PropertyChange).oldBaseValue).toBe(16)
+		expect((umbrellaPayload :: PropertyChange).newBaseValue).toBe(24)
+		expect((umbrellaPayload :: PropertyChange).oldResolvedValue).toBe(0)
+		expect((umbrellaPayload :: PropertyChange).newResolvedValue).toBe(0)
+
+		baseConnection:Disconnect()
+		resolvedConnection:Disconnect()
+		umbrellaConnection:Disconnect()
+		destroyControllers(tagController, propertyController)
+	end
+)
+
+it("applies pre-existing active tags when the property controller is created after the tag controller", function()
+	TagRegistry._resetForTests()
+
+	local loaded: boolean, loadReason: string? = TagRegistry.Load(ValidPropertyModifierCatalog)
+	expect(loaded).toBe(true)
+	expect(loadReason).toBeNil()
+
+	local actor: Actor = ActorEntity.new()
+	local tagController: TagControllerType = TagControllerModule.new(actor)
+	local setTagControllerOk: boolean = actor:SetController("TagController", tagController)
+	expect(setTagControllerOk).toBe(true)
+
+	local addOk: boolean, addReason: string? = tagController:AddTag("Buff.Sprint")
+	expect(addOk).toBe(true)
+	expect(addReason).toBeNil()
+
+	local propertyController: PropertyController = PropertyControllerModule.new(actor)
+
+	expect(propertyController:GetBaseProperty("WalkSpeed")).toBe(16)
+	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBeCloseTo(25.3, 5)
 
 	destroyControllers(tagController, propertyController)
 end)
@@ -154,6 +289,57 @@ it(
 		destroyControllers(tagController, propertyController)
 	end
 )
+
+it("applies an already-active custom-property modifier when the property is created later", function()
+	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
+		createControllerWithCatalog(MixedTagCatalog)
+	local eventOrder: { string } = {}
+	local umbrellaPayload: PropertyChange? = nil
+
+	tagController:AddTag("Status.OnFire")
+
+	local baseConnection = propertyController.OnBasePropertyChanged:Connect(
+		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+			table.insert(eventOrder, "base")
+			expect(eventActor).toBe(actor)
+			expect(propertyName).toBe("HealingReceived")
+			expect(oldValue).toBeNil()
+			expect(newValue).toBe(100)
+		end
+	)
+	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
+		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+			table.insert(eventOrder, "resolved")
+			expect(eventActor).toBe(actor)
+			expect(propertyName).toBe("HealingReceived")
+			expect(oldValue).toBeNil()
+			expect(newValue).toBe(75)
+		end
+	)
+	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
+		table.insert(eventOrder, "umbrella")
+		umbrellaPayload = change
+	end)
+
+	local setOk: boolean, setReason: string? = propertyController:SetBaseProperty("HealingReceived", 100)
+
+	expect(setOk).toBe(true)
+	expect(setReason).toBeNil()
+	expect(eventOrder).toEqual({ "base", "resolved", "umbrella" })
+	expect(propertyController:HasProperty("HealingReceived")).toBe(true)
+	expect(propertyController:GetBaseProperty("HealingReceived")).toBe(100)
+	expect(propertyController:GetResolvedProperty("HealingReceived")).toBe(75)
+	expect(umbrellaPayload).never.toBeNil()
+	expect((umbrellaPayload :: PropertyChange).oldBaseValue).toBeNil()
+	expect((umbrellaPayload :: PropertyChange).newBaseValue).toBe(100)
+	expect((umbrellaPayload :: PropertyChange).oldResolvedValue).toBeNil()
+	expect((umbrellaPayload :: PropertyChange).newResolvedValue).toBe(75)
+
+	baseConnection:Disconnect()
+	resolvedConnection:Disconnect()
+	umbrellaConnection:Disconnect()
+	destroyControllers(tagController, propertyController)
+end)
 
 it("supports built-in and user-defined numeric properties coexisting under the same active tag", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
@@ -319,6 +505,64 @@ it(
 	end
 )
 
+it("fires only when stack removal changes the final unclamped WalkSpeed", function()
+	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
+		createControllerWithCatalog(ValidPropertyModifierCatalog)
+	local baseEventCount: number = 0
+	local eventOrder: { string } = {}
+	local resolvedOldValue: number? = nil
+	local resolvedNewValue: number? = nil
+	local umbrellaPayload: PropertyChange? = nil
+
+	tagController:AddTag("Buff.Sprint")
+	tagController:AddTag("Buff.Sprint")
+	tagController:AddTag("Buff.Sprint")
+
+	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
+		baseEventCount += 1
+	end)
+	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
+		function(_eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
+			table.insert(eventOrder, "resolved")
+			expect(propertyName).toBe("WalkSpeed")
+			resolvedOldValue = oldValue
+			resolvedNewValue = newValue
+		end
+	)
+	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
+		table.insert(eventOrder, "umbrella")
+		umbrellaPayload = change
+	end)
+
+	local firstRemoveOk: boolean, firstRemoveReason: string? = tagController:RemoveSingleTag("Buff.Sprint")
+
+	expect(firstRemoveOk).toBe(true)
+	expect(firstRemoveReason).toBeNil()
+	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBe(32)
+	expect(baseEventCount).toBe(0)
+	expect(eventOrder).toEqual({})
+
+	local secondRemoveOk: boolean, secondRemoveReason: string? = tagController:RemoveSingleTag("Buff.Sprint")
+
+	expect(secondRemoveOk).toBe(true)
+	expect(secondRemoveReason).toBeNil()
+	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBeCloseTo(25.3, 5)
+	expect(baseEventCount).toBe(0)
+	expect(eventOrder).toEqual({ "resolved", "umbrella" })
+	expect(resolvedOldValue).toBe(32)
+	expect(resolvedNewValue).toBeCloseTo(25.3, 5)
+	expect(umbrellaPayload).never.toBeNil()
+	expect((umbrellaPayload :: PropertyChange).oldBaseValue).toBe(16)
+	expect((umbrellaPayload :: PropertyChange).newBaseValue).toBe(16)
+	expect((umbrellaPayload :: PropertyChange).oldResolvedValue).toBe(32)
+	expect((umbrellaPayload :: PropertyChange).newResolvedValue).toBeCloseTo(25.3, 5)
+
+	baseConnection:Disconnect()
+	resolvedConnection:Disconnect()
+	umbrellaConnection:Disconnect()
+	destroyControllers(tagController, propertyController)
+end)
+
 it("fires no property events when a set modifier recomputes to the value already stored", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
@@ -375,6 +619,39 @@ it("stops emitting later property events if the controller is destroyed during a
 	expect(resolvedEventCount).toBe(1)
 
 	resolvedConnection:Disconnect()
+	tagController:Destroy()
+end)
+
+it("ignores later tag mutations after the property controller is destroyed", function()
+	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
+		createControllerWithCatalog(ValidPropertyModifierCatalog)
+	local baseEventCount: number = 0
+	local resolvedEventCount: number = 0
+	local umbrellaEventCount: number = 0
+
+	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
+		baseEventCount += 1
+	end)
+	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
+		resolvedEventCount += 1
+	end)
+	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
+		umbrellaEventCount += 1
+	end)
+
+	propertyController:Destroy()
+
+	local addOk: boolean, addReason: string? = tagController:AddTag("Buff.Sprint")
+
+	expect(addOk).toBe(true)
+	expect(addReason).toBeNil()
+	expect(baseEventCount).toBe(0)
+	expect(resolvedEventCount).toBe(0)
+	expect(umbrellaEventCount).toBe(0)
+
+	baseConnection:Disconnect()
+	resolvedConnection:Disconnect()
+	umbrellaConnection:Disconnect()
 	tagController:Destroy()
 end)
 
