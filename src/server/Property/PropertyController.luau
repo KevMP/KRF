@@ -4,12 +4,14 @@ local SignalFolder = serverFolder.Parent.shared.Signal
 
 local PropertyTypes = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local TagTypes = require(script.Parent.Parent.Tags.types)
 local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 
 export type PropertyController = PropertyTypes.PropertyController
 type Actor = ActorTypes.Actor
+type TagController = TagTypes.TagController
 
 type PropertyRecord = {
 	baseValue: number,
@@ -41,6 +43,9 @@ function PropertyController.new(actor: Actor): PropertyController
 		OnResolvedPropertyChangedSignal,
 		OnPropertyChangedSignal,
 	})
+
+	local tagController: TagController = actor:GetController("TagController") :: TagController
+	local tagConnections: { SignalTypes.Connection } = {}
 
 	function controller:SetBaseProperty(propertyName: string, value: number): (boolean, string?)
 		if typeof(value) ~= "number" then
@@ -139,6 +144,16 @@ function PropertyController.new(actor: Actor): PropertyController
 	controller.OnBasePropertyChanged = SignalModule.wrapEvent(OnBasePropertyChangedSignal)
 	controller.OnResolvedPropertyChanged = SignalModule.wrapEvent(OnResolvedPropertyChangedSignal)
 	controller.OnPropertyChanged = SignalModule.wrapEvent(OnPropertyChangedSignal)
+
+	if tagConnections then
+		table.insert(tagConnections, tagController.OnTagAdded:Connect(function(_actor: Actor, tagId: string) end))
+
+		table.insert(tagConnections, tagController.OnTagRemoved:Connect(function(_actor: Actor, tagId: string) end))
+
+		table.insert(tagConnections, tagController.OnTagExpired:Connect(function(_actor: Actor, tagId: string) end))
+
+		table.insert(tagConnections, tagController.OnTagRefreshed:Connect(function(_actor: Actor, tagId: string) end))
+	end
 
 	return controller
 end
