@@ -66,9 +66,9 @@ function PropertyController.new(actor: Actor): PropertyController
 		local changes: { ResolvedChange } =
 			PropertyRecompute.RecomputePropertiesAffectedByTag(propertiesById, tagController, tagId)
 
-		for _, change: ResolvedChange in changes do
-			PropertyControllerEventUtils.FireResolvedChange(eventContext, change)
-		end
+		PropertyControllerEventUtils.FireResolvedChanges(eventContext, changes, function(): boolean
+			return not destroyed
+		end)
 	end
 
 	for propertyName: string in propertiesById do

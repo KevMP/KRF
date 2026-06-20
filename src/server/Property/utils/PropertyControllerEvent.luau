@@ -17,6 +17,39 @@ export type PropertyControllerEventContext = {
 
 local PropertyControllerEventUtils = {}
 
+function PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
+	eventContext: PropertyControllerEventContext,
+	propertyName: string,
+	oldBaseValue: number?,
+	newBaseValue: number,
+	oldResolvedValue: number?,
+	newResolvedValue: number,
+	shouldFireBaseChanged: boolean,
+	shouldFireResolvedChanged: boolean
+): ()
+	if shouldFireBaseChanged then
+		eventContext.basePropertyChangedSignal:Fire(eventContext.actor, propertyName, oldBaseValue, newBaseValue)
+	end
+
+	if shouldFireResolvedChanged then
+		eventContext.resolvedPropertyChangedSignal:Fire(
+			eventContext.actor,
+			propertyName,
+			oldResolvedValue,
+			newResolvedValue
+		)
+	end
+
+	eventContext.propertyChangedSignal:Fire({
+		actor = eventContext.actor,
+		propertyName = propertyName,
+		oldBaseValue = oldBaseValue,
+		newBaseValue = newBaseValue,
+		oldResolvedValue = oldResolvedValue,
+		newResolvedValue = newResolvedValue,
+	})
+end
+
 function PropertyControllerEventUtils.FirePropertyChanged(
 	eventContext: PropertyControllerEventContext,
 	propertyName: string,
@@ -28,35 +61,24 @@ function PropertyControllerEventUtils.FirePropertyChanged(
 	shouldFireResolvedChanged: boolean
 ): ()
 	eventContext.ownedSignals:WithDeferredDestroy(function()
-		if shouldFireBaseChanged then
-			eventContext.basePropertyChangedSignal:Fire(eventContext.actor, propertyName, oldBaseValue, newBaseValue)
-		end
-
-		if shouldFireResolvedChanged then
-			eventContext.resolvedPropertyChangedSignal:Fire(
-				eventContext.actor,
-				propertyName,
-				oldResolvedValue,
-				newResolvedValue
-			)
-		end
-
-		eventContext.propertyChangedSignal:Fire({
-			actor = eventContext.actor,
-			propertyName = propertyName,
-			oldBaseValue = oldBaseValue,
-			newBaseValue = newBaseValue,
-			oldResolvedValue = oldResolvedValue,
-			newResolvedValue = newResolvedValue,
-		})
+		PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
+			eventContext,
+			propertyName,
+			oldBaseValue,
+			newBaseValue,
+			oldResolvedValue,
+			newResolvedValue,
+			shouldFireBaseChanged,
+			shouldFireResolvedChanged
+		)
 	end)
 end
 
-function PropertyControllerEventUtils.FireResolvedChange(
+function PropertyControllerEventUtils.FireResolvedChangeWithoutDeferred(
 	eventContext: PropertyControllerEventContext,
 	change: PropertyRecompute.ResolvedChange
 ): ()
-	PropertyControllerEventUtils.FirePropertyChanged(
+	PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
 		eventContext,
 		change.propertyName,
 		change.oldBaseValue,
@@ -66,6 +88,26 @@ function PropertyControllerEventUtils.FireResolvedChange(
 		false,
 		true
 	)
+end
+
+function PropertyControllerEventUtils.FireResolvedChanges(
+	eventContext: PropertyControllerEventContext,
+	changes: { PropertyRecompute.ResolvedChange },
+	shouldContinue: () -> boolean
+): ()
+	if #changes == 0 then
+		return
+	end
+
+	eventContext.ownedSignals:WithDeferredDestroy(function()
+		for _, change: PropertyRecompute.ResolvedChange in changes do
+			if shouldContinue ~= nil and not shouldContinue() then
+				break
+			end
+
+			PropertyControllerEventUtils.FireResolvedChangeWithoutDeferred(eventContext, change)
+		end
+	end)
 end
 
 return PropertyControllerEventUtils

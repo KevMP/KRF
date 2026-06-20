@@ -30,7 +30,6 @@ function PropertyModifierCollector.CollectForProperty(
 
 		if modifier ~= nil then
 			table.insert(modifierEntries, {
-				tagId = activeTag.tagId,
 				modifier = modifier,
 				stackCount = activeTag.stackCount,
 			})
