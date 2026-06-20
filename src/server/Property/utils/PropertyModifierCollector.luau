@@ -52,6 +52,8 @@ function PropertyModifierCollector.GetAffectedPropertyNames(tagId: string): { st
 		table.insert(propertyNames, propertyName)
 	end
 
+	table.sort(propertyNames)
+
 	return propertyNames
 end
 
