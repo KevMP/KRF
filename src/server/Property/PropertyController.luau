@@ -1,27 +1,33 @@
 --!strict
 local serverFolder = script.Parent.Parent
 local SignalFolder = serverFolder.Parent.shared.Signal
+local utilsFolder = script.Parent.utils
 
 local PropertyTypes = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local TagTypes = require(script.Parent.Parent.Tags.types)
 local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 
+local PropertyRecompute = require(utilsFolder.PropertyRecompute)
+local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent)
+
 export type PropertyController = PropertyTypes.PropertyController
 type Actor = ActorTypes.Actor
+type TagController = TagTypes.TagController
 
-type PropertyRecord = {
-	baseValue: number,
-	resolvedValue: number,
-}
+type PropertyRecord = PropertyRecompute.PropertyRecord
+type PropertyRecordsById = PropertyRecompute.PropertyRecordsById
+type ResolvedChange = PropertyRecompute.ResolvedChange
+type PropertyControllerEventContext = PropertyControllerEventUtils.PropertyControllerEventContext
 
 local PropertyController = {}
 
 function PropertyController.new(actor: Actor): PropertyController
 	local controller: PropertyController = {} :: PropertyController
 	local destroyed: boolean = false
-	local propertiesById: { [string]: PropertyRecord } = {
+	local propertiesById: PropertyRecordsById = {
 		WalkSpeed = {
 			baseValue = 16,
 			resolvedValue = 16,
@@ -41,6 +47,33 @@ function PropertyController.new(actor: Actor): PropertyController
 		OnResolvedPropertyChangedSignal,
 		OnPropertyChangedSignal,
 	})
+	local eventContext: PropertyControllerEventContext = {
+		actor = actor,
+		ownedSignals = ownedSignals,
+		basePropertyChangedSignal = OnBasePropertyChangedSignal,
+		resolvedPropertyChangedSignal = OnResolvedPropertyChangedSignal,
+		propertyChangedSignal = OnPropertyChangedSignal,
+	}
+
+	local tagController: TagController? = actor:GetController("TagController") :: TagController?
+	local tagConnections: { SignalTypes.Connection } = {}
+
+	local function recomputePropertiesAffectedByTag(tagId: string): ()
+		if destroyed then
+			return
+		end
+
+		local changes: { ResolvedChange } =
+			PropertyRecompute.RecomputePropertiesAffectedByTag(propertiesById, tagController, tagId)
+
+		PropertyControllerEventUtils.FireResolvedChanges(eventContext, changes, function(): boolean
+			return not destroyed
+		end)
+	end
+
+	for propertyName: string in propertiesById do
+		PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
+	end
 
 	function controller:SetBaseProperty(propertyName: string, value: number): (boolean, string?)
 		if typeof(value) ~= "number" then
@@ -55,18 +88,19 @@ function PropertyController.new(actor: Actor): PropertyController
 				resolvedValue = value,
 			}
 
-			ownedSignals:WithDeferredDestroy(function()
-				OnBasePropertyChangedSignal:Fire(actor, propertyName, nil, value)
-				OnResolvedPropertyChangedSignal:Fire(actor, propertyName, nil, value)
-				OnPropertyChangedSignal:Fire({
-					actor = actor,
-					propertyName = propertyName,
-					oldBaseValue = nil,
-					newBaseValue = value,
-					oldResolvedValue = nil,
-					newResolvedValue = value,
-				})
-			end)
+			PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
+			local newResolvedValue: number = propertiesById[propertyName].resolvedValue
+
+			PropertyControllerEventUtils.FirePropertyChanged(
+				eventContext,
+				propertyName,
+				nil,
+				value,
+				nil,
+				newResolvedValue,
+				true,
+				true
+			)
 			return true, nil
 		end
 
@@ -78,20 +112,19 @@ function PropertyController.new(actor: Actor): PropertyController
 		local previousResolvedValue: number = propertyRecord.resolvedValue
 
 		propertyRecord.baseValue = value
-		propertyRecord.resolvedValue = value
+		PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
+		local newResolvedValue: number = propertyRecord.resolvedValue
 
-		ownedSignals:WithDeferredDestroy(function()
-			OnBasePropertyChangedSignal:Fire(actor, propertyName, previousBaseValue, value)
-			OnResolvedPropertyChangedSignal:Fire(actor, propertyName, previousResolvedValue, value)
-			OnPropertyChangedSignal:Fire({
-				actor = actor,
-				propertyName = propertyName,
-				oldBaseValue = previousBaseValue,
-				newBaseValue = value,
-				oldResolvedValue = previousResolvedValue,
-				newResolvedValue = value,
-			})
-		end)
+		PropertyControllerEventUtils.FirePropertyChanged(
+			eventContext,
+			propertyName,
+			previousBaseValue,
+			value,
+			previousResolvedValue,
+			newResolvedValue,
+			true,
+			previousResolvedValue ~= newResolvedValue
+		)
 
 		return true, nil
 	end
@@ -133,12 +166,36 @@ function PropertyController.new(actor: Actor): PropertyController
 		end
 
 		destroyed = true
+
+		for _, connection: SignalTypes.Connection in tagConnections do
+			connection:Disconnect()
+		end
+		table.clear(tagConnections)
+
 		ownedSignals:Destroy()
 	end
 
 	controller.OnBasePropertyChanged = SignalModule.wrapEvent(OnBasePropertyChangedSignal)
 	controller.OnResolvedPropertyChanged = SignalModule.wrapEvent(OnResolvedPropertyChangedSignal)
 	controller.OnPropertyChanged = SignalModule.wrapEvent(OnPropertyChangedSignal)
+
+	if tagController ~= nil then
+		local tagEvents: { SignalTypes.Event<Actor, string> } = {
+			tagController.OnTagAdded,
+			tagController.OnTagRemoved,
+			tagController.OnTagExpired,
+			tagController.OnTagRefreshed,
+		}
+
+		for _, event: SignalTypes.Event<Actor, string> in tagEvents do
+			table.insert(
+				tagConnections,
+				event:Connect(function(_actor: Actor, tagId: string)
+					recomputePropertiesAffectedByTag(tagId)
+				end)
+			)
+		end
+	end
 
 	return controller
 end

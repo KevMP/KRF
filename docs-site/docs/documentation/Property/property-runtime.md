@@ -15,6 +15,8 @@ Each property has:
 
 This separation gives KRF one place to own numeric property state instead of having unrelated systems mutate Humanoid values or ad hoc tables directly.
 
+If active tags modify that property, KRF recomputes the resolved value immediately from the current base value and active tag state.
+
 ## What this owns
 
 `PropertyController` owns:
@@ -52,6 +54,8 @@ KRF currently includes two built in properties on every actor:
 
 Game code may also create custom numeric properties by setting a base value for a new property name.
 
+Tag-defined custom property modifiers do not create property entries by themselves. A custom property begins participating in resolution after game code sets its base value at least once.
+
 ## Example
 
 ```lua
@@ -80,6 +84,7 @@ end
 ## Common mistakes
 
 * Reading base values when another system really needs the actor's current final number. Prefer resolved values for runtime decisions.
+* Expecting a tag modifier to create a custom property entry automatically. Tags modify existing numeric properties, but game code still creates a custom property by setting its base value.
 * Storing numeric actor state in unrelated tables when the value belongs to the actor lifecycle.
 * Treating a custom property name as a gameplay rule by itself. KRF stores the number, but your game still decides how to use it.
 * Using non-numeric values. `PropertyController` only accepts numbers.
