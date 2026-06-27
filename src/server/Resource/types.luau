@@ -1,18 +1,10 @@
 export type ResourceVisibility = "ServerOnly" | "ClientVisible"
 
-export type StaticResourceNumericSource = {
-	value: number,
-	propertyName: nil?,
-	defaultBaseValue: nil?,
+export type ResourceNumericSource = {
+	value: number?,
+	propertyName: string?,
+	defaultBaseValue: number?,
 }
-
-export type PropertyResourceNumericSource = {
-	value: nil?,
-	propertyName: string,
-	defaultBaseValue: number,
-}
-
-export type ResourceNumericSource = StaticResourceNumericSource | PropertyResourceNumericSource
 
 export type ResourceRegenDefinition = {
 	rate: ResourceNumericSource,

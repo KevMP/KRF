@@ -6,12 +6,12 @@ type ResourceDefinition = ResourceTypes.ResourceDefinition
 local ResourceRegistry = {}
 local isLoaded: boolean = false
 
+function ResourceRegistry.Load(_definitions: { ResourceDefinition }): (boolean, string?)
+	if isLoaded then
+		return false, "ResourceDefinitionsAlreadyLoaded"
+	end
 
-function ResourceRegistry.Load(definitions: { ResourceDefinition }) : (boolean, string?)
-  if isLoaded then 
-    return false, "ResourceDefinitionsAlreadyLoaded"
-  end
-  
+	return true, nil
 end
 
-return ResourceRegistry :: ResourceRegistry 
+return ResourceRegistry :: ResourceRegistry
