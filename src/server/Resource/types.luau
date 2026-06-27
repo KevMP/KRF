@@ -26,7 +26,6 @@ export type ResourceDefinition = {
 
 export type LoadedResourceDefinition = ResourceDefinition & {
 	min: ResourceNumericSource,
-	initialValue: number,
 	autoAssign: boolean,
 }
 
