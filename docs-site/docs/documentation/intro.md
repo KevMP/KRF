@@ -59,6 +59,8 @@ If you are new to KRF, start with the runtime docs:
 
 * [Actor Runtime](/Actor/actor-runtime)
 * [Property Runtime](/Property/property-runtime)
+* [Resource Registry](/Resource/resource-registry)
+* [Resource Runtime](/Resource/resource-runtime)
 * [Tag Registry](/Tags/tag-registry)
 * [Tag Runtime](/Tags/tag-runtime)
 
