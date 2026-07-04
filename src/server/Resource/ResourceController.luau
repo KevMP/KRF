@@ -60,6 +60,22 @@ function ResourceController.new(actor: Actor): ResourceController
 		return true, nil
 	end
 
+	function controller:SetCurrent(resourceId: string, value: number): (boolean, string?)
+		if not controller:HasResource(resourceId) then
+			return false, "ResourceNotAssigned"
+		end
+
+		local resourceRecord: ResourceRecord = resourcesById[resourceId]
+
+		if typeof(value) ~= "number" then
+			return false, "InvalidResourceValue"
+		end
+
+		resourceRecord.currentValue = math.clamp(value, resourceRecord.resolvedMin, resourceRecord.resolvedMax)
+
+		return true, nil
+	end
+
 	function controller:HasResource(resourceId: string): boolean
 		return resourcesById[resourceId] ~= nil
 	end
@@ -89,6 +105,64 @@ function ResourceController.new(actor: Actor): ResourceController
 		end
 
 		return resourceRecord.resolvedMin
+	end
+
+	function controller:CanSpend(resourceId: string, amount: number): (boolean, string?)
+		if not controller:HasResource(resourceId) then
+			return false, "ResourceNotAssigned"
+		end
+
+		if typeof(amount) ~= "number" or amount < 0 then
+			return false, "InvalidResourceAmount"
+		end
+
+		local resourceRecord: ResourceRecord = resourcesById[resourceId]
+		local spendableValue: number = resourceRecord.currentValue - resourceRecord.resolvedMin
+
+		if spendableValue < amount then
+			return false, "InsufficientResourceValue"
+		end
+
+		return true, nil
+	end
+
+	function controller:Spend(resourceId: string, amount: number): (boolean, string?)
+		local canSpendOk: boolean, canSpendReason: string? = controller:CanSpend(resourceId, amount)
+		if not canSpendOk then
+			return false, canSpendReason
+		end
+
+		local resourceRecord: ResourceRecord = resourcesById[resourceId]
+
+		return controller:SetCurrent(resourceId, resourceRecord.currentValue - amount)
+	end
+
+	function controller:Restore(resourceId: string, amount: number): (boolean, string?)
+		if not controller:HasResource(resourceId) then
+			return false, "ResourceNotAssigned"
+		end
+
+		if typeof(amount) ~= "number" or amount < 0 then
+			return false, "InvalidResourceAmount"
+		end
+
+		local resourceRecord: ResourceRecord = resourcesById[resourceId]
+
+		return controller:SetCurrent(resourceId, resourceRecord.currentValue + amount)
+	end
+
+	function controller:Drain(resourceId: string, amount: number): (boolean, string?)
+		if not controller:HasResource(resourceId) then
+			return false, "ResourceNotAssigned"
+		end
+
+		if typeof(amount) ~= "number" or amount < 0 then
+			return false, "InvalidResourceAmount"
+		end
+
+		local resourceRecord: ResourceRecord = resourcesById[resourceId]
+
+		return controller:SetCurrent(resourceId, resourceRecord.currentValue - amount)
 	end
 
 	function controller:Destroy(): ()
