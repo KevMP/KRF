@@ -1,0 +1,6 @@
+base: roblox
+
+globals:
+  math.isfinite:
+    args:
+      - type: number

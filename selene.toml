@@ -1,2 +1,2 @@
-std = "roblox"
+std = "roblox-plus"
 exclude  = ["src/shared/Signal/GoodSignal.luau"]

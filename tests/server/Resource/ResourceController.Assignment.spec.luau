@@ -191,6 +191,8 @@ it("returns nil before add and rejects unknown, duplicate, and invalid resource 
 	local missingOk: boolean, missingReason: string? = resourceController:AddResource("Resource.Unknown")
 	local invalidOverrideOk: boolean, invalidOverrideReason: string? =
 		resourceController:AddResource("Resource.Guard", "boom" :: any)
+	local invalidOverrideNanOk: boolean, invalidOverrideNanReason: string? =
+		resourceController:AddResource("Resource.Guard", 0 / 0)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Guard")
 	local duplicateOk: boolean, duplicateReason: string? = resourceController:AddResource("Resource.Guard")
 
@@ -198,6 +200,8 @@ it("returns nil before add and rejects unknown, duplicate, and invalid resource 
 	expect(missingReason).toBe("UnknownResourceId:Resource.Unknown")
 	expect(invalidOverrideOk).toBe(false)
 	expect(invalidOverrideReason).toBe("InvalidResourceOverrideValue")
+	expect(invalidOverrideNanOk).toBe(false)
+	expect(invalidOverrideNanReason).toBe("InvalidResourceOverrideValue")
 	expect(addOk).toBe(true)
 	expect(addReason).toBeNil()
 	expect(duplicateOk).toBe(false)

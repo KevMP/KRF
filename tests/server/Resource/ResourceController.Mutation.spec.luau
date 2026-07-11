@@ -88,6 +88,39 @@ it("updates current values, clamps out-of-bounds inputs, and rejects invalid Set
 	propertyController:Destroy()
 end)
 
+it("rejects NaN current values without mutating existing state", function()
+	resetAndLoadDefinitions({
+		{
+			id = "Resource.Resolve",
+			min = {
+				value = 5,
+			},
+			max = {
+				value = 30,
+			},
+			visibility = "ServerOnly",
+		},
+	} :: { ResourceDefinition })
+
+	local actor: Actor, propertyController: PropertyController = createActorWithPropertyController()
+	local resourceController: ResourceController = ResourceControllerModule.new(actor)
+	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Resolve")
+	local invalidValue: number = 0 / 0
+
+	expect(addOk).toBe(true)
+	expect(addReason).toBeNil()
+
+	local setCurrentOk: boolean, setCurrentReason: string? =
+		resourceController:SetCurrent("Resource.Resolve", invalidValue)
+
+	expect(setCurrentOk).toBe(false)
+	expect(setCurrentReason).toBe("InvalidResourceValue")
+	expect(resourceController:GetCurrent("Resource.Resolve")).toBe(30)
+
+	resourceController:Destroy()
+	propertyController:Destroy()
+end)
+
 it("returns true only when enough spendable value exists and rejects invalid CanSpend calls", function()
 	resetAndLoadDefinitions({
 		{
@@ -133,9 +166,12 @@ it("returns true only when enough spendable value exists and rejects invalid Can
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:CanSpend("Resource.Resolve", "boom" :: any)
+	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:CanSpend("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
 	expect(invalidTypeReason).toBe("InvalidResourceAmount")
+	expect(invalidNanOk).toBe(false)
+	expect(invalidNanReason).toBe("InvalidResourceAmount")
 
 	local invalidNegativeOk: boolean, invalidNegativeReason: string? =
 		resourceController:CanSpend("Resource.Resolve", -1)
@@ -194,9 +230,12 @@ it("subtracts current value only when enough spendable value exists and rejects 
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Spend("Resource.Resolve", "boom" :: any)
+	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Spend("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
 	expect(invalidTypeReason).toBe("InvalidResourceAmount")
+	expect(invalidNanOk).toBe(false)
+	expect(invalidNanReason).toBe("InvalidResourceAmount")
 	expect(resourceController:GetCurrent("Resource.Resolve")).toBe(10)
 
 	local invalidNegativeOk: boolean, invalidNegativeReason: string? = resourceController:Spend("Resource.Resolve", -1)
@@ -256,9 +295,12 @@ it("adds current value up to the resolved max and rejects invalid Restore calls"
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Restore("Resource.Resolve", "boom" :: any)
+	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Restore("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
 	expect(invalidTypeReason).toBe("InvalidResourceAmount")
+	expect(invalidNanOk).toBe(false)
+	expect(invalidNanReason).toBe("InvalidResourceAmount")
 	expect(resourceController:GetCurrent("Resource.Resolve")).toBe(30)
 
 	local invalidNegativeOk: boolean, invalidNegativeReason: string? =
@@ -319,9 +361,12 @@ it("subtracts current value down to the resolved min and rejects invalid Drain c
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Drain("Resource.Resolve", "boom" :: any)
+	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Drain("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
 	expect(invalidTypeReason).toBe("InvalidResourceAmount")
+	expect(invalidNanOk).toBe(false)
+	expect(invalidNanReason).toBe("InvalidResourceAmount")
 	expect(resourceController:GetCurrent("Resource.Resolve")).toBe(10)
 
 	local invalidNegativeOk: boolean, invalidNegativeReason: string? = resourceController:Drain("Resource.Resolve", -1)

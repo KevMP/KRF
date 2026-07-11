@@ -49,7 +49,10 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "ResourceAlreadyAssigned"
 		end
 
-		if initialValueOverride ~= nil and typeof(initialValueOverride) ~= "number" then
+		if
+			initialValueOverride ~= nil
+			and (typeof(initialValueOverride) ~= "number" or not math.isfinite(initialValueOverride))
+		then
 			return false, "InvalidResourceOverrideValue"
 		end
 
@@ -84,7 +87,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 		local resourceRecord: ResourceRecord = resourcesById[resourceId]
 
-		if typeof(value) ~= "number" then
+		if typeof(value) ~= "number" or not math.isfinite(value) then
 			return false, "InvalidResourceValue"
 		end
 
@@ -149,7 +152,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "ResourceNotAssigned"
 		end
 
-		if typeof(amount) ~= "number" or amount < 0 then
+		if typeof(amount) ~= "number" or not math.isfinite(amount) or amount < 0 then
 			return false, "InvalidResourceAmount"
 		end
 
@@ -179,7 +182,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "ResourceNotAssigned"
 		end
 
-		if typeof(amount) ~= "number" or amount < 0 then
+		if typeof(amount) ~= "number" or not math.isfinite(amount) or amount < 0 then
 			return false, "InvalidResourceAmount"
 		end
 
@@ -193,7 +196,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "ResourceNotAssigned"
 		end
 
-		if typeof(amount) ~= "number" or amount < 0 then
+		if typeof(amount) ~= "number" or not math.isfinite(amount) or amount < 0 then
 			return false, "InvalidResourceAmount"
 		end
 
