@@ -1,15 +1,20 @@
 --!strict
 local serverFolder = script.Parent.Parent
+local SignalFolder = serverFolder.Parent.shared.Signal
 
 local ResourceTypes = require(script.Parent.types)
 local ActorTypes = require(serverFolder.Actor.types)
 local PropertyTypes = require(serverFolder.Property.types)
+local SignalTypes = require(SignalFolder.types)
+local SignalModule = require(SignalFolder.SignalModule)
+local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ResourceRegistry = require(script.Parent.ResourceRegistry)
 local ResourceStateResolver = require(script.Parent.utils.ResourceStateResolver)
 
 type Actor = ActorTypes.Actor
 type ResourceController = ResourceTypes.ResourceController
 type LoadedResourceDefinition = ResourceTypes.LoadedResourceDefinition
+type ResourceChange = ResourceTypes.ResourceChange
 type PropertyController = PropertyTypes.PropertyController
 
 type ResourceRecord = {
@@ -25,6 +30,14 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	local controller: ResourceController = {} :: ResourceController
 	local resourcesById: { [string]: ResourceRecord } = {}
+
+	local OnResourceAddedSignal: SignalTypes.Signal<Actor, string> = SignalModule.new()
+	local OnResourceChangedSignal: SignalTypes.Signal<ResourceChange> = SignalModule.new()
+
+	local ownedSignals: SignalTypes.OwnedSignals =
+		OwnedSignalsModule.new({ OnResourceAddedSignal, OnResourceChangedSignal })
+
+	local destroyed: boolean = false
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
@@ -57,6 +70,10 @@ function ResourceController.new(actor: Actor): ResourceController
 			resolvedMax = resolvedMax,
 		}
 
+		ownedSignals:WithDeferredDestroy(function()
+			OnResourceAddedSignal:Fire(actor, resourceId)
+		end)
+
 		return true, nil
 	end
 
@@ -71,7 +88,27 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "InvalidResourceValue"
 		end
 
-		resourceRecord.currentValue = math.clamp(value, resourceRecord.resolvedMin, resourceRecord.resolvedMax)
+		local previousCurrentValue: number = resourceRecord.currentValue
+		local nextCurrentValue: number = math.clamp(value, resourceRecord.resolvedMin, resourceRecord.resolvedMax)
+
+		if previousCurrentValue == nextCurrentValue then
+			return true, nil
+		end
+
+		resourceRecord.currentValue = nextCurrentValue
+
+		ownedSignals:WithDeferredDestroy(function()
+			OnResourceChangedSignal:Fire({
+				actor = actor,
+				resourceId = resourceId,
+				currentOldValue = previousCurrentValue,
+				currentNewValue = nextCurrentValue,
+				minOldValue = resourceRecord.resolvedMin,
+				minNewValue = resourceRecord.resolvedMin,
+				maxOldValue = resourceRecord.resolvedMax,
+				maxNewValue = resourceRecord.resolvedMax,
+			})
+		end)
 
 		return true, nil
 	end
@@ -166,8 +203,17 @@ function ResourceController.new(actor: Actor): ResourceController
 	end
 
 	function controller:Destroy(): ()
+		if destroyed then
+			return
+		end
+
+		destroyed = true
+		ownedSignals:Destroy()
 		table.clear(resourcesById)
 	end
+
+	controller.OnResourceAdded = SignalModule.wrapEvent(OnResourceAddedSignal)
+	controller.OnResourceChanged = SignalModule.wrapEvent(OnResourceChangedSignal)
 
 	for _, definition: LoadedResourceDefinition in ResourceRegistry.GetAll() do
 		if definition.autoAssign then
