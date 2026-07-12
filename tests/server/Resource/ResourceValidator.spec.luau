@@ -113,6 +113,49 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 	expect(invalidAutoAssignReason).toBe("ResourceAutoAssignMustBeBoolean")
 end)
 
+it("ResourceValidator.ValidateResourceDefinition rejects non-finite numeric metadata values", function()
+	local invalidInitialValueDefinition: ResourceDefinition = createValidResourceDefinition();
+	(invalidInitialValueDefinition :: any).initialValue = 0 / 0
+
+	local isInvalidInitialValueValid: boolean, invalidInitialValueReason: string? =
+		ResourceValidator.ValidateResourceDefinition(invalidInitialValueDefinition, {})
+	expect(isInvalidInitialValueValid).toBe(false)
+	expect(invalidInitialValueReason).toBe("ResourceInitialValueMustBeFiniteNumber")
+
+	local invalidStaticMaxSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+	(invalidStaticMaxSourceDefinition :: any).max = {
+		value = math.huge,
+	}
+
+	local isInvalidStaticMaxSourceValid: boolean, invalidStaticMaxSourceReason: string? =
+		ResourceValidator.ValidateResourceDefinition(invalidStaticMaxSourceDefinition, {})
+	expect(isInvalidStaticMaxSourceValid).toBe(false)
+	expect(invalidStaticMaxSourceReason).toBe("ResourceMaxValueMustBeFiniteNumber")
+
+	local invalidPropertyBackedMinDefinition: ResourceDefinition = createValidResourceDefinition();
+	(invalidPropertyBackedMinDefinition :: any).min = {
+		propertyName = "MinStamina",
+		defaultBaseValue = math.huge,
+	}
+
+	local isInvalidPropertyBackedMinValid: boolean, invalidPropertyBackedMinReason: string? =
+		ResourceValidator.ValidateResourceDefinition(invalidPropertyBackedMinDefinition, {})
+	expect(isInvalidPropertyBackedMinValid).toBe(false)
+	expect(invalidPropertyBackedMinReason).toBe("ResourceMinDefaultBaseValueMustBeFiniteNumber")
+
+	local invalidRegenRateDefinition: ResourceDefinition = createValidResourceDefinition();
+	(invalidRegenRateDefinition :: any).regen = {
+		rate = {
+			value = math.huge,
+		},
+	}
+
+	local isInvalidRegenRateValid: boolean, invalidRegenRateReason: string? =
+		ResourceValidator.ValidateResourceDefinition(invalidRegenRateDefinition, {})
+	expect(isInvalidRegenRateValid).toBe(false)
+	expect(invalidRegenRateReason).toBe("ResourceRegenRateValueMustBeFiniteNumber")
+end)
+
 it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min numeric sources", function()
 	local missingMaxDefinition: ResourceDefinition = createValidResourceDefinition();
 	(missingMaxDefinition :: any).max = nil

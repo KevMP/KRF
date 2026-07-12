@@ -12,6 +12,18 @@ local VALID_VISIBILITIES = table.freeze({
 
 local ResourceValidator = {}
 
+local function ValidateFiniteNumber(value: any, numberReason: string, finiteNumberReason: string): (boolean, string?)
+	if type(value) ~= "number" then
+		return false, numberReason
+	end
+
+	if not math.isfinite(value) then
+		return false, finiteNumberReason
+	end
+
+	return true, nil
+end
+
 local function ValidateResourceId(
 	definition: ResourceDefinition,
 	loadedResources: { [string]: ResourceDefinition }
@@ -56,11 +68,11 @@ local function ValidateResourceInitialValue(definition: ResourceDefinition): (bo
 		return true, nil
 	end
 
-	if type(definition.initialValue) ~= "number" then
-		return false, "ResourceInitialValueMustBeNumber"
-	end
-
-	return true, nil
+	return ValidateFiniteNumber(
+		definition.initialValue,
+		"ResourceInitialValueMustBeNumber",
+		"ResourceInitialValueMustBeFiniteNumber"
+	)
 end
 
 local function ValidateResourceAutoAssign(definition: ResourceDefinition): (boolean, string?)
@@ -97,8 +109,13 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 	end
 
 	if hasValue then
-		if type(sourceValue) ~= "number" then
-			return false, `{sourcePrefix}ValueMustBeNumber`
+		local isSourceValueValid: boolean, sourceValueFailReason: string? = ValidateFiniteNumber(
+			sourceValue,
+			`{sourcePrefix}ValueMustBeNumber`,
+			`{sourcePrefix}ValueMustBeFiniteNumber`
+		)
+		if not isSourceValueValid then
+			return false, sourceValueFailReason
 		end
 
 		if defaultBaseValue ~= nil then
@@ -120,8 +137,13 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 		return false, `{sourcePrefix}DefaultBaseValueMissing`
 	end
 
-	if type(defaultBaseValue) ~= "number" then
-		return false, `{sourcePrefix}DefaultBaseValueMustBeNumber`
+	local isDefaultBaseValueValid: boolean, defaultBaseValueFailReason: string? = ValidateFiniteNumber(
+		defaultBaseValue,
+		`{sourcePrefix}DefaultBaseValueMustBeNumber`,
+		`{sourcePrefix}DefaultBaseValueMustBeFiniteNumber`
+	)
+	if not isDefaultBaseValueValid then
+		return false, defaultBaseValueFailReason
 	end
 
 	return true, nil

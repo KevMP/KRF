@@ -122,6 +122,25 @@ it("ResourceRegistry.Load remains atomic when a later definition fails validatio
 	expect(Registry.GetAllById()["Resource.Stamina"]).toBeNil()
 end)
 
+it("ResourceRegistry.Load rejects definitions with non-finite numeric values", function()
+	Registry._resetForTests()
+
+	local loaded: boolean, reason: string? = Registry.Load({
+		{
+			id = "Resource.Broken",
+			max = {
+				value = math.huge,
+			},
+			visibility = "ServerOnly",
+		},
+	})
+
+	expect(loaded).toBe(false)
+	expect(reason).toBe("ResourceMaxValueMustBeFiniteNumber")
+	expect(Registry.IsLoaded()).toBe(false)
+	expect(#Registry.GetAll()).toBe(0)
+end)
+
 it("ResourceRegistry.Get, GetAll, and GetAllById expose stable loaded definitions after startup load", function()
 	Registry._resetForTests()
 
