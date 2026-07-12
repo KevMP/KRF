@@ -4,8 +4,8 @@ local SignalFolder = serverFolder.Parent.shared.Signal
 local utilsFolder = script.Parent.utils
 
 local PropertyTypes = require(script.Parent.types)
-local ActorTypes = require(script.Parent.Parent.Actor.types)
-local TagTypes = require(script.Parent.Parent.Tags.types)
+local ActorTypes = require(serverFolder.Actor.types)
+local TagTypes = require(serverFolder.Tags.types)
 local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)

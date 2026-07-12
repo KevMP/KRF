@@ -18,6 +18,11 @@ const sidebarsApi: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Resource',
+      items: ['Resource/resource-registry'],
+    },
+    {
+      type: 'category',
       label: 'Tags',
       items: [
         'Tags/tag-registry',
