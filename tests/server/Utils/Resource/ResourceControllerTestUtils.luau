@@ -44,4 +44,18 @@ function ResourceControllerTestUtils.resetAndLoadDefinitions(definitions: { Reso
 	expect(loadReason).toBeNil()
 end
 
+function ResourceControllerTestUtils.waitUntil(predicate: () -> boolean, maxSteps: number?): boolean
+	local limit: number = maxSteps or 30
+
+	for _index: number = 1, limit do
+		if predicate() then
+			return true
+		end
+
+		task.wait()
+	end
+
+	return predicate()
+end
+
 return ResourceControllerTestUtils

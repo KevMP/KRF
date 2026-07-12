@@ -9,27 +9,68 @@ local SignalTypes = require(SignalFolder.types)
 local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ResourceRegistry = require(script.Parent.ResourceRegistry)
+local ResourceControllerRecomputeUtils = require(script.Parent.utils.ResourceControllerRecompute)
 local ResourceStateResolver = require(script.Parent.utils.ResourceStateResolver)
+
+local RunService: RunService = game:GetService("RunService")
+local automaticStepIntervalSeconds: number = 0.1
 
 type Actor = ActorTypes.Actor
 type ResourceController = ResourceTypes.ResourceController
 type LoadedResourceDefinition = ResourceTypes.LoadedResourceDefinition
 type ResourceChange = ResourceTypes.ResourceChange
 type PropertyController = PropertyTypes.PropertyController
-
-type ResourceRecord = {
-	currentValue: number,
-	resolvedMin: number,
-	resolvedMax: number,
+type ResourceRecord = ResourceControllerRecomputeUtils.ResourceRecord
+type ResourceRecordsById = ResourceControllerRecomputeUtils.ResourceRecordsById
+type ResourceIdsByPropertyName = ResourceControllerRecomputeUtils.ResourceIdsByPropertyName
+type ResourceRecomputeChange = ResourceControllerRecomputeUtils.ResourceRecomputeChange
+type ResourceControllerModule = {
+	new: (actor: Actor) -> ResourceController,
+	Step: (deltaTime: number) -> (),
+	_setAutomaticSteppingEnabledForTests: (enabled: boolean) -> (),
 }
 
-local ResourceController = {}
+local ResourceController: ResourceControllerModule = {} :: ResourceControllerModule
+local HeartBeatConnection: RBXScriptConnection? = nil
+local automaticSteppingEnabled: boolean = true
+local automaticStepAccumulatorSeconds: number = 0
+local regeneratingActorsByController: { [ResourceController]: Actor } = {}
+
+local function UpdateHeartbeatConnection(): ()
+	local hasRegeneratingControllers: boolean = next(regeneratingActorsByController) ~= nil
+
+	if automaticSteppingEnabled and hasRegeneratingControllers then
+		if HeartBeatConnection == nil then
+			automaticStepAccumulatorSeconds = 0
+			HeartBeatConnection = RunService.Heartbeat:Connect(function(deltaTime: number)
+				automaticStepAccumulatorSeconds += deltaTime
+
+				if automaticStepAccumulatorSeconds < automaticStepIntervalSeconds then
+					return
+				end
+
+				ResourceController.Step(automaticStepIntervalSeconds)
+				automaticStepAccumulatorSeconds -= automaticStepIntervalSeconds
+			end)
+		end
+
+		return
+	end
+
+	automaticStepAccumulatorSeconds = 0
+
+	if HeartBeatConnection ~= nil then
+		HeartBeatConnection:Disconnect()
+		HeartBeatConnection = nil
+	end
+end
 
 function ResourceController.new(actor: Actor): ResourceController
 	local propertyController: PropertyController? = actor:GetController("PropertyController") :: PropertyController?
 
 	local controller: ResourceController = {} :: ResourceController
-	local resourcesById: { [string]: ResourceRecord } = {}
+	local resourcesById: ResourceRecordsById = {}
+	local resourceIdsByPropertyName: ResourceIdsByPropertyName = {}
 
 	local OnResourceAddedSignal: SignalTypes.Signal<Actor, string> = SignalModule.new()
 	local OnResourceChangedSignal: SignalTypes.Signal<ResourceChange> = SignalModule.new()
@@ -38,6 +79,7 @@ function ResourceController.new(actor: Actor): ResourceController
 		OwnedSignalsModule.new({ OnResourceAddedSignal, OnResourceChangedSignal })
 
 	local destroyed: boolean = false
+	local propertyConnection: SignalTypes.Connection? = nil
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
@@ -56,7 +98,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			return false, "InvalidResourceOverrideValue"
 		end
 
-		local resolvedMin: number?, resolvedMax: number?, resolveReason: string? =
+		local resolvedMin: number?, resolvedMax: number?, resolvedRegenRate: number?, resolveReason: string? =
 			ResourceStateResolver.Resolve(propertyController, definition)
 		if resolvedMin == nil or resolvedMax == nil then
 			return false, resolveReason
@@ -68,10 +110,18 @@ function ResourceController.new(actor: Actor): ResourceController
 			else resolvedMax
 
 		resourcesById[resourceId] = {
+			definition = definition,
 			currentValue = math.clamp(initialValue, resolvedMin, resolvedMax),
 			resolvedMin = resolvedMin,
 			resolvedMax = resolvedMax,
+			resolvedRegenRate = resolvedRegenRate,
 		}
+
+		ResourceControllerRecomputeUtils.IndexPropertySources(resourceIdsByPropertyName, definition)
+		if definition.regen ~= nil then
+			regeneratingActorsByController[controller] = actor
+			UpdateHeartbeatConnection()
+		end
 
 		ownedSignals:WithDeferredDestroy(function()
 			OnResourceAddedSignal:Fire(actor, resourceId)
@@ -205,18 +255,78 @@ function ResourceController.new(actor: Actor): ResourceController
 		return controller:SetCurrent(resourceId, resourceRecord.currentValue - amount)
 	end
 
+	function controller:Step(deltaTime: number): ()
+		if typeof(deltaTime) ~= "number" or not math.isfinite(deltaTime) or deltaTime <= 0 then
+			return
+		end
+
+		for resourceId: string, resourceRecord: ResourceRecord in resourcesById do
+			local resolvedRegenRate: number? = resourceRecord.resolvedRegenRate
+			if resolvedRegenRate == nil or resolvedRegenRate <= 0 then
+				continue
+			end
+
+			controller:Restore(resourceId, resolvedRegenRate * deltaTime)
+		end
+	end
+
 	function controller:Destroy(): ()
 		if destroyed then
 			return
 		end
 
 		destroyed = true
+		regeneratingActorsByController[controller] = nil
+		UpdateHeartbeatConnection()
+
+		if propertyConnection ~= nil then
+			propertyConnection:Disconnect()
+			propertyConnection = nil
+		end
+
 		ownedSignals:Destroy()
 		table.clear(resourcesById)
+		table.clear(resourceIdsByPropertyName)
 	end
 
 	controller.OnResourceAdded = SignalModule.wrapEvent(OnResourceAddedSignal)
 	controller.OnResourceChanged = SignalModule.wrapEvent(OnResourceChangedSignal)
+
+	if propertyController ~= nil then
+		local resolvedPropertyChangedEvent: any = (propertyController :: any).OnResolvedPropertyChanged
+		if resolvedPropertyChangedEvent ~= nil then
+			propertyConnection = resolvedPropertyChangedEvent:Connect(
+				function(_actor: Actor, propertyName: string, _oldValue: number?, _newValue: number)
+					local changes: { ResourceRecomputeChange } =
+						ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperty(
+							resourcesById,
+							resourceIdsByPropertyName,
+							propertyController,
+							propertyName
+						)
+
+					if #changes == 0 then
+						return
+					end
+
+					ownedSignals:WithDeferredDestroy(function()
+						for _, change: ResourceRecomputeChange in changes do
+							OnResourceChangedSignal:Fire({
+								actor = actor,
+								resourceId = change.resourceId,
+								currentOldValue = change.currentOldValue,
+								currentNewValue = change.currentNewValue,
+								minOldValue = change.minOldValue,
+								minNewValue = change.minNewValue,
+								maxOldValue = change.maxOldValue,
+								maxNewValue = change.maxNewValue,
+							})
+						end
+					end)
+				end
+			)
+		end
+	end
 
 	for _, definition: LoadedResourceDefinition in ResourceRegistry.GetAll() do
 		if definition.autoAssign then
@@ -234,6 +344,25 @@ function ResourceController.new(actor: Actor): ResourceController
 	end
 
 	return controller
+end
+
+function ResourceController.Step(deltaTime: number): ()
+	if deltaTime <= 0 then
+		return
+	end
+
+	for controller: ResourceController, actor: Actor in regeneratingActorsByController do
+		if not actor.enabled then
+			continue
+		end
+
+		controller:Step(deltaTime)
+	end
+end
+
+function ResourceController._setAutomaticSteppingEnabledForTests(enabled: boolean): ()
+	automaticSteppingEnabled = enabled
+	UpdateHeartbeatConnection()
 end
 
 return ResourceController

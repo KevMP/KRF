@@ -44,29 +44,32 @@ end
 function ResourceStateResolver.Resolve(
 	propertyController: PropertyController?,
 	definition: LoadedResourceDefinition
-): (number?, number?, string?)
+): (number?, number?, number?, string?)
 	local resolvedMin: number?, minReason: string? = ResolveNumericSource(propertyController, definition.min)
 	if resolvedMin == nil then
-		return nil, nil, minReason
+		return nil, nil, nil, minReason
 	end
 
 	local resolvedMax: number?, maxReason: string? = ResolveNumericSource(propertyController, definition.max)
 	if resolvedMax == nil then
-		return nil, nil, maxReason
+		return nil, nil, nil, maxReason
 	end
 
+	local resolvedRegenRate: number? = nil
 	if definition.regen ~= nil then
 		local regenRate: number?, regenReason: string? = ResolveNumericSource(propertyController, definition.regen.rate)
 		if regenRate == nil then
-			return nil, nil, regenReason
+			return nil, nil, nil, regenReason
 		end
+
+		resolvedRegenRate = regenRate
 	end
 
 	if resolvedMax < resolvedMin then
-		return nil, nil, "ResourceResolvedMaxLessThanResolvedMin"
+		return nil, nil, nil, "ResourceResolvedMaxLessThanResolvedMin"
 	end
 
-	return resolvedMin, resolvedMax, nil
+	return resolvedMin, resolvedMax, resolvedRegenRate, nil
 end
 
 return ResourceStateResolver
