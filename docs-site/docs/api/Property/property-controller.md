@@ -4,89 +4,73 @@ sidebar_position: 1
 
 # Property Controller
 
-`PropertyController` is the per-actor runtime API for numeric properties.
-
-Game code usually gets it from an actor:
+`PropertyController` owns numeric base and resolved values for one Actor. Obtain it from the Actor after controller attachment.
 
 ```lua
-local propertyController = actor:GetController("PropertyController")
+local properties = actor:GetController("PropertyController")
 ```
+
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`SetBaseProperty(propertyName: string, value: number) -> (boolean, string?)`](#set-base-property) |
+| Method | [`GetBaseProperty(propertyName: string) -> number?`](#get-base-property) |
+| Method | [`GetResolvedProperty(propertyName: string) -> number?`](#get-resolved-property) |
+| Method | [`GetResolvedProperties() -> {[string]: number}`](#get-resolved-properties) |
+| Method | [`HasProperty(propertyName: string) -> boolean`](#has-property) |
+| Method | [`Destroy() -> ()`](#destroy) |
+| Event | [`OnBasePropertyChanged: Event<Actor, string, number?, number>`](#on-base-property-changed) |
+| Event | [`OnResolvedPropertyChanged: Event<Actor, string, number?, number>`](#on-resolved-property-changed) |
+| Event | [`OnPropertyChanged: Event<PropertyChange>`](#on-property-changed) |
 
 ## Methods
 
-### `SetBaseProperty(propertyName, value) -> (boolean, string?)`
+### `SetBaseProperty(propertyName: string, value: number) -> (boolean, string?)` {#set-base-property}
 
-Sets the base value for a property.
+Creates or updates a numeric base value, then recomputes the resolved value from active tags.
 
-If the property does not exist yet, this creates it.
+**Returns**
 
-Returns:
+- `true, nil`: the value is valid. Writing the current base value is a successful no-op.
+- `false, "InvalidPropertyValue"`: `value` is not a number; no property is created or changed.
 
-* `true, nil` on success
-* `false, "InvalidPropertyValue"` if `value` is not numeric
+### `GetBaseProperty(propertyName: string) -> number?` {#get-base-property}
 
-### `GetBaseProperty(propertyName) -> number?`
+Returns the stored base value, or `nil` when the property does not exist.
 
-Returns the current base value for a property.
+### `GetResolvedProperty(propertyName: string) -> number?` {#get-resolved-property}
 
-### `GetResolvedProperty(propertyName) -> number?`
+Returns the current value after tag resolution, or `nil` when the property does not exist. Runtime decisions should normally read this value.
 
-Returns the current resolved value for a property.
+### `GetResolvedProperties() -> {[string]: number}` {#get-resolved-properties}
 
-### `GetResolvedProperties() -> {[string]: number}`
+Returns a frozen snapshot of all current resolved values. Later controller changes do not mutate the snapshot.
 
-Returns every resolved property currently stored on the actor.
+### `HasProperty(propertyName: string) -> boolean` {#has-property}
 
-### `HasProperty(propertyName) -> boolean`
+Returns whether a property entry exists. A tag modifier does not create a custom property; `SetBaseProperty` does.
 
-Reports whether the actor currently has that property entry.
+### `Destroy() -> ()` {#destroy}
 
-### `Destroy() -> ()`
-
-Destroys the controller and its owned signals.
+Disconnects tag observers and destroys owned events. Repeated calls are no-ops. Normal gameplay code should let Actor teardown call this method.
 
 ## Events
 
-### `OnBasePropertyChanged`
+### `OnBasePropertyChanged: Event<Actor, string, number?, number>` {#on-base-property-changed}
 
-Fires when a base property value changes.
+Fires when a base value changes.
 
-```lua
-SignalTypes.Event<Actor, string, number?, number>
-```
+### `OnResolvedPropertyChanged: Event<Actor, string, number?, number>` {#on-resolved-property-changed}
 
-### `OnResolvedPropertyChanged`
+Fires when a resolved value changes.
 
-Fires when a resolved property value changes.
+### `OnPropertyChanged: Event<PropertyChange>` {#on-property-changed}
 
-```lua
-SignalTypes.Event<Actor, string, number?, number>
-```
-
-### `OnPropertyChanged`
-
-Fires a structured property change record.
-
-```lua
-type PropertyChange = {
-	actor: Actor,
-	propertyName: string,
-	oldBaseValue: number?,
-	newBaseValue: number,
-	oldResolvedValue: number?,
-	newResolvedValue: number,
-}
-```
-
-## Built-in Defaults
-
-Every new controller starts with:
-
-* `WalkSpeed = 16`
-* `JumpPower = 50`
+Fires when a base or resolved value changes.
 
 ## Related
 
-* [Property Runtime concepts](/Property/property-runtime)
-* [Tag Registry](../Tags/tag-registry)
-* [Tag Controller](../Tags/tag-controller)
+- [Property Runtime guide](/Property/property-runtime)
+- [Tag Controller](../Tags/tag-controller)
+- [Tag Registry](../Tags/tag-registry)

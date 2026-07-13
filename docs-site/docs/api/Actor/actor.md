@@ -4,50 +4,57 @@ sidebar_position: 2
 
 # Actor
 
-`Actor` is KRF's runtime object for one gameplay participant.
+`Actor` represents one server-side gameplay participant and provides access to its actor-scoped controllers. `ActorRuntime.RegisterActor(...)` returns the live instance.
 
-Games usually receive an actor from `ActorRuntime.RegisterActor(...)` and then interact with that actor through attached controllers.
+## Members
 
-## Core fields
+| Kind | Signature |
+| --- | --- |
+| Property | [`actor.model: Model?`](#model) |
+| Property | [`actor.enabled: boolean`](#enabled) |
+| Method | [`actor:GetId() -> string`](#get-id) |
+| Method | [`actor:GetController(key: string) -> Controller?`](#get-controller) |
+| Method | [`actor:GetControllerKeys() -> {string}`](#get-controller-keys) |
+| Method | [`actor:SetController(key: string, controller: Controller) -> boolean`](#set-controller) |
+| Method | [`actor:RemoveController(key: string) -> Controller?`](#remove-controller) |
 
-### `actor.model: Model?`
+## Properties
 
-The currently bound model for the actor. This becomes `nil` after unregistration.
+### `actor.model: Model?` {#model}
 
-### `actor.enabled: boolean`
+The current bound model. `ActorRuntime` clears it after unregistration. Treat this field as read-only in game code.
 
-Whether the actor is currently live in the runtime.
+### `actor.enabled: boolean` {#enabled}
+
+Whether the Actor is live. New Actor objects start disabled; registration enables them and teardown disables them. Treat this field as read-only in game code.
 
 ## Methods
 
-### `actor:GetId() -> string`
+### `actor:GetId() -> string` {#get-id}
 
-Returns the actor's stable runtime id.
+Returns the Actor's immutable runtime id. External fields named `id` do not change this value.
 
-### `actor:GetController(key) -> Controller?`
+### `actor:GetController(key: string) -> Controller?` {#get-controller}
 
-Returns the controller attached at `key`, or `nil` if no controller is attached there.
+Returns the controller attached under `key`, or `nil` when the key is unoccupied.
 
-### `actor:GetControllerKeys() -> {string}`
+### `actor:GetControllerKeys() -> {string}` {#get-controller-keys}
 
-Returns every currently attached controller key.
+Returns a new array containing all occupied controller keys. The array can be changed by the caller without changing the Actor; key order is not a public guarantee.
 
-### `actor:SetController(key, controller) -> boolean`
+### `actor:SetController(key: string, controller: Controller) -> boolean` {#set-controller}
 
-Attaches a controller to the actor if that key is not already occupied.
+Attaches `controller` only when `key` is unoccupied. Returns `false` and preserves the existing controller on collision.
 
-Returns `false` if a controller with that key is already attached.
+Controllers managed by `ActorRuntime` must provide `Destroy()`.
 
-### `actor:RemoveController(key) -> Controller?`
+### `actor:RemoveController(key: string) -> Controller?` {#remove-controller}
 
-Removes and returns the controller attached at `key`, if one exists.
-
-## Notes
-
-`Actor` does not own gameplay rules by itself. In normal game code, it mostly acts as the access point for attached controllers such as `PropertyController` and `TagController`.
+Removes and returns the controller under `key`. Returns `nil` when none is attached. This method does not call `Destroy()`.
 
 ## Related
 
-* [Actor Runtime](./actor-runtime)
-* [Property Controller](../Property/property-controller)
-* [Tag Controller](../Tags/tag-controller)
+- [Actor Runtime](./actor-runtime)
+- [Property Controller](../Property/property-controller)
+- [Resource Controller](../Resource/resource-controller)
+- [Tag Controller](../Tags/tag-controller)

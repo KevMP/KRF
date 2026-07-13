@@ -1,67 +1,42 @@
 ---
 slug: /
+description: Kevin's Roblox Framework is a reusable, server-authoritative combat and RPG framework for anime-inspired Roblox games.
 sidebar_position: 1
-sidebar_label: KRF Intro
+sidebar_label: KRF Overview
 displayed_sidebar: docsSidebar
 ---
 
 # Kevin's Roblox Framework
 
-**Kevin's Roblox Framework (KRF)** is a reusable, server authoritative combat and RPG framework for anime inspired Roblox games.
+**A server-authoritative gameplay framework for anime-inspired Roblox games.**
 
-It is built for developers who want a serious gameplay foundation without rebuilding the same runtime spine every project. KRF handles the hard architectural and runtime problems so you can spend your time on lore, visuals, feel, and content.
+KRF connects the full gameplay chain—from input and actions to combat results, replicated state, and presentation—under one Actor-centered runtime. You define the game; KRF provides the architecture that keeps its systems coherent.
 
-## Why KRF exists
+[Start with the runtime](./Actor/actor-runtime) · [Browse the API](/api/Actor/actor-runtime) · [View on GitHub](https://github.com/KevMP/KRF)
 
-A lot of anime and anime inspired Roblox games are built around the same core ideas:
+## One gameplay model
 
-- ability based combat
-- RPG stats and progression
-- quests and content loops
-- fast, responsive gameplay with strong presentation
+Players, NPCs, bosses, summons, and training dummies are all Actors. Player input and AI intent enter the same action system, follow the same gameplay rules, and produce server-authoritative outcomes.
 
-KRF exists to provide a **consistent, reusable foundation** for those systems so developers do not have to reinvent them every time.
+**Input or AI intent → Action → Validation → Gameplay outcome → Replication and presentation**
 
-## What KRF is not
+Tags, properties, resources, movement, combat, and presentation participate in that shared pipeline instead of inventing separate state, lifecycle, and networking rules.
 
-KRF is **not**:
+## From runtime spine to complete game
 
-- a full game template
-- a universe specific framework tied to one theme or progression system
-- an ECS framework
-- a datastore solution
-- a matchmaking framework
-- a final UI/theming solution
-- a monetization or analytics layer
+The runtime spine covers Actors, statuses, numeric properties, resources, actions, input, replication, and debugging. It gives gameplay state a clear owner and gives every core operation a consistent entrypoint.
 
-KRF gives you the runtime spine. Your game still defines its world, progression, content, balance, and presentation.
+On top of that spine, KRF brings together combat resolution, health and knockdown, movement, inventory and equipment, abilities, quests, dialogue, world interactions, AI, animation, and effects. These systems are designed to work together without forcing game-specific content into the framework.
 
-## Who KRF is for
+## Built to become your game
 
-KRF is built for developers making games like:
+KRF defines runtime rules, not fiction. It does not prescribe a universe, power source, class system, progression model, combat style, or visual identity.
 
-- anime RPGs
-- combat arena games
-- magic combat games
-- PvE or PvP games built around abilities, statuses, movement, and progression
+Your game owns its world, characters, abilities, items, quests, balance, assets, interface, and presentation. Persistence, matchmaking, monetization, analytics, and final UI theming also remain outside KRF.
 
-It is especially useful when your game needs a shared foundation for things like actors, tags, actions, combat, movement, replication, and debugging.
+## Start with the runtime
 
-## Design goal
-
-The goal is to make it realistically possible to build complete Roblox RPG games faster by solving the architecture once, solving it well, and reusing it across projects.
-
-With a stable runtime foundation and ready assets, developers should be able to focus on the game specific work that actually makes one project feel different from another.
-
-## Start here
-
-If you are new to KRF, start with the runtime docs:
-
-* [Actor Runtime](/Actor/actor-runtime)
-* [Property Runtime](/Property/property-runtime)
-* [Resource Registry](/Resource/resource-registry)
-* [Resource Runtime](/Resource/resource-runtime)
-* [Tag Registry](/Tags/tag-registry)
-* [Tag Runtime](/Tags/tag-runtime)
-
-Additional guides and higher-level learning content will be added as the framework grows.
+- [Actor Runtime](./Actor/actor-runtime)
+- [Tags](./Tags/tag-runtime) and [properties](./Property/property-runtime)
+- [Resources](./Resource/resource-runtime)
+- [API Reference](/api/Actor/actor-runtime)

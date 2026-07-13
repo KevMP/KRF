@@ -1,86 +1,74 @@
 # Resource Runtime
 
-KRF treats a resource as actor-scoped runtime state backed by a static resource definition.
+`ResourceController` owns live resource state for one Actor: assignment, current values, resolved bounds, costs, and regeneration. The registry supplies definitions; the controller turns them into Actor-specific state.
 
-Use resources when your game needs meters such as stamina, mana, energy, focus, rage, breath, heat, or other values that belong to one live actor.
+## Assignment
 
-## What this is
+Adding a resource resolves its state in this order:
 
-A resource is a current actor-scoped meter in KRF.
+1. Find the loaded definition.
+2. Seed missing property-backed sources.
+3. Resolve minimum, maximum, and optional regeneration rate.
+4. Choose explicit override, definition initial value, or resolved maximum.
+5. Clamp current value to the resolved bounds.
+6. Store the resource and fire `OnResourceAdded`.
 
-Each live resource has:
+Definitions marked `autoAssign` run this flow when the controller is constructed. Assignment fails without partial resource state when the id, override, property source, or bounds are invalid.
 
-* a current value
-* a resolved minimum and maximum
-* an optional regeneration rate
+## Mutation choices
 
-The definition for that resource is loaded through `ResourceRegistry`, but the live value belongs to one actor at runtime.
+| Intent | Method | Behavior at a bound |
+| --- | --- | --- |
+| Set an authoritative value | `SetCurrent` | Clamps to min and max. |
+| Check a full cost | `CanSpend` | Never mutates. |
+| Pay a full cost | `Spend` | Atomic; insufficient value fails unchanged. |
+| Add value | `Restore` | Clamps at max. |
+| Remove up to an amount | `Drain` | Clamps at min; partial drain succeeds. |
 
-Two actors may both use `Resource.Stamina`, but each actor owns its own current value, resolved bounds, and regeneration behavior.
+`Spend` measures available value above the resolved minimum, not above zero.
 
-## What resources own
+```lua
+local resources = actor:GetController("ResourceController")
 
-Resource Runtime owns:
+local paid, reason = resources:Spend("Resource.Stamina", 20)
+if not paid then
+	if reason == "InsufficientResourceValue" then
+		return
+	end
 
-* current resource values on live actors
-* resolved minimum and maximum bounds for those values
-* optional regeneration for resource types that define it
-* actor-scoped resource state instead of global shared meter state
+	warn(("Stamina spend failed: %s"):format(reason or "Unknown"))
+	return
+end
 
-## What resources do not own
+performDash(actor)
+```
 
-Resource Runtime does not own:
+## Live property-backed state
 
-* loading the resource catalog
-* actor registration
-* property values themselves
-* combat meaning, UI meaning, or progression meaning
-* health as an automatic built-in resource
+Current resource value is not a property. Properties supply optional bounds and regeneration rates; the resource retains its own current value.
 
-KRF still owns numeric properties through Property Runtime. Resource Runtime reads property-backed limits and regen from that system, but current resource values stay separate from properties.
+When a source property changes, KRF recomputes affected resources and clamps current value into new valid bounds. An invalid recompute preserves the last valid resource state.
 
-## Resource definitions and live state
+| Property change | Resource event? |
+| --- | --- |
+| Minimum or maximum changes | Yes |
+| Bounds clamp current value | Yes, in the same payload |
+| Regeneration rate changes by itself | No |
+| Unrelated property changes | No |
 
-`ResourceRegistry` defines what a resource means.
+## Regeneration
 
-That definition may include:
+Regeneration is measured in units per second and advances automatically in fixed 0.1-second steps while the Actor is enabled. It uses the latest resolved rate and clamps at maximum; a step that changes nothing fires no event.
 
-* id
-* visibility
-* minimum and maximum numeric sources
-* optional initial value
-* optional automatic assignment
-* optional regeneration metadata
+## Design rules
 
-After that catalog is loaded, live resource state is where KRF:
+- Use `Spend` for all-or-nothing gameplay costs and `Drain` for forced loss.
+- Read resource current values from `ResourceController`, never `PropertyController`.
+- Attach `ResourceController` after `PropertyController` when using live sources.
+- Subscribe to `OnResourceChanged` when another runtime system needs current value or bound changes.
 
-* assign resources to actors
-* resolve actor-specific defaults
-* seed missing property-backed base values
-* clamp current value within resolved bounds
-* spend, restore, drain, or regenerate current value
+## API reference
 
-## Property-backed resources
-
-Resource definitions may use:
-
-* static numeric sources through `value`
-* property-backed numeric sources through `propertyName` and `defaultBaseValue`
-
-This keeps resource definitions connected to Property Runtime without turning resource state into another property table.
-
-A property-backed resource still owns its own current value. Properties only supply the numbers that resource state resolves against.
-
-## Common mistakes
-
-* Treating a resource definition as if it were already live state on every actor.
-* Treating current resource values as properties instead of actor-scoped runtime state.
-* Using a property-backed source when the value is really just static authored data.
-
-## Related concepts
-
-Read [Resource Registry](./resource-registry) for the startup catalog and definition rules.
-
-Read [Property Runtime](../Property/property-runtime) for the numeric property surface used by property-backed limits and regeneration.
-
-Read [Actor Runtime](../Actor/actor-runtime) for the actor lifecycle resources will eventually live inside.
+- [`ResourceController`](/api/Resource/resource-controller)
+- [`ResourceRegistry`](/api/Resource/resource-registry)
+- [`PropertyController`](/api/Property/property-controller)

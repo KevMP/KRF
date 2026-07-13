@@ -1,127 +1,71 @@
 # Tag Registry
 
-`TagRegistry` is KRF's catalog for tag definitions.
+`TagRegistry` defines the shared meaning of gameplay tags. A definition is static server-lifetime data; active instances belong to each Actor's `TagController`.
 
-Tags give KRF a shared language for gameplay state. They let different systems agree on what something means without each system inventing separate flags, timers, or modifier rules.
+## What a definition controls
 
-Common examples include crowd control such as `Status.Stunned`, movement buffs such as `Buff.Sprint`, or ticking damage effects such as `Status.OnFire`.
+| Concern | Field |
+| --- | --- |
+| Identity | `id` |
+| Reapplication | `duplicateBehavior`, optional `maxStacks` |
+| Lifetime | optional `defaultDuration` |
+| Periodic work | optional `tickInterval` and `onTick` |
+| Visibility classification | `visibility` |
+| Numeric effects | optional `properties` |
 
-A tag definition is not an active tag on an actor. It is the static definition KRF uses to understand what that tag means.
+Load the full catalog once during startup. Validation is atomic, registration order is preserved, and a successful load cannot be replaced during that server lifetime.
 
-## How tags fit into KRF
+## Choose duplicate behavior
 
-Tags are meant to be reusable gameplay signals.
+| Behavior | Use when reapplication should… |
+| --- | --- |
+| `Ignore` | Keep the original instance unchanged. |
+| `Refresh` | Keep one instance and reset its duration. |
+| `Stack` | Add independent instances, optionally up to `maxStacks`. |
 
-Multiple systems may care about the same state at the same time. A stun may affect movement, input, animation, action gating, or UI. A sprint buff may affect movement resolution and status display. A fire effect may carry both timing metadata and periodic behavior.
+At the stack cap, KRF refreshes an existing instance instead of adding another. See [Tag Runtime](./tag-runtime) for exact selection and event behavior.
 
-`TagRegistry` gives those systems one shared source of truth.
+## Timing and ticks
 
-## Loading a tag catalog
+- `defaultDuration` supplies a lifetime when `AddTag` does not override it.
+- No duration means the instance is indefinite.
+- `tickInterval` schedules `onTick` when both are present; a ticking tag does not require a duration.
+- `onTick` runs synchronously during tag advancement. Keep it fast and do not yield.
+- A callback failure is warned and isolated from later tag advancement.
 
-Games define their tag catalog in data and load it once during startup.
+Definitions describe timing. `TagController` owns countdown, refresh, expiry, and live instances.
 
-Load rules:
+## Property modifiers
 
-* load happens once during startup
-* load is all or nothing
-* invalid catalogs do not partially register
-* successful load freezes the catalog for the lifetime of the server
-* a second successful load is not supported
+Each property modifier uses one of two modes.
 
-## What a tag definition describes
+| Mode | Fields | Resolution |
+| --- | --- | --- |
+| Override | `set` only | Lowest active `set` wins. |
+| Normal | Any of `add`, `multiply`, `min`, `max` | Add, multiply, then clamp. |
 
-A tag definition gives KRF the static meaning of a tag.
+`set` cannot be combined with normal fields in the same modifier. Active stacks repeat additive and multiplicative effects.
 
-That meaning usually falls into a few buckets:
+Tags may name built-in or custom properties. They modify only properties already owned by `PropertyController`; they do not create custom property entries.
 
-* **identity**, through a unique tag id
-* **reapplication rules**, through stack, refresh, or ignore behavior
-* **visibility**, through whether the tag is server only or may be surfaced to clients
-* **timing metadata**, such as default duration or tick cadence
-* **behavior surfaces**, such as `onTick`
-* **numeric modifiers**, through built in or custom properties
-
-Not every tag uses every part of that surface.
-
-A stun may define duration and movement overrides. A sprint buff may define movement modifiers. A ticking damage effect may define duration, tick cadence, and periodic behavior. It may also tick indefinitely when it has `tickInterval` and `onTick` but no duration.
-
-KRF keeps those definitions in one catalog so the rest of the runtime can reason about them consistently.
-
-`TagRegistry` only defines that timing metadata. The live countdown and expiry behavior belongs to `TagController` at runtime.
-
-If a tag uses `onTick`, treat it like lightweight gameplay logic. KRF runs it synchronously during tag stepping, so avoid slow work or yielding there.
-
-## Property modifier modes
-
-A property entry affects a numeric property in one of two ways.
-
-### Override mode
-
-Override mode uses `set`.
-
-If `set` is present, it may not be combined with `add`, `multiply`, `min`, or `max`.
-
-### Normal modifier mode
-
-Normal modifier mode may use any subset of:
-
-* `add`
-* `multiply`
-* `min`
-* `max`
-
-KRF owns these resolution rules. Consumers do not provide custom modifier ordering or cross tag priority.
-
-## Numeric property resolution
-
-* if any active `set` exists, the property resolves through override mode
-* if multiple active `set` values exist, the lowest `set` value wins
-* otherwise, the property resolves through normal modifier mode
-* normal modifier mode resolves as base value plus summed `add`, then multiplied by all `multiply`, then clamped by effective `min` and `max`
-
-Clamp rules:
-
-* effective `min` is the highest active `min`
-* effective `max` is the lowest active `max`
-
-## Custom properties
-
-`TagRegistry` also supports custom numeric properties inside `properties`.
-
-This lets games define shared modifier language beyond KRF's built in movement properties. For example, a game may use tag properties for things like `PoiseDamageTaken`, `BlockMeterRegen`, or `DashCostMultiplier`.
-
-The registry validates the modifier shape for these properties the same way it does for built in ones. What a custom property means, and which systems respond to it, is defined by the rest of the game or framework runtime.
-
-Read [Property Runtime](../Property/property-runtime) for the actor-side property surface that owns those numeric values at runtime.
-
-## Related concepts
-
-`TagRegistry` defines tag meaning. `TagController` owns active tag state on a live actor.
-
-Read [Tag Runtime](./tag-runtime) when you need to apply, refresh, stack, query, or remove tags during gameplay.
-
-## Example catalog
+## Catalog example
 
 ```lua
+--!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local TagRegistry = require(KRF.server.Tags.TagRegistry)
+local TagTypes = require(KRF.server.Tags.types)
 
-local TagRegistry = require(ReplicatedStorage.Packages.KRF.server.Tag.TagRegistry)
-local TagTypes = require(ReplicatedStorage.Packages.KRF.server.Tag.types)
-local ActorTypes = require(ReplicatedStorage.Packages.KRF.server.Actor.types)
-
-local TagDefinitions: { TagTypes.TagDefinition } = {
+local definitions: {TagTypes.TagDefinition} = {
 	{
 		id = "Status.Stunned",
 		defaultDuration = 1.5,
 		duplicateBehavior = "Refresh",
 		visibility = "ClientVisible",
 		properties = {
-			WalkSpeed = {
-				set = 0,
-			},
-			JumpPower = {
-				set = 0,
-			},
+			WalkSpeed = { set = 0 },
+			JumpPower = { set = 0 },
 		},
 	},
 	{
@@ -129,30 +73,26 @@ local TagDefinitions: { TagTypes.TagDefinition } = {
 		duplicateBehavior = "Refresh",
 		visibility = "ClientVisible",
 		properties = {
-			WalkSpeed = {
-				add = 6,
-				multiply = 1.15,
-				max = 32,
-			},
-			DashCostMultiplier = {
-				multiply = 0.8,
-			},
-		},
-	},
-	{
-		id = "Status.OnFire",
-		defaultDuration = 5,
-		tickInterval = 1,
-		duplicateBehavior = "Refresh",
-		visibility = "ClientVisible",
-		onTick = function(actor: ActorTypes.Actor, _deltaTime: number): ()
-			print(actor)
-		end,
-		properties = {
-			HealingReceived = {
-				multiply = 0.75,
-			},
+			WalkSpeed = { add = 6, multiply = 1.15, max = 32 },
 		},
 	},
 }
+
+local loaded, reason = TagRegistry.Load(definitions)
+if not loaded then
+	error(reason)
+end
 ```
+
+## Design rules
+
+- Use tags for shared gameplay state that several systems may observe.
+- Keep definitions declarative; reserve `onTick` for small synchronous behavior.
+- Choose `Stack` only when individual instances matter.
+- Put final numeric reads in Property Runtime, not in the tag definition.
+
+## API reference
+
+- [`TagRegistry`](/api/Tags/tag-registry)
+- [`TagController`](/api/Tags/tag-controller)
+- [`PropertyController`](/api/Property/property-controller)

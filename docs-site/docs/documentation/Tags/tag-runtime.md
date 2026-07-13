@@ -1,172 +1,81 @@
 # Tag Runtime
 
-`TagController` is KRF's runtime surface for managing tags on a live actor.
+`TagController` owns the active tags for one Actor. Each Actor has independent instances, stack counts, remaining durations, and events even when several Actors use the same definition id.
 
-`TagRegistry` defines what a tag means. `TagController` answers the next question: which of those tags are active on this actor right now?
+## Applying tags
 
-Use it when gameplay state changes during runtime. A hit may apply `Status.Stunned`, a sprint input may apply `Buff.Sprint`, and a cleanse may remove one or more active tag instances.
+`AddTag(tagId, options?)` resolves duration from the explicit option first, then the definition default. With neither, the new instance is indefinite.
 
-## What this is
+| Duplicate behavior | Reapplication result |
+| --- | --- |
+| `Ignore` | Existing instance is preserved; no event fires. |
+| `Refresh` | Existing instance resets to the newly resolved duration. |
+| `Stack` below cap | New independent instance is added. |
+| `Stack` at cap | Finite stack with least time remaining refreshes; oldest breaks ties. |
 
-An active tag is a runtime instance of a tag definition attached to one actor.
+A refresh resets remaining duration. It never adds the new duration to time already left.
 
-KRF tracks active tags per actor, not globally. Two actors may both have `Status.Stunned`, but each actor owns its own active instances, durations, and stack count.
+## Removing and expiring
 
-## What this owns
+| Transition | Scope | Event pair |
+| --- | --- | --- |
+| `RemoveTag` | Every instance for one id | `OnTagRemoved` → `OnTagChanged` |
+| `RemoveSingleTag` | Oldest applied instance | `OnTagRemoved` → `OnTagChanged` |
+| Timed expiry | The instance that reached zero | `OnTagExpired` → `OnTagChanged` |
 
-`TagController` owns:
+Manual removal and expiry are deliberately distinct. Removing a timed tag never emits `OnTagExpired`; removing an inactive id fails with `TagNotActive` and emits nothing.
 
-* applying a registered tag to one actor
-* resolving active instance duration from explicit options or the tag definition
-* enforcing `Ignore`, `Refresh`, and `Stack` duplicate behavior
-* tracking stack count and individual active instances
-* removing one active instance or all active instances for a tag id
-* firing tag mutation events for runtime observers
+## Queries
 
-## What this does not own
+| Need | Method | Shape |
+| --- | --- | --- |
+| Presence only | `HasTag` | Boolean |
+| One row per active id | `GetActiveTags` | Aggregate stack count and longest remaining duration |
+| Exact stack details | `GetTagInstances` | One snapshot per instance with duration and applied order |
 
-`TagController` does not own:
+`GetActiveTags()` orders ids by their oldest active instance. Returned snapshots do not expose mutable controller state.
 
-* defining the tag catalog
-* validating tag definitions
-* deciding what a tag means in UI, combat, or movement systems
-* cross-actor queries
+## Timing
 
-## Canonical flow
+KRF advances timed and ticking instances automatically while the Actor is enabled.
 
-The normal flow is:
+1. Advance tick countdown and remaining duration.
+2. Run a due `onTick` if the instance is still active.
+3. Expire instances whose remaining duration reached zero.
 
-1. Load tag definitions through `TagRegistry` during startup.
-2. Get the actor's `TagController`.
-3. Apply or remove tags as gameplay state changes.
-4. Query active tags when another system needs current state.
-5. Observe tag events if another controller or service reacts to changes.
+A tick therefore runs before expiry when both are due in the same step. Tick-only work does not fire `OnTagChanged`, and callback errors do not stop expiry.
 
-Reapplying a tag depends on its duplicate behavior:
-
-* `Ignore` keeps the existing active instance and does not create another one.
-* `Refresh` keeps one active instance and refreshes its duration.
-* `Stack` creates another active instance until `maxStacks` is reached.
-
-If a stacked tag is reapplied at `maxStacks`, KRF refreshes an existing stack instead of creating a new one.
-
-## Timed tags
-
-If a tag resolves to a duration, KRF treats it as a timed tag.
-
-Timed tags count down during gameplay and expire when their remaining time runs out.
-
-Duration can come from either source:
-
-* `options.duration` when the caller applies the tag explicitly
-* `defaultDuration` on the tag definition when no explicit duration is provided
-
-If neither exists, the tag is indefinite and does not expire just because time passes.
-
-Reapplying a `Refresh` tag resets that tag's duration to the newly resolved value. It does not extend the time that was already left.
-
-For stacked tags, each active instance keeps its own remaining time.
-
-If a tag definition provides `tickInterval` and `onTick`, KRF runs `onTick` while that tag instance stays active, even when the tag has no duration.
-
-:::warning Keep `onTick` fast
-`onTick` runs synchronously during tag stepping. Slow work or yielding code can stall other tag updates on that frame.
+:::warning Keep `onTick` synchronous
+Tag callbacks run inside the shared advancement pass. Do not yield or perform slow work.
 :::
-
-## Removing tags
-
-KRF exposes two different removal intents because stacked tags need both:
-
-* `RemoveTag(tagId)` removes every active instance for that tag id from the actor.
-* `RemoveSingleTag(tagId)` removes exactly one active instance for that tag id.
-
-For stacked tags, `RemoveSingleTag` removes the oldest applied active instance first. If only one active instance remains, removing one clears the tag entirely.
-
-If the tag is not active, both removal calls fail with `TagNotActive` and do not fire mutation events.
-
-Manual removal is distinct from timed expiry:
-
-* `RemoveTag` and `RemoveSingleTag` fire removal semantics
-* automatic timeout fires expiry semantics
-* manual removal does not emit `OnTagExpired`
-
-## Querying active state
-
-There are two common query shapes:
-
-* `HasTag(tagId)` answers whether the actor currently has at least one active instance.
-* `GetActiveTags()` returns one entry per active tag id with aggregate `stackCount`.
-
-For timed tags, `GetActiveTags()` surfaces the longest remaining duration still active for that tag id. This gives other systems a stable per-tag summary even when multiple timed stacks are active.
-
-Use `GetTagInstances(tagId)` when a system needs per-instance details such as exact remaining duration or applied order for a stacked tag.
-
-## Event contract
-
-`TagController` exposes events for systems that react to runtime tag changes.
-
-Event order is stable:
-
-* a successful add fires `OnTagAdded` and then `OnTagChanged`
-* a successful refresh fires `OnTagRefreshed` and then `OnTagChanged`
-* a successful removal fires `OnTagRemoved` and then `OnTagChanged`
-* a timed expiry fires `OnTagExpired` and then `OnTagChanged`
-
-Failed mutations do not fire these events.
 
 ## Example
 
 ```lua
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.server.Actor.types)
-local TagTypes = require(KRF.server.Tags.types)
+local tags = actor:GetController("TagController")
 
-type Actor = ActorTypes.Actor
-type TagController = TagTypes.TagController
+local added, reason = tags:AddTag("Buff.Sprint", {
+	duration = 6,
+})
 
-local function getTagController(actor: Actor): TagController
-	return actor:GetController("TagController") :: TagController
+if not added then
+	warn(("Could not apply sprint: %s"):format(reason or "Unknown"))
 end
 
-local function applySprint(actor: Actor): ()
-	local tagController: TagController = getTagController(actor)
-
-	local added: boolean, addReason: string? = tagController:AddTag("Buff.Sprint", {
-		duration = 6,
-	})
-
-	if not added then
-		warn(("Failed to apply sprint buff: %s"):format(addReason or "unknown"))
-	end
-end
-
-local function consumeOneSprintStack(actor: Actor): ()
-	local tagController: TagController = getTagController(actor)
-	local removed: boolean, removeReason: string? = tagController:RemoveSingleTag("Buff.Sprint")
-
-	if not removed and removeReason ~= "TagNotActive" then
-		warn(("Failed to remove sprint stack: %s"):format(removeReason or "unknown"))
-	end
-end
-
-local function clearStun(actor: Actor): ()
-	local tagController: TagController = getTagController(actor)
-	tagController:RemoveTag("Status.Stunned")
-end
+local consumed = tags:RemoveSingleTag("Buff.Sprint")
 ```
 
-## Common mistakes
+Use typed controller acquisition in shared modules where static checking matters; see the API page for the canonical type import.
 
-* Treating tag definitions as active tag state. `TagRegistry` defines tags, but `TagController` owns per-actor runtime state.
-* Using remove-all semantics when only one stack should be consumed. Use `RemoveSingleTag` when the gameplay rule is "spend one stack."
-* Expecting `GetActiveTags()` to return one entry per stack instance. It returns one aggregated entry per active tag id.
-* Treating refresh as time extension. A refresh resets the chosen instance to the newly resolved duration.
-* Listening only for `OnTagRemoved` when a timed effect must react to timeout. Time-based expiry uses `OnTagExpired`.
+## Design rules
 
-## Related concepts
+- Load the tag catalog before any `TagController` is constructed.
+- Use `RemoveSingleTag` only when gameplay consumes one stack; otherwise use `RemoveTag`.
+- Observe the specific event when add, refresh, manual removal, and expiry differ to your system.
+- Read numeric outcomes from `PropertyController`, not directly from tag metadata.
 
-Read [Tag Registry](./tag-registry) for the tag catalog and definition rules.
+## API reference
 
-Read [Actor Runtime](../Actor/actor-runtime) for the actor lifecycle that creates and tears down the controllers tags live inside.
+- [`TagController`](/api/Tags/tag-controller)
+- [`TagRegistry`](/api/Tags/tag-registry)
+- [`PropertyController`](/api/Property/property-controller)

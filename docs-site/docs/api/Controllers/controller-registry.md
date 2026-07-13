@@ -4,9 +4,7 @@ sidebar_position: 1
 
 # Controller Registry
 
-`ControllerRegistry` stores controller definitions and resolves their attach order.
-
-Use it when your game or framework code needs to register an actor controller that should participate in KRF actor startup.
+`ControllerRegistry` stores Actor controller factories and resolves dependency-safe attachment order. Register definitions during server startup, before registering Actors.
 
 ## Import
 
@@ -17,54 +15,52 @@ local KRF = ReplicatedStorage.Packages.KRF
 local ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
 ```
 
-## Controller Definition Shape
+## Members
 
-```lua
-type ControllerDef = {
-	key: string,
-	factory: (actor: Actor) -> Controller,
-	dependsOn: { string }?,
-	autoAttach: boolean?,
-}
-```
+| Kind | Signature |
+| --- | --- |
+| Method | [`Register(controllerDefinition: ControllerDef) -> (boolean, string?)`](#register) |
+| Method | [`Get(key: string) -> ControllerDef?`](#get) |
+| Method | [`GetKeys() -> {string}`](#get-keys) |
+| Method | [`GetAutoAttachKeys() -> {string}`](#get-auto-attach-keys) |
+| Method | [`ResolveOrder(keys: {string}) -> ({string}?, string?)`](#resolve-order) |
 
 ## Methods
 
-### `Register(controllerDefinition) -> (boolean, string?)`
+### `Register(controllerDefinition: ControllerDef) -> (boolean, string?)` {#register}
 
-Registers a controller definition by key.
+Adds the definition under its key.
 
-Returns:
+- Returns `true, nil` on success.
+- Returns `false, "DuplicateControllerKey"` without replacing the existing definition when the key is occupied.
 
-* `true, nil` on success
-* `false, "DuplicateControllerKey"` when the key is already registered
+### `Get(key: string) -> ControllerDef?` {#get}
 
-### `GetKeys() -> {string}`
+Returns the registered definition or `nil` for an unknown key.
 
-Returns controller keys in registration order.
+### `GetKeys() -> {string}` {#get-keys}
 
-### `Get(key) -> ControllerDef?`
+Returns a new array of every key in registration order.
 
-Returns one controller definition by key.
+### `GetAutoAttachKeys() -> {string}` {#get-auto-attach-keys}
 
-### `GetAutoAttachKeys() -> {string}`
+Returns a new array of keys whose definitions do not set `autoAttach = false`, preserving registration order.
 
-Returns the subset of controller keys that participate in automatic actor registration.
+### `ResolveOrder(keys: {string}) -> ({string}?, string?)` {#resolve-order}
 
-Controllers default to auto-attach unless `autoAttach` is explicitly `false`.
+Returns a dependency-safe order for the unique requested keys. When several keys are eligible, the earlier registered key wins.
 
-### `ResolveOrder(keys) -> ({string}?, string?)`
+| Failure reason | Meaning |
+| --- | --- |
+| `UnknownControllerKey:<key>` | A requested key is not registered. |
+| `MissingDependency:<key>-><dependency>` | The definition names an unregistered dependency. |
+| `DependencyNotInAttachSet:<key>-><dependency>` | The dependency exists but was not requested. |
+| `CyclicDependency` | The requested dependency graph contains a cycle. |
 
-Resolves dependency-safe attach order for a specific controller key set.
-
-This fails when:
-
-* a key is unknown
-* a dependency is missing
-* a dependency is not part of the requested attach set
-* the dependency graph is cyclic
+Duplicate requested keys and duplicate dependency entries are ignored. An empty request returns an empty order.
 
 ## Related
 
-* [Actor Runtime](../Actor/actor-runtime)
-* [Actor Runtime concepts](/Actor/actor-runtime)
+- [Actor Runtime](../Actor/actor-runtime)
+- [Actor](../Actor/)
+- [Actor Runtime guide](/Actor/actor-runtime)

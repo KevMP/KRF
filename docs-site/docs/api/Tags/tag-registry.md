@@ -4,9 +4,7 @@ sidebar_position: 1
 
 # Tag Registry
 
-`TagRegistry` stores the static tag catalog for the lifetime of the server.
-
-Use it during startup to load tag definitions once, then query those definitions later when needed.
+`TagRegistry` validates and stores the server-lifetime catalog that defines tag identity, duplication, timing, visibility, ticks, and property modifiers. Load it before constructing `TagController` instances.
 
 ## Import
 
@@ -17,53 +15,50 @@ local KRF = ReplicatedStorage.Packages.KRF
 local TagRegistry = require(KRF.server.Tags.TagRegistry)
 ```
 
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`Load(definitions: {TagDefinition}) -> (boolean, string?)`](#load) |
+| Method | [`IsLoaded() -> boolean`](#is-loaded) |
+| Method | [`Get(tagId: string) -> TagDefinition?`](#get) |
+| Method | [`GetAll() -> {TagDefinition}`](#get-all) |
+| Method | [`GetAllById() -> {[string]: TagDefinition}`](#get-all-by-id) |
+
 ## Methods
 
-### `Load(definitions) -> (boolean, string?)`
+### `Load(definitions: {TagDefinition}) -> (boolean, string?)` {#load}
 
-Validates and loads the registry once.
+Validates the complete catalog and commits it in input order.
 
-Returns:
+**Returns**
 
-* `true, nil` on success
-* `false, reason` if validation fails or the registry was already loaded
+- `true, nil`: the full catalog committed.
+- `false, "TagDefinitionsAlreadyLoded"`: a catalog already committed.
+- `false, reason`: validation failed; nothing from the call committed and `IsLoaded()` remains `false`.
 
-### `Get(tagId) -> TagDefinition?`
+Validation reasons identify missing or duplicate ids, invalid duration and tick values, invalid duplicate or visibility values, invalid `maxStacks`, and malformed modifiers.
 
-Returns a tag definition by id.
+The returned registry containers are frozen. Definitions remain the same table references supplied to `Load`; treat authored definitions as immutable after loading.
 
-### `GetAll() -> {TagDefinition}`
+### `IsLoaded() -> boolean` {#is-loaded}
 
-Returns every loaded definition in registration order.
+Returns `true` only after a successful load.
 
-### `GetAllById() -> {[string]: TagDefinition}`
+### `Get(tagId: string) -> TagDefinition?` {#get}
 
-Returns every loaded definition indexed by id.
+Returns the registered definition, or `nil` for an unknown id.
 
-### `IsLoaded() -> boolean`
+### `GetAll() -> {TagDefinition}` {#get-all}
 
-Reports whether the registry is already loaded.
+Returns the frozen definition array in load order.
 
-## Key Type
+### `GetAllById() -> {[string]: TagDefinition}` {#get-all-by-id}
 
-```lua
-type TagDefinition = {
-	id: string,
-	defaultDuration: number?,
-	tickInterval: number?,
-	duplicateBehavior: "Stack" | "Refresh" | "Ignore",
-	maxStacks: number?,
-	visibility: "ServerOnly" | "ClientVisible",
-	onTick: ((Actor, number) -> ())?,
-	properties: { [string]: PropertyModifier }?,
-}
-```
-
-## Notes
-
-`TagRegistry` only stores tag meaning. It does not apply or remove active tag state on actors. That runtime behavior belongs to `TagController`.
+Returns the frozen id-indexed catalog.
 
 ## Related
 
-* [Tag Controller](./tag-controller)
-* [Tag Registry concepts](/Tags/tag-registry)
+- [Tag Controller](./tag-controller)
+- [Tag Registry guide](/Tags/tag-registry)
+- [Tag Runtime guide](/Tags/tag-runtime)

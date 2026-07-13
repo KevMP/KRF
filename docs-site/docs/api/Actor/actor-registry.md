@@ -4,9 +4,11 @@ sidebar_position: 3
 
 # Actor Registry
 
-`ActorRegistry` is KRF's runtime lookup table for actor bindings.
+`ActorRegistry` is the server-side lookup and model-binding store for live Actors.
 
-Most gameplay code should prefer `ActorRuntime`. Use `ActorRegistry` when another server system needs to find the current actor for a model or actor id.
+:::info Infrastructure API
+Use `ActorRuntime` to create and destroy Actors. Use this registry when a server system only needs lookup by model or runtime id.
+:::
 
 ## Import
 
@@ -17,42 +19,43 @@ local KRF = ReplicatedStorage.Packages.KRF
 local ActorRegistry = require(KRF.server.Actor.ActorRegistry)
 ```
 
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`GetActorById(actorId: string) -> Actor?`](#get-actor-by-id) |
+| Method | [`GetActorByModel(actorModel: Model) -> Actor?`](#get-actor-by-model) |
+| Method | [`BindModel(actor: Actor, model: Model) -> (boolean, string?)`](#bind-model) |
+| Method | [`UnbindModel(actor: Actor) -> boolean`](#unbind-model) |
+
 ## Methods
 
-### `GetActorById(actorId) -> Actor?`
+### `GetActorById(actorId: string) -> Actor?` {#get-actor-by-id}
 
-Returns the currently registered actor for that runtime id.
+Returns the currently bound Actor with that runtime id, or `nil` after unbinding.
 
-### `GetActorByModel(actorModel) -> Actor?`
+### `GetActorByModel(actorModel: Model) -> Actor?` {#get-actor-by-model}
 
-Returns the currently registered actor bound to that `Model`.
+Returns the Actor currently bound to `actorModel`, or `nil` when the model is unbound.
 
-### `BindModel(actor, model) -> (boolean, string?)`
+### `BindModel(actor: Actor, model: Model) -> (boolean, string?)` {#bind-model}
 
-Binds an actor to a model and starts cleanup tracking for that model.
+Creates id and model lookups, assigns `actor.model`, and begins watching the model for destruction or `Parent = nil`.
 
-Returns:
+**Returns**
 
-* `true, nil` on success
-* `false, "ModelAlreadyRegistered"` if that model is already bound
-* `false, "ActorHasDifferentModelBinded"` if the actor is already bound to another model
+- `true, nil`: binding and cleanup tracking started.
+- `false, "ModelAlreadyRegistered"`: the model is already bound; no binding changed.
+- `false, "ActorHasDifferentModelBinded"`: the Actor already points at another model; no binding changed.
 
-`ActorRuntime.RegisterActor(...)` already does this as part of normal registration.
+`ActorRuntime.RegisterActor(...)` performs this operation before attaching controllers.
 
-### `UnbindModel(actor) -> boolean`
+### `UnbindModel(actor: Actor) -> boolean` {#unbind-model}
 
-Clears the actor's current model binding and lookup records.
-
-Returns `false` if the actor is not currently registered.
-
-## Notes
-
-`ActorRegistry` is a low-level runtime utility. If you are creating or destroying actors, `ActorRuntime` is the supported higher-level entrypoint.
-
-When a bound model is destroyed or removed from the DataModel, KRF still routes cleanup through normal actor teardown.
+Clears id and model lookups, disconnects model tracking, and sets `actor.model` to `nil`. Returns `false` when the Actor has no registry record.
 
 ## Related
 
-* [Actor Runtime](./actor-runtime)
-* [Actor](/api/Actor/)
-* [Actor Runtime concepts](/Actor/actor-runtime)
+- [Actor Runtime](./actor-runtime)
+- [Actor](./)
+- [Actor Runtime guide](/Actor/actor-runtime)

@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Actor Runtime
 
-`ActorRuntime` is the public server-side entrypoint for registering and unregistering live KRF actors.
+`ActorRuntime` registers and unregisters server-side Actors. It is the supported lifecycle entrypoint for gameplay code.
 
 ## Import
 
@@ -15,74 +15,70 @@ local KRF = ReplicatedStorage.Packages.KRF
 local ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 ```
 
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`RegisterActor(model: Model, opts: RegisterActorOpts?) -> (Actor?, string?)`](#register-actor) |
+| Method | [`UnregisterActor(actor: Actor, reason: string?) -> (boolean, string?)`](#unregister-actor) |
+| Method | [`AttachControllers(actor: Actor) -> (boolean, string?)`](#attach-controllers) |
+| Method | [`DetachAllControllers(actor: Actor) -> ()`](#detach-all-controllers) |
+| Event | [`OnActorRegistered: Event<Actor>`](#on-actor-registered) |
+| Event | [`OnActorUnregistering: Event<Actor, string?>`](#on-actor-unregistering) |
+| Event | [`OnActorUnregistered: Event<Actor, string?>`](#on-actor-unregistered) |
+
 ## Methods
 
-### `RegisterActor(model, opts?) -> (Actor?, string?)`
+### `RegisterActor(model: Model, opts: RegisterActorOpts?) -> (Actor?, string?)` {#register-actor}
 
-Registers a `Model` as a live actor.
+Creates an Actor for `model`, binds it, attaches every auto-attach controller, then sets `actor.enabled` to `true`.
 
-Returns:
+**Returns**
 
-* `Actor` on success
-* `nil, reason` on failure
+- `actor, nil`: registration completed and `OnActorRegistered` fired.
+- `nil, "ModelAlreadyRegistered"`: the model already belongs to another Actor.
+- `nil, reason`: binding, controller ordering, factory, or attachment failed.
 
-Common failure reasons include duplicate model binding or controller attachment failure.
+Registration is atomic from the caller's perspective. A controller failure destroys controllers attached during the attempt and clears the model binding before returning.
 
-### `UnregisterActor(actor, reason?) -> (boolean, string?)`
+### `UnregisterActor(actor: Actor, reason: string?) -> (boolean, string?)` {#unregister-actor}
 
-Unregisters a live actor and tears down its controllers.
+Disables a live Actor, fires the teardown events, destroys all controllers, and clears model and registry bindings.
 
-Returns:
+**Returns**
 
-* `true, nil` on success
-* `false, reason` if the actor is already unregistered or teardown cannot proceed
+- `true, nil`: teardown completed.
+- `false, "AlreadyUnregistered"`: `actor.enabled` was already `false`; no teardown event fired.
 
-### `AttachControllers(actor) -> (boolean, string?)`
+A bound model being destroyed or parented to `nil` invokes this method with reason `"ModelGone"`.
 
-Attaches every controller currently marked for automatic attachment in `ControllerRegistry`.
+### `AttachControllers(actor: Actor) -> (boolean, string?)` {#attach-controllers}
 
-This is usually called by `RegisterActor`, not directly by game code.
+Resolves all auto-attach controller definitions through `ControllerRegistry`, creates them in dependency order, and attaches them to `actor`.
 
-### `DetachAllControllers(actor) -> ()`
+Failure rolls back only the controllers attached by that call, in reverse attach order. Existing controllers remain attached. Reasons identify ordering, factory, contract, or occupied-key failures.
 
-Detaches and destroys every controller currently attached to the actor.
+### `DetachAllControllers(actor: Actor) -> ()` {#detach-all-controllers}
 
-This is usually called by `UnregisterActor`, not directly by game code.
+Removes every attached controller and calls its `Destroy()` method. A controller error is warned and does not prevent later controllers from being removed.
 
 ## Events
 
-### `OnActorRegistered`
+### `OnActorRegistered: Event<Actor>` {#on-actor-registered}
 
-Fires after registration succeeds and the actor is live.
+Fires when Actor registration succeeds.
 
-Signature:
+### `OnActorUnregistering: Event<Actor, string?>` {#on-actor-unregistering}
 
-```lua
-SignalTypes.Event<Actor>
-```
+Fires when Actor unregistration begins.
 
-### `OnActorUnregistering`
+### `OnActorUnregistered: Event<Actor, string?>` {#on-actor-unregistered}
 
-Fires after the actor is marked not live but before teardown completes.
-
-Signature:
-
-```lua
-SignalTypes.Event<Actor, string?>
-```
-
-### `OnActorUnregistered`
-
-Fires after controller teardown and model unbinding complete.
-
-Signature:
-
-```lua
-SignalTypes.Event<Actor, string?>
-```
+Fires when Actor unregistration completes.
 
 ## Related
 
-* [Actor](/api/Actor/)
-* [Controller Registry](../Controllers/controller-registry)
-* [Actor Runtime concepts](/Actor/actor-runtime)
+- [Actor](./)
+- [Actor Registry](./actor-registry)
+- [Controller Registry](../Controllers/controller-registry)
+- [Actor Runtime guide](/Actor/actor-runtime)

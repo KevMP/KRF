@@ -4,136 +4,97 @@ sidebar_position: 2
 
 # Tag Controller
 
-`TagController` is the per-actor runtime API for applying, removing, and querying active tags.
-
-Game code usually gets it from an actor:
+`TagController` owns active tag instances for one Actor. Obtain it from the Actor after controller attachment.
 
 ```lua
-local tagController = actor:GetController("TagController")
+local tags = actor:GetController("TagController")
 ```
+
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`AddTag(tagId: string, options: AddTagOptions?) -> (boolean, string?)`](#add-tag) |
+| Method | [`RemoveTag(tagId: string) -> (boolean, string?)`](#remove-tag) |
+| Method | [`RemoveSingleTag(tagId: string) -> (boolean, string?)`](#remove-single-tag) |
+| Method | [`HasTag(tagId: string) -> boolean`](#has-tag) |
+| Method | [`GetActiveTags() -> {ActiveTagSnapshot}`](#get-active-tags) |
+| Method | [`GetTagInstances(tagId: string) -> {TagInstanceSnapshot}`](#get-tag-instances) |
+| Method | [`Destroy() -> ()`](#destroy) |
+| Event | [`OnTagAdded: Event<Actor, string>`](#on-tag-added) |
+| Event | [`OnTagRefreshed: Event<Actor, string>`](#on-tag-refreshed) |
+| Event | [`OnTagRemoved: Event<Actor, string>`](#on-tag-removed) |
+| Event | [`OnTagExpired: Event<Actor, string>`](#on-tag-expired) |
+| Event | [`OnTagChanged: Event<Actor, string>`](#on-tag-changed) |
 
 ## Methods
 
-### `AddTag(tagId, options?) -> (boolean, string?)`
+### `AddTag(tagId: string, options: AddTagOptions?) -> (boolean, string?)` {#add-tag}
 
-Applies one active tag instance to the actor.
+Adds, refreshes, stacks, or ignores an application according to the registered definition.
 
-Returns:
+**Returns**
 
-* `true, nil` on success
-* `false, "UnknownTagId:<tagId>"` if the tag is not registered
-* `false, "TagDurationMustBePositive"` if `options.duration` is `<= 0`
-* `false, "TagActiveInstancesInitFailed:<tagId>"` if runtime state cannot initialize
+- `true, nil`: the request was accepted, including an ignored reapplication.
+- `false, "UnknownTagId:<id>"`: the registry has no definition.
+- `false, "TagDurationMustBePositive"`: explicit duration is zero or negative.
 
-Reapplying a tag follows the definition's `duplicateBehavior`.
+### `RemoveTag(tagId: string) -> (boolean, string?)` {#remove-tag}
 
-### `RemoveTag(tagId) -> (boolean, string?)`
+Removes every active instance for the id.
 
-Removes every active instance for that tag id.
+- Returns `true, nil` when the instances are removed.
+- Returns `false, "TagNotActive"` without events when no instance is active.
 
-Returns `false, "TagNotActive"` if the actor does not currently have that tag.
+### `RemoveSingleTag(tagId: string) -> (boolean, string?)` {#remove-single-tag}
 
-### `RemoveSingleTag(tagId) -> (boolean, string?)`
+Removes exactly one instance: the oldest applied stack. The remaining instances stay active.
 
-Removes exactly one active instance for that tag id.
+- Returns `true, nil` when one instance is removed.
+- Returns `false, "TagNotActive"` without events when no instance is active.
 
-For stacked tags, KRF removes the oldest applied instance first.
+### `HasTag(tagId: string) -> boolean` {#has-tag}
 
-Returns `false, "TagNotActive"` if the actor does not currently have that tag.
+Returns whether at least one instance is active.
 
-### `HasTag(tagId) -> boolean`
+### `GetActiveTags() -> {ActiveTagSnapshot}` {#get-active-tags}
 
-Reports whether the actor currently has at least one active instance for that tag id.
+Returns one aggregate snapshot per active tag id, ordered by the oldest active application across tags.
 
-### `GetActiveTags() -> {ActiveTagSnapshot}`
+### `GetTagInstances(tagId: string) -> {TagInstanceSnapshot}` {#get-tag-instances}
 
-Returns one summary record per active tag id.
+Returns per-instance snapshots in stored stack order, or an empty array when inactive.
 
-```lua
-type ActiveTagSnapshot = {
-	tagId: string,
-	stackCount: number,
-	remainingDuration: number?,
-}
-```
+### `Destroy() -> ()` {#destroy}
 
-For timed stacks, `remainingDuration` is the longest remaining duration still active for that tag id.
-
-### `GetTagInstances(tagId) -> {TagInstanceSnapshot}`
-
-Returns per-instance records for one active tag id.
-
-```lua
-type TagInstanceSnapshot = {
-	tagId: string,
-	duration: number?,
-	remainingDuration: number?,
-	appliedOrder: number,
-}
-```
-
-Returns an empty array when the tag is not active.
-
-### `Destroy() -> ()`
-
-Destroys the controller and disconnects its owned signals.
+Stops advancement, clears active state, and destroys owned events. Repeated calls are no-ops. Normal gameplay code should let Actor teardown call this method.
 
 ## Events
 
-### `OnTagAdded`
+All events use payload `(actor: Actor, tagId: string)`.
 
-Fires when a tag becomes active on the actor.
+### `OnTagAdded: Event<Actor, string>` {#on-tag-added}
 
-```lua
-SignalTypes.Event<Actor, string>
-```
+Fires when a new instance is stored.
 
-### `OnTagRemoved`
+### `OnTagRefreshed: Event<Actor, string>` {#on-tag-refreshed}
 
-Fires when one or more active instances are removed manually.
+Fires when an existing instance resets.
 
-```lua
-SignalTypes.Event<Actor, string>
-```
+### `OnTagRemoved: Event<Actor, string>` {#on-tag-removed}
 
-### `OnTagRefreshed`
+Fires when one or all instances are removed manually.
 
-Fires when an active instance is refreshed instead of a new one being added.
+### `OnTagExpired: Event<Actor, string>` {#on-tag-expired}
 
-```lua
-SignalTypes.Event<Actor, string>
-```
+Fires when a timed instance expires.
 
-### `OnTagChanged`
+### `OnTagChanged: Event<Actor, string>` {#on-tag-changed}
 
-Fires after any successful add, refresh, removal, or expiry.
-
-```lua
-SignalTypes.Event<Actor, string>
-```
-
-### `OnTagExpired`
-
-Fires when a timed tag instance expires because its remaining duration reached zero.
-
-```lua
-SignalTypes.Event<Actor, string>
-```
-
-## Key Types
-
-```lua
-type AddTagOptions = {
-	duration: number?,
-}
-```
-
-## Notes
-
-`TagController` owns active tag state on one actor. `TagRegistry` still owns the shared tag catalog and validation rules.
+Fires when active tag state changes.
 
 ## Related
 
-* [Tag Registry](./tag-registry)
-* [Tag Runtime concepts](/Tags/tag-runtime)
-* [Actor](/api/Actor/)
+- [Tag Registry](./tag-registry)
+- [Property Controller](../Property/property-controller)
+- [Tag Runtime guide](/Tags/tag-runtime)

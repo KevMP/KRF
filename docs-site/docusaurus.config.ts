@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: "Kevin's Roblox Framework",
-  tagline: 'A complete framework for Roblox RPG gameplay',
+  tagline: 'A server-authoritative RPG gameplay runtime for Roblox',
   favicon: 'img/favicon.ico',
 
   future: {
@@ -105,11 +105,6 @@ const config: Config = {
           label: 'GitHub',
           position: 'right',
         },
-        {
-          href: 'https://discord.gg/NEED-TO-MAKE-SERVER',
-          label: 'Discord',
-          position: 'right',
-        },
       ],
     },
     footer: {
@@ -119,7 +114,7 @@ const config: Config = {
           title: 'Docs',
           items: [
             {
-              label: 'KRF Intro',
+              label: 'KRF Overview',
               to: '/',
             }
           ],
@@ -148,10 +143,6 @@ const config: Config = {
             {
               label: 'GitHub',
               href: 'https://github.com/KevMP/KRF',
-            },
-            {
-              label: 'Discord',
-              href: 'https://discord.gg/NEED-TO-MAKE-SERVER',
             },
           ],
         },
