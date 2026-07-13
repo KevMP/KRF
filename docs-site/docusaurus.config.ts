@@ -123,7 +123,7 @@ const config: Config = {
           title: 'Learn KRF',
           items: [
             {
-              label: 'Runtime Foundations',
+              label: 'Getting Started',
               to: '/learn/intro',
             },
           ],
