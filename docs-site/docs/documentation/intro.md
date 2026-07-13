@@ -1,67 +1,52 @@
 ---
 slug: /
 sidebar_position: 1
-sidebar_label: KRF Intro
+sidebar_label: KRF Overview
 displayed_sidebar: docsSidebar
 ---
 
 # Kevin's Roblox Framework
 
-**Kevin's Roblox Framework (KRF)** is a reusable, server authoritative combat and RPG framework for anime inspired Roblox games.
+KRF is a server-authoritative, Actor-centered runtime for Roblox combat and RPG games. It owns shared gameplay lifecycle and state rules; your game owns content, balance, presentation, and progression design.
 
-It is built for developers who want a serious gameplay foundation without rebuilding the same runtime spine every project. KRF handles the hard architectural and runtime problems so you can spend your time on lore, visuals, feel, and content.
+## Runtime map
 
-## Why KRF exists
+| System | Owns | Does not own |
+| --- | --- | --- |
+| Actor Runtime | Model binding, Actor lifecycle, controller attachment and teardown | Game-specific character rules |
+| Tag Runtime | Active statuses, stacks, durations, ticks | Static tag definitions or final numeric values |
+| Property Runtime | Base and resolved numeric Actor properties | Current resource meters |
+| Resource Runtime | Actor-scoped meters, bounds, costs, regeneration | The numeric properties used as live sources |
+| Registries | Static tag, resource, and controller definitions | Per-Actor state |
 
-A lot of anime and anime inspired Roblox games are built around the same core ideas:
+## Choose the owning system
 
-- ability based combat
-- RPG stats and progression
-- quests and content loops
-- fast, responsive gameplay with strong presentation
+| You need to represent… | Use… |
+| --- | --- |
+| A gameplay participant bound to a `Model` | Actor Runtime |
+| A stun, buff, debuff, stack, or timed status | Tag Runtime |
+| A numeric stat modified by active tags | Property Runtime |
+| A spendable or regenerating meter | Resource Runtime |
+| Startup-authored definitions shared by every Actor | The matching registry |
 
-KRF exists to provide a **consistent, reusable foundation** for those systems so developers do not have to reinvent them every time.
+## Server flow
 
-## What KRF is not
+1. Load static tag and resource catalogs.
+2. Register controller definitions and dependencies.
+3. Register a model through `ActorRuntime`.
+4. Read and mutate gameplay state through the Actor's controllers.
+5. Unregister the Actor when its gameplay lifecycle ends.
 
-KRF is **not**:
+Registries are loaded once. Actors and their controller state are created and destroyed throughout the server lifetime.
 
-- a full game template
-- a universe specific framework tied to one theme or progression system
-- an ECS framework
-- a datastore solution
-- a matchmaking framework
-- a final UI/theming solution
-- a monetization or analytics layer
+## Scope
 
-KRF gives you the runtime spine. Your game still defines its world, progression, content, balance, and presentation.
-
-## Who KRF is for
-
-KRF is built for developers making games like:
-
-- anime RPGs
-- combat arena games
-- magic combat games
-- PvE or PvP games built around abilities, statuses, movement, and progression
-
-It is especially useful when your game needs a shared foundation for things like actors, tags, actions, combat, movement, replication, and debugging.
-
-## Design goal
-
-The goal is to make it realistically possible to build complete Roblox RPG games faster by solving the architecture once, solving it well, and reusing it across projects.
-
-With a stable runtime foundation and ready assets, developers should be able to focus on the game specific work that actually makes one project feel different from another.
+KRF is not a game template, ECS, datastore, matchmaking service, UI theme, monetization layer, or analytics system. It supplies the gameplay runtime spine those game-specific systems can build on.
 
 ## Start here
 
-If you are new to KRF, start with the runtime docs:
-
-* [Actor Runtime](/Actor/actor-runtime)
-* [Property Runtime](/Property/property-runtime)
-* [Resource Registry](/Resource/resource-registry)
-* [Resource Runtime](/Resource/resource-runtime)
-* [Tag Registry](/Tags/tag-registry)
-* [Tag Runtime](/Tags/tag-runtime)
-
-Additional guides and higher-level learning content will be added as the framework grows.
+- [Actor Runtime](./Actor/actor-runtime): lifecycle and controller composition.
+- [Tag Registry](./Tags/tag-registry) and [Tag Runtime](./Tags/tag-runtime): authored meaning and live status state.
+- [Property Runtime](./Property/property-runtime): base and tag-resolved numbers.
+- [Resource Registry](./Resource/resource-registry) and [Resource Runtime](./Resource/resource-runtime): meter definitions and live values.
+- [API Reference](/api/Actor/actor-runtime): exact signatures, failures, payloads, and ordering.

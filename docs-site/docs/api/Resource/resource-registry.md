@@ -4,9 +4,7 @@ sidebar_position: 1
 
 # Resource Registry
 
-`ResourceRegistry` stores the static resource catalog for the lifetime of the server.
-
-Use it during startup to load resource definitions once, then query those definitions later when needed.
+`ResourceRegistry` validates and stores the server-lifetime catalog used to create actor-scoped resources. Load it once during startup, before constructing `ResourceController` instances.
 
 ## Import
 
@@ -17,70 +15,48 @@ local KRF = ReplicatedStorage.Packages.KRF
 local ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
 ```
 
+## Members
+
+| Kind | Signature |
+| --- | --- |
+| Method | [`Load(definitions: {ResourceDefinition}) -> (boolean, string?)`](#load) |
+| Method | [`IsLoaded() -> boolean`](#is-loaded) |
+| Method | [`Get(resourceId: string) -> LoadedResourceDefinition?`](#get) |
+| Method | [`GetAll() -> {LoadedResourceDefinition}`](#get-all) |
+| Method | [`GetAllById() -> {[string]: LoadedResourceDefinition}`](#get-all-by-id) |
+
 ## Methods
 
-### `Load(definitions) -> (boolean, string?)`
+### `Load(definitions: {ResourceDefinition}) -> (boolean, string?)` {#load}
 
-Validates and loads the registry once.
+Validates the whole catalog, normalizes defaults, freezes the loaded definitions, and commits them in input order.
 
-Returns:
+**Returns**
 
-* `true, nil` on success
-* `false, reason` if validation fails or the registry was already loaded
+- `true, nil`: the full catalog committed.
+- `false, "ResourceDefinitionsAlreadyLoaded"`: a catalog already committed.
+- `false, reason`: a definition failed validation; nothing from this call committed and `IsLoaded()` remains `false`.
 
-### `Get(resourceId) -> LoadedResourceDefinition?`
+Validation reasons identify the field and rule, including missing ids, duplicate ids, invalid visibility, malformed sources, non-finite numbers, invalid default bounds, and out-of-bounds initial values.
 
-Returns one loaded definition by id.
+### `IsLoaded() -> boolean` {#is-loaded}
 
-### `GetAll() -> {LoadedResourceDefinition}`
+Returns `true` only after a successful load.
 
-Returns every loaded definition in registration order.
+### `Get(resourceId: string) -> LoadedResourceDefinition?` {#get}
 
-### `GetAllById() -> {[string]: LoadedResourceDefinition}`
+Returns the frozen normalized definition, or `nil` for an unknown id.
 
-Returns every loaded definition indexed by id.
+### `GetAll() -> {LoadedResourceDefinition}` {#get-all}
 
-### `IsLoaded() -> boolean`
+Returns the frozen definition array in load order.
 
-Reports whether the registry is already loaded.
+### `GetAllById() -> {[string]: LoadedResourceDefinition}` {#get-all-by-id}
 
-## Key Types
-
-```lua
-type ResourceDefinition = {
-	id: string,
-	min: {
-		value: number?,
-		propertyName: string?,
-		defaultBaseValue: number?,
-	}?,
-	max: {
-		value: number?,
-		propertyName: string?,
-		defaultBaseValue: number?,
-	},
-	initialValue: number?,
-	visibility: "ServerOnly" | "ClientVisible",
-	autoAssign: boolean?,
-	regen: {
-		rate: {
-			value: number?,
-			propertyName: string?,
-			defaultBaseValue: number?,
-		},
-	}?,
-}
-
-type LoadedResourceDefinition = ResourceDefinition & {
-	min: {
-		value: number?,
-		propertyName: string?,
-		defaultBaseValue: number?,
-	},
-	autoAssign: boolean,
-}
-```
+Returns the frozen id-indexed catalog.
 
 ## Related
 
-* [Resource Registry concepts](/Resource/resource-registry)
+- [Resource Controller](./resource-controller)
+- [Resource Registry guide](/Resource/resource-registry)
+- [Resource Runtime guide](/Resource/resource-runtime)

@@ -19,7 +19,10 @@ const sidebarsApi: SidebarsConfig = {
     {
       type: 'category',
       label: 'Resource',
-      items: ['Resource/resource-registry'],
+      items: [
+        'Resource/resource-registry',
+        'Resource/resource-controller',
+      ],
     },
     {
       type: 'category',

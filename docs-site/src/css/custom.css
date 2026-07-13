@@ -33,3 +33,149 @@
 .theme-code-block code {
   tab-size: 2;
 }
+
+/* API reference: denser symbol navigation and signature-first member cards. */
+html.plugin-id-api {
+  --krf-api-border: #d9dde6;
+  --krf-api-surface: #f7f8fa;
+  --krf-api-surface-hover: #eef4ff;
+  --krf-api-signature: #2356c4;
+  --krf-api-method: #8e3ec8;
+}
+
+html.plugin-id-api[data-theme='dark'] {
+  --krf-api-border: #30333b;
+  --krf-api-surface: #15161a;
+  --krf-api-surface-hover: #1b2230;
+  --krf-api-signature: #7aa2ff;
+  --krf-api-method: #d47cff;
+}
+
+html.plugin-id-api .container {
+  max-width: 1480px;
+}
+
+html.plugin-id-api .theme-doc-markdown > header h1 {
+  font-size: 2.35rem;
+  letter-spacing: -0.035em;
+  margin-bottom: 0.65rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h2 {
+  border: 0;
+  font-size: 1.35rem;
+  margin-top: 2.75rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h3:has(> code) {
+  align-items: center;
+  background: var(--krf-api-surface);
+  border: 1px solid var(--krf-api-border);
+  border-radius: 6px;
+  display: flex;
+  font-size: 1rem;
+  margin: 2rem 0 1rem;
+  padding: 0.8rem 1rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h3:has(> code)::before {
+  color: var(--krf-api-method);
+  content: '◆';
+  font-size: 0.7rem;
+  margin-right: 0.7rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h3 > code {
+  background: transparent;
+  border: 0;
+  color: var(--ifm-font-color-base);
+  font-size: 0.95rem;
+  padding: 0;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table {
+  border: 1px solid var(--krf-api-border);
+  border-collapse: separate;
+  border-radius: 6px;
+  border-spacing: 0;
+  display: table;
+  overflow: hidden;
+  width: 100%;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table th,
+html.plugin-id-api .theme-doc-markdown h2#members + table td {
+  border: 0;
+  border-bottom: 1px solid var(--krf-api-border);
+  padding: 0.7rem 0.85rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table tr:last-child td {
+  border-bottom: 0;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table tbody tr:hover {
+  background: var(--krf-api-surface-hover);
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table tbody tr {
+  background: transparent;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table th {
+  background: var(--krf-api-surface);
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table td:first-child {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.78rem;
+  font-weight: 700;
+  width: 7rem;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table td:nth-child(2) {
+  font-family: var(--ifm-font-family-monospace);
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table td:nth-child(2) a {
+  color: var(--krf-api-signature);
+  font-weight: 600;
+}
+
+html.plugin-id-api .theme-doc-markdown h2#members + table td:nth-child(2) code {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+}
+
+html.plugin-id-api .table-of-contents {
+  border-left: 0;
+}
+
+html.plugin-id-api .table-of-contents__link {
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+html.plugin-id-api .table-of-contents__link--active {
+  background: var(--krf-api-surface-hover);
+  color: var(--ifm-font-color-base);
+  font-weight: 700;
+}
+
+html.plugin-id-api .table-of-contents code {
+  background: transparent;
+  border: 0;
+  display: block;
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.78rem;
+  overflow: hidden;
+  padding: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
