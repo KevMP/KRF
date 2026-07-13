@@ -1,5 +1,6 @@
 ---
 slug: /
+description: Kevin's Roblox Framework is a reusable, server-authoritative combat and RPG framework for anime-inspired Roblox games.
 sidebar_position: 1
 sidebar_label: KRF Overview
 displayed_sidebar: docsSidebar
@@ -7,46 +8,35 @@ displayed_sidebar: docsSidebar
 
 # Kevin's Roblox Framework
 
-KRF is a server-authoritative, Actor-centered runtime for Roblox combat and RPG games. It owns shared gameplay lifecycle and state rules; your game owns content, balance, presentation, and progression design.
+**A server-authoritative gameplay framework for anime-inspired Roblox games.**
 
-## Runtime map
+KRF connects the full gameplay chain—from input and actions to combat results, replicated state, and presentation—under one Actor-centered runtime. You define the game; KRF provides the architecture that keeps its systems coherent.
 
-| System | Owns | Does not own |
-| --- | --- | --- |
-| Actor Runtime | Model binding, Actor lifecycle, controller attachment and teardown | Game-specific character rules |
-| Tag Runtime | Active statuses, stacks, durations, ticks | Static tag definitions or final numeric values |
-| Property Runtime | Base and resolved numeric Actor properties | Current resource meters |
-| Resource Runtime | Actor-scoped meters, bounds, costs, regeneration | The numeric properties used as live sources |
-| Registries | Static tag, resource, and controller definitions | Per-Actor state |
+[Start with the runtime](./Actor/actor-runtime) · [Browse the API](/api/Actor/actor-runtime) · [View on GitHub](https://github.com/KevMP/KRF)
 
-## Choose the owning system
+## One gameplay model
 
-| You need to represent… | Use… |
-| --- | --- |
-| A gameplay participant bound to a `Model` | Actor Runtime |
-| A stun, buff, debuff, stack, or timed status | Tag Runtime |
-| A numeric stat modified by active tags | Property Runtime |
-| A spendable or regenerating meter | Resource Runtime |
-| Startup-authored definitions shared by every Actor | The matching registry |
+Players, NPCs, bosses, summons, and training dummies are all Actors. Player input and AI intent enter the same action system, follow the same gameplay rules, and produce server-authoritative outcomes.
 
-## Server flow
+**Input or AI intent → Action → Validation → Gameplay outcome → Replication and presentation**
 
-1. Load static tag and resource catalogs.
-2. Register controller definitions and dependencies.
-3. Register a model through `ActorRuntime`.
-4. Read and mutate gameplay state through the Actor's controllers.
-5. Unregister the Actor when its gameplay lifecycle ends.
+Tags, properties, resources, movement, combat, and presentation participate in that shared pipeline instead of inventing separate state, lifecycle, and networking rules.
 
-Registries are loaded once. Actors and their controller state are created and destroyed throughout the server lifetime.
+## From runtime spine to complete game
 
-## Scope
+The runtime spine covers Actors, statuses, numeric properties, resources, actions, input, replication, and debugging. It gives gameplay state a clear owner and gives every core operation a consistent entrypoint.
 
-KRF is not a game template, ECS, datastore, matchmaking service, UI theme, monetization layer, or analytics system. It supplies the gameplay runtime spine those game-specific systems can build on.
+On top of that spine, KRF brings together combat resolution, health and knockdown, movement, inventory and equipment, abilities, quests, dialogue, world interactions, AI, animation, and effects. These systems are designed to work together without forcing game-specific content into the framework.
 
-## Start here
+## Built to become your game
 
-- [Actor Runtime](./Actor/actor-runtime): lifecycle and controller composition.
-- [Tag Registry](./Tags/tag-registry) and [Tag Runtime](./Tags/tag-runtime): authored meaning and live status state.
-- [Property Runtime](./Property/property-runtime): base and tag-resolved numbers.
-- [Resource Registry](./Resource/resource-registry) and [Resource Runtime](./Resource/resource-runtime): meter definitions and live values.
-- [API Reference](/api/Actor/actor-runtime): exact signatures, failures, payloads, and ordering.
+KRF defines runtime rules, not fiction. It does not prescribe a universe, power source, class system, progression model, combat style, or visual identity.
+
+Your game owns its world, characters, abilities, items, quests, balance, assets, interface, and presentation. Persistence, matchmaking, monetization, analytics, and final UI theming also remain outside KRF.
+
+## Start with the runtime
+
+- [Actor Runtime](./Actor/actor-runtime)
+- [Tags](./Tags/tag-runtime) and [properties](./Property/property-runtime)
+- [Resources](./Resource/resource-runtime)
+- [API Reference](/api/Actor/actor-runtime)
