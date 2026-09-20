@@ -9,6 +9,9 @@ local TagRegistry = require(script.Tags.TagRegistry)
 local TagValidator = require(script.Tags.TagValidator)
 local ResourceRegistry = require(script.Resource.ResourceRegistry)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
+local PropertyController = require(script.Property.PropertyController)
+local TagController = require(script.Tags.TagController)
+local ResourceController = require(script.Resource.ResourceController)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
 export type StartupFailure = ServerStartTypes.StartupFailure
@@ -19,6 +22,11 @@ type ResourceDefinition = ResourceTypes.ResourceDefinition
 
 local Server = {}
 local initAttempted: boolean = false
+local initialized: boolean = false
+
+function Server._IsInitialized(): boolean
+	return initialized
+end
 
 function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	if initAttempted then
@@ -30,7 +38,15 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Server", reason = "CatalogAlreadyLoaded" }
 	end
 
-	local controllers: { ControllerDef } = config.controllers or {}
+	local controllers: { ControllerDef } = {
+		{ key = "TagController", factory = TagController.new },
+		{ key = "PropertyController", factory = PropertyController.new, dependsOn = { "TagController" } },
+		{ key = "ResourceController", factory = ResourceController.new, dependsOn = { "PropertyController" } },
+	}
+	local gameControllers: { ControllerDef } = config.controllers or {}
+	for _, definition: ControllerDef in gameControllers do
+		table.insert(controllers, definition)
+	end
 	local tags: { TagDefinition } = config.tags or {}
 	local resources: { ResourceDefinition } = config.resources or {}
 
@@ -70,11 +86,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Resource", reason = reason :: string }
 	end
 
+	initialized = true
 	return true, nil
 end
 
 function Server._ResetForTests(): ()
 	initAttempted = false
+	initialized = false
 	ControllerRegistry._ResetForTests()
 	TagRegistry._resetForTests()
 	ResourceRegistry._resetForTests()

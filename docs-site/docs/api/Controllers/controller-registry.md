@@ -6,7 +6,7 @@ sidebar_position: 1
 
 `ControllerRegistry` loads one immutable catalog of Actor controller factories and resolves dependency-safe attachment order.
 
-For full KRF startup, pass the composed catalog to [`Server.Init`](/initializing-krf).
+For full KRF startup, pass game controller definitions to [`Server.Init`](/initializing-krf).
 
 ## Import
 

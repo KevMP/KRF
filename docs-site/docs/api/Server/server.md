@@ -19,7 +19,7 @@ local Server = require(ReplicatedStorage.Packages.KRF.server)
 
 ### `Init(config: ServerStartConfig) -> (boolean, StartupFailure?)` {#init}
 
-Validates and publishes the controller, tag, and resource catalogs in one startup attempt.
+Combines KRF's built-in controllers with `config.controllers`, then validates and publishes the controller, tag, and resource catalogs in one startup attempt.
 
 - Returns `true, nil` when all catalogs load.
 - Returns `false, { system, reason }` when validation or loading fails. The catalogs remain unpublished for validation failures.

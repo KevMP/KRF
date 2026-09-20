@@ -114,7 +114,7 @@ end
 it("KRF.Server.Init publishes valid controller, tag, and resource catalogs together", function()
 	local started: boolean, failure: StartupFailure? = Init({
 		controllers = {
-			createControllerDefinition("Game.Root", nil),
+			createControllerDefinition("Game.Root", { "ResourceController" }),
 			createControllerDefinition("Game.Dependent", { "Game.Root" }),
 		},
 		tags = { createTagDefinition("Game.Burning") },
@@ -131,20 +131,35 @@ it("KRF.Server.Init publishes valid controller, tag, and resource catalogs toget
 	expect(tagDefinition).never.toBeNil()
 	expect(resourceDefinition).never.toBeNil()
 	expect((rootController :: ControllerDef).key).toBe("Game.Root")
+	expect(Controllers.Get("TagController")).never.toBeNil()
+	expect(Controllers.Get("PropertyController")).never.toBeNil()
+	expect(Controllers.Get("ResourceController")).never.toBeNil()
 	expect((tagDefinition :: TagDefinition).id).toBe("Game.Burning")
 	expect((resourceDefinition :: LoadedResourceDefinition).id).toBe("Game.Stamina")
 end)
 
-it("KRF.Server.Init treats omitted definition catalogs as empty published catalogs", function()
+it("KRF.Server.Init loads built-in controllers when game catalogs are omitted", function()
 	local started: boolean, failure: StartupFailure? = Init({})
 
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
-	expect(#Controllers.GetAutoAttachKeys()).toBe(0)
+	expect(Controllers.GetAutoAttachKeys()).toEqual({ "TagController", "PropertyController", "ResourceController" })
 	expect(Tags.IsLoaded()).toBe(true)
 	expect(#Tags.GetAll()).toBe(0)
 	expect(Resources.IsLoaded()).toBe(true)
 	expect(#Resources.GetAll()).toBe(0)
+end)
+
+it("KRF.Server.Init rejects game definitions that duplicate a built-in controller", function()
+	local started: boolean, failure: StartupFailure? = Init({
+		controllers = { createControllerDefinition("TagController", nil) },
+	})
+
+	expect(started).toBe(false)
+	expectFailure(failure, "Controller", "DuplicateControllerKey")
+	expect(Controllers.IsLoaded()).toBe(false)
+	expect(Tags.IsLoaded()).toBe(false)
+	expect(Resources.IsLoaded()).toBe(false)
 end)
 
 it("KRF.Server.Init rejects invalid controller catalogs without publishing any system", function()
@@ -310,6 +325,28 @@ it("Actor registration before KRF.Server.Init leaves no lifecycle residue", func
 	expect(registrationEvents).toBe(0)
 end)
 
+it("Loading ControllerRegistry directly does not unlock Actor registration", function()
+	local loaded: boolean, loadReason: string? = Controllers.Load({})
+	expect(loaded).toBe(true)
+	expect(loadReason).toBeNil()
+
+	local registrationEvents: number = 0
+	local connection = Runtime.OnActorRegistered:Connect(function(_actor: Actor)
+		registrationEvents += 1
+	end)
+	table.insert(testConnections, connection)
+
+	local model: Model = createModel()
+	local actor: Actor?, reason: string? = Runtime.RegisterActor(model)
+
+	expect(actor).toBeNil()
+	expect(reason).toBe("ControllerDefinitionsNotLoaded")
+	expect(Registry.GetActorByModel(model)).toBeNil()
+	expect(registrationEvents).toBe(0)
+	expect(Tags.IsLoaded()).toBe(false)
+	expect(Resources.IsLoaded()).toBe(false)
+end)
+
 it("Actor registration after successful KRF.Server.Init succeeds", function()
 	local started: boolean, failure: StartupFailure? = Init({})
 	expect(started).toBe(true)
@@ -327,6 +364,9 @@ it("Actor registration after successful KRF.Server.Init succeeds", function()
 	local registeredActor: Actor = actor :: Actor
 	expect(registeredActor.enabled).toBe(true)
 	expect(Registry.GetActorByModel(model)).toBe(registeredActor)
+	expect(registeredActor:GetController("TagController")).never.toBeNil()
+	expect(registeredActor:GetController("PropertyController")).never.toBeNil()
+	expect(registeredActor:GetController("ResourceController")).never.toBeNil()
 end)
 
 it("Actor registration after failed KRF.Server.Init remains unavailable without lifecycle residue", function()

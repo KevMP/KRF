@@ -18,17 +18,17 @@ type Connection = SignalTypes.Connection
 
 local ActorRuntime: ActorRuntimeT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
 local ActorRegistry: ActorRegistryT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRegistry)
-local ControllerRegistry = require(ReplicatedStorage.Packages.KRF.server.Controller.ControllerRegistry)
+local Server = require(ReplicatedStorage.Packages.KRF.server)
 
 beforeEach(function()
-	ControllerRegistry._ResetForTests()
-	local loaded: boolean, reason: string? = ControllerRegistry.Load({})
-	expect(loaded).toBe(true)
-	expect(reason).toBeNil()
+	Server._ResetForTests()
+	local started: boolean, failure = Server.Init({})
+	expect(started).toBe(true)
+	expect(failure).toBeNil()
 end)
 
 afterEach(function()
-	ControllerRegistry._ResetForTests()
+	Server._ResetForTests()
 end)
 
 it("UnregisterActor unbinds after controller cleanup (model destroyed during DetachAllControllers)", function()

@@ -16,7 +16,7 @@ Server startup is the boundary between configuration and live Actor state. Your 
 
 ## Server initialization
 
-Compose KRF and game controller definitions in one array. Dependency order decides which factory runs first; catalog order breaks ties between unrelated controllers.
+Pass your game's controller definitions to `Server.Init`. KRF adds its own controllers before validating the combined catalog. Dependencies decide attachment order; catalog order breaks ties between unrelated controllers.
 
 ```lua
 --!strict
@@ -24,16 +24,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 
 local Server = require(KRF.server)
-local PropertyController = require(KRF.server.Property.PropertyController)
-local TagController = require(KRF.server.Tags.TagController)
-local ResourceController = require(KRF.server.Resource.ResourceController)
 local ControllerTypes = require(KRF.server.Controller.types)
 local GameCombatController = require(script.Parent.GameCombatController)
 
 local controllers: { ControllerTypes.ControllerDef } = {
-	{ key = "PropertyController", factory = PropertyController.new },
-	{ key = "TagController", factory = TagController.new, dependsOn = { "PropertyController" } },
-	{ key = "ResourceController", factory = ResourceController.new, dependsOn = { "PropertyController" } },
 	{
 		key = "Game.CombatController",
 		dependsOn = { "TagController", "ResourceController" },
@@ -66,7 +60,7 @@ if not started then
 end
 ```
 
-The example assumes `GameCombatController` is a controller module beside your startup script. Replace it, the tag, and the resource with your game's definitions. Omitted catalogs load as empty.
+The example assumes `GameCombatController` is a controller module beside your startup script. Replace it, the tag, and the resource with your game's definitions. Omitted game catalogs load as empty; KRF's built-in controllers still load.
 
 ## Client initialization
 
