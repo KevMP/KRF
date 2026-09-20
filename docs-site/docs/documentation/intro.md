@@ -12,7 +12,7 @@ displayed_sidebar: docsSidebar
 
 KRF connects the full gameplay chain—from input and actions to combat results, replicated state, and presentation—under one Actor-centered runtime. You define the game; KRF provides the architecture that keeps its systems coherent.
 
-[Start with the runtime](./Actor/actor-runtime) · [Browse the API](/api/Actor/actor-runtime) · [View on GitHub](https://github.com/KevMP/KRF)
+[Initialize KRF](./initializing-krf) · [Explore Actor Runtime](./Actor/actor-runtime) · [Browse the API](/api/Server/) · [View on GitHub](https://github.com/KevMP/KRF)
 
 ## One gameplay model
 
@@ -36,6 +36,7 @@ Your game owns its world, characters, abilities, items, quests, balance, assets,
 
 ## Start with the runtime
 
+- [Initializing KRF](./initializing-krf)
 - [Actor Runtime](./Actor/actor-runtime)
 - [Tags](./Tags/tag-runtime) and [properties](./Property/property-runtime)
 - [Resources](./Resource/resource-runtime)

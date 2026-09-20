@@ -50,6 +50,8 @@ Tags may name built-in or custom properties. They modify only properties already
 
 ## Catalog example
 
+For normal KRF startup, pass this catalog as `tags` to [`Server.Init`](../initializing-krf). The direct `Load` call below is for using `TagRegistry` on its own.
+
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

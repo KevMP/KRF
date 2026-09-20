@@ -254,6 +254,46 @@ it("KRF.Server.Init preserves catalog order between unrelated controllers", func
 	expect(attachmentOrder).toEqual({ "Game.First", "Game.Second" })
 end)
 
+it("Actors registered at different times receive the same dependency-ordered auto-attach set", function()
+	local attachmentOrder: { string } = {}
+	local function definition(key: string, dependsOn: { string }?, autoAttach: boolean?): ControllerDef
+		return {
+			key = key,
+			dependsOn = dependsOn,
+			autoAttach = autoAttach,
+			factory = function(_actor: Actor): Controller
+				table.insert(attachmentOrder, key)
+				return { Destroy = function() end }
+			end,
+		}
+	end
+
+	local started: boolean, failure: StartupFailure? = Init({
+		controllers = {
+			definition("Game.Dependent", { "Game.Root" }, nil),
+			definition("Game.Disabled", nil, false),
+			definition("Game.Root", nil, nil),
+		},
+	})
+	expect(started).toBe(true)
+	expect(failure).toBeNil()
+
+	local firstActor: Actor?, firstReason: string? = Runtime.RegisterActor(createModel())
+	local secondActor: Actor?, secondReason: string? = Runtime.RegisterActor(createModel())
+	if firstActor ~= nil then
+		table.insert(testActors, firstActor)
+	end
+	if secondActor ~= nil then
+		table.insert(testActors, secondActor)
+	end
+
+	expect(firstReason).toBeNil()
+	expect(secondReason).toBeNil()
+	expect(firstActor).never.toBeNil()
+	expect(secondActor).never.toBeNil()
+	expect(attachmentOrder).toEqual({ "Game.Root", "Game.Dependent", "Game.Root", "Game.Dependent" })
+end)
+
 it("Actor registration before KRF.Server.Init leaves no lifecycle residue", function()
 	local registrationEvents: number = 0
 	local connection = Runtime.OnActorRegistered:Connect(function(_actor: Actor)
@@ -265,7 +305,7 @@ it("Actor registration before KRF.Server.Init leaves no lifecycle residue", func
 	local actor: Actor?, reason: string? = Runtime.RegisterActor(model)
 
 	expect(actor).toBeNil()
-	expect(reason).never.toBeNil()
+	expect(reason).toBe("ControllerDefinitionsNotLoaded")
 	expect(Registry.GetActorByModel(model)).toBeNil()
 	expect(registrationEvents).toBe(0)
 end)

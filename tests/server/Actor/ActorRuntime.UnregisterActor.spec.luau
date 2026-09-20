@@ -4,6 +4,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it = JestGlobals.it
 local expect = JestGlobals.expect
+local beforeEach = JestGlobals.beforeEach
+local afterEach = JestGlobals.afterEach
 
 local ActorTypes = require(ReplicatedStorage.Packages.KRF.server.Actor.types)
 local SignalTypes = require(ReplicatedStorage.Packages.KRF.shared.Signal.types)
@@ -16,6 +18,18 @@ type Connection = SignalTypes.Connection
 
 local ActorRuntime: ActorRuntimeT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
 local ActorRegistry: ActorRegistryT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRegistry)
+local ControllerRegistry = require(ReplicatedStorage.Packages.KRF.server.Controller.ControllerRegistry)
+
+beforeEach(function()
+	ControllerRegistry._ResetForTests()
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({})
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+end)
+
+afterEach(function()
+	ControllerRegistry._ResetForTests()
+end)
 
 it("UnregisterActor unbinds after controller cleanup (model destroyed during DetachAllControllers)", function()
 	local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)

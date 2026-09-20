@@ -12,7 +12,8 @@ export type ControllerDef = {
 }
 
 export type ControllerRegistry = {
-	Register: (ControllerDef) -> (boolean, string?),
+	Load: (definitions: { ControllerDef }) -> (boolean, string?),
+	IsLoaded: () -> boolean,
 	GetAutoAttachKeys: () -> { string },
 	GetKeys: () -> { string },
 	Get: (key: string) -> ControllerDef?,
