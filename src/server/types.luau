@@ -18,6 +18,4 @@ export type StartupFailure = {
 	reason: string,
 }
 
-export type ServerInit = (ServerStartConfig) -> (boolean, StartupFailure?)
-
 return types
