@@ -14,11 +14,13 @@ An Actor is not limited to player characters. NPCs and other modeled gameplay pa
 
 ## Registration
 
+Complete [server initialization](../initializing-krf) before registering any Actor. Until `Server.Init` succeeds, `RegisterActor` returns `ControllerDefinitionsNotLoaded` without binding the model or firing registration events. A successful initialization fixes the controller definitions for every later Actor.
+
 `ActorRuntime.RegisterActor(model)` performs one transaction:
 
 1. Create a disabled Actor.
 2. Bind the Actor and model in `ActorRegistry`.
-3. Resolve and attach all registered auto-attach controllers in dependency order.
+3. Resolve and attach all loaded auto-attach controllers in dependency order.
 4. Set `actor.enabled = true`.
 5. Fire `OnActorRegistered`.
 

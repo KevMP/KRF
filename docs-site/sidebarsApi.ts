@@ -4,6 +4,11 @@ const sidebarsApi: SidebarsConfig = {
   apiSidebar: [
     {
       type: 'category',
+      label: 'Server',
+      items: ['Server/server'],
+    },
+    {
+      type: 'category',
       label: 'Actor',
       items: [
         'Actor/actor-runtime',

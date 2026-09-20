@@ -16,6 +16,7 @@ local ActorEntity = require(script.Parent.ActorEntity)
 local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ControllerRegistry = require(script.Parent.Parent.Controller.ControllerRegistry)
+local Server = require(script.Parent.Parent)
 
 local ActorRuntime = {} :: ActorRuntime
 
@@ -41,6 +42,10 @@ local function DestroyController(controllerKey: string, controller: Controller):
 end
 
 function ActorRuntime.RegisterActor(model: Model, _opts: RegisterActorOpts?): (Actor?, string?)
+	if not Server._IsInitialized() then
+		return nil, "ControllerDefinitionsNotLoaded"
+	end
+
 	local actor: Actor = ActorEntity.new()
 	local ok: boolean, reason: string? = ActorRegistry.BindModel(actor, model)
 

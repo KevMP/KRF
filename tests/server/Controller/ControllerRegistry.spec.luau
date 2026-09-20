@@ -17,337 +17,209 @@ local ControllerRegistry: ControllerRegistryT =
 	require(ReplicatedStorage.Packages.KRF.server.Controller.ControllerRegistry)
 
 local function FactoryNoop(_actor: Actor): Controller
-	local controller: Controller = {
-		Destroy = function() end,
-	}
-	return controller
+	return { Destroy = function() end }
 end
 
-it("ControllerRegistry.Register rejects duplicate controller keys", function()
+it("loads a complete catalog and resolves dependencies with catalog order as the tie breaker", function()
 	ControllerRegistry._ResetForTests()
-
-	local controllerDef1: ControllerDef = {
-		key = "TestController",
-		factory = FactoryNoop,
+	local definitions: { ControllerDef } = {
+		{ key = "Dependent", factory = FactoryNoop, dependsOn = { "Root" } },
+		{ key = "Other", factory = FactoryNoop },
+		{ key = "Root", factory = FactoryNoop },
+		{ key = "Final", factory = FactoryNoop, dependsOn = { "Dependent", "Other" } },
 	}
+	local loaded: boolean, reason: string? = ControllerRegistry.Load(definitions)
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	expect(ControllerRegistry.IsLoaded()).toBe(true)
+	expect(ControllerRegistry.GetKeys()).toEqual({ "Dependent", "Other", "Root", "Final" })
 
-	local controllerDef2: ControllerDef = {
-		key = "TestController",
-		factory = FactoryNoop,
-	}
-
-	local ok1: boolean, reason1: string? = ControllerRegistry.Register(controllerDef1)
-	local ok2: boolean, reason2: string? = ControllerRegistry.Register(controllerDef2)
-
-	expect(ok1).toBe(true)
-	expect(reason1).toBeNil()
-
-	expect(ok2).toBe(false)
-	expect(reason2).toBe("DuplicateControllerKey")
-
-	local stored: ControllerDef? = ControllerRegistry.Get("TestController")
-	expect(stored).toBe(controllerDef1)
-
-	ControllerRegistry._ResetForTests()
-end)
-
-it("ControllerRegistry.ResolveOrder returns a deterministic topological order", function()
-	ControllerRegistry._ResetForTests()
-
-	-- Graph:
-	-- A
-	-- ├─ B (depends on A)
-	-- ├─ C (depends on A)
-	-- └─ D (depends on B, C)
-	--
-	-- Expected deterministic order (given registration order A, B, C, D):
-	-- A, B, C, D
-
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-	}
-
-	local controllerDefB: ControllerDef = {
-		key = "B",
-		factory = FactoryNoop,
-		dependsOn = { "A" },
-	}
-
-	local controllerDefC: ControllerDef = {
-		key = "C",
-		factory = FactoryNoop,
-		dependsOn = { "A" },
-	}
-
-	local controllerDefD: ControllerDef = {
-		key = "D",
-		factory = FactoryNoop,
-		dependsOn = { "B", "C" },
-	}
-
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-	local okC: boolean, reasonC: string? = ControllerRegistry.Register(controllerDefC)
-	local okD: boolean, reasonD: string? = ControllerRegistry.Register(controllerDefD)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
-	expect(okC).toBe(true)
-	expect(reasonC).toBeNil()
-	expect(okD).toBe(true)
-	expect(reasonD).toBeNil()
-
-	-- Call with scrambled input order (should not matter)
-	local orderedKeys1: { string }?, resolveReason1: string? = ControllerRegistry.ResolveOrder({ "D", "C", "B", "A" })
-
-	expect(resolveReason1).toBeNil()
-	expect(orderedKeys1).toEqual({ "A", "B", "C", "D" })
-
-	-- Call again with a different scrambled order to prove determinism
-	local orderedKeys2: { string }?, resolveReason2: string? = ControllerRegistry.ResolveOrder({ "B", "D", "A", "C" })
-
-	expect(resolveReason2).toBeNil()
-	expect(orderedKeys2).toEqual({ "A", "B", "C", "D" })
-
-	-- Sanity: ensure result contains only candidate keys and has the right length
-	expect(#(orderedKeys2 :: { string })).toBe(4)
-
-	ControllerRegistry._ResetForTests()
-end)
-
-it("ControllerRegistry.ResolveOrder rejects unknown controller keys", function()
-	ControllerRegistry._ResetForTests()
-
-	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "NotRegistered" })
-
-	expect(orderedKeys).toBeNil()
-	expect(resolveReason).toBe("UnknownControllerKey:NotRegistered")
-
+	local ordered: { string }?, orderReason: string? =
+		ControllerRegistry.ResolveOrder({ "Final", "Root", "Other", "Dependent", "Root" })
+	expect(orderReason).toBeNil()
+	expect(ordered).toEqual({ "Other", "Root", "Dependent", "Final" })
+	local reordered: { string }?, reorderedReason: string? =
+		ControllerRegistry.ResolveOrder({ "Dependent", "Other", "Final", "Root" })
+	expect(reorderedReason).toBeNil()
+	expect(reordered).toEqual({ "Other", "Root", "Dependent", "Final" })
 	ControllerRegistry._ResetForTests()
 end)
 
 it("ControllerRegistry.ResolveOrder ignores duplicate input keys", function()
 	ControllerRegistry._ResetForTests()
-
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-	}
-
-	local controllerDefB: ControllerDef = {
-		key = "B",
-		factory = FactoryNoop,
-	}
-
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
+	local controllerDefA: ControllerDef = { key = "A", factory = FactoryNoop }
+	local controllerDefB: ControllerDef = { key = "B", factory = FactoryNoop }
+	local loaded: boolean, loadReason: string? = ControllerRegistry.Load({ controllerDefA, controllerDefB })
+	expect(loaded).toBe(true)
+	expect(loadReason).toBeNil()
 
 	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "B", "A", "A", "B" })
-
 	expect(resolveReason).toBeNil()
 	expect(orderedKeys).toEqual({ "A", "B" })
-
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.ResolveOrder rejects cycles even when other controllers are acyclic", function()
+it("rejects duplicate keys atomically and accepts a corrected catalog", function()
 	ControllerRegistry._ResetForTests()
+	local duplicate: ControllerDef = { key = "Same", factory = FactoryNoop }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ duplicate, duplicate })
+	expect(loaded).toBe(false)
+	expect(reason).toBe("DuplicateControllerKey")
+	expect(ControllerRegistry.IsLoaded()).toBe(false)
+	expect(ControllerRegistry.Get("Same")).toBeNil()
+	expect(ControllerRegistry.GetKeys()).toEqual({})
 
-	-- Cycle: A -> B -> C -> A
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-		dependsOn = { "B" },
-	}
-
-	local controllerDefB: ControllerDef = {
-		key = "B",
-		factory = FactoryNoop,
-		dependsOn = { "C" },
-	}
-
-	local controllerDefC: ControllerDef = {
-		key = "C",
-		factory = FactoryNoop,
-		dependsOn = { "A" },
-	}
-
-	-- Acyclic chain: D -> E
-	local controllerDefD: ControllerDef = {
-		key = "D",
-		factory = FactoryNoop,
-	}
-
-	local controllerDefE: ControllerDef = {
-		key = "E",
-		factory = FactoryNoop,
-		dependsOn = { "D" },
-	}
-
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-	local okC: boolean, reasonC: string? = ControllerRegistry.Register(controllerDefC)
-	local okD: boolean, reasonD: string? = ControllerRegistry.Register(controllerDefD)
-	local okE: boolean, reasonE: string? = ControllerRegistry.Register(controllerDefE)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
-	expect(okC).toBe(true)
-	expect(reasonC).toBeNil()
-	expect(okD).toBe(true)
-	expect(reasonD).toBeNil()
-	expect(okE).toBe(true)
-	expect(reasonE).toBeNil()
-
-	-- Scrambled input order to ensure behavior doesn't depend on input ordering
-	local orderedKeys: { string }?, resolveReason: string? =
-		ControllerRegistry.ResolveOrder({ "E", "C", "D", "B", "A" })
-
-	expect(orderedKeys).toBeNil()
-	expect(resolveReason).toBe("CyclicDependency")
-
+	loaded, reason = ControllerRegistry.Load({ duplicate })
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	expect(ControllerRegistry.Get("Same")).never.toBeNil()
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.ResolveOrder rejects dependencies outside the requested set", function()
+it("rejects invalid definitions before exposing any controller", function()
 	ControllerRegistry._ResetForTests()
-
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-		autoAttach = false,
-	}
-
-	local controllerDefB: ControllerDef = {
-		key = "B",
-		factory = FactoryNoop,
-		dependsOn = { "A" },
-	}
-
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
-
-	-- Candidate set excludes A, but B depends on A -> reject
-	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "B" })
-
-	expect(orderedKeys).toBeNil()
-	expect(resolveReason).toBe("DependencyNotInAttachSet:B->A")
-
+	local valid: ControllerDef = { key = "Valid", factory = FactoryNoop }
+	local invalid: ControllerDef = { key = "", factory = FactoryNoop }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ valid, invalid })
+	expect(loaded).toBe(false)
+	expect(reason).toBe("ControllerKeyCannotBeEmpty")
+	expect(ControllerRegistry.IsLoaded()).toBe(false)
+	expect(ControllerRegistry.Get("Valid")).toBeNil()
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.ResolveOrder returns a stable error when a dependency was never registered", function()
-	ControllerRegistry._ResetForTests()
-
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-		dependsOn = { "Missing" },
+it("rejects malformed catalog entries without publishing a partial catalog", function()
+	local malformedCases: { { definitions: any, reason: string } } = {
+		{ definitions = "invalid", reason = "ControllerCatalogMustBeTable" },
+		{ definitions = { false }, reason = "ControllerDefinitionMustBeTable" },
+		{ definitions = { {} }, reason = "ControllerKeyMissing" },
+		{ definitions = { { key = 1 } }, reason = "ControllerKeyMustBeString" },
+		{ definitions = { { key = "Bad" } }, reason = "ControllerFactoryMustBeFunction" },
+		{
+			definitions = { { key = "Bad", factory = FactoryNoop, autoAttach = "yes" } },
+			reason = "ControllerAutoAttachMustBeBoolean",
+		},
+		{
+			definitions = { { key = "Bad", factory = FactoryNoop, dependsOn = "Other" } },
+			reason = "ControllerDependenciesMustBeTable",
+		},
+		{
+			definitions = { { key = "Bad", factory = FactoryNoop, dependsOn = { false } } },
+			reason = "ControllerDependencyKeyInvalid",
+		},
 	}
 
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-
-	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "A" })
-
-	expect(orderedKeys).toBeNil()
-	expect(resolveReason).toBe("MissingDependency:A->Missing")
-
+	for _, case in malformedCases do
+		ControllerRegistry._ResetForTests()
+		local loaded: boolean, reason: string? = ControllerRegistry.Load(case.definitions)
+		expect(loaded).toBe(false)
+		expect(reason).toBe(case.reason)
+		expect(ControllerRegistry.IsLoaded()).toBe(false)
+		expect(ControllerRegistry.GetKeys()).toEqual({})
+	end
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.GetAutoAttachKeys respects default attachment and preserves registration order", function()
+it("rejects missing dependencies and cycles during load", function()
 	ControllerRegistry._ResetForTests()
+	local missing: ControllerDef = { key = "NeedsMissing", factory = FactoryNoop, dependsOn = { "Missing" } }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ missing })
+	expect(loaded).toBe(false)
+	expect(reason).toBe("MissingDependency:NeedsMissing->Missing")
+	expect(ControllerRegistry.IsLoaded()).toBe(false)
 
-	local controllerDefDefault: ControllerDef = {
-		key = "Default",
+	local first: ControllerDef = { key = "First", factory = FactoryNoop, dependsOn = { "Second" } }
+	local second: ControllerDef = { key = "Second", factory = FactoryNoop, dependsOn = { "Third" } }
+	local third: ControllerDef = { key = "Third", factory = FactoryNoop, dependsOn = { "First" } }
+	local unrelated: ControllerDef = { key = "Unrelated", factory = FactoryNoop }
+	local unrelatedDependent: ControllerDef = {
+		key = "UnrelatedDependent",
 		factory = FactoryNoop,
-		-- autoAttach omitted => default true
+		dependsOn = { "Unrelated" },
 	}
+	loaded, reason = ControllerRegistry.Load({ first, unrelated, third, unrelatedDependent, second })
+	expect(loaded).toBe(false)
+	expect(reason).toBe("CyclicDependency")
+	expect(ControllerRegistry.IsLoaded()).toBe(false)
+	expect(ControllerRegistry.Get("First")).toBeNil()
+	expect(ControllerRegistry.Get("Unrelated")).toBeNil()
+	ControllerRegistry._ResetForTests()
+end)
 
-	local controllerDefExplicitTrue: ControllerDef = {
-		key = "ExplicitTrue",
-		factory = FactoryNoop,
-		autoAttach = true,
-	}
+it("ControllerRegistry.GetAutoAttachKeys respects default and explicit attachment in catalog order", function()
+	ControllerRegistry._ResetForTests()
+	local defaultDefinition: ControllerDef = { key = "Default", factory = FactoryNoop }
+	local explicitDefinition: ControllerDef = { key = "ExplicitTrue", factory = FactoryNoop, autoAttach = true }
+	local disabledDefinition: ControllerDef = { key = "False", factory = FactoryNoop, autoAttach = false }
+	local loaded: boolean, reason: string? =
+		ControllerRegistry.Load({ defaultDefinition, explicitDefinition, disabledDefinition })
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	expect(ControllerRegistry.GetAutoAttachKeys()).toEqual({ "Default", "ExplicitTrue" })
+	ControllerRegistry._ResetForTests()
+end)
 
-	local controllerDefFalse: ControllerDef = {
-		key = "False",
-		factory = FactoryNoop,
-		autoAttach = false,
-	}
+it("rejects a second load without changing the published catalog", function()
+	ControllerRegistry._ResetForTests()
+	local first: ControllerDef = { key = "First", factory = FactoryNoop }
+	local second: ControllerDef = { key = "Second", factory = FactoryNoop }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ first })
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	loaded, reason = ControllerRegistry.Load({ second })
+	expect(loaded).toBe(false)
+	expect(reason).toBe("ControllerDefinitionsAlreadyLoaded")
+	expect(ControllerRegistry.GetKeys()).toEqual({ "First" })
+	expect(ControllerRegistry.Get("Second")).toBeNil()
+	ControllerRegistry._ResetForTests()
+end)
 
-	local ok1: boolean, reason1: string? = ControllerRegistry.Register(controllerDefDefault)
-	local ok2: boolean, reason2: string? = ControllerRegistry.Register(controllerDefExplicitTrue)
-	local ok3: boolean, reason3: string? = ControllerRegistry.Register(controllerDefFalse)
+it("copies definitions and returns defensive key arrays", function()
+	ControllerRegistry._ResetForTests()
+	local dependencies: { string } = { "Root" }
+	local root: ControllerDef = { key = "Root", factory = FactoryNoop }
+	local dependent: ControllerDef = { key = "Dependent", factory = FactoryNoop, dependsOn = dependencies }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ root, dependent })
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
 
-	expect(ok1).toBe(true)
-	expect(reason1).toBeNil()
-	expect(ok2).toBe(true)
-	expect(reason2).toBeNil()
-	expect(ok3).toBe(true)
-	expect(reason3).toBeNil()
-
+	dependent.autoAttach = false
+	table.clear(dependencies)
+	local keys: { string } = ControllerRegistry.GetKeys()
 	local autoAttachKeys: { string } = ControllerRegistry.GetAutoAttachKeys()
-	expect(autoAttachKeys).toEqual({ "Default", "ExplicitTrue" })
-
+	table.clear(keys)
+	table.clear(autoAttachKeys)
+	expect(ControllerRegistry.GetKeys()).toEqual({ "Root", "Dependent" })
+	expect(ControllerRegistry.GetAutoAttachKeys()).toEqual({ "Root", "Dependent" })
+	expect((ControllerRegistry.Get("Dependent") :: ControllerDef).dependsOn).toEqual({ "Root" })
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.ResolveOrder returns an empty order for an empty request", function()
+it("preserves subset dependency rules and ignores repeated dependencies", function()
 	ControllerRegistry._ResetForTests()
+	local root: ControllerDef = { key = "Root", factory = FactoryNoop, autoAttach = false }
+	local dependent: ControllerDef = { key = "Dependent", factory = FactoryNoop, dependsOn = { "Root", "Root" } }
+	local loaded: boolean, reason: string? = ControllerRegistry.Load({ dependent, root })
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+	expect(ControllerRegistry.GetAutoAttachKeys()).toEqual({ "Dependent" })
 
-	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({})
-
-	expect(resolveReason).toBeNil()
-	expect(orderedKeys).toEqual({})
-
+	local ordered: { string }?, orderReason: string? = ControllerRegistry.ResolveOrder({ "Dependent" })
+	expect(ordered).toBeNil()
+	expect(orderReason).toBe("DependencyNotInAttachSet:Dependent->Root")
+	ordered, orderReason = ControllerRegistry.ResolveOrder({ "Dependent", "Root" })
+	expect(orderReason).toBeNil()
+	expect(ordered).toEqual({ "Root", "Dependent" })
 	ControllerRegistry._ResetForTests()
 end)
 
-it("ControllerRegistry.ResolveOrder ignores duplicate dependencies", function()
+it("resolves an empty request and rejects unknown requested keys", function()
 	ControllerRegistry._ResetForTests()
-
-	local controllerDefA: ControllerDef = {
-		key = "A",
-		factory = FactoryNoop,
-	}
-
-	local controllerDefB: ControllerDef = {
-		key = "B",
-		factory = FactoryNoop,
-		dependsOn = { "A", "A" },
-	}
-
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
-
-	local orderedKeys: { string }?, resolveReason: string? = ControllerRegistry.ResolveOrder({ "A", "B" })
-
-	expect(resolveReason).toBeNil()
-	expect(orderedKeys).toEqual({ "A", "B" })
-
+	local ordered: { string }?, reason: string? = ControllerRegistry.ResolveOrder({})
+	expect(reason).toBeNil()
+	expect(ordered).toEqual({})
+	ordered, reason = ControllerRegistry.ResolveOrder({ "Unknown" })
+	expect(ordered).toBeNil()
+	expect(reason).toBe("UnknownControllerKey:Unknown")
 	ControllerRegistry._ResetForTests()
 end)

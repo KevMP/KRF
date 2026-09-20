@@ -5,6 +5,8 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it = JestGlobals.it
 local expect = JestGlobals.expect
 local jest = JestGlobals.jest
+local beforeEach = JestGlobals.beforeEach
+local afterEach = JestGlobals.afterEach
 
 local ActorTypes = require(ReplicatedStorage.Packages.KRF.server.Actor.types)
 local SignalTypes = require(ReplicatedStorage.Packages.KRF.shared.Signal.types)
@@ -17,6 +19,18 @@ type Connection = SignalTypes.Connection
 
 local ActorRuntime: ActorRuntimeT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
 local ActorRegistry: ActorRegistryT = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRegistry)
+local Server = require(ReplicatedStorage.Packages.KRF.server)
+
+beforeEach(function()
+	Server._ResetForTests()
+	local started: boolean, failure = Server.Init({})
+	expect(started).toBe(true)
+	expect(failure).toBeNil()
+end)
+
+afterEach(function()
+	Server._ResetForTests()
+end)
 
 it("RegisterActor succeeds: bind -> attach -> enable -> event", function()
 	local model: Model = Instance.new("Model")

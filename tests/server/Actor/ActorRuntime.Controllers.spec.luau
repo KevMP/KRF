@@ -46,7 +46,7 @@ it("ActorRuntime.AttachControllers fails when the controller key is already occu
 		end,
 	}
 
-	local okReg: boolean, regReason: string? = ControllerRegistry.Register(controllerDefA)
+	local okReg: boolean, regReason: string? = ControllerRegistry.Load({ controllerDefA })
 	expect(okReg).toBe(true)
 	expect(regReason).toBeNil()
 
@@ -92,13 +92,9 @@ it("ActorRuntime.AttachControllers rolls back controllers attached in the curren
 		end,
 	}
 
-	local okA: boolean, reasonA: string? = ControllerRegistry.Register(controllerDefA)
-	local okB: boolean, reasonB: string? = ControllerRegistry.Register(controllerDefB)
-
-	expect(okA).toBe(true)
-	expect(reasonA).toBeNil()
-	expect(okB).toBe(true)
-	expect(reasonB).toBeNil()
+	local loaded: boolean, loadReason: string? = ControllerRegistry.Load({ controllerDefA, controllerDefB })
+	expect(loaded).toBe(true)
+	expect(loadReason).toBeNil()
 
 	local okAttach: boolean, attachReason: string? = ActorRuntime.AttachControllers(actor)
 	expect(okAttach).toBe(false)
@@ -191,7 +187,7 @@ it("ActorRuntime.AttachControllers rejects a factory that does not create a cont
 		end,
 	}
 
-	local okReg: boolean, regReason: string? = ControllerRegistry.Register(controllerDefA)
+	local okReg: boolean, regReason: string? = ControllerRegistry.Load({ controllerDefA })
 	expect(okReg).toBe(true)
 	expect(regReason).toBeNil()
 
@@ -216,7 +212,7 @@ it("ActorRuntime.AttachControllers rejects a controller that does not satisfy th
 		end,
 	}
 
-	local okReg: boolean, regReason: string? = ControllerRegistry.Register(controllerDefA)
+	local okReg: boolean, regReason: string? = ControllerRegistry.Load({ controllerDefA })
 	expect(okReg).toBe(true)
 	expect(regReason).toBeNil()
 

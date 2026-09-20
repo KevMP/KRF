@@ -36,6 +36,7 @@ Creates an Actor for `model`, binds it, attaches every auto-attach controller, t
 **Returns**
 
 - `actor, nil`: registration completed and `OnActorRegistered` fired.
+- `nil, "ControllerDefinitionsNotLoaded"`: `Server.Init` has not succeeded; no Actor is bound or enabled.
 - `nil, "ModelAlreadyRegistered"`: the model already belongs to another Actor.
 - `nil, reason`: binding, controller ordering, factory, or attachment failed.
 

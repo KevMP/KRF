@@ -35,6 +35,8 @@ The registry can validate only default source values. Runtime assignment resolve
 
 ## Catalog example
 
+For normal KRF startup, pass this catalog as `resources` to [`Server.Init`](../initializing-krf). The direct `Load` call below is for using `ResourceRegistry` on its own.
+
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
