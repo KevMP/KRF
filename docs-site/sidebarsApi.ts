@@ -18,6 +18,11 @@ const sidebarsApi: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Action',
+      items: ['Action/action-registry'],
+    },
+    {
+      type: 'category',
       label: 'Property',
       items: ['Property/property-controller'],
     },
