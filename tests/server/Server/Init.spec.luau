@@ -13,6 +13,7 @@ local ActorTypes: any = require(KRF.server.Actor.types)
 local ControllerTypes: any = require(KRF.server.Controller.types)
 local TagTypes: any = require(KRF.server.Tags.types)
 local ResourceTypes: any = require(KRF.server.Resource.types)
+local ActionTypes: any = require(KRF.server.Action.types)
 local ServerTypes: any = require(KRF.server.types)
 
 type Actor = ActorTypes.Actor
@@ -26,6 +27,8 @@ type TagRegistry = TagTypes.TagRegistry
 type ResourceDefinition = ResourceTypes.ResourceDefinition
 type LoadedResourceDefinition = ResourceTypes.LoadedResourceDefinition
 type ResourceRegistry = ResourceTypes.ResourceRegistry
+type ActionDefinition = ActionTypes.ActionDefinition
+type ActionRegistry = ActionTypes.ActionRegistry
 type StartupFailure = ServerTypes.StartupFailure
 
 local Server = require(KRF.server)
@@ -35,6 +38,7 @@ local Registry: ActorRegistry = require(KRF.server.Actor.ActorRegistry)
 local Controllers: ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
 local Tags: TagRegistry = require(KRF.server.Tags.TagRegistry)
 local Resources: ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
+local Actions: ActionRegistry = require(KRF.server.Action.ActionRegistry)
 
 local testModels: { Model } = {}
 local testConnections: { any } = {}
@@ -103,6 +107,13 @@ local function createResourceDefinition(id: string): ResourceDefinition
 	}
 end
 
+local function createActionDefinition(id: string): ActionDefinition
+	return {
+		id = id,
+		visibility = "ServerOnly",
+	}
+end
+
 local function expectFailure(failure: StartupFailure?, system: string, reason: string)
 	expect(failure).never.toBeNil()
 
@@ -148,6 +159,76 @@ it("KRF.Server.Init loads built-in controllers when game catalogs are omitted", 
 	expect(#Tags.GetAll()).toBe(0)
 	expect(Resources.IsLoaded()).toBe(true)
 	expect(#Resources.GetAll()).toBe(0)
+	expect(Actions.IsLoaded()).toBe(true)
+	expect(#Actions.GetAll()).toBe(0)
+end)
+
+it("KRF.Server.Init validates and publishes Tags, Resources, and Actions as one catalog transaction", function()
+	local action: ActionDefinition = createActionDefinition("Action.Dodge")
+	action.requiredTags = { "Game.Grounded" }
+	action.costs = { ["Game.Stamina"] = 15 }
+	action.locks = { "Locomotion" }
+
+	local started: boolean, failure: StartupFailure? = Init({
+		tags = { createTagDefinition("Game.Grounded") },
+		resources = { createResourceDefinition("Game.Stamina") },
+		actions = { action },
+	})
+
+	expect(started).toBe(true)
+	expect(failure).toBeNil()
+	expect(Actions.IsLoaded()).toBe(true)
+	expect(Actions.Get("Action.Dodge")).never.toBeNil()
+end)
+
+it(
+	"KRF.Server.Init leaves every catalog unpublished when Action validation fails after all prior preparation",
+	function()
+		local invalidAction: any = createActionDefinition("Action.Invalid")
+		invalidAction.visibility = "Everyone"
+
+		local started: boolean, failure: StartupFailure? = Init({
+			controllers = { createControllerDefinition("Game.ValidController", nil) },
+			tags = { createTagDefinition("Game.ValidTag") },
+			resources = { createResourceDefinition("Game.ValidResource") },
+			actions = { invalidAction },
+		})
+
+		expect(started).toBe(false)
+		expectFailure(failure, "Action", "ActionVisibilityInvalid")
+		expect(Controllers.IsLoaded()).toBe(false)
+		expect(Tags.IsLoaded()).toBe(false)
+		expect(Resources.IsLoaded()).toBe(false)
+		expect(Actions.IsLoaded()).toBe(false)
+		expect(Actions.Get("Action.Invalid")).toBeNil()
+	end
+)
+
+it("KRF.Server.Init rejects unknown Action Tag, Resource, and Action references before publication", function()
+	local unknownTagAction: ActionDefinition = createActionDefinition("Action.UnknownTag")
+	unknownTagAction.requiredTags = { "Tag.Unknown" }
+	local unknownTagStarted: boolean, unknownTagFailure: StartupFailure? = Init({ actions = { unknownTagAction } })
+	expect(unknownTagStarted).toBe(false)
+	expectFailure(unknownTagFailure, "Action", "ActionRequiredTagUnknown:Tag.Unknown")
+	expect(Actions.IsLoaded()).toBe(false)
+
+	Server._ResetForTests()
+	local unknownResourceAction: ActionDefinition = createActionDefinition("Action.UnknownResource")
+	unknownResourceAction.costs = { ["Resource.Unknown"] = 1 }
+	local unknownResourceStarted: boolean, unknownResourceFailure: StartupFailure? =
+		Init({ actions = { unknownResourceAction } })
+	expect(unknownResourceStarted).toBe(false)
+	expectFailure(unknownResourceFailure, "Action", "ActionCostResourceUnknown:Resource.Unknown")
+	expect(Actions.IsLoaded()).toBe(false)
+
+	Server._ResetForTests()
+	local unknownActionReference: ActionDefinition = createActionDefinition("Action.UnknownReference")
+	unknownActionReference.interruptibleBy = { "Action.Unknown" }
+	local unknownActionStarted: boolean, unknownActionFailure: StartupFailure? =
+		Init({ actions = { unknownActionReference } })
+	expect(unknownActionStarted).toBe(false)
+	expectFailure(unknownActionFailure, "Action", "ActionInterruptibleByUnknown:Action.Unknown")
+	expect(Actions.IsLoaded()).toBe(false)
 end)
 
 it("KRF.Server.Init rejects game definitions that duplicate a built-in controller", function()

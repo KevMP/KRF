@@ -3,11 +3,14 @@ local ServerStartTypes = require(script.types)
 local ControllerTypes = require(script.Controller.types)
 local TagTypes = require(script.Tags.types)
 local ResourceTypes = require(script.Resource.types)
+local ActionTypes = require(script.Action.types)
 
 local ControllerRegistry = require(script.Controller.ControllerRegistry)
 local TagRegistry = require(script.Tags.TagRegistry)
 local TagValidator = require(script.Tags.TagValidator)
 local ResourceRegistry = require(script.Resource.ResourceRegistry)
+local ActionRegistry = require(script.Action.ActionRegistry)
+local ActionValidator = require(script.Action.ActionValidator)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
 local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
@@ -19,6 +22,7 @@ export type StartupFailure = ServerStartTypes.StartupFailure
 type ControllerDef = ControllerTypes.ControllerDef
 type TagDefinition = TagTypes.TagDefinition
 type ResourceDefinition = ResourceTypes.ResourceDefinition
+type ActionDefinition = ActionTypes.ActionDefinition
 
 local Server = {}
 local initAttempted: boolean = false
@@ -34,7 +38,12 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 	initAttempted = true
 
-	if ControllerRegistry.IsLoaded() or TagRegistry.IsLoaded() or ResourceRegistry.IsLoaded() then
+	if
+		ControllerRegistry.IsLoaded()
+		or TagRegistry.IsLoaded()
+		or ResourceRegistry.IsLoaded()
+		or ActionRegistry.IsLoaded()
+	then
 		return false, { system = "Server", reason = "CatalogAlreadyLoaded" }
 	end
 
@@ -49,19 +58,23 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 	local tags: { TagDefinition } = config.tags or {}
 	local resources: { ResourceDefinition } = config.resources or {}
+	local actions: { ActionDefinition } = if config.actions ~= nil then config.actions else {}
 
 	-- Validate the other catalogs before publishing any of them. Their Load calls
 	-- run the same validators and do not yield, so publication cannot fail later.
 	local stagedTags: { [string]: TagDefinition } = {}
+	local preparedTagIds: { [string]: boolean } = {}
 	for _, definition: TagDefinition in tags do
 		local valid: boolean, reason: string? = TagValidator.ValidateTagDefinition(definition, stagedTags)
 		if not valid then
 			return false, { system = "Tag", reason = reason :: string }
 		end
 		stagedTags[definition.id] = definition
+		preparedTagIds[definition.id] = true
 	end
 
 	local stagedResources: { [string]: ResourceDefinition } = {}
+	local preparedResourceIds: { [string]: boolean } = {}
 	for _, definition: ResourceDefinition in resources do
 		local valid: boolean, reason: string? =
 			ResourceValidator.ValidateResourceDefinition(definition, stagedResources)
@@ -69,6 +82,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 			return false, { system = "Resource", reason = reason :: string }
 		end
 		stagedResources[definition.id] = definition
+		preparedResourceIds[definition.id] = true
+	end
+
+	local actionsValid: boolean, actionReason: string? =
+		ActionValidator.ValidateCatalog(actions, preparedTagIds, preparedResourceIds)
+	if not actionsValid then
+		return false, { system = "Action", reason = actionReason :: string }
 	end
 
 	local loaded: boolean, reason: string? = ControllerRegistry.Load(controllers)
@@ -86,6 +106,11 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Resource", reason = reason :: string }
 	end
 
+	loaded, reason = ActionRegistry.Load(actions, preparedTagIds, preparedResourceIds)
+	if not loaded then
+		return false, { system = "Action", reason = reason :: string }
+	end
+
 	initialized = true
 	return true, nil
 end
@@ -96,6 +121,7 @@ function Server._ResetForTests(): ()
 	ControllerRegistry._ResetForTests()
 	TagRegistry._resetForTests()
 	ResourceRegistry._resetForTests()
+	ActionRegistry._resetForTests()
 end
 
 return Server
