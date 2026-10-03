@@ -86,4 +86,5 @@ Grants are runtime state. Game persistence code can restore ownership by calling
 
 - [ActionController API](/api/Action/action-controller)
 - [Action catalog](./action-registry)
+- [Run Actions](./action-lifecycle)
 - [Initializing KRF](../initializing-krf)

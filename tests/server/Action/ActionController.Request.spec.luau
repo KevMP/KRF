@@ -72,6 +72,19 @@ it("rejects invalid, unknown, and ungranted ids without consuming a sequence id"
 	expect(accepted).toEqual({ accepted = true, sequenceId = 1 })
 end)
 
+it("returns distinct stable reasons for invalid, unknown, and ungranted Action ids", function()
+	loadActions({
+		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
+		{ id = "Action.Roll", visibility = "ServerOnly" },
+	})
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction(12).reason).toBe("ActionIdMustBeString")
+	expect(controller:RequestAction("").reason).toBe("ActionIdCannotBeEmpty")
+	expect(controller:RequestAction("Action.Unknown").reason).toBe("UnknownActionId:Action.Unknown")
+	expect(controller:RequestAction("Action.Roll").reason).toBe("ActionNotGranted")
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
 it("rejects requests while the Actor is disabled or the controller is destroyed", function()
 	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
 	local actor: Actor, controller: any = createController()
@@ -94,8 +107,8 @@ it("allocates sequence ids in commit order and allows concurrent same-id instanc
 	local second: any = controller:RequestAction("Action.Dodge")
 	expect(first).toEqual({ accepted = true, sequenceId = 1 })
 	expect(second).toEqual({ accepted = true, sequenceId = 2 })
-	expect(controller:EndAction(first.sequenceId)).toBe(true)
-	expect(controller:EndAction(second.sequenceId)).toBe(true)
+	expect((controller:EndAction(first.sequenceId))).toBe(true)
+	expect((controller:EndAction(second.sequenceId))).toBe(true)
 	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
 end)
 
@@ -292,4 +305,37 @@ it("assigns nested requests ids in actual commit order", function()
 	local outer: any = controller:RequestAction("Action.Dodge")
 	expect(nested).toEqual({ accepted = true, sequenceId = 1 })
 	expect(outer).toEqual({ accepted = true, sequenceId = 2 })
+end)
+
+it("does not emit Started for a rejected request", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly" } })
+	local _actor: Actor, controller: any = createController()
+	local startedCount: number = 0
+	controller.OnActionStarted:Connect(function()
+		startedCount += 1
+	end)
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(false)
+	task.wait()
+	task.wait()
+	expect(startedCount).toBe(0)
+end)
+
+it("keeps an accepted instance active after its grant is revoked", function()
+	local context: any = nil
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			onStart = function(value: any)
+				context = value
+			end,
+		},
+	})
+	local _actor: Actor, controller: any = createController()
+	expect((controller:SetGrants("Learned", { "Action.Dodge" }))).toBe(true)
+	local result: any = controller:RequestAction("Action.Dodge")
+	expect(result.accepted).toBe(true)
+	expect((controller:SetGrants("Learned", {}))).toBe(true)
+	expect(context:IsActive()).toBe(true)
+	expect((controller:EndAction(result.sequenceId))).toBe(true)
 end)

@@ -32,7 +32,7 @@ KRF has no Action kind taxonomy, static duration, or first-class cooldown metada
 
 All lifecycle hooks are optional; their presence does not define the framework-owned lifecycle. Missing `onCanStart` declares no additional Action-defined rejection; missing `onStart`, `onEnd`, or `onInterrupt` declares no custom behavior for that transition. Missing `onUpdate` does not opt into stepping. Returning from `onStart` does not specify Action lifetime. The preemption hook refines permission only after the incoming id passes `interruptibleBy`.
 
-The catalog preserves hook functions without invoking them. Callback arguments are typed as `...any`; this catalog exposes no execution-context capabilities.
+The catalog preserves hook functions without invoking them. `onCanStart` receives an `ActionStartContext`; `onStart`, `onEnd`, and `onInterrupt` receive an `ActionExecutionContext` when an Actor [runs the Action](./action-lifecycle).
 
 ## Configure the catalog
 
@@ -89,6 +89,7 @@ Omitting `actions` loads an empty catalog with `IsLoaded() == true`. Before publ
 
 - [Action Registry API](/api/Action/action-registry)
 - [Action grants](./action-grants)
+- [Run Actions](./action-lifecycle)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)
 - [Resource Registry](../Resource/resource-registry)

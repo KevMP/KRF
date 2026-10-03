@@ -65,7 +65,7 @@ it("delivers opaque stop parameters to a waiter armed before RequestAction retur
 	expect(result.accepted).toBe(true)
 	expect(context:IsActive()).toBe(true)
 	local parameters: { [string]: number } = { charge = 7 }
-	expect(controller:RequestStop(result.sequenceId, parameters)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId, parameters))).toBe(true)
 	flushEvents()
 	expect(received.parameters).toBe(parameters)
 	expect(context:IsActive()).toBe(false)
@@ -88,13 +88,13 @@ it("notifies only the targeted instance and never ends an Action by default", fu
 	contexts[2].OnStopRequested:Connect(function()
 		counts[2] += 1
 	end)
-	expect(controller:RequestStop(first.sequenceId)).toBe(true)
-	expect(controller:RequestStop(first.sequenceId)).toBe(true)
+	expect((controller:RequestStop(first.sequenceId))).toBe(true)
+	expect((controller:RequestStop(first.sequenceId))).toBe(true)
 	flushEvents()
 	expect(counts).toEqual({ 2, 0 })
 	expect(contexts[1]:IsActive()).toBe(true)
 	expect(contexts[2]:IsActive()).toBe(true)
-	expect(controller:RequestStop(second.sequenceId)).toBe(true)
+	expect((controller:RequestStop(second.sequenceId))).toBe(true)
 	flushEvents()
 	expect(counts).toEqual({ 2, 1 })
 end)
@@ -118,8 +118,8 @@ it("offers normal Connect and Once semantics on the read-only stop Event", funct
 	context.OnStopRequested:Once(function()
 		once += 1
 	end)
-	expect(controller:RequestStop(result.sequenceId)).toBe(true)
-	expect(controller:RequestStop(result.sequenceId)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId))).toBe(true)
+	expect((controller:RequestStop(result.sequenceId))).toBe(true)
 	flushEvents()
 	expect(connected).toBe(2)
 	expect(once).toBe(1)
@@ -136,11 +136,11 @@ it("one stop Wait consumes only the first of back-to-back stop requests", functi
 	end
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
-	expect(controller:RequestStop(result.sequenceId, 1)).toBe(true)
-	expect(controller:RequestStop(result.sequenceId, 2)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId, 1))).toBe(true)
+	expect((controller:RequestStop(result.sequenceId, 2))).toBe(true)
 	flushEvents()
 	expect(received).toEqual({ 1 })
-	expect(controller:RequestStop(result.sequenceId, 3)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId, 3))).toBe(true)
 	flushEvents()
 	expect(received).toEqual({ 1, 3 })
 end)
@@ -158,9 +158,9 @@ it("retires a suspended onStart on external End, Interrupt, and Destroy", functi
 		local _actor: Actor, controller: any = createController(definition)
 		local result: any = controller:RequestAction("Action.Sprint")
 		if termination == "End" then
-			expect(controller:EndAction(result.sequenceId)).toBe(true)
+			expect((controller:EndAction(result.sequenceId))).toBe(true)
 		elseif termination == "Interrupt" then
-			expect(controller:InterruptAction(result.sequenceId, "Manual")).toBe(true)
+			expect((controller:InterruptAction(result.sequenceId, "Manual"))).toBe(true)
 		else
 			controller:Destroy()
 		end
@@ -184,8 +184,8 @@ it("does not run a queued stop continuation after external termination", functio
 	end
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
-	expect(controller:RequestStop(result.sequenceId)).toBe(true)
-	expect(controller:EndAction(result.sequenceId)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId))).toBe(true)
+	expect((controller:EndAction(result.sequenceId))).toBe(true)
 	flushEvents()
 	expect(resumed).toBe(false)
 end)
@@ -204,12 +204,12 @@ it("interrupts once when a stop-resumed onStart errors while still active", func
 	end
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
-	expect(controller:RequestStop(result.sequenceId)).toBe(true)
+	expect((controller:RequestStop(result.sequenceId))).toBe(true)
 	flushEvents()
 	expect(interruptedCount).toBe(1)
 	expect(type(interruptedReason)).toBe("string")
 	expect(interruptedReason).never.toBe("")
-	expect(controller:EndAction(result.sequenceId)).toBe(false)
+	expect((controller:EndAction(result.sequenceId))).toBe(false)
 end)
 
 it("retires an onStart invocation that suspends after self-termination", function()
@@ -254,8 +254,7 @@ it("commits all active instances inactive before the first teardown hook", funct
 	controller:Destroy()
 	expect(observedAllInactive).toEqual({ true, true })
 	expect(#interruptedReasons).toBe(2)
-	expect(type(interruptedReasons[1])).toBe("string")
-	expect(interruptedReasons[1]).never.toBe("")
+	expect(interruptedReasons[1]).toBe("ActionControllerDestroyed")
 	expect(interruptedReasons[2]).toBe(interruptedReasons[1])
 	controller:Destroy()
 	expect(#interruptedReasons).toBe(2)
@@ -287,9 +286,9 @@ it("rejects public mutations during teardown and emits one interruption per acti
 	definition.onInterrupt = function(context: any)
 		local requested: any = controller:RequestAction("Action.Sprint")
 		table.insert(mutationResults, requested.accepted)
-		table.insert(mutationResults, controller:RequestStop(context.sequenceId))
-		table.insert(mutationResults, controller:EndAction(context.sequenceId))
-		table.insert(mutationResults, controller:InterruptAction(context.sequenceId, "Again"))
+		table.insert(mutationResults, (controller:RequestStop(context.sequenceId)))
+		table.insert(mutationResults, (controller:EndAction(context.sequenceId)))
+		table.insert(mutationResults, (controller:InterruptAction(context.sequenceId, "Again")))
 	end
 	local _actor: Actor
 	_actor, controller = createController(definition)

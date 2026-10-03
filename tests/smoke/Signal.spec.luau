@@ -338,6 +338,43 @@ it("one Wait() consumes only the first of several fires queued before its contin
 	signal:Destroy()
 end)
 
+it("a queued Wait callback cannot resume the same waiter twice", function()
+	local signal: any = GoodSignal.new()
+	local received: { string } = {}
+	task.spawn(function()
+		local value: string = signal:Wait()
+		table.insert(received, value)
+	end)
+	pump(1)
+
+	-- Exercise two callbacks already queued for the same connection before its continuation runs.
+	local queuedCallback: any = signal._handlerListHead._fn
+	queuedCallback("first")
+	queuedCallback("second")
+	pump(2)
+	expect(received).toEqual({ "first" })
+end)
+
+it("a queued Wait callback ignores a waiter cancelled before delivery", function()
+	local signal: any = GoodSignal.new()
+	local waitingThread: thread? = nil
+	local resumed: boolean = false
+	task.spawn(function()
+		waitingThread = coroutine.running()
+		signal:Wait()
+		resumed = true
+	end)
+	pump(1)
+
+	local queuedCallback: any = signal._handlerListHead._fn
+	task.cancel(waitingThread :: thread)
+	expect(function()
+		queuedCallback("late")
+	end).never.toThrow()
+	pump(2)
+	expect(resumed).toBe(false)
+end)
+
 it("independent waiters each consume one value from the same fire", function()
 	local signal: Signal<string> = SignalModule.new()
 	local event: Event<string> = SignalModule.wrapEvent(signal)
