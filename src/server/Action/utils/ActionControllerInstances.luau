@@ -8,12 +8,12 @@ type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
 type ActionLifecycleEvent = ActionTypes.ActionLifecycleEvent
 type ActionInterruptedEvent = ActionTypes.ActionInterruptedEvent
-type ActionDefinition = ActionTypes.ActionDefinition
+type ActionImplementation = ActionTypes.ActionImplementation
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
 	actionId: string,
-	definition: ActionDefinition,
+	implementation: ActionImplementation,
 	context: ActionExecutionContext,
 	onStartThread: thread?,
 }
@@ -22,7 +22,7 @@ export type ActionControllerInstances = {
 	Start: (
 		self: ActionControllerInstances,
 		actionId: string,
-		definition: ActionDefinition,
+		implementation: ActionImplementation,
 		parameters: any?
 	) -> number,
 	RequestStop: (self: ActionControllerInstances, sequenceId: number, parameters: any?) -> (boolean, string?),
@@ -84,7 +84,7 @@ function ActionControllerInstancesModule.new(
 	local function dispatchEnd(instance: InternalActionInstance): ()
 		ownedSignals:WithDeferredDestroy(function()
 			endedSignal:Fire(lifecycleEvent(instance))
-			local callback = instance.definition.onEnd
+			local callback = instance.implementation.onEnd
 			if callback ~= nil then
 				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 					ActionControllerHooks.RunNonSuspending(callback, instance.context)
@@ -103,7 +103,7 @@ function ActionControllerInstancesModule.new(
 				sequenceId = instance.sequenceId,
 				reason = reason,
 			})
-			local callback = instance.definition.onInterrupt
+			local callback = instance.implementation.onInterrupt
 			if callback ~= nil then
 				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 					ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
@@ -156,7 +156,7 @@ function ActionControllerInstancesModule.new(
 
 	local function commitActivation(
 		actionId: string,
-		definition: ActionDefinition,
+		implementation: ActionImplementation,
 		parameters: any?
 	): InternalActionInstance
 		local sequenceId: number = nextSequenceId
@@ -183,7 +183,7 @@ function ActionControllerInstancesModule.new(
 		instance.sequenceId = sequenceId
 		instance.identity = identity
 		instance.actionId = actionId
-		instance.definition = definition
+		instance.implementation = implementation
 		instance.context = context
 		instance.onStartThread = nil
 		activeBySequenceId[sequenceId] = instance
@@ -191,7 +191,7 @@ function ActionControllerInstancesModule.new(
 	end
 
 	local function beginStart(instance: InternalActionInstance): ()
-		local callback = instance.definition.onStart
+		local callback = instance.implementation.onStart
 		if callback == nil or not isActive(instance) then
 			return
 		end
@@ -219,8 +219,8 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	function instances:Start(actionId: string, definition: ActionDefinition, parameters: any?): number
-		local instance: InternalActionInstance = commitActivation(actionId, definition, parameters)
+	function instances:Start(actionId: string, implementation: ActionImplementation, parameters: any?): number
+		local instance: InternalActionInstance = commitActivation(actionId, implementation, parameters)
 		ownedSignals:WithDeferredDestroy(function()
 			startedSignal:Fire(lifecycleEvent(instance))
 			beginStart(instance)
@@ -239,7 +239,7 @@ function ActionControllerInstancesModule.new(
 		if instance == nil then
 			return false, "ActionInstanceNotActive"
 		end
-		local callback = instance.definition.onStopRequested
+		local callback = instance.implementation.onStopRequested
 		if callback ~= nil then
 			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 				ActionControllerHooks.RunNonSuspending(callback, instance.context, { parameters = parameters })

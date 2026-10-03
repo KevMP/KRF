@@ -34,6 +34,8 @@ All lifecycle hooks are optional; their presence does not define the framework-o
 
 KRF calls each factory once at startup to load metadata, then once for each granted request that reaches Action-defined validation. Keep `id`, `visibility`, grants, tags, costs, locks, and interruption metadata fixed. The startup values control the catalog; per-request results provide fresh callbacks and private lexical state. `onCanStart` receives an `ActionStartContext`; lifecycle callbacks receive an `ActionExecutionContext` when an Actor [runs the Action](./action-lifecycle).
 
+KRF captures the returned callback references for each request before `onCanStart` runs. Changing fields on a returned table afterward does not change an active Action's callbacks.
+
 ## Configure the catalog
 
 This startup example declares an auto-granted Dodge with Tag preconditions, a Stamina cost, a lifetime lock, and a forward interruption reference to Roll.

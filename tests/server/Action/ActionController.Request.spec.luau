@@ -142,6 +142,34 @@ it("shares one request's lexical state between onCanStart and onStart", function
 	expect(observed).toEqual({ 20, 30 })
 end)
 
+it("snapshots callbacks before onCanStart can mutate the factory result", function()
+	local calls: { string } = {}
+	local current: ActionDefinition? = nil
+	local factory = function(): ActionDefinition
+		local definition: ActionDefinition = {
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				local mutable: ActionDefinition = current :: ActionDefinition
+				mutable.onStart = function()
+					table.insert(calls, "mutated start")
+				end
+				return true, nil
+			end,
+			onStart = function()
+				table.insert(calls, "original start")
+			end,
+		}
+		current = definition
+		return definition
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
+	expect(calls).toEqual({ "original start" })
+end)
+
 it("rejects invalid, unknown, and ungranted ids without consuming a sequence id", function()
 	loadActions({
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },

@@ -72,6 +72,16 @@ export type ActionDefinition = {
 
 export type ActionFactory = () -> ActionDefinition
 
+export type ActionImplementation = {
+	onCanStart: ((ActionStartContext) -> (boolean, string?))?,
+	onStart: ((ActionExecutionContext) -> ())?,
+	onStopRequested: ((ActionExecutionContext, ActionStopRequest) -> ())?,
+	onUpdate: ((...any) -> ())?,
+	onEnd: ((ActionExecutionContext) -> ())?,
+	onInterrupt: ((ActionExecutionContext, string) -> ())?,
+	canBeInterruptedBy: ((...any) -> boolean)?,
+}
+
 export type LoadedActionDefinition = ActionDefinition & {
 	autoGrant: boolean,
 	requiredTags: { string },
@@ -102,7 +112,7 @@ export type ActionRegistry = {
 		preparedResourceIds: { [string]: boolean }
 	) -> (PreparedActionCatalog?, string?),
 	Publish: (prepared: PreparedActionCatalog) -> (boolean, string?),
-	CreateExecution: (actionId: string) -> (ActionDefinition?, string?),
+	CreateExecution: (actionId: string) -> (ActionImplementation?, string?),
 	IsLoaded: () -> boolean,
 	_resetForTests: () -> (),
 }

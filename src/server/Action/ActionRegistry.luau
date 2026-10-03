@@ -5,6 +5,7 @@ local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
 
 type ActionDefinition = ActionTypes.ActionDefinition
 type ActionFactory = ActionTypes.ActionFactory
+type ActionImplementation = ActionTypes.ActionImplementation
 type ActionRegistry = ActionTypes.ActionRegistry
 type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 type PreparedActionCatalog = ActionTypes.PreparedActionCatalog
@@ -122,7 +123,7 @@ function ActionRegistry.Load(
 	return ActionRegistry.Publish(prepared)
 end
 
-function ActionRegistry.CreateExecution(actionId: string): (ActionDefinition?, string?)
+function ActionRegistry.CreateExecution(actionId: string): (ActionImplementation?, string?)
 	local factory: ActionFactory? = factoriesById[actionId]
 	if factory == nil then
 		return nil, "UnknownActionId:" .. actionId
@@ -142,7 +143,17 @@ function ActionRegistry.CreateExecution(actionId: string): (ActionDefinition?, s
 	if not valid then
 		return nil, "ActionFactoryInvalidResult"
 	end
-	return result :: ActionDefinition, nil
+	local definition: ActionDefinition = result :: ActionDefinition
+	local implementation: ActionImplementation = table.freeze({
+		onCanStart = definition.onCanStart,
+		onStart = definition.onStart,
+		onStopRequested = definition.onStopRequested,
+		onUpdate = definition.onUpdate,
+		onEnd = definition.onEnd,
+		onInterrupt = definition.onInterrupt,
+		canBeInterruptedBy = definition.canBeInterruptedBy,
+	}) :: ActionImplementation
+	return implementation, nil
 end
 
 function ActionRegistry.Get(actionId: string): LoadedActionDefinition?

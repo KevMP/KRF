@@ -99,6 +99,42 @@ it("uses one factory instance across start, stop, end, and interrupt callbacks",
 	expect((controller:RequestStop(first.sequenceId))).toBe(false)
 end)
 
+it("keeps accepted callbacks fixed when consumer code mutates its returned table", function()
+	local calls: { string } = {}
+	local current: ActionDefinition? = nil
+	local factory = function(): ActionDefinition
+		local definition: ActionDefinition = {
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onStopRequested = function()
+				table.insert(calls, "original stop")
+			end,
+			onEnd = function()
+				table.insert(calls, "original end")
+			end,
+		}
+		current = definition
+		return definition
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	local actor: Actor = ActorEntity.new()
+	actor.enabled = true
+	local controller: any = ActionControllerModule.new(actor)
+	table.insert(controllers, controller)
+	local result: any = controller:RequestAction("Action.Sprint")
+	local mutable: ActionDefinition = current :: ActionDefinition
+	mutable.onStopRequested = function()
+		table.insert(calls, "mutated stop")
+	end
+	mutable.onEnd = function()
+		table.insert(calls, "mutated end")
+	end
+	expect((controller:RequestStop(result.sequenceId))).toBe(true)
+	expect((controller:EndAction(result.sequenceId))).toBe(true)
+	expect(calls).toEqual({ "original stop", "original end" })
+end)
+
 it("delivers stop synchronously without automatic termination", function()
 	local context: any = nil
 	local requests: { any } = {}
