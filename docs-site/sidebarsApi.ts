@@ -19,7 +19,7 @@ const sidebarsApi: SidebarsConfig = {
     {
       type: 'category',
       label: 'Action',
-      items: ['Action/action-registry'],
+      items: ['Action/action-registry', 'Action/action-controller'],
     },
     {
       type: 'category',
