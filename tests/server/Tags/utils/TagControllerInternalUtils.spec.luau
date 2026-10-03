@@ -2,7 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local it = JestGlobals.it
+local it: (string, () -> ()) -> () = JestGlobals.it :: any
 local expect = JestGlobals.expect
 
 local KRF = ReplicatedStorage.Packages.KRF
@@ -14,7 +14,7 @@ local TagControllerTickUtils = require(KRF.server.Tags.utils.TagControllerTickUt
 local TagRegistry = require(KRF.server.Tags.TagRegistry)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
-local TagTestUtils: any = script.Parent.Parent.Parent.Utils.Tags
+local TagTestUtils: any = ReplicatedStorage.Tests.server.Utils.Tags
 
 type Actor = ActorTypes.Actor
 type TagDefinition = TagTypes.TagDefinition
