@@ -65,13 +65,14 @@ Requests one Action on this Actor. An accepted result is `{ accepted = true, seq
 | `ActionIdMustBeString` / `ActionIdCannotBeEmpty` | The Action id is invalid. |
 | `UnknownActionId:<id>` | No loaded definition has this id. |
 | `ActionNotGranted` | This Actor is not granted the Action. |
+| `ActionFactoryFailed` / `ActionFactoryYielded` / `ActionFactoryInvalidResult` | The per-request factory errored, yielded, or returned an invalid Action implementation. No sequence id is consumed. |
 | `ActionCanStartRejected` | `onCanStart` returned `false` without a usable custom reason. |
 | `ActionCanStartFailed` / `ActionCanStartYielded` / `ActionCanStartInvalidResult` | The decision callback errored, attempted to yield, or returned a non-boolean first value. |
 | Game-defined string | `onCanStart` returned `false, reason` with a non-empty string. |
 
 ### `RequestStop(sequenceId: number, parameters: any?) -> (boolean, string?)` {#request-stop}
 
-Fires a stop request on one active instance's `OnStopRequested` Event. It does not terminate the Action. Returns `false` with `ActionSequenceIdInvalid`, `ActionInstanceNotActive`, or `ActionControllerDestroyed` when the request cannot be delivered.
+Calls that instance's optional `onStopRequested(ctx, { parameters = parameters })` synchronously. The callback must not yield. Its error or yield is contained. Repeated requests are allowed while active; KRF does not End or Interrupt the Action automatically. Returns `false` with `ActionSequenceIdInvalid`, `ActionInstanceNotActive`, or `ActionControllerDestroyed` when the target is unavailable.
 
 ### `EndAction(sequenceId: number) -> (boolean, string?)` {#end-action}
 

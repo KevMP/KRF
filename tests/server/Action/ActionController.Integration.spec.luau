@@ -69,9 +69,13 @@ end)
 it("gives each Actor independent source grants while sharing the loaded auto-grant baseline", function()
 	local started: boolean, failure = Server.Init({
 		actions = {
-			{ id = "Action.Auto", visibility = "ServerOnly", autoGrant = true },
-			{ id = "Action.Manual", visibility = "ServerOnly" },
-		} :: { ActionDefinition },
+			function(): ActionDefinition
+				return { id = "Action.Auto", visibility = "ServerOnly", autoGrant = true }
+			end,
+			function(): ActionDefinition
+				return { id = "Action.Manual", visibility = "ServerOnly" }
+			end,
+		},
 	})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()

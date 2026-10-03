@@ -2,22 +2,19 @@
 local ActionTypes = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
-local SignalModule = require(script.Parent.Parent.Parent.Parent.shared.Signal.SignalModule)
 local ActionControllerHooks = require(script.Parent.ActionControllerHooks)
 
 type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
 type ActionLifecycleEvent = ActionTypes.ActionLifecycleEvent
 type ActionInterruptedEvent = ActionTypes.ActionInterruptedEvent
-type ActionStopRequest = ActionTypes.ActionStopRequest
-type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
+type ActionDefinition = ActionTypes.ActionDefinition
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
 	actionId: string,
-	definition: LoadedActionDefinition,
+	definition: ActionDefinition,
 	context: ActionExecutionContext,
-	stopSignal: SignalTypes.Signal<ActionStopRequest>,
 	onStartThread: thread?,
 }
 
@@ -25,7 +22,7 @@ export type ActionControllerInstances = {
 	Start: (
 		self: ActionControllerInstances,
 		actionId: string,
-		definition: LoadedActionDefinition,
+		definition: ActionDefinition,
 		parameters: any?
 	) -> number,
 	RequestStop: (self: ActionControllerInstances, sequenceId: number, parameters: any?) -> (boolean, string?),
@@ -73,7 +70,6 @@ function ActionControllerInstancesModule.new(
 		end
 		activeBySequenceId[instance.sequenceId] = nil
 		retireStart(instance)
-		instance.stopSignal:Destroy()
 		return true
 	end
 
@@ -160,21 +156,18 @@ function ActionControllerInstancesModule.new(
 
 	local function commitActivation(
 		actionId: string,
-		definition: LoadedActionDefinition,
+		definition: ActionDefinition,
 		parameters: any?
 	): InternalActionInstance
 		local sequenceId: number = nextSequenceId
 		nextSequenceId += 1
 		local identity: {} = {}
-		local stopSignal: SignalTypes.Signal<ActionStopRequest> = SignalModule.new()
 		local instance: InternalActionInstance = {} :: InternalActionInstance
 		local context: ActionExecutionContext = {
 			actor = actor,
 			actionId = actionId,
 			sequenceId = sequenceId,
 			parameters = parameters,
-			state = {},
-			OnStopRequested = SignalModule.wrapEvent(stopSignal),
 			IsActive = function(_self: ActionExecutionContext): boolean
 				local active: InternalActionInstance? = activeBySequenceId[sequenceId]
 				return active ~= nil and active.identity == identity
@@ -192,7 +185,6 @@ function ActionControllerInstancesModule.new(
 		instance.actionId = actionId
 		instance.definition = definition
 		instance.context = context
-		instance.stopSignal = stopSignal
 		instance.onStartThread = nil
 		activeBySequenceId[sequenceId] = instance
 		return instance
@@ -227,7 +219,7 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	function instances:Start(actionId: string, definition: LoadedActionDefinition, parameters: any?): number
+	function instances:Start(actionId: string, definition: ActionDefinition, parameters: any?): number
 		local instance: InternalActionInstance = commitActivation(actionId, definition, parameters)
 		ownedSignals:WithDeferredDestroy(function()
 			startedSignal:Fire(lifecycleEvent(instance))
@@ -247,7 +239,19 @@ function ActionControllerInstancesModule.new(
 		if instance == nil then
 			return false, "ActionInstanceNotActive"
 		end
-		instance.stopSignal:Fire({ parameters = parameters })
+		local callback = instance.definition.onStopRequested
+		if callback ~= nil then
+			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
+				ActionControllerHooks.RunNonSuspending(callback, instance.context, { parameters = parameters })
+			if not succeeded then
+				ActionControllerHooks.WarnFailure(
+					actor,
+					instance.actionId,
+					"onStopRequested",
+					failureDetail or failureKind
+				)
+			end
+		end
 		return true, nil
 	end
 

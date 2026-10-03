@@ -33,7 +33,14 @@ afterEach(function()
 end)
 
 local function loadActions(definitions: { ActionDefinition }): ()
-	local loaded: boolean, reason: string? = ActionRegistry.Load(definitions, {}, {})
+	local factories: { ActionTypes.ActionFactory } = {}
+	for _, definition: ActionDefinition in definitions do
+		local source: ActionDefinition = definition
+		table.insert(factories, function(): ActionDefinition
+			return table.clone(source)
+		end)
+	end
+	local loaded: boolean, reason: string? = ActionRegistry.Load(factories, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 end

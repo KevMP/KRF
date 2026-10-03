@@ -6,9 +6,9 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 export type ActionStartContext = {
-	actor: ActorTypes.Actor,
-	actionId: string,
-	parameters: any?,
+	read actor: ActorTypes.Actor,
+	read actionId: string,
+	read parameters: any?,
 }
 
 export type ActionStopRequest = {
@@ -20,8 +20,6 @@ export type ActionExecutionContext = {
 	read actionId: string,
 	read sequenceId: number,
 	read parameters: any?,
-	read state: { [any]: any },
-	read OnStopRequested: SignalTypes.Event<ActionStopRequest>,
 	read IsActive: (self: ActionExecutionContext) -> boolean,
 	read End: (self: ActionExecutionContext) -> (boolean, string?),
 	read Interrupt: (self: ActionExecutionContext, reason: string) -> (boolean, string?),
@@ -65,11 +63,14 @@ export type ActionDefinition = {
 	interruptibleBy: { string }?,
 	onCanStart: ((ActionStartContext) -> (boolean, string?))?,
 	onStart: ((ActionExecutionContext) -> ())?,
+	onStopRequested: ((ActionExecutionContext, ActionStopRequest) -> ())?,
 	onUpdate: ((...any) -> ())?,
 	onEnd: ((ActionExecutionContext) -> ())?,
 	onInterrupt: ((ActionExecutionContext, string) -> ())?,
 	canBeInterruptedBy: ((...any) -> boolean)?,
 }
+
+export type ActionFactory = () -> ActionDefinition
 
 export type LoadedActionDefinition = ActionDefinition & {
 	autoGrant: boolean,
@@ -80,15 +81,28 @@ export type LoadedActionDefinition = ActionDefinition & {
 	interruptibleBy: { string },
 }
 
+export type PreparedActionCatalog = {
+	definitionsById: { [string]: LoadedActionDefinition },
+	orderedDefinitions: { LoadedActionDefinition },
+	factoriesById: { [string]: ActionFactory },
+}
+
 export type ActionRegistry = {
 	Load: (
-		definitions: { ActionDefinition },
+		factories: { ActionFactory },
 		preparedTagIds: { [string]: boolean },
 		preparedResourceIds: { [string]: boolean }
 	) -> (boolean, string?),
 	Get: (actionId: string) -> LoadedActionDefinition?,
 	GetAll: () -> { LoadedActionDefinition },
 	GetAllById: () -> { [string]: LoadedActionDefinition },
+	Prepare: (
+		factories: { ActionFactory },
+		preparedTagIds: { [string]: boolean },
+		preparedResourceIds: { [string]: boolean }
+	) -> (PreparedActionCatalog?, string?),
+	Publish: (prepared: PreparedActionCatalog) -> (boolean, string?),
+	CreateExecution: (actionId: string) -> (ActionDefinition?, string?),
 	IsLoaded: () -> boolean,
 	_resetForTests: () -> (),
 }

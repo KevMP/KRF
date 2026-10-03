@@ -76,7 +76,11 @@ function ActionControllerModule.new(actor: Actor): ActionController
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
 
-		local callback = definition.onCanStart
+		local implementation, factoryReason = ActionRegistry.CreateExecution(actionId)
+		if implementation == nil then
+			return { accepted = false, reason = factoryReason or "ActionFactoryInvalidResult" }
+		end
+		local callback = implementation.onCanStart
 		if callback ~= nil then
 			local startContext = table.freeze({ actor = actor, actionId = actionId, parameters = parameters })
 			local succeeded: boolean, allowed: any, customReason: any, failureKind: string?, failureDetail: any =
@@ -114,7 +118,7 @@ function ActionControllerModule.new(actor: Actor): ActionController
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
 
-		local sequenceId: number = instances:Start(actionId, definition, parameters)
+		local sequenceId: number = instances:Start(actionId, implementation, parameters)
 		return { accepted = true, sequenceId = sequenceId }
 	end
 

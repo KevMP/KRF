@@ -38,71 +38,70 @@ ActorRuntime.OnActorRegistered:Connect(function(actor)
 end)
 ```
 
-The Action must exist, be granted, and pass its optional `onCanStart` decision. `onCanStart` receives a frozen `ActionStartContext` with `actor`, `actionId`, and the original `parameters`; it runs synchronously and must not yield. It may return `false, "GameReason"` to reject with a game-defined reason. KRF rechecks the Actor and grant after the callback, so a grant revocation or Actor teardown during the decision prevents acceptance. A rejection creates no instance and consumes no sequence id.
+The Action must exist, be granted, and pass its optional `onCanStart` decision. KRF calls its factory for this request, then uses that result's callbacks throughout the activation. The factory and `onCanStart` must finish synchronously without yielding. `onCanStart` receives a frozen `ActionStartContext` with `actor`, `actionId`, and the original `parameters`. It may return `false, "GameReason"` to reject with a game-defined reason. KRF rechecks the Actor and grant after the callback, so a grant revocation or Actor teardown during the decision prevents acceptance. A rejection creates no instance and consumes no sequence id.
 
 Request parameters are opaque server-side game data. KRF passes the same value to `onCanStart` and the accepted Action; it does not copy or serialize it. Validate client-originated data before calling this server API.
 
 ## Use the execution context
 
-An accepted instance receives a frozen `ActionExecutionContext`. Its `actor`, `actionId`, `sequenceId`, and `parameters` identify the request. Its `state` table is mutable and private to that instance. `ctx:IsActive()` checks that exact instance, including when several instances share one Action id.
+An accepted instance receives a frozen `ActionExecutionContext`. Its `actor`, `actionId`, `sequenceId`, and `parameters` identify the request. `ctx:IsActive()` checks that exact instance, including when several instances share one Action id. Declare private state inside the factory; callbacks from one activation share those local variables.
 
 ```lua
-local charge: ActionTypes.ActionDefinition = {
-	id = "Action.Charge",
-	visibility = "ServerOnly",
-	autoGrant = true,
-	onStart = function(ctx: ActionTypes.ActionExecutionContext)
-		ctx.state.startedAt = os.clock()
-		local stopRequest: ActionTypes.ActionStopRequest = ctx.OnStopRequested:Wait()
-		releaseCharge(os.clock() - ctx.state.startedAt, stopRequest.parameters)
-		ctx:End()
-	end,
-	onInterrupt = function(ctx: ActionTypes.ActionExecutionContext, reason: string)
-		cancelCharge(ctx.state.startedAt, reason)
-	end,
-}
+local function createCharge(): ActionTypes.ActionDefinition
+	local startedAt = 0
+	return {
+		id = "Action.Charge",
+		visibility = "ServerOnly",
+		autoGrant = true,
+		onStart = function(_ctx: ActionTypes.ActionExecutionContext)
+			startedAt = os.clock()
+		end,
+		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext, request: ActionTypes.ActionStopRequest)
+			releaseCharge(os.clock() - startedAt, request.parameters)
+			ctx:End()
+		end,
+		onInterrupt = function(_ctx: ActionTypes.ActionExecutionContext, reason: string)
+			cancelCharge(startedAt, reason)
+		end,
+	}
+end
+
+-- Pass createCharge in Server.Init({ actions = { createCharge } }).
 ```
 
-Here `releaseCharge` and `cancelCharge` represent your game functions. Each accepted Charge gets a fresh `state` table and stop Event. Game code can retain the context, but it cannot mutate the controller's private instance ownership through it.
+Here `releaseCharge` and `cancelCharge` represent your game functions. Each Charge request gets a fresh `startedAt` variable. Game code can retain the context to query or terminate that instance.
 
 ## Stop, End, and Interrupt
 
-`RequestStop(sequenceId, parameters?)` notifies one active instance through its normal KRF `OnStopRequested` Event. Action code can use `Connect`, `Once`, or `Wait`. A successful stop request means the event was fired; its listener may run later. Stop does not End or Interrupt the Action, and repeated stop requests are allowed while it remains active.
+`RequestStop(sequenceId, parameters?)` invokes that instance's `onStopRequested(ctx, request)` synchronously. `request.parameters` is the original stop parameter value. The callback must not yield. Stop does not End or Interrupt the Action automatically, and repeated stop requests are allowed while it remains active. The callback can call `ctx:End()` when its work is complete.
 
-For a held Action, `onStart` can wait for a stop request and then decide how to finish:
+For a held Action, start the effect in `onStart` and finish it in `onStopRequested`:
 
 ```lua
-onStart = function(ctx: ActionTypes.ActionExecutionContext)
+onStart = function(_ctx: ActionTypes.ActionExecutionContext)
 	startSprinting()
-	ctx.OnStopRequested:Wait()
+end,
+onStopRequested = function(ctx: ActionTypes.ActionExecutionContext, _request: ActionTypes.ActionStopRequest)
 	stopSprinting()
 	ctx:End()
 end
 ```
 
-KRF starts `onStart` before `RequestAction` returns, so an immediate stop request can reach its initial waiter. The Action stays active while `onStart` waits. Returning from `onStart` also leaves the Action active; a long-lived Action may set up game behavior and return, then be terminated later by sequence id.
+KRF starts `onStart` before `RequestAction` returns. Returning from `onStart` leaves the Action active; a long-lived Action may set up game behavior and return, then be terminated later by sequence id.
 
 An instant Action can finish itself; an Action whose start callback only sets up game behavior stays active until another call terminates it:
 
 ```lua
-local instant: ActionTypes.ActionDefinition = {
-	id = "Action.Dodge",
-	visibility = "ServerOnly",
-	onStart = function(ctx: ActionTypes.ActionExecutionContext)
-		-- Apply the game effect.
-		ctx:End()
-		return
-	end,
-}
-
-local longLived: ActionTypes.ActionDefinition = {
-	id = "Action.Aura",
-	visibility = "ServerOnly",
-	onStart = function(ctx: ActionTypes.ActionExecutionContext)
-		ctx.state.startedAt = os.clock()
-		-- Set up game-owned behavior.
-	end,
-}
+local function createDodge(): ActionTypes.ActionDefinition
+	return {
+		id = "Action.Dodge",
+		visibility = "ServerOnly",
+		onStart = function(ctx: ActionTypes.ActionExecutionContext)
+			-- Apply the game effect.
+			ctx:End()
+		end,
+	}
+end
 ```
 
 Use `ctx:End()` or `EndAction(sequenceId)` for normal completion. Use `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` for interruption. A successful transition makes `ctx:IsActive()` false before `onEnd` or `onInterrupt` runs. These cleanup callbacks must finish synchronously without yielding. Their errors do not undo the transition. A failing `onStart` automatically Interrupts an instance that is still active.

@@ -32,7 +32,11 @@ afterEach(function()
 end)
 
 local function createController(definition: ActionDefinition): (Actor, any)
-	local loaded: boolean, reason: string? = ActionRegistry.Load({ definition }, {}, {})
+	local loaded: boolean, reason: string? = ActionRegistry.Load({
+		function(): ActionDefinition
+			return table.clone(definition)
+		end,
+	}, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 	local actor: Actor = ActorEntity.new()
@@ -51,7 +55,7 @@ local function flushEvents(): ()
 	task.wait()
 end
 
-it("creates a frozen execution shell and fresh mutable private state for each instance", function()
+it("creates a frozen execution shell containing only KRF identity and capabilities", function()
 	local contexts: { any } = {}
 	local definition: ActionDefinition = action()
 	definition.onStart = function(context: any)
@@ -71,10 +75,8 @@ it("creates a frozen execution shell and fresh mutable private state for each in
 	expect(table.isfrozen(contexts[1])).toBe(true)
 	expect(contexts[1]:IsActive()).toBe(true)
 	expect(contexts[2]:IsActive()).toBe(true)
-	contexts[1].state.counter = 4
-	expect(contexts[1].state.counter).toBe(4)
-	expect(contexts[2].state.counter).toBeNil()
-	expect(contexts[1].state).never.toBe(contexts[2].state)
+	expect(contexts[1].state).toBeNil()
+	expect(contexts[1].OnStopRequested).toBeNil()
 	expect(function()
 		contexts[1].sequenceId = second.sequenceId
 	end).toThrow()
