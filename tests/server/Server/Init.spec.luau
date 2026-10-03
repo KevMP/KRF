@@ -154,7 +154,12 @@ it("KRF.Server.Init loads built-in controllers when game catalogs are omitted", 
 
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
-	expect(Controllers.GetAutoAttachKeys()).toEqual({ "TagController", "PropertyController", "ResourceController" })
+	expect(Controllers.GetAutoAttachKeys()).toEqual({
+		"TagController",
+		"PropertyController",
+		"ResourceController",
+		"ActionController",
+	})
 	expect(Tags.IsLoaded()).toBe(true)
 	expect(#Tags.GetAll()).toBe(0)
 	expect(Resources.IsLoaded()).toBe(true)
@@ -448,6 +453,7 @@ it("Actor registration after successful KRF.Server.Init succeeds", function()
 	expect(registeredActor:GetController("TagController")).never.toBeNil()
 	expect(registeredActor:GetController("PropertyController")).never.toBeNil()
 	expect(registeredActor:GetController("ResourceController")).never.toBeNil()
+	expect(registeredActor:GetController("ActionController")).never.toBeNil()
 end)
 
 it("Actor registration after failed KRF.Server.Init remains unavailable without lifecycle residue", function()

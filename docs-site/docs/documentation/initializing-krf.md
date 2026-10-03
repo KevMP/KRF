@@ -71,7 +71,7 @@ TODO
 
 `Server.Init` validates every catalog before publishing them. An invalid definition, missing reference or dependency, or controller cycle leaves all four registries unpublished. The failure identifies the catalog in `system` and the validation error in `reason`.
 
-Supply the optional `actions` array to load the [Action catalog](./Action/action-registry). Its Tag, Resource, and Action references resolve against the complete prepared catalogs. Omitting `actions` publishes an empty Action catalog. Loading Action metadata does not create or execute actor-scoped Actions.
+Supply the optional `actions` array to load the [Action catalog](./Action/action-registry). Its Tag, Resource, and Action references resolve against the complete prepared catalogs. Omitting `actions` publishes an empty Action catalog. Each registered Actor receives an [`ActionController`](./Action/action-grants); `autoGrant` definitions form its initial grant baseline without starting Actions.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix startup configuration and restart the server after a failure. After a successful call, [Actor Runtime](./Actor/actor-runtime) can register Actors against the loaded controller catalog.
 
@@ -82,3 +82,4 @@ Supply the optional `actions` array to load the [Action catalog](./Action/action
 - [Tag Registry](./Tags/tag-registry)
 - [Resource Registry](./Resource/resource-registry)
 - [Action catalog](./Action/action-registry)
+- [Action grants](./Action/action-grants)

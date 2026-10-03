@@ -6,7 +6,7 @@ sidebar_position: 1
 
 `ActionRegistry` owns the immutable server catalog of Action definitions. Supply `actions` to `Server.Init` alongside Tags and Resources; game code reads the catalog through the registry.
 
-This surface stores static metadata only. Registration does not grant, activate, or execute an Action. There is no actor-scoped Action controller, hook execution, lock acquisition, Resource spending, or Action replication in this surface.
+This surface stores static metadata only. Registration itself does not grant, activate, or execute an Action. The actor-scoped [`ActionController`](./action-grants) manages grant state from the loaded `autoGrant` baseline and explicit sources. Granting an Action does not execute hooks, acquire locks, spend Resources, or replicate Action state.
 
 ## Definition fields
 
@@ -16,7 +16,7 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | --- | --- |
 | `id` | Required unique, non-empty string. |
 | `visibility` | Required `"ServerOnly"` or `"ClientVisible"` replication metadata. |
-| `autoGrant` | Optional boolean; defaults to `false`. Declares automatic-grant intent, without granting anything during catalog loading. |
+| `autoGrant` | Optional boolean; defaults to `false`. Grants the Action to every Actor when its `ActionController` is created. It does not start the Action or bind input. |
 | `requiredTags` | Optional array of registered Tag ids declaring preconditions. |
 | `blockedTags` | Optional array of registered Tag ids declaring blockers. Cannot overlap `requiredTags`. |
 | `costs` | Optional Resource-id keyed map of finite, strictly positive upfront cost amounts. |
@@ -88,6 +88,7 @@ Omitting `actions` loads an empty catalog with `IsLoaded() == true`. Before publ
 ## Related
 
 - [Action Registry API](/api/Action/action-registry)
+- [Action grants](./action-grants)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)
 - [Resource Registry](../Resource/resource-registry)

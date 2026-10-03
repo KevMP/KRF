@@ -30,3 +30,4 @@ Combines KRF's built-in controllers with `config.controllers`, then validates an
 - [Initializing KRF](/initializing-krf)
 - [Controller Registry](../Controllers/controller-registry)
 - [Action Registry](../Action/action-registry)
+- [Action Controller](../Action/action-controller)

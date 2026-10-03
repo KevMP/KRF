@@ -15,6 +15,7 @@ local ResourceValidator = require(script.Resource.utils.ResourceValidator)
 local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
 local ResourceController = require(script.Resource.ResourceController)
+local ActionController = require(script.Action.ActionController)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
 export type StartupFailure = ServerStartTypes.StartupFailure
@@ -51,6 +52,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		{ key = "TagController", factory = TagController.new },
 		{ key = "PropertyController", factory = PropertyController.new, dependsOn = { "TagController" } },
 		{ key = "ResourceController", factory = ResourceController.new, dependsOn = { "PropertyController" } },
+		{ key = "ActionController", factory = ActionController.new },
 	}
 	local gameControllers: { ControllerDef } = config.controllers or {}
 	for _, definition: ControllerDef in gameControllers do
