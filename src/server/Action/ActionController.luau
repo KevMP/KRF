@@ -19,15 +19,19 @@ function ActionControllerModule.new(actor: Actor): ActionController
 
 	local catalog: { LoadedActionDefinition } = ActionRegistry.GetAll()
 	local explicitBySourceId: { [string]: GrantSet } = {}
+	local explicitGrantCountById: { [string]: number } = {}
+	local autoGrantedById: GrantSet = {}
 	local effectiveById: GrantSet = {}
-	local grantedActionIds: { string } = {}
+	local emptyGrantedActionIds: { string } = {}
+	table.freeze(emptyGrantedActionIds)
+	local grantedActionIds: { string } = emptyGrantedActionIds
+	local grantSnapshotDirty: boolean = true
 	for _, definition: LoadedActionDefinition in catalog do
 		if definition.autoGrant then
+			autoGrantedById[definition.id] = true
 			effectiveById[definition.id] = true
-			table.insert(grantedActionIds, definition.id)
 		end
 	end
-	table.freeze(grantedActionIds)
 
 	local grantChangedSignal: SignalTypes.Signal<Actor, string, boolean> = SignalModule.new()
 	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({ grantChangedSignal })
@@ -75,33 +79,26 @@ function ActionControllerModule.new(actor: Actor): ActionController
 			replacement[actionId] = true
 		end
 
-		local nextEffective: GrantSet = {}
-		for _, definition: LoadedActionDefinition in catalog do
-			if definition.autoGrant then
-				nextEffective[definition.id] = true
-			end
-		end
-		for existingSourceId: string, grants: GrantSet in explicitBySourceId do
-			if existingSourceId ~= sourceId then
-				for actionId: string in grants do
-					nextEffective[actionId] = true
-				end
+		local previous: GrantSet = explicitBySourceId[sourceId] or {}
+		local nextCountsById: { [string]: number } = {}
+		for actionId: string in previous do
+			if not replacement[actionId] then
+				nextCountsById[actionId] = (explicitGrantCountById[actionId] or 0) - 1
 			end
 		end
 		for actionId: string in replacement do
-			nextEffective[actionId] = true
+			if not previous[actionId] then
+				nextCountsById[actionId] = (explicitGrantCountById[actionId] or 0) + 1
+			end
+		end
+		if next(nextCountsById) == nil then
+			return true, nil
 		end
 
-		local previousEffective: GrantSet = effectiveById
-		local nextGrantedActionIds: { string } = {}
 		local transitions: { GrantTransition } = {}
-		for _, definition: LoadedActionDefinition in catalog do
-			local actionId: string = definition.id
-			local isGranted: boolean = nextEffective[actionId] == true
-			if isGranted then
-				table.insert(nextGrantedActionIds, actionId)
-			end
-			if (previousEffective[actionId] == true) ~= isGranted then
+		for actionId: string, nextCount: number in nextCountsById do
+			local isGranted: boolean = autoGrantedById[actionId] == true or nextCount > 0
+			if (effectiveById[actionId] == true) ~= isGranted then
 				table.insert(transitions, { actionId = actionId, isGranted = isGranted })
 			end
 		end
@@ -111,14 +108,28 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		else
 			explicitBySourceId[sourceId] = replacement
 		end
-		effectiveById = nextEffective
-		grantedActionIds = table.freeze(nextGrantedActionIds)
-
-		ownedSignals:WithDeferredDestroy(function()
-			for _, transition: GrantTransition in transitions do
-				grantChangedSignal:Fire(actor, transition.actionId, transition.isGranted)
+		for actionId: string, nextCount: number in nextCountsById do
+			if nextCount == 0 then
+				explicitGrantCountById[actionId] = nil
+			else
+				explicitGrantCountById[actionId] = nextCount
 			end
-		end)
+		end
+		for _, transition: GrantTransition in transitions do
+			if transition.isGranted then
+				effectiveById[transition.actionId] = true
+			else
+				effectiveById[transition.actionId] = nil
+			end
+		end
+		if #transitions > 0 then
+			grantSnapshotDirty = true
+			ownedSignals:WithDeferredDestroy(function()
+				for _, transition: GrantTransition in transitions do
+					grantChangedSignal:Fire(actor, transition.actionId, transition.isGranted)
+				end
+			end)
+		end
 
 		return true, nil
 	end
@@ -128,6 +139,16 @@ function ActionControllerModule.new(actor: Actor): ActionController
 	end
 
 	function controller:GetGrantedActions(): { string }
+		if grantSnapshotDirty then
+			local snapshot: { string } = {}
+			for _, definition: LoadedActionDefinition in catalog do
+				if effectiveById[definition.id] then
+					table.insert(snapshot, definition.id)
+				end
+			end
+			grantedActionIds = table.freeze(snapshot)
+			grantSnapshotDirty = false
+		end
 		return grantedActionIds
 	end
 
@@ -137,9 +158,11 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		end
 		destroyed = true
 		table.clear(explicitBySourceId)
+		table.clear(explicitGrantCountById)
+		table.clear(autoGrantedById)
 		table.clear(effectiveById)
-		local emptyGrantedActionIds: { string } = {}
-		grantedActionIds = table.freeze(emptyGrantedActionIds)
+		grantedActionIds = emptyGrantedActionIds
+		grantSnapshotDirty = false
 		ownedSignals:Destroy()
 	end
 

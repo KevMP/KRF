@@ -100,6 +100,41 @@ it("replaces only the named source and keeps another source's overlapping grant"
 	expect(controller:GetGrantedActions()).toEqual({ "Action.B", "Action.C" })
 end)
 
+it("keeps grants from three sources while one source replaces a partially overlapping set", function()
+	loadActions({ action("Action.A"), action("Action.B"), action("Action.C") })
+	local _actor: Actor, controller: ActionController = createController()
+	expect((controller:SetGrants("First", { "Action.A", "Action.B" }))).toBe(true)
+	expect((controller:SetGrants("Second", { "Action.B" }))).toBe(true)
+	expect((controller:SetGrants("Third", { "Action.B", "Action.C" }))).toBe(true)
+
+	local transitions: { string } = {}
+	local connection = controller.OnActionGrantChanged:Connect(
+		function(_eventActor: Actor, actionId: string, granted: boolean)
+			table.insert(transitions, actionId .. ":" .. tostring(granted))
+		end
+	)
+
+	expect((controller:SetGrants("First", { "Action.B", "Action.C" }))).toBe(true)
+	expect(controller:GetGrantedActions()).toEqual({ "Action.B", "Action.C" })
+	flushEvents()
+	expect(transitions).toEqual({ "Action.A:false" })
+
+	expect((controller:SetGrants("Third", {}))).toBe(true)
+	expect((controller:SetGrants("Second", {}))).toBe(true)
+	expect(controller:GetGrantedActions()).toEqual({ "Action.B", "Action.C" })
+	flushEvents()
+	expect(transitions).toEqual({ "Action.A:false" })
+
+	expect((controller:SetGrants("First", { "Action.C" }))).toBe(true)
+	flushEvents()
+	expect(transitions).toEqual({ "Action.A:false", "Action.B:false" })
+	expect((controller:SetGrants("First", {}))).toBe(true)
+	expect(controller:GetGrantedActions()).toEqual({})
+	flushEvents()
+	expect(transitions).toEqual({ "Action.A:false", "Action.B:false", "Action.C:false" })
+	connection:Disconnect()
+end)
+
 it("normalizes duplicate ids and repeated normalized sets without duplicate events", function()
 	loadActions({ action("Action.A"), action("Action.B") })
 	local _actor: Actor, controller: ActionController = createController()
@@ -202,6 +237,22 @@ it("returns a frozen grant snapshot that stays unchanged after reconciliation", 
 	expect((controller:SetGrants("Learned", {}))).toBe(true)
 	expect(granted).toEqual({ "Action.A" })
 	expect(controller:GetGrantedActions()).toEqual({})
+end)
+
+it("keeps the same grant snapshot when only source provenance changes", function()
+	loadActions({ action("Action.A"), action("Action.B") })
+	local _actor: Actor, controller: ActionController = createController()
+	expect((controller:SetGrants("First", { "Action.A" }))).toBe(true)
+	local granted: { string } = controller:GetGrantedActions()
+	expect(granted).toEqual({ "Action.A" })
+	expect((controller:SetGrants("Second", { "Action.A" }))).toBe(true)
+	expect((controller:SetGrants("First", {}))).toBe(true)
+	expect(controller:GetGrantedActions()).toBe(granted)
+	expect((controller:SetGrants("Second", { "Action.A", "Action.B" }))).toBe(true)
+	local expanded: { string } = controller:GetGrantedActions()
+	expect(expanded).never.toBe(granted)
+	expect(expanded).toEqual({ "Action.A", "Action.B" })
+	expect(granted).toEqual({ "Action.A" })
 end)
 
 it("destroys its owned event without emitting synthetic grant revocations", function()

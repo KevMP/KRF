@@ -76,7 +76,7 @@ KRF validates the source id, array shape, entries, and registry membership befor
 
 ## Read and observe effective grants
 
-An Action is effectively granted when `autoGrant` is true or at least one explicit source includes it. `IsActionGranted` returns `false` for an unknown id. `GetGrantedActions` returns each effective id once in Action catalog order as a frozen snapshot. A later reconciliation publishes a new snapshot without changing an earlier one.
+An Action is effectively granted when `autoGrant` is true or at least one explicit source includes it. `IsActionGranted` returns `false` for an unknown id. `GetGrantedActions` returns each effective id once in Action catalog order as a frozen snapshot. An effective grant change publishes a new snapshot on the next read without changing an earlier one.
 
 `OnActionGrantChanged` reports `(actor, actionId, isGranted)` only when effective access changes. Adding or removing a redundant source contribution produces no event. A callback can query the fully committed grant set; callbacks for multiple changed Actions have no promised order.
 

@@ -45,7 +45,7 @@ Returns whether the Action is effectively granted to this Actor; an unknown id r
 
 ### `GetGrantedActions() -> {string}` {#get-granted-actions}
 
-Returns a frozen snapshot of effective Action ids in Action catalog order. Repeated reads share the snapshot until grants are reconciled.
+Returns a frozen snapshot of effective Action ids in Action catalog order. Repeated reads share the snapshot until effective grants change.
 
 ### `Destroy() -> ()` {#destroy}
 
