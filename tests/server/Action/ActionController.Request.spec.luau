@@ -130,9 +130,9 @@ it("passes a read-only pre-accept context with the original opaque parameters", 
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			autoGrant = true,
-			onCanStart = function(context: any): boolean
+			onCanStart = function(context: any): (boolean, string?)
 				observed = context
-				return true
+				return true, nil
 			end,
 		},
 	})
@@ -160,7 +160,7 @@ it("preserves a custom onCanStart rejection and consumes no id", function()
 				if not allow then
 					return false, "GameCooldown"
 				end
-				return true
+				return true, nil
 			end,
 		},
 	})
@@ -176,8 +176,8 @@ it("maps onCanStart false without a usable reason to one stable framework reason
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			autoGrant = true,
-			onCanStart = function(): boolean
-				return false
+			onCanStart = function(): (boolean, string?)
+				return false, nil
 			end,
 		},
 	})
@@ -191,14 +191,15 @@ it("maps onCanStart false without a usable reason to one stable framework reason
 end)
 
 it("rejects an onCanStart error or invalid result without activating an instance", function()
+	local invalidResult: any = function(): string
+		return "yes"
+	end
 	for _, callback: any in
 		{
 			function(): boolean
 				error("decision boom")
 			end,
-			function(): any
-				return "yes"
-			end,
+			invalidResult,
 		} :: { any }
 	do
 		loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, onCanStart = callback } })
@@ -218,9 +219,9 @@ it("rejects a yielding onCanStart without accepting or allocating an instance", 
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			autoGrant = true,
-			onCanStart = function(): boolean
+			onCanStart = function(): (boolean, string?)
 				task.wait()
-				return true
+				return true, nil
 			end,
 		},
 	})
@@ -238,9 +239,9 @@ it("revalidates a grant revoked by onCanStart before committing", function()
 		{
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
-			onCanStart = function(): boolean
+			onCanStart = function(): (boolean, string?)
 				revoked = controller:SetGrants("Learned", {})
-				return true
+				return true, nil
 			end,
 		},
 	})
@@ -264,13 +265,13 @@ it("revalidates Actor and controller availability after onCanStart", function()
 				id = "Action.Dodge",
 				visibility = "ServerOnly",
 				autoGrant = true,
-				onCanStart = function(): boolean
+				onCanStart = function(): (boolean, string?)
 					if invalidate == "disable" then
 						(actor :: Actor).enabled = false
 					else
 						controller:Destroy()
 					end
-					return true
+					return true, nil
 				end,
 			},
 		})
@@ -291,12 +292,12 @@ it("assigns nested requests ids in actual commit order", function()
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			autoGrant = true,
-			onCanStart = function(): boolean
+			onCanStart = function(): (boolean, string?)
 				if not entering then
 					entering = true
 					nested = controller:RequestAction("Action.Dodge")
 				end
-				return true
+				return true, nil
 			end,
 		},
 	})

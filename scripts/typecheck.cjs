@@ -39,6 +39,7 @@ async function main() {
 		if (exitCode === 0) {
 			exitCode = runTool("luau-lsp", [
 				"analyze",
+				"--flag:LuauSolverV2=true",
 				"--platform",
 				"roblox",
 				"--no-strict-dm-types",

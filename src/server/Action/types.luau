@@ -16,15 +16,15 @@ export type ActionStopRequest = {
 }
 
 export type ActionExecutionContext = {
-	actor: ActorTypes.Actor,
-	actionId: string,
-	sequenceId: number,
-	parameters: any?,
-	state: { [any]: any },
-	OnStopRequested: SignalTypes.Event<ActionStopRequest>,
-	IsActive: (self: ActionExecutionContext) -> boolean,
-	End: (self: ActionExecutionContext) -> (boolean, string?),
-	Interrupt: (self: ActionExecutionContext, reason: string) -> (boolean, string?),
+	read actor: ActorTypes.Actor,
+	read actionId: string,
+	read sequenceId: number,
+	read parameters: any?,
+	read state: { [any]: any },
+	read OnStopRequested: SignalTypes.Event<ActionStopRequest>,
+	read IsActive: (self: ActionExecutionContext) -> boolean,
+	read End: (self: ActionExecutionContext) -> (boolean, string?),
+	read Interrupt: (self: ActionExecutionContext, reason: string) -> (boolean, string?),
 }
 
 export type ActionRequestAccepted = { accepted: true, sequenceId: number }

@@ -26,10 +26,12 @@ beforeEach(function()
 	local started: boolean, failure = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+	return nil
 end)
 
 afterEach(function()
 	Server._ResetForTests()
+	return nil
 end)
 
 it("RegisterActor succeeds: bind -> attach -> enable -> event", function()

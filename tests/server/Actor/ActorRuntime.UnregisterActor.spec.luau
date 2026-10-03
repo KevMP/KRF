@@ -25,10 +25,12 @@ beforeEach(function()
 	local started: boolean, failure = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+	return nil
 end)
 
 afterEach(function()
 	Server._ResetForTests()
+	return nil
 end)
 
 it("UnregisterActor unbinds after controller cleanup (model destroyed during DetachAllControllers)", function()
