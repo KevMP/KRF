@@ -12,6 +12,7 @@ local ActionTypes = require(KRF.server.Action.types)
 local ActorTypes = require(KRF.server.Actor.types)
 local ActionRegistry = require(KRF.server.Action.ActionRegistry)
 local ActionControllerModule = require(KRF.server.Action.ActionController)
+local ActionControllerUpdates = require(KRF.server.Action.utils.ActionControllerUpdates)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 
 type ActionDefinition = ActionTypes.ActionDefinition
@@ -37,25 +38,25 @@ end
 
 local function heartbeat(elapsed: number): ()
 	now += elapsed
-	ActionControllerModule._heartbeatForTests(elapsed)
+	ActionControllerUpdates._heartbeatForTests(elapsed)
 end
 
 beforeEach(function()
 	ActionRegistry._resetForTests()
 	controllers = {}
 	now = 100
-	ActionControllerModule._setClockForTests(function(): number
+	ActionControllerUpdates._setClockForTests(function(): number
 		return now
 	end)
-	ActionControllerModule._setAutomaticSteppingEnabledForTests(false)
+	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(false)
 end)
 
 afterEach(function()
 	for _, controller: any in controllers do
 		controller:Destroy()
 	end
-	ActionControllerModule._setClockForTests(nil)
-	ActionControllerModule._setAutomaticSteppingEnabledForTests(true)
+	ActionControllerUpdates._setClockForTests(nil)
+	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	ActionRegistry._resetForTests()
 end)
 
@@ -67,7 +68,7 @@ it("never schedules an Action whose activation has no onUpdate", function()
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Wait")
 	expect(result.accepted).toBe(true)
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(false)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(false)
 	heartbeat(1)
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
 end)
@@ -224,13 +225,13 @@ it("does not dispatch an update with a zero or non-finite measured delta", funct
 	end)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
-	ActionControllerModule._heartbeatForTests(0.05)
+	ActionControllerUpdates._heartbeatForTests(0.05)
 	expect(deltas).toEqual({})
 	now = math.huge
-	ActionControllerModule._heartbeatForTests(0.05)
+	ActionControllerUpdates._heartbeatForTests(0.05)
 	expect(deltas).toEqual({})
 	now = 100.1
-	ActionControllerModule._heartbeatForTests(0.05)
+	ActionControllerUpdates._heartbeatForTests(0.05)
 	expect(#deltas).toBe(1)
 	expect(math.abs(deltas[1] - 0.1) < 0.000001).toBe(true)
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
@@ -323,7 +324,7 @@ it("skips a captured Actor group destroyed by another Actor's update", function(
 	targetController:RequestAction("Action.Channel")
 	heartbeat(0.05)
 	expect(#seen).toBe(1)
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(true)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(true)
 end)
 
 it("never uses the catalog callback when an activation omits onUpdate", function()
@@ -347,9 +348,43 @@ it("never uses the catalog callback when an activation omits onUpdate", function
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
 	expect(result.accepted).toBe(true)
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(false)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(false)
 	heartbeat(0.2)
 	expect(catalogCalls).toBe(0)
+end)
+
+it("steps a runtime onUpdate even when the startup factory result omitted it", function()
+	local factoryCalls: number = 0
+	local observedContext: ActionExecutionContext? = nil
+	local observedDelta: number? = nil
+	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
+		factoryCalls += 1
+		local definition: ActionDefinition = {
+			id = "Action.Channel",
+			visibility = "ServerOnly",
+			autoGrant = true,
+		}
+		if factoryCalls == 2 then
+			definition.onUpdate = function(context: ActionExecutionContext, deltaTime: number): ()
+				observedContext = context
+				observedDelta = deltaTime
+			end
+		end
+		return definition
+	end
+	loadFactory(factory)
+	local actor: Actor, controller: any = createController()
+	local result: any = controller:RequestAction("Action.Channel")
+	expect(result).toEqual({ accepted = true, sequenceId = 1 })
+	expect(factoryCalls).toBe(2)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(true)
+	heartbeat(0.05)
+	expect(observedContext).never.toBeNil()
+	expect((observedContext :: ActionExecutionContext).actor).toBe(actor)
+	expect((observedContext :: ActionExecutionContext).sequenceId).toBe(result.sequenceId)
+	expect(math.abs((observedDelta :: number) - 0.05) < 0.000001).toBe(true)
+	expect((controller:EndAction(result.sequenceId))).toBe(true)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(false)
 end)
 
 it("allows self-End and self-Interrupt without updating those instances again", function()
@@ -377,7 +412,7 @@ it("allows self-End and self-Interrupt without updating those instances again", 
 	expect(counts).toEqual({ [1] = 1, [2] = 1 })
 	expect((controller:EndAction(first.sequenceId))).toBe(false)
 	expect((controller:EndAction(second.sequenceId))).toBe(false)
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(false)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(false)
 end)
 
 it("interrupts a thrown update once and continues with the next instance", function()
@@ -472,13 +507,13 @@ it("updates membership before start and terminal hooks run", function()
 			autoGrant = true,
 			onUpdate = function(): () end,
 			onStart = function(): ()
-				table.insert(observations, ActionControllerModule._hasUpdateEligibleInstancesForTests())
+				table.insert(observations, ActionControllerUpdates._hasUpdateEligibleInstancesForTests())
 			end,
 			onEnd = function(): ()
-				table.insert(observations, ActionControllerModule._hasUpdateEligibleInstancesForTests())
+				table.insert(observations, ActionControllerUpdates._hasUpdateEligibleInstancesForTests())
 			end,
 			onInterrupt = function(): ()
-				table.insert(observations, ActionControllerModule._hasUpdateEligibleInstancesForTests())
+				table.insert(observations, ActionControllerUpdates._hasUpdateEligibleInstancesForTests())
 			end,
 		}
 	end)
@@ -512,7 +547,7 @@ it("skips an Action interrupted before its snapshot turn", function()
 	controller:RequestAction("Action.Channel")
 	heartbeat(0.05)
 	expect(seen).toEqual({ 1 })
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(true)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(true)
 end)
 
 it("removes every update-enabled Action before destruction hooks run", function()
@@ -524,7 +559,7 @@ it("removes every update-enabled Action before destruction hooks run", function(
 			autoGrant = true,
 			onUpdate = function(): () end,
 			onInterrupt = function(): ()
-				table.insert(eligibleDuringTeardown, ActionControllerModule._hasUpdateEligibleInstancesForTests())
+				table.insert(eligibleDuringTeardown, ActionControllerUpdates._hasUpdateEligibleInstancesForTests())
 			end,
 		}
 	end)
@@ -533,7 +568,7 @@ it("removes every update-enabled Action before destruction hooks run", function(
 	controller:RequestAction("Action.Channel")
 	controller:Destroy()
 	expect(eligibleDuringTeardown).toEqual({ false, false })
-	expect(ActionControllerModule._hasUpdateEligibleInstancesForTests()).toBe(false)
+	expect(ActionControllerUpdates._hasUpdateEligibleInstancesForTests()).toBe(false)
 	heartbeat(0.05)
 end)
 
@@ -551,15 +586,15 @@ it("keeps one scheduler until the last update-enabled Action leaves and reconnec
 	end)
 	local _firstActor: Actor, firstController: any = createController()
 	local _secondActor: Actor, secondController: any = createController()
-	ActionControllerModule._setAutomaticSteppingEnabledForTests(true)
+	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	local first: any = firstController:RequestAction("Action.Channel")
 	local second: any = secondController:RequestAction("Action.Channel")
-	expect(ActionControllerModule._isSchedulerConnectedForTests()).toBe(true)
+	expect(ActionControllerUpdates._isSchedulerConnectedForTests()).toBe(true)
 	heartbeat(0.03)
 	firstController:EndAction(first.sequenceId)
-	expect(ActionControllerModule._isSchedulerConnectedForTests()).toBe(true)
+	expect(ActionControllerUpdates._isSchedulerConnectedForTests()).toBe(true)
 	secondController:Destroy()
-	expect(ActionControllerModule._isSchedulerConnectedForTests()).toBe(false)
+	expect(ActionControllerUpdates._isSchedulerConnectedForTests()).toBe(false)
 	local third: any = firstController:RequestAction("Action.Channel")
 	heartbeat(0.02)
 	expect(calls).toBe(0)
@@ -581,8 +616,8 @@ it("automatically dispatches updates from Heartbeat while an eligible Action is 
 			end,
 		}
 	end)
-	ActionControllerModule._setClockForTests(nil)
-	ActionControllerModule._setAutomaticSteppingEnabledForTests(true)
+	ActionControllerUpdates._setClockForTests(nil)
+	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
 	for _attempt: number = 1, 30 do
@@ -594,5 +629,5 @@ it("automatically dispatches updates from Heartbeat while an eligible Action is 
 	expect(#deltas > 0).toBe(true)
 	expect(math.isfinite(deltas[1]) and deltas[1] > 0).toBe(true)
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
-	expect(ActionControllerModule._isSchedulerConnectedForTests()).toBe(false)
+	expect(ActionControllerUpdates._isSchedulerConnectedForTests()).toBe(false)
 end)

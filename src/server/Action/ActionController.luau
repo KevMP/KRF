@@ -8,7 +8,6 @@ local ActionRegistry = require(script.Parent.ActionRegistry)
 local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
 local ActionControllerGrantsModule = require(script.Parent.utils.ActionControllerGrants)
 local ActionControllerInstancesModule = require(script.Parent.utils.ActionControllerInstances)
-local ActionControllerUpdates = require(script.Parent.utils.ActionControllerUpdates)
 
 type Actor = ActorTypes.Actor
 type ActionController = ActionTypes.ActionController
@@ -20,13 +19,6 @@ type ActionControllerGrants = ActionControllerGrantsModule.ActionControllerGrant
 type ActionControllerInstances = ActionControllerInstancesModule.ActionControllerInstances
 
 local ActionControllerModule = {}
-
-ActionControllerModule._setClockForTests = ActionControllerUpdates._setClockForTests
-ActionControllerModule._setAutomaticSteppingEnabledForTests =
-	ActionControllerUpdates._setAutomaticSteppingEnabledForTests
-ActionControllerModule._heartbeatForTests = ActionControllerUpdates._heartbeatForTests
-ActionControllerModule._isSchedulerConnectedForTests = ActionControllerUpdates._isSchedulerConnectedForTests
-ActionControllerModule._hasUpdateEligibleInstancesForTests = ActionControllerUpdates._hasUpdateEligibleInstancesForTests
 
 function ActionControllerModule.new(actor: Actor): ActionController
 	assert(ActionRegistry.IsLoaded(), "ActionRegistryNotLoaded")
