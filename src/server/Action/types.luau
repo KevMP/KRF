@@ -15,6 +15,16 @@ export type ActionStopRequest = {
 	parameters: any?,
 }
 
+export type ActionInterruptionContext = {
+	read actor: ActorTypes.Actor,
+	read actionId: string,
+	read parameters: any?,
+}
+
+export type LockClaim = {
+	Release: (self: LockClaim) -> (),
+}
+
 export type ActionExecutionContext = {
 	read actor: ActorTypes.Actor,
 	read actionId: string,
@@ -23,6 +33,7 @@ export type ActionExecutionContext = {
 	read IsActive: (self: ActionExecutionContext) -> boolean,
 	read End: (self: ActionExecutionContext) -> (boolean, string?),
 	read Interrupt: (self: ActionExecutionContext, reason: string) -> (boolean, string?),
+	read ClaimLocks: (self: ActionExecutionContext, lockIds: { string }) -> (LockClaim?, string?),
 }
 
 export type ActionRequestAccepted = { accepted: true, sequenceId: number }
@@ -58,7 +69,7 @@ export type OnStopRequested = (ActionExecutionContext, ActionStopRequest) -> ()
 export type OnUpdate = (ActionExecutionContext, number) -> ()
 export type OnEnd = (ActionExecutionContext) -> ()
 export type OnInterrupt = (ActionExecutionContext, string) -> ()
-export type CanBeInterruptedBy = (...any) -> boolean
+export type CanBeInterruptedBy = (ActionExecutionContext, ActionInterruptionContext) -> boolean
 
 export type ActionDefinition = {
 	id: string,

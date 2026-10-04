@@ -13,7 +13,7 @@ sidebar_position: 3
 | Accepted request | The controller created an Action instance and returned its sequence id. |
 | Active Action | That instance has not Ended or been Interrupted. |
 
-An accepted Action may already have terminated by the time `RequestAction` returns, for example when its `onStart` calls `ctx:End()`. Sequence ids increase within one Actor's controller and are never reused during that controller's lifetime. Several instances of the same Action can be active at once.
+An accepted Action may already have terminated by the time `RequestAction` returns, for example when its `onStart` calls `ctx:End()`. Sequence ids increase within one Actor's controller and are never reused during that controller's lifetime. Several instances of the same Action can be active at once when their [lock claims](./action-locks) allow it.
 
 ## Request an Action
 
@@ -38,7 +38,7 @@ ActorRuntime.OnActorRegistered:Connect(function(actor)
 end)
 ```
 
-The Action must exist, be granted, and pass its optional `onCanStart` decision. KRF calls its factory for this request, then uses that result's callbacks throughout the activation. The factory and `onCanStart` must finish synchronously without yielding. `onCanStart` receives a frozen `ActionStartContext` with `actor`, `actionId`, and the original `parameters`. It may return `false, "GameReason"` to reject with a game-defined reason. KRF rechecks the Actor and grant after the callback, so a grant revocation or Actor teardown during the decision prevents acceptance. A rejection creates no instance and consumes no sequence id.
+The Action must exist, be granted, pass its optional `onCanStart` decision, and acquire its declared locks. KRF calls its factory for this request, then uses that result's callbacks throughout the activation. The factory and `onCanStart` must finish synchronously without yielding. `onCanStart` receives a frozen `ActionStartContext` with `actor`, `actionId`, and the original `parameters`. It may return `false, "GameReason"` to reject with a game-defined reason. KRF rechecks the Actor and grant after decision callbacks, so a grant revocation or Actor teardown during a decision prevents acceptance. A rejection creates no instance and consumes no sequence id.
 
 Request parameters are opaque server-side game data. KRF passes the same value to `onCanStart` and the accepted Action; it does not copy or serialize it. Validate client-originated data before calling this server API.
 
@@ -106,7 +106,7 @@ local function createDodge(): ActionTypes.ActionDefinition
 end
 ```
 
-Use `ctx:End()` or `EndAction(sequenceId)` for normal completion. Use `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` for interruption. A successful transition makes `ctx:IsActive()` false and removes update eligibility before `onEnd` or `onInterrupt` runs. These cleanup callbacks must finish synchronously without yielding. Their errors do not undo the transition. A failing `onStart` automatically Interrupts an instance that is still active.
+Use `ctx:End()` or `EndAction(sequenceId)` for normal completion. Use `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` for interruption. A successful transition makes `ctx:IsActive()` false, releases its lifetime and scoped locks, and removes update eligibility before `onEnd` or `onInterrupt` runs. These cleanup callbacks must finish synchronously without yielding. Their errors do not undo the transition. A failing `onStart` automatically Interrupts an instance that is still active.
 
 `ctx:End()` and `ctx:Interrupt()` are ordinary calls: Action code should `return` afterward if it has no more synchronous work to do. KRF retires a suspended `onStart` invocation when its instance terminates. Tasks or connections created separately by game code remain game-owned.
 
@@ -122,3 +122,4 @@ Destroying the controller Interrupts every active Action with `ActionControllerD
 - [Action grants](./action-grants)
 - [Action catalog](./action-registry)
 - [Action updates](./action-updates)
+- [Action locks](./action-locks)

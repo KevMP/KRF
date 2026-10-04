@@ -118,7 +118,27 @@ function ActionControllerModule.new(actor: Actor): ActionController
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
 
-		local sequenceId: number = instances:Start(actionId, implementation, parameters)
+		local sequenceId: number?, lockReason: string? = instances:Start(
+			actionId,
+			implementation,
+			parameters,
+			definition,
+			function(): string?
+				if controllerState.destroyed then
+					return "ActionControllerDestroyed"
+				end
+				if not actor.enabled then
+					return "ActorDisabled"
+				end
+				if not grants:IsGranted(actionId) then
+					return "ActionNotGranted"
+				end
+				return nil
+			end
+		)
+		if sequenceId == nil then
+			return { accepted = false, reason = lockReason or "ActionLockConflict" }
+		end
 		return { accepted = true, sequenceId = sequenceId }
 	end
 

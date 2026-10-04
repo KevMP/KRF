@@ -20,12 +20,12 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | `requiredTags` | Optional array of registered Tag ids declaring preconditions. |
 | `blockedTags` | Optional array of registered Tag ids declaring blockers. Cannot overlap `requiredTags`. |
 | `costs` | Optional Resource-id keyed map of finite, strictly positive upfront cost amounts. |
-| `locks` | Optional array of opaque, non-empty game-defined lifetime lock ids. Locks declare concurrency claims. |
-| `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action. Forward references and self-references are valid. |
+| `locks` | Optional array of opaque, non-empty game-defined lock ids, acquired as [lifetime claims](./action-locks) at activation. |
+| `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action when locks conflict. Forward references and self-references are valid. |
 | `onCanStart` | Optional function returning `(boolean, string?)`, for an Action-defined start decision. |
 | `onStart`, `onStopRequested`, `onEnd`, `onInterrupt` | Optional lifecycle functions. |
 | `onUpdate` | Optional `(ActionExecutionContext, number) -> ()` hook for [active Action updates](./action-updates). |
-| `canBeInterruptedBy` | Optional function returning `boolean`, refining the static `interruptibleBy` allowlist. |
+| `canBeInterruptedBy` | Optional `(ActionExecutionContext, ActionInterruptionContext) -> boolean` hook from the running instance, narrowing the static `interruptibleBy` allowlist. |
 
 All lists must be dense arrays without duplicate entries. Their entries must be non-empty strings. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action catalog. Omitted lists and `costs` normalize to empty collections.
 
@@ -98,6 +98,7 @@ Omitting `actions` loads an empty catalog with `IsLoaded() == true`. Before publ
 - [Action grants](./action-grants)
 - [Run Actions](./action-lifecycle)
 - [Action updates](./action-updates)
+- [Action locks](./action-locks)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)
 - [Resource Registry](../Resource/resource-registry)
