@@ -2,9 +2,9 @@
 sidebar_position: 4
 ---
 
-# Update active Actions
+# Action Updates
 
-An Action can opt into recurring server updates by defining `onUpdate(context, deltaTime)`. `ActionController` steps only active instances whose per-request factory result contains this hook. Each instance uses the callback and private state captured for its own activation; the startup catalog callback is never used for updates.
+An Action can opt into recurring server updates by defining `onUpdate(context, deltaTime)`. `ActionController` steps only active instances whose per-request factory result contains this hook. Each instance uses the callback and private state captured for its own activation; the startup factory callback is never used for updates.
 
 ## Timing and callback contract
 
@@ -20,7 +20,7 @@ KRF uses one scheduler for all update-enabled Actions. It checks `RunService.Hea
 
 ## A stepped Action
 
-This factory keeps a separate elapsed counter for each accepted `Action.Channel` request. Register it with `Server.Init({ actions = { createChannel } })`, then request the Action through the Actor's `ActionController` as shown in [Run Actions](./action-lifecycle).
+This factory keeps a separate elapsed counter for each accepted `Action.Channel` request. Register it with `Server.Init({ actions = { createChannel } })`, then request the Action through the Actor's `ActionController` as shown in [Action Runtime](./action-lifecycle).
 
 ```lua
 --!strict
@@ -57,6 +57,6 @@ An Action started during a pass waits until a later pass, including when a callb
 
 ## Related
 
-- [Run Actions](./action-lifecycle)
-- [Action catalog](./action-registry)
+- [Action Runtime](./action-lifecycle)
+- [Action Registry](./action-registry)
 - [Action Controller API](/api/Action/action-controller)

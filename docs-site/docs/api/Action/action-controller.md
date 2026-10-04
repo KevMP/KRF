@@ -52,11 +52,13 @@ Returns whether the Action is effectively granted to this Actor; an unknown id r
 
 ### `GetGrantedActions() -> {string}` {#get-granted-actions}
 
-Returns a frozen list of effective Action ids in Action catalog order.
+Returns a frozen list of effective Action ids in Action registry order.
 
 ### `RequestAction(actionId: string, parameters: any?) -> ActionRequestResult` {#request-action}
 
 Requests one Action on this Actor. An accepted result is `{ accepted = true, sequenceId = number }`; a rejected result is `{ accepted = false, reason = string }`.
+
+`RequestAction` does not enforce `requiredTags` or `blockedTags`, or spend `costs`. Those definition fields are registry metadata.
 
 | Rejection reason | Cause |
 | --- | --- |
@@ -68,6 +70,8 @@ Requests one Action on this Actor. An accepted result is `{ accepted = true, seq
 | `ActionFactoryFailed` / `ActionFactoryYielded` / `ActionFactoryInvalidResult` | The per-request factory errored, yielded, or returned an invalid Action implementation. No sequence id is consumed. |
 | `ActionCanStartRejected` | `onCanStart` returned `false` without a usable custom reason. |
 | `ActionCanStartFailed` / `ActionCanStartYielded` / `ActionCanStartInvalidResult` | The decision callback errored, attempted to yield, or returned a non-boolean first value. |
+| `ActionLockConflict` | A conflicting owner did not permit preemption. |
+| `ActionInterruptDecisionFailed` / `ActionInterruptDecisionYielded` / `ActionInterruptDecisionInvalidResult` | A conflicting owner's interruption hook errored, yielded, or returned a non-boolean value. |
 | Game-defined string | `onCanStart` returned `false, reason` with a non-empty string. |
 
 ### `RequestStop(sequenceId: number, parameters: any?) -> (boolean, string?)` {#request-stop}
@@ -102,11 +106,12 @@ Fires when an active instance Ends. The payload contains `actor`, `actionId`, an
 
 ### `OnActionInterrupted: Event<ActionInterruptedEvent>` {#on-action-interrupted}
 
-Fires when an active instance is Interrupted. The payload contains `actor`, `actionId`, `sequenceId`, and `reason`; an update error or yield uses `ActionUpdateFailed`.
+Fires when an active instance is Interrupted. The payload contains `actor`, `actionId`, `sequenceId`, and `reason`; an update error or yield uses `ActionUpdateFailed`, and lock preemption uses `ActionLockPreempted`.
 
 ## Related
 
-- [Run Actions guide](/Action/action-lifecycle)
+- [Action Runtime guide](/Action/action-lifecycle)
 - [Action grants guide](/Action/action-grants)
 - [Action updates guide](/Action/action-updates)
+- [Action locks guide](/Action/action-locks)
 - [Action Registry](/api/Action/action-registry)
