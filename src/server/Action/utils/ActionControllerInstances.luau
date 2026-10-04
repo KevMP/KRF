@@ -21,6 +21,7 @@ type InternalActionInstance = {
 	context: ActionExecutionContext,
 	ownedLockReasons: { [string]: number },
 	onStartThread: thread?,
+	startedEmitted: boolean,
 }
 
 export type ActionControllerInstances = {
@@ -56,30 +57,6 @@ function ActionControllerInstancesModule.new(
 	local nextSequenceId: number = 1
 	local activeBySequenceId: { [number]: InternalActionInstance } = {}
 	local lockOwners: { [string]: InternalActionInstance } = {}
-	local lifecycleDispatchQueue: { () -> () } = {}
-	local dispatchingLifecycle: boolean = false
-
-	local function dispatchLifecycle(batch: () -> ()): ()
-		table.insert(lifecycleDispatchQueue, batch)
-		if dispatchingLifecycle then
-			return
-		end
-		dispatchingLifecycle = true
-		local succeeded: boolean, failure: any = pcall(function()
-			ownedSignals:WithDeferredDestroy(function()
-				local nextBatch: number = 1
-				while nextBatch <= #lifecycleDispatchQueue do
-					lifecycleDispatchQueue[nextBatch]()
-					nextBatch += 1
-				end
-			end)
-		end)
-		table.clear(lifecycleDispatchQueue)
-		dispatchingLifecycle = false
-		if not succeeded then
-			error(failure, 0)
-		end
-	end
 
 	local function isActive(instance: InternalActionInstance): boolean
 		return activeBySequenceId[instance.sequenceId] == instance
@@ -142,33 +119,53 @@ function ActionControllerInstancesModule.new(
 		}
 	end
 
-	local function emitEnd(instance: InternalActionInstance): ()
-		endedSignal:Fire(lifecycleEvent(instance))
-		local callback = instance.implementation.onEnd
-		if callback ~= nil then
-			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
-				ActionControllerHooks.RunNonSuspending(callback, instance.context)
-			if not succeeded then
-				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onEnd", failureDetail or failureKind)
-			end
+	local function emitStarted(instance: InternalActionInstance): ()
+		if instance.startedEmitted then
+			return
 		end
+		-- A reentrant call may terminate this accepted instance before its outer request reaches Started.
+		instance.startedEmitted = true
+		startedSignal:Fire(lifecycleEvent(instance))
 	end
 
-	local function emitInterrupt(instance: InternalActionInstance, reason: string): ()
-		interruptedSignal:Fire({
-			actor = actor,
-			actionId = instance.actionId,
-			sequenceId = instance.sequenceId,
-			reason = reason,
-		})
-		local callback = instance.implementation.onInterrupt
-		if callback ~= nil then
-			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
-				ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
-			if not succeeded then
-				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onInterrupt", failureDetail or failureKind)
+	local function dispatchEnd(instance: InternalActionInstance): ()
+		ownedSignals:WithDeferredDestroy(function()
+			emitStarted(instance)
+			endedSignal:Fire(lifecycleEvent(instance))
+			local callback = instance.implementation.onEnd
+			if callback ~= nil then
+				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
+					ActionControllerHooks.RunNonSuspending(callback, instance.context)
+				if not succeeded then
+					ActionControllerHooks.WarnFailure(actor, instance.actionId, "onEnd", failureDetail or failureKind)
+				end
 			end
-		end
+		end)
+	end
+
+	local function dispatchInterrupt(instance: InternalActionInstance, reason: string): ()
+		ownedSignals:WithDeferredDestroy(function()
+			emitStarted(instance)
+			interruptedSignal:Fire({
+				actor = actor,
+				actionId = instance.actionId,
+				sequenceId = instance.sequenceId,
+				reason = reason,
+			})
+			local callback = instance.implementation.onInterrupt
+			if callback ~= nil then
+				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
+					ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
+				if not succeeded then
+					ActionControllerHooks.WarnFailure(
+						actor,
+						instance.actionId,
+						"onInterrupt",
+						failureDetail or failureKind
+					)
+				end
+			end
+		end)
 	end
 
 	local function normalizeLockIds(lockIds: any): { string }?
@@ -348,9 +345,9 @@ function ActionControllerInstancesModule.new(
 			end,
 		}
 		table.freeze(claim)
-		dispatchLifecycle(function()
+		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
-				emitInterrupt(owner, "ActionLockPreempted")
+				dispatchInterrupt(owner, "ActionLockPreempted")
 			end
 		end)
 		return claim :: LockClaim?, nil
@@ -368,9 +365,7 @@ function ActionControllerInstancesModule.new(
 			return false, "ActionInstanceNotActive"
 		end
 		commitTerminal(instance)
-		dispatchLifecycle(function()
-			emitEnd(instance)
-		end)
+		dispatchEnd(instance)
 		return true, nil
 	end
 
@@ -389,9 +384,7 @@ function ActionControllerInstancesModule.new(
 			return false, "ActionInstanceNotActive"
 		end
 		commitTerminal(instance)
-		dispatchLifecycle(function()
-			emitInterrupt(instance, reason)
-		end)
+		dispatchInterrupt(instance, reason)
 		return true, nil
 	end
 
@@ -433,6 +426,7 @@ function ActionControllerInstancesModule.new(
 		instance.context = context
 		instance.ownedLockReasons = {}
 		instance.onStartThread = nil
+		instance.startedEmitted = false
 		activeBySequenceId[sequenceId] = instance
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
@@ -463,9 +457,7 @@ function ActionControllerInstancesModule.new(
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
 				if commitTerminal(instance) then
-					dispatchLifecycle(function()
-						emitInterrupt(instance, "ActionStartFailed")
-					end)
+					dispatchInterrupt(instance, "ActionStartFailed")
 				end
 			end
 		end)
@@ -475,9 +467,7 @@ function ActionControllerInstancesModule.new(
 			instance.onStartThread = nil
 			ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
 			if commitTerminal(instance) then
-				dispatchLifecycle(function()
-					emitInterrupt(instance, "ActionStartFailed")
-				end)
+				dispatchInterrupt(instance, "ActionStartFailed")
 			end
 		elseif coroutine.status(startThread) ~= "dead" and not isActive(instance) then
 			ActionControllerHooks.CancelSuspendedThread(startThread)
@@ -510,11 +500,11 @@ function ActionControllerInstancesModule.new(
 			commitTerminal(owner)
 		end
 		local instance: InternalActionInstance = commitActivation(actionId, implementation, parameters, definition)
-		dispatchLifecycle(function()
+		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
-				emitInterrupt(owner, "ActionLockPreempted")
+				dispatchInterrupt(owner, "ActionLockPreempted")
 			end
-			startedSignal:Fire(lifecycleEvent(instance))
+			emitStarted(instance)
 			beginStart(instance)
 		end)
 		return instance.sequenceId, nil
@@ -566,11 +556,9 @@ function ActionControllerInstancesModule.new(
 		for _, instance: InternalActionInstance in activeInstances do
 			commitTerminal(instance)
 		end
-		dispatchLifecycle(function()
-			for _, instance: InternalActionInstance in activeInstances do
-				emitInterrupt(instance, "ActionControllerDestroyed")
-			end
-		end)
+		for _, instance: InternalActionInstance in activeInstances do
+			dispatchInterrupt(instance, "ActionControllerDestroyed")
+		end
 	end
 
 	return instances

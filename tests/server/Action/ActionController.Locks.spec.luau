@@ -439,6 +439,9 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 	local controller: ActionController? = nil
 	local dodgeEvents: { string } = {}
 	local counterRequest: ActionTypes.ActionRequestResult? = nil
+	local dodgeInterrupted: boolean = false
+	local counterStarted: boolean = false
+	local nestedCallbacksRanBeforeReturn: boolean? = nil
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -448,6 +451,7 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 			interruptibleBy = { "Action.Dodge" },
 			onInterrupt = function(): ()
 				counterRequest = (controller :: ActionController):RequestAction("Action.Counter")
+				nestedCallbacksRanBeforeReturn = dodgeInterrupted and counterStarted
 			end,
 		},
 		{
@@ -456,8 +460,19 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 			autoGrant = true,
 			locks = { "Movement" },
 			interruptibleBy = { "Action.Counter" },
+			onInterrupt = function(): ()
+				dodgeInterrupted = true
+			end,
 		},
-		{ id = "Action.Counter", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
+		{
+			id = "Action.Counter",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			onStart = function(): ()
+				counterStarted = true
+			end,
+		},
 	})
 	local _actor: Actor
 	_actor, controller = createController()
@@ -475,9 +490,49 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
 	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 2 })
 	expect(counterRequest).toEqual({ accepted = true, sequenceId = 3 })
+	expect(nestedCallbacksRanBeforeReturn).toBe(true)
 	task.wait()
 	task.wait()
 	expect(dodgeEvents).toEqual({ "Started", "Interrupted" })
+end)
+
+it("runs a reentrant EndAction hook before returning to an interruption hook", function()
+	local controller: ActionController? = nil
+	local emoteSequenceId: number? = nil
+	local endResult: boolean? = nil
+	local endHookRan: boolean = false
+	local endHookRanBeforeReturn: boolean? = nil
+	loadDefinitions({
+		{
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Dodge" },
+			onInterrupt = function(): ()
+				endResult = (controller :: ActionController):EndAction(emoteSequenceId :: number)
+				endHookRanBeforeReturn = endHookRan
+			end,
+		},
+		{
+			id = "Action.Emote",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onEnd = function(): ()
+				endHookRan = true
+			end,
+		},
+		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
+	local emoteRequest: ActionTypes.ActionRequestResult = (controller :: ActionController):RequestAction("Action.Emote")
+	expect(emoteRequest).toEqual({ accepted = true, sequenceId = 2 })
+	emoteSequenceId = (emoteRequest :: ActionTypes.ActionRequestAccepted).sequenceId
+	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
+	expect(endResult).toBe(true)
+	expect(endHookRanBeforeReturn).toBe(true)
 end)
 
 it("rebuilds the conflict plan after a decision hook ends its own Action", function()
