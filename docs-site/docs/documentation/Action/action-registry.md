@@ -101,7 +101,6 @@ Omitting `actions` loads an empty registry with `IsLoaded() == true`. Before pub
 - [Action Runtime](./action-lifecycle)
 - [Action Updates](./action-updates)
 - [Action Locks](./action-locks)
-- [Action Example](./action-example)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)
 - [Resource Registry](../Resource/resource-registry)

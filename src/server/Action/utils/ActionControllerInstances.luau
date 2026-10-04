@@ -56,7 +56,6 @@ function ActionControllerInstancesModule.new(
 	local nextSequenceId: number = 1
 	local activeBySequenceId: { [number]: InternalActionInstance } = {}
 	local lockOwners: { [string]: InternalActionInstance } = {}
-	local ownershipRevision: number = 0
 
 	local function isActive(instance: InternalActionInstance): boolean
 		return activeBySequenceId[instance.sequenceId] == instance
@@ -84,7 +83,6 @@ function ActionControllerInstancesModule.new(
 			end
 		end
 		table.clear(instance.ownedLockReasons)
-		ownershipRevision += 1
 		if instance.implementation.onUpdate ~= nil then
 			ActionControllerUpdates.Remove(instances, instance.sequenceId)
 		end
@@ -201,6 +199,18 @@ function ActionControllerInstancesModule.new(
 		return conflicts
 	end
 
+	local function sameConflicts(left: { InternalActionInstance }, right: { InternalActionInstance }): boolean
+		if #left ~= #right then
+			return false
+		end
+		for index: number, owner: InternalActionInstance in left do
+			if right[index] ~= owner then
+				return false
+			end
+		end
+		return true
+	end
+
 	local function decideInterruption(
 		owner: InternalActionInstance,
 		incomingContext: ActionTypes.ActionInterruptionContext
@@ -258,12 +268,14 @@ function ActionControllerInstancesModule.new(
 			if incomingInstance ~= nil and not isActive(incomingInstance) then
 				return nil, "ActionInstanceNotActive"
 			end
-			local revision: number = ownershipRevision
 			local conflicts: { InternalActionInstance } = collectConflicts(lockIds, incomingInstance)
 			local stale: boolean = false
 			for _, owner: InternalActionInstance in conflicts do
 				local allowed: boolean, reason: string? = decideInterruption(owner, incomingContext)
-				if ownershipRevision ~= revision then
+				if incomingInstance ~= nil and not isActive(incomingInstance) then
+					return nil, "ActionInstanceNotActive"
+				end
+				if not sameConflicts(conflicts, collectConflicts(lockIds, incomingInstance)) then
 					stale = true
 					break
 				end
@@ -305,7 +317,6 @@ function ActionControllerInstancesModule.new(
 		for _, lockId: string in normalized do
 			addLockReason(instance, lockId)
 		end
-		ownershipRevision += 1
 		local released: boolean = false
 		local claim: LockClaim = {
 			Release = function(_self: LockClaim): ()
@@ -319,7 +330,6 @@ function ActionControllerInstancesModule.new(
 				for _, lockId: string in normalized do
 					removeLockReason(instance, lockId)
 				end
-				ownershipRevision += 1
 			end,
 		}
 		table.freeze(claim)
@@ -408,7 +418,6 @@ function ActionControllerInstancesModule.new(
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
 		end
-		ownershipRevision += 1
 		local updateCallback = implementation.onUpdate
 		if updateCallback ~= nil then
 			ActionControllerUpdates.Register(

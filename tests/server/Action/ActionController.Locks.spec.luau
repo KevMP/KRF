@@ -464,6 +464,53 @@ it("rebuilds the conflict plan after a decision hook ends its own Action", funct
 	expect(((controller :: ActionController):EndAction(sprint.sequenceId))).toBe(false)
 end)
 
+it("preempts unchanged lock owners when a decision starts an unrelated lockless Action", function()
+	local controller: ActionController? = nil
+	local ownerContext: ActionExecutionContext? = nil
+	local unrelatedContext: ActionExecutionContext? = nil
+	local decisionCalls: number = 0
+	local interruptionCalls: number = 0
+	local unrelatedRequests: { ActionTypes.ActionRequestResult } = {}
+	loadDefinitions({
+		{
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Dodge" },
+			onStart = function(context: ActionExecutionContext): ()
+				ownerContext = context
+			end,
+			canBeInterruptedBy = function(): boolean
+				decisionCalls += 1
+				table.insert(unrelatedRequests, (controller :: ActionController):RequestAction("Action.Emote"))
+				return true
+			end,
+			onInterrupt = function(): ()
+				interruptionCalls += 1
+			end,
+		},
+		{
+			id = "Action.Emote",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onStart = function(context: ActionExecutionContext): ()
+				unrelatedContext = context
+			end,
+		},
+		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
+	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
+	expect(unrelatedRequests).toEqual({ { accepted = true, sequenceId = 2 } })
+	expect(decisionCalls).toBe(1)
+	expect(interruptionCalls).toBe(1)
+	expect((ownerContext :: ActionExecutionContext):IsActive()).toBe(false)
+	expect((unrelatedContext :: ActionExecutionContext):IsActive()).toBe(true)
+end)
+
 it("does not commit a stale plan when a decision hook starts a new conflicting owner", function()
 	local controller: ActionController? = nil
 	local nested: any = nil

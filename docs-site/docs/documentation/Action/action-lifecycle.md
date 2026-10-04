@@ -42,7 +42,7 @@ KRF creates one frozen `ActionExecutionContext` for each accepted instance. It p
 | `ctx:Interrupt(reason)` | Terminates this instance with a non-empty reason. Returns `true` on success, or `false, reason` if it cannot Interrupt. |
 | `ctx:ClaimLocks(lockIds)` | Temporarily claims [scoped locks](./action-locks) while active. Returns a releasable claim or `nil, reason`. |
 
-The context identifies and controls an instance; it is not a mutable state bag. Put private state inside the Action factory so callbacks from one activation share it without sharing it with other activations. An Action can retain its context to query or terminate its own instance later; a retained context cannot reactivate an instance after it ends. The [complete Action example](./action-example) shows every context member and lifecycle hook in one factory.
+The context identifies and controls an instance; it is not a mutable state bag. Put private state inside the Action factory so callbacks from one activation share it without sharing it with other activations. An Action can retain its context to query or terminate its own instance later; a retained context cannot reactivate an instance after it ends.
 
 ## Stop, End, and Interrupt
 
@@ -87,4 +87,3 @@ Lock preemption commits conflicting owners inactive and activates the incoming i
 - [Action Registry](./action-registry)
 - [Action Updates](./action-updates)
 - [Action Locks](./action-locks)
-- [Action Example](./action-example)

@@ -80,7 +80,7 @@ For multiple conflicting owners, KRF evaluates distinct owners in ascending sequ
 
 `canBeInterruptedBy` receives the running instance's `ActionExecutionContext` and a frozen `ActionInterruptionContext` containing the incoming `actor`, `actionId`, and original request `parameters`. For a scoped claim, the incoming parameters are the claiming instance's original request parameters. The hook is synchronous and must return a boolean. An error, yield, or non-boolean return denies preemption and returns `ActionInterruptDecisionFailed`, `ActionInterruptDecisionYielded`, or `ActionInterruptDecisionInvalidResult` respectively. The running Action stays active. KRF uses the callback captured for that exact activation, so it can read the same private factory state as its other callbacks.
 
-Decision hooks may call back into KRF. KRF rebuilds a conflict plan when those calls change Action or lock state, and rechecks request availability before committing. Manual `InterruptAction` and `ctx:Interrupt()` do not consult the lock allowlist.
+Decision hooks may call back into KRF. KRF rebuilds a conflict plan when those calls change the owners of the requested locks, and rechecks request availability before committing. Unrelated Action changes leave the plan valid. Manual `InterruptAction` and `ctx:Interrupt()` do not consult the lock allowlist.
 
 ## Temporary scoped claims
 
@@ -116,4 +116,3 @@ The claiming Action's id and original parameters are used for owner-side preempt
 - [Action Runtime](./action-lifecycle)
 - [Action Registry](./action-registry)
 - [Action Controller API](/api/Action/action-controller)
-- [Action Example](./action-example)
