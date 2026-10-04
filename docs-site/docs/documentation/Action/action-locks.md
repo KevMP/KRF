@@ -2,14 +2,14 @@
 sidebar_position: 5
 ---
 
-# Coordinate Actions with locks
+# Action Locks
 
 `ActionController` owns exclusive named locks for active Action instances on one Actor. An Action claims its declared locks when it starts, and can claim more locks temporarily through its execution context.
 
 | Surface | Ownership | Use |
 | --- | --- | --- |
-| `ActionDefinition.locks` | Loaded Action catalog | Locks held for the complete active lifetime. |
-| `ActionDefinition.interruptibleBy` | Loaded Action catalog | Exact Action ids allowed to preempt this Action. |
+| `ActionDefinition.locks` | Loaded Action registry | Locks held for the complete active lifetime. |
+| `ActionDefinition.interruptibleBy` | Loaded Action registry | Exact Action ids allowed to preempt this Action. |
 | `canBeInterruptedBy(ctx, incoming)` | Running instance | Optional decision that can deny an allowlisted incoming Action. |
 | `ctx:ClaimLocks(lockIds)` | Running instance | Temporary lock ownership returned as a releasable claim. |
 
@@ -113,6 +113,7 @@ The claiming Action's id and original parameters are used for owner-side preempt
 
 ## Related
 
-- [Run Actions](./action-lifecycle)
-- [Action catalog](./action-registry)
+- [Action Runtime](./action-lifecycle)
+- [Action Registry](./action-registry)
 - [Action Controller API](/api/Action/action-controller)
+- [Action Example](./action-example)

@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# Action grants
+# Action Grants
 
 KRF attaches an `ActionController` to each registered Actor as its Action runtime. This guide covers its grant state: which registered Actions that Actor has been granted.
 
@@ -84,7 +84,7 @@ KRF validates the source id, array shape, entries, and registry membership befor
 
 ## Read and observe effective grants
 
-An Action is granted when `autoGrant` is true or at least one explicit source includes it. `IsActionGranted` returns `false` for an unknown id. `GetGrantedActions` returns each effective id once, in Action catalog order, as a frozen list.
+An Action is granted when `autoGrant` is true or at least one explicit source includes it. `IsActionGranted` returns `false` for an unknown id. `GetGrantedActions` returns each effective id once, in Action registry order, as a frozen list.
 
 `OnActionGrantChanged` reports `(actor, actionId, isGranted)` only when effective access changes. Adding or removing a redundant source contribution produces no event. A callback can query the fully committed grant set; callbacks for multiple changed Actions have no promised order.
 
@@ -93,6 +93,6 @@ Grants are runtime state. Game persistence code can restore ownership by calling
 ## Related
 
 - [ActionController API](/api/Action/action-controller)
-- [Action catalog](./action-registry)
-- [Run Actions](./action-lifecycle)
+- [Action Registry](./action-registry)
+- [Action Runtime](./action-lifecycle)
 - [Initializing KRF](../initializing-krf)

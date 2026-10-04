@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Action Registry
 
-`ActionRegistry` provides read access to the static Action catalog published by `Server.Init`.
+`ActionRegistry` provides read access to static Action definitions published by `Server.Init`.
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,13 +32,13 @@ Returns the frozen metadata array in declaration order.
 
 ### `GetAllById() -> {[string]: LoadedActionDefinition}` {#get-all-by-id}
 
-Returns the frozen id-indexed catalog.
+Returns the frozen id-indexed registry.
 
 ### `IsLoaded() -> boolean` {#is-loaded}
 
-Returns whether the catalog has been published, including an empty catalog.
+Returns whether the registry has been published, including an empty registry.
 
 ## Related
 
-- [Action catalog guide](/Action/action-registry)
+- [Action Registry guide](/Action/action-registry)
 - [Server](/api/Server/)

@@ -1,6 +1,6 @@
 # Server
 
-`Server` initializes KRF's controller, Tag, Resource, and Action catalogs before Actors are registered.
+`Server` initializes KRF's controller, Tag, Resource, and Action registries before Actors are registered.
 
 ## Import
 
@@ -19,10 +19,10 @@ local Server = require(ReplicatedStorage.Packages.KRF.server)
 
 ### `Init(config: ServerStartConfig) -> (boolean, StartupFailure?)` {#init}
 
-Combines KRF's built-in controllers with `config.controllers`, then validates and publishes the controller, Tag, Resource, and Action catalogs in one startup attempt.
+Combines KRF's built-in controllers with `config.controllers`, then validates and publishes the controller, Tag, Resource, and Action registries in one startup attempt.
 
-- Returns `true, nil` when all catalogs load.
-- Returns `false, { system, reason }` when validation or loading fails. The catalogs remain unpublished for validation failures.
+- Returns `true, nil` when all registries load.
+- Returns `false, { system, reason }` when validation or loading fails. The registries remain unpublished for validation failures.
 - Returns a `Server` failure on a repeated attempt, including after a failed first attempt.
 
 ## Related

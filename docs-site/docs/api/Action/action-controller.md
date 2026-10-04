@@ -52,11 +52,13 @@ Returns whether the Action is effectively granted to this Actor; an unknown id r
 
 ### `GetGrantedActions() -> {string}` {#get-granted-actions}
 
-Returns a frozen list of effective Action ids in Action catalog order.
+Returns a frozen list of effective Action ids in Action registry order.
 
 ### `RequestAction(actionId: string, parameters: any?) -> ActionRequestResult` {#request-action}
 
 Requests one Action on this Actor. An accepted result is `{ accepted = true, sequenceId = number }`; a rejected result is `{ accepted = false, reason = string }`.
+
+`RequestAction` does not enforce `requiredTags` or `blockedTags`, or spend `costs`. Those definition fields are registry metadata.
 
 | Rejection reason | Cause |
 | --- | --- |
@@ -108,7 +110,7 @@ Fires when an active instance is Interrupted. The payload contains `actor`, `act
 
 ## Related
 
-- [Run Actions guide](/Action/action-lifecycle)
+- [Action Runtime guide](/Action/action-lifecycle)
 - [Action grants guide](/Action/action-grants)
 - [Action updates guide](/Action/action-updates)
 - [Action locks guide](/Action/action-locks)
