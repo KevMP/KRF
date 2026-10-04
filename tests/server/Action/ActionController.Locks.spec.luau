@@ -435,6 +435,51 @@ it("commits every preemption before callbacks and dispatches in sequence order",
 	expect(reasons).toEqual({ "ActionLockPreempted", "ActionLockPreempted" })
 end)
 
+it("emits Started before Interrupted when an interruption hook preempts the incoming Action", function()
+	local controller: ActionController? = nil
+	local dodgeEvents: { string } = {}
+	local counterRequest: ActionTypes.ActionRequestResult? = nil
+	loadDefinitions({
+		{
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Dodge" },
+			onInterrupt = function(): ()
+				counterRequest = (controller :: ActionController):RequestAction("Action.Counter")
+			end,
+		},
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Counter" },
+		},
+		{ id = "Action.Counter", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	local activeController: ActionController = controller :: ActionController
+	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
+		if event.actionId == "Action.Dodge" then
+			table.insert(dodgeEvents, "Started")
+		end
+	end)
+	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
+		if event.actionId == "Action.Dodge" then
+			table.insert(dodgeEvents, "Interrupted")
+		end
+	end)
+	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
+	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 2 })
+	expect(counterRequest).toEqual({ accepted = true, sequenceId = 3 })
+	task.wait()
+	task.wait()
+	expect(dodgeEvents).toEqual({ "Started", "Interrupted" })
+end)
+
 it("rebuilds the conflict plan after a decision hook ends its own Action", function()
 	local controller: ActionController? = nil
 	local decisions: { number } = {}
