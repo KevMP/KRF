@@ -11,7 +11,6 @@ type OnUpdate = ActionTypes.OnUpdate
 type UpdateRecord = {
 	actor: Actor,
 	actionId: string,
-	sequenceId: number,
 	context: ActionExecutionContext,
 	callback: OnUpdate,
 	interrupt: (number, string) -> (boolean, string?),
@@ -23,13 +22,16 @@ type ControllerSnapshot = { key: ControllerKey, sequenceIds: { number } }
 local minimumIntervalSeconds: number = 0.05
 local updateFailureReason: string = "ActionUpdateFailed"
 local recordsByController: { [ControllerKey]: { [number]: UpdateRecord } } = {}
-local activeCount: number = 0
 local automaticSteppingEnabled: boolean = true
 local heartbeatConnection: RBXScriptConnection? = nil
 local accumulatedSeconds: number = 0
 local clockForTests: (() -> number)? = nil
 
 local ActionControllerUpdates = {}
+
+local function hasUpdateEligibleInstances(): boolean
+	return next(recordsByController) ~= nil
+end
 
 local function clock(): number
 	if clockForTests ~= nil then
@@ -83,7 +85,7 @@ local function step(): ()
 end
 
 local function heartbeat(deltaTime: number): ()
-	if activeCount == 0 or not math.isfinite(deltaTime) or deltaTime <= 0 then
+	if not hasUpdateEligibleInstances() or not math.isfinite(deltaTime) or deltaTime <= 0 then
 		return
 	end
 	accumulatedSeconds += deltaTime
@@ -95,7 +97,8 @@ local function heartbeat(deltaTime: number): ()
 end
 
 local function reconcileConnection(): ()
-	if automaticSteppingEnabled and activeCount > 0 then
+	local hasEligibleInstances: boolean = hasUpdateEligibleInstances()
+	if automaticSteppingEnabled and hasEligibleInstances then
 		if heartbeatConnection == nil then
 			accumulatedSeconds = 0
 			heartbeatConnection = RunService.Heartbeat:Connect(heartbeat)
@@ -106,7 +109,7 @@ local function reconcileConnection(): ()
 		heartbeatConnection:Disconnect()
 		heartbeatConnection = nil
 		accumulatedSeconds = 0
-	elseif activeCount == 0 then
+	elseif not hasEligibleInstances then
 		accumulatedSeconds = 0
 	end
 end
@@ -127,23 +130,18 @@ function ActionControllerUpdates.Register(
 	records[sequenceId] = {
 		actor = actor,
 		actionId = actionId,
-		sequenceId = sequenceId,
 		context = context,
 		callback = callback,
 		interrupt = interrupt,
 		lastUpdateAt = clock(),
 	}
-	activeCount += 1
 	reconcileConnection()
 end
 
 function ActionControllerUpdates.Remove(key: ControllerKey, sequenceId: number): ()
-	local records: { [number]: UpdateRecord }? = recordsByController[key]
-	if records == nil or records[sequenceId] == nil then
-		return
-	end
+	local records: { [number]: UpdateRecord } = assert(recordsByController[key], "ActionUpdateNotRegistered")
+	assert(records[sequenceId] ~= nil, "ActionUpdateNotRegistered")
 	records[sequenceId] = nil
-	activeCount -= 1
 	if next(records) == nil then
 		recordsByController[key] = nil
 	end
@@ -168,7 +166,7 @@ function ActionControllerUpdates._isSchedulerConnectedForTests(): boolean
 end
 
 function ActionControllerUpdates._hasUpdateEligibleInstancesForTests(): boolean
-	return activeCount > 0
+	return hasUpdateEligibleInstances()
 end
 
 return ActionControllerUpdates
