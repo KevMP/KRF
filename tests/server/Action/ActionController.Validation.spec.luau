@@ -21,9 +21,15 @@ beforeEach(function()
 	ActionRegistry._resetForTests()
 	controllers = {}
 	local loaded: boolean, reason: string? = ActionRegistry.Load({
-		{ id = "Action.A", visibility = "ServerOnly" },
-		{ id = "Action.B", visibility = "ServerOnly" },
-		{ id = "Action.C", visibility = "ServerOnly" },
+		function()
+			return { id = "Action.A", visibility = "ServerOnly" }
+		end,
+		function()
+			return { id = "Action.B", visibility = "ServerOnly" }
+		end,
+		function()
+			return { id = "Action.C", visibility = "ServerOnly" }
+		end,
 	}, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()

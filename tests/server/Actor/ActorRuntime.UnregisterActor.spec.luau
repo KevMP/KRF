@@ -2,7 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local it = JestGlobals.it
+local it: (string, () -> ()) -> () = JestGlobals.it :: any
 local expect = JestGlobals.expect
 local beforeEach = JestGlobals.beforeEach
 local afterEach = JestGlobals.afterEach
@@ -25,10 +25,12 @@ beforeEach(function()
 	local started: boolean, failure = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+	return nil
 end)
 
 afterEach(function()
 	Server._ResetForTests()
+	return nil
 end)
 
 it("UnregisterActor unbinds after controller cleanup (model destroyed during DetachAllControllers)", function()

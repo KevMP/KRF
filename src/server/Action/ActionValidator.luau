@@ -14,6 +14,7 @@ local SUPPORTED_FIELDS: { [string]: boolean } = {
 	interruptibleBy = true,
 	onCanStart = true,
 	onStart = true,
+	onStopRequested = true,
 	onUpdate = true,
 	onEnd = true,
 	onInterrupt = true,
@@ -24,6 +25,7 @@ table.freeze(SUPPORTED_FIELDS)
 local HOOK_FIELDS: { string } = {
 	"onCanStart",
 	"onStart",
+	"onStopRequested",
 	"onUpdate",
 	"onEnd",
 	"onInterrupt",
@@ -32,6 +34,27 @@ local HOOK_FIELDS: { string } = {
 table.freeze(HOOK_FIELDS)
 
 local ActionValidator = {}
+
+function ActionValidator.ValidateExecutionDefinition(definition: any, actionId: string): (boolean, string?)
+	if
+		type(definition) ~= "table"
+		or definition.id ~= actionId
+		or (definition.visibility ~= "ServerOnly" and definition.visibility ~= "ClientVisible")
+	then
+		return false, "ActionFactoryInvalidResult"
+	end
+	for field in definition do
+		if type(field) ~= "string" or not SUPPORTED_FIELDS[field] then
+			return false, "ActionFactoryInvalidResult"
+		end
+	end
+	for _, field: string in HOOK_FIELDS do
+		if definition[field] ~= nil and type(definition[field]) ~= "function" then
+			return false, "ActionFactoryInvalidResult"
+		end
+	end
+	return true, nil
+end
 
 local function ValidateIdentity(definition: any): (boolean, string?)
 	if definition == nil then

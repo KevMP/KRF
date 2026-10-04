@@ -10,7 +10,7 @@ local COVERAGE_CHUNK_SIZE = 8000
 
 local processServiceExists, ProcessService = pcall(function()
 	-- selene: allow(incorrect_standard_library_use)
-	return game:GetService("ProcessService")
+	return game:GetService("ProcessService" :: any)
 end)
 
 coverage.instrument({

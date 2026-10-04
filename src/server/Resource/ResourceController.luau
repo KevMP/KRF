@@ -279,8 +279,9 @@ function ResourceController.new(actor: Actor): ResourceController
 		regeneratingActorsByController[controller] = nil
 		UpdateHeartbeatConnection()
 
-		if propertyConnection ~= nil then
-			propertyConnection:Disconnect()
+		local connection = propertyConnection
+		if connection ~= nil then
+			connection:Disconnect()
 			propertyConnection = nil
 		end
 
@@ -293,7 +294,8 @@ function ResourceController.new(actor: Actor): ResourceController
 	controller.OnResourceChanged = SignalModule.wrapEvent(OnResourceChangedSignal)
 
 	if propertyController ~= nil then
-		local resolvedPropertyChangedEvent: any = (propertyController :: any).OnResolvedPropertyChanged
+		local resolvedPropertyChangedEvent: SignalTypes.Event<Actor, string, number?, number>? =
+			propertyController.OnResolvedPropertyChanged
 		if resolvedPropertyChangedEvent ~= nil then
 			propertyConnection = resolvedPropertyChangedEvent:Connect(
 				function(_actor: Actor, propertyName: string, _oldValue: number?, _newValue: number)

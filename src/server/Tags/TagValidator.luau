@@ -6,24 +6,27 @@ export type TagDefinition = RegistryTypes.TagDefinition
 export type TagVisibility = RegistryTypes.TagVisibility
 export type PropertyModifier = RegistryTypes.PropertyModifier
 
-local VALID_DUPLICATE_BEHAVIORS = table.freeze({
+local VALID_DUPLICATE_BEHAVIORS: { [string]: boolean } = {
 	Stack = true,
 	Refresh = true,
 	Ignore = true,
-})
+}
+table.freeze(VALID_DUPLICATE_BEHAVIORS :: any)
 
-local VALID_VISIBILITIES = table.freeze({
+local VALID_VISIBILITIES: { [string]: boolean } = {
 	ServerOnly = true,
 	ClientVisible = true,
-})
+}
+table.freeze(VALID_VISIBILITIES :: any)
 
-local VALID_PROPERTY_MODIFIER_KEYS: { [string]: boolean } = table.freeze({
+local VALID_PROPERTY_MODIFIER_KEYS: { [string]: boolean } = {
 	set = true,
 	add = true,
 	multiply = true,
 	min = true,
 	max = true,
-})
+}
+table.freeze(VALID_PROPERTY_MODIFIER_KEYS :: any)
 
 local TagValidator = {}
 

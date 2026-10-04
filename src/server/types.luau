@@ -12,7 +12,7 @@ export type ServerStartConfig = {
 	controllers: { ControllerTypes.ControllerDef }?,
 	tags: { TagTypes.TagDefinition }?,
 	resources: { ResourceTypes.ResourceDefinition }?,
-	actions: { ActionTypes.ActionDefinition }?,
+	actions: { ActionTypes.ActionFactory }?,
 }
 
 export type StartupFailure = {

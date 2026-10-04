@@ -1,0 +1,457 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+
+local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
+local it: any = JestGlobals.it
+local expect: any = JestGlobals.expect
+local beforeEach: any = JestGlobals.beforeEach
+local afterEach: any = JestGlobals.afterEach
+
+local ActionTypes = require(KRF.server.Action.types)
+local ActorTypes = require(KRF.server.Actor.types)
+type ActionDefinition = ActionTypes.ActionDefinition
+type Actor = ActorTypes.Actor
+
+local ActionRegistry = require(KRF.server.Action.ActionRegistry)
+local ActionControllerModule = require(KRF.server.Action.ActionController)
+local ActorEntity = require(KRF.server.Actor.ActorEntity)
+
+local controllers: { any } = {}
+
+beforeEach(function()
+	ActionRegistry._resetForTests()
+	controllers = {}
+end)
+
+afterEach(function()
+	for _, controller: any in controllers do
+		controller:Destroy()
+	end
+	ActionRegistry._resetForTests()
+end)
+
+local function loadActions(definitions: { ActionDefinition }): ()
+	local factories: { ActionTypes.ActionFactory } = {}
+	for _, definition: ActionDefinition in definitions do
+		local source: ActionDefinition = definition
+		table.insert(factories, function(): ActionDefinition
+			return table.clone(source)
+		end)
+	end
+	local loaded: boolean, reason: string? = ActionRegistry.Load(factories, {}, {})
+	expect(loaded).toBe(true)
+	expect(reason).toBeNil()
+end
+
+local function createController(): (Actor, any)
+	local actor: Actor = ActorEntity.new()
+	actor.enabled = true
+	local controller: any = ActionControllerModule.new(actor)
+	table.insert(controllers, controller)
+	return actor, controller
+end
+
+it("accepts a granted Action and allocates one positive sequence id", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
+	local _actor: Actor, controller: any = createController()
+	local result: any = controller:RequestAction("Action.Dodge")
+	expect(result.accepted).toBe(true)
+	expect(type(result.sequenceId)).toBe("number")
+	expect(result.sequenceId > 0).toBe(true)
+	expect(result.reason).toBeNil()
+end)
+
+it("rejects request factory errors, yields, and invalid results without consuming ids", function()
+	local mode: string = "startup"
+	local factory = function(): ActionDefinition
+		if mode == "error" then
+			error("factory boom")
+		elseif mode == "yield" then
+			task.wait()
+		elseif mode == "invalid" then
+			return { id = "Action.Other", visibility = "ServerOnly" }
+		end
+		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	local _actor: Actor, controller: any = createController()
+	for _, case in
+		{
+			{ "error", "ActionFactoryFailed" },
+			{ "yield", "ActionFactoryYielded" },
+			{ "invalid", "ActionFactoryInvalidResult" },
+		}
+	do
+		mode = case[1]
+		expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = false, reason = case[2] })
+	end
+	mode = "valid"
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
+it("uses startup metadata even if a later factory result changes grant fields", function()
+	local startup: boolean = true
+	local started: number = 0
+	local factory = function(): ActionDefinition
+		if startup then
+			return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
+		end
+		return {
+			id = "Action.Dodge",
+			visibility = "ClientVisible",
+			autoGrant = false,
+			requiredTags = { "Tag.Unknown" },
+			onStart = function()
+				started += 1
+			end,
+		}
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	startup = false
+	local _actor: Actor, controller: any = createController()
+	expect(controller:IsActionGranted("Action.Dodge")).toBe(true)
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+	expect(started).toBe(1)
+	expect((ActionRegistry.Get("Action.Dodge") :: ActionTypes.LoadedActionDefinition).visibility).toBe("ServerOnly")
+end)
+
+it("shares one request's lexical state between onCanStart and onStart", function()
+	local observed: { number } = {}
+	local nextValue: number = 0
+	local factory = function(): ActionDefinition
+		nextValue += 1
+		local value: number = nextValue
+		return {
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				value *= 10
+				return true, nil
+			end,
+			onStart = function()
+				table.insert(observed, value)
+			end,
+		}
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
+	expect(observed).toEqual({ 20, 30 })
+end)
+
+it("snapshots callbacks before onCanStart can mutate the factory result", function()
+	local calls: { string } = {}
+	local current: ActionDefinition? = nil
+	local factory = function(): ActionDefinition
+		local definition: ActionDefinition = {
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				local mutable: ActionDefinition = current :: ActionDefinition
+				mutable.onStart = function()
+					table.insert(calls, "mutated start")
+				end
+				return true, nil
+			end,
+			onStart = function()
+				table.insert(calls, "original start")
+			end,
+		}
+		current = definition
+		return definition
+	end
+	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
+	expect(calls).toEqual({ "original start" })
+end)
+
+it("rejects invalid, unknown, and ungranted ids without consuming a sequence id", function()
+	loadActions({
+		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
+		{ id = "Action.Roll", visibility = "ServerOnly" },
+	})
+	local _actor: Actor, controller: any = createController()
+	for _, actionId: any in { 12, {}, "", "Action.Unknown", "Action.Roll" } :: { any } do
+		local result: any = controller:RequestAction(actionId)
+		expect(result.accepted).toBe(false)
+		expect(type(result.reason)).toBe("string")
+		expect(result.reason).never.toBe("")
+		expect(result.sequenceId).toBeNil()
+	end
+	local accepted: any = controller:RequestAction("Action.Dodge")
+	expect(accepted).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
+it("returns distinct stable reasons for invalid, unknown, and ungranted Action ids", function()
+	loadActions({
+		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
+		{ id = "Action.Roll", visibility = "ServerOnly" },
+	})
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction(12).reason).toBe("ActionIdMustBeString")
+	expect(controller:RequestAction("").reason).toBe("ActionIdCannotBeEmpty")
+	expect(controller:RequestAction("Action.Unknown").reason).toBe("UnknownActionId:Action.Unknown")
+	expect(controller:RequestAction("Action.Roll").reason).toBe("ActionNotGranted")
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
+it("rejects requests while the Actor is disabled or the controller is destroyed", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
+	local actor: Actor, controller: any = createController()
+	actor.enabled = false
+	local disabled: any = controller:RequestAction("Action.Dodge")
+	expect(disabled.accepted).toBe(false)
+	expect(type(disabled.reason)).toBe("string")
+	actor.enabled = true
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+	controller:Destroy()
+	local destroyed: any = controller:RequestAction("Action.Dodge")
+	expect(destroyed.accepted).toBe(false)
+	expect(destroyed.reason).toBe("ActionControllerDestroyed")
+end)
+
+it("allocates sequence ids in commit order and allows concurrent same-id instances", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
+	local _actor: Actor, controller: any = createController()
+	local first: any = controller:RequestAction("Action.Dodge")
+	local second: any = controller:RequestAction("Action.Dodge")
+	expect(first).toEqual({ accepted = true, sequenceId = 1 })
+	expect(second).toEqual({ accepted = true, sequenceId = 2 })
+	expect((controller:EndAction(first.sequenceId))).toBe(true)
+	expect((controller:EndAction(second.sequenceId))).toBe(true)
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
+end)
+
+it("scopes sequence ids to each Actor's controller", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
+	local _firstActor: Actor, firstController: any = createController()
+	local _secondActor: Actor, secondController: any = createController()
+	expect(firstController:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+	expect(secondController:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
+it("passes a read-only pre-accept context with the original opaque parameters", function()
+	local parameters: { [any]: any } = {}
+	parameters.self = parameters
+	local actor: Actor? = nil
+	local observed: any = nil
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(context: any): (boolean, string?)
+				observed = context
+				return true, nil
+			end,
+		},
+	})
+	local controller: any
+	actor, controller = createController()
+	expect(controller:RequestAction("Action.Dodge", parameters).accepted).toBe(true)
+	expect(observed.actor).toBe(actor)
+	expect(observed.actionId).toBe("Action.Dodge")
+	expect(observed.parameters).toBe(parameters)
+	expect(table.isfrozen(observed)).toBe(true)
+	expect(rawget(observed, "sequenceId")).toBeNil()
+	expect(function()
+		observed.actionId = "Action.Other"
+	end).toThrow()
+end)
+
+it("preserves a custom onCanStart rejection and consumes no id", function()
+	local allow: boolean = false
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				if not allow then
+					return false, "GameCooldown"
+				end
+				return true, nil
+			end,
+		},
+	})
+	local _actor: Actor, controller: any = createController()
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = false, reason = "GameCooldown" })
+	allow = true
+	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
+end)
+
+it("maps onCanStart false without a usable reason to one stable framework reason", function()
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				return false, nil
+			end,
+		},
+	})
+	local _actor: Actor, controller: any = createController()
+	local first: any = controller:RequestAction("Action.Dodge")
+	local second: any = controller:RequestAction("Action.Dodge")
+	expect(first.accepted).toBe(false)
+	expect(type(first.reason)).toBe("string")
+	expect(first.reason).never.toBe("")
+	expect(second.reason).toBe(first.reason)
+end)
+
+it("rejects an onCanStart error or invalid result without activating an instance", function()
+	local invalidResult: any = function(): string
+		return "yes"
+	end
+	for _, callback: any in
+		{
+			function(): boolean
+				error("decision boom")
+			end,
+			invalidResult,
+		} :: { any }
+	do
+		loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, onCanStart = callback } })
+		local _actor: Actor, controller: any = createController()
+		local rejected: any = controller:RequestAction("Action.Dodge")
+		expect(rejected.accepted).toBe(false)
+		expect(type(rejected.reason)).toBe("string")
+		expect(rejected.sequenceId).toBeNil()
+		controller:Destroy()
+		ActionRegistry._resetForTests()
+	end
+end)
+
+it("rejects a yielding onCanStart without accepting or allocating an instance", function()
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				task.wait()
+				return true, nil
+			end,
+		},
+	})
+	local _actor: Actor, controller: any = createController()
+	local rejected: any = controller:RequestAction("Action.Dodge")
+	expect(rejected.accepted).toBe(false)
+	expect(type(rejected.reason)).toBe("string")
+	expect(rejected.sequenceId).toBeNil()
+end)
+
+it("revalidates a grant revoked by onCanStart before committing", function()
+	local controller: any = nil
+	local revoked: boolean = false
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			onCanStart = function(): (boolean, string?)
+				revoked = controller:SetGrants("Learned", {})
+				return true, nil
+			end,
+		},
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	expect(controller:SetGrants("Learned", { "Action.Dodge" })).toBe(true)
+	local rejected: any = controller:RequestAction("Action.Dodge")
+	expect(revoked).toBe(true)
+	expect(rejected.accepted).toBe(false)
+	expect(type(rejected.reason)).toBe("string")
+	expect(controller:IsActionGranted("Action.Dodge")).toBe(false)
+	expect(rejected.sequenceId).toBeNil()
+end)
+
+it("revalidates Actor and controller availability after onCanStart", function()
+	for _, invalidate: string in { "disable", "destroy" } do
+		local actor: Actor? = nil
+		local controller: any = nil
+		loadActions({
+			{
+				id = "Action.Dodge",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				onCanStart = function(): (boolean, string?)
+					if invalidate == "disable" then
+						(actor :: Actor).enabled = false
+					else
+						controller:Destroy()
+					end
+					return true, nil
+				end,
+			},
+		})
+		actor, controller = createController()
+		local rejected: any = controller:RequestAction("Action.Dodge")
+		expect(rejected.accepted).toBe(false)
+		expect(rejected.sequenceId).toBeNil()
+		ActionRegistry._resetForTests()
+	end
+end)
+
+it("assigns nested requests ids in actual commit order", function()
+	local controller: any = nil
+	local nested: any = nil
+	local entering: boolean = false
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onCanStart = function(): (boolean, string?)
+				if not entering then
+					entering = true
+					nested = controller:RequestAction("Action.Dodge")
+				end
+				return true, nil
+			end,
+		},
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	local outer: any = controller:RequestAction("Action.Dodge")
+	expect(nested).toEqual({ accepted = true, sequenceId = 1 })
+	expect(outer).toEqual({ accepted = true, sequenceId = 2 })
+end)
+
+it("does not emit Started for a rejected request", function()
+	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly" } })
+	local _actor: Actor, controller: any = createController()
+	local startedCount: number = 0
+	controller.OnActionStarted:Connect(function()
+		startedCount += 1
+	end)
+	expect(controller:RequestAction("Action.Dodge").accepted).toBe(false)
+	task.wait()
+	task.wait()
+	expect(startedCount).toBe(0)
+end)
+
+it("keeps an accepted instance active after its grant is revoked", function()
+	local context: any = nil
+	loadActions({
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			onStart = function(value: any)
+				context = value
+			end,
+		},
+	})
+	local _actor: Actor, controller: any = createController()
+	expect((controller:SetGrants("Learned", { "Action.Dodge" }))).toBe(true)
+	local result: any = controller:RequestAction("Action.Dodge")
+	expect(result.accepted).toBe(true)
+	expect((controller:SetGrants("Learned", {}))).toBe(true)
+	expect(context:IsActive()).toBe(true)
+	expect((controller:EndAction(result.sequenceId))).toBe(true)
+end)

@@ -10,7 +10,6 @@ local TagRegistry = require(script.Tags.TagRegistry)
 local TagValidator = require(script.Tags.TagValidator)
 local ResourceRegistry = require(script.Resource.ResourceRegistry)
 local ActionRegistry = require(script.Action.ActionRegistry)
-local ActionValidator = require(script.Action.ActionValidator)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
 local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
@@ -23,7 +22,8 @@ export type StartupFailure = ServerStartTypes.StartupFailure
 type ControllerDef = ControllerTypes.ControllerDef
 type TagDefinition = TagTypes.TagDefinition
 type ResourceDefinition = ResourceTypes.ResourceDefinition
-type ActionDefinition = ActionTypes.ActionDefinition
+type ActionFactory = ActionTypes.ActionFactory
+type PreparedActionCatalog = ActionTypes.PreparedActionCatalog
 
 local Server = {}
 local initAttempted: boolean = false
@@ -60,7 +60,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 	local tags: { TagDefinition } = config.tags or {}
 	local resources: { ResourceDefinition } = config.resources or {}
-	local actions: { ActionDefinition } = if config.actions ~= nil then config.actions else {}
+	local actions: { ActionFactory } = if config.actions ~= nil then config.actions else {}
 
 	-- Validate the other catalogs before publishing any of them. Their Load calls
 	-- run the same validators and do not yield, so publication cannot fail later.
@@ -87,9 +87,9 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		preparedResourceIds[definition.id] = true
 	end
 
-	local actionsValid: boolean, actionReason: string? =
-		ActionValidator.ValidateCatalog(actions, preparedTagIds, preparedResourceIds)
-	if not actionsValid then
+	local preparedActions: PreparedActionCatalog?, actionReason: string? =
+		ActionRegistry.Prepare(actions, preparedTagIds, preparedResourceIds)
+	if preparedActions == nil then
 		return false, { system = "Action", reason = actionReason :: string }
 	end
 
@@ -108,7 +108,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Resource", reason = reason :: string }
 	end
 
-	loaded, reason = ActionRegistry.Load(actions, preparedTagIds, preparedResourceIds)
+	loaded, reason = ActionRegistry.Publish(preparedActions :: PreparedActionCatalog)
 	if not loaded then
 		return false, { system = "Action", reason = reason :: string }
 	end

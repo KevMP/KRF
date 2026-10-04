@@ -22,13 +22,21 @@ local KRF = ReplicatedStorage.Packages.KRF
 local Server = require(KRF.server)
 local ActionTypes = require(KRF.server.Action.types)
 
-local definitions: { ActionTypes.ActionDefinition } = {
-	{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
-	{ id = "Action.Fireball", visibility = "ServerOnly" },
-	{ id = "Action.WaterDragon", visibility = "ServerOnly" },
-	{ id = "Action.Substitution", visibility = "ServerOnly" },
+local actions: { ActionTypes.ActionFactory } = {
+	function(): ActionTypes.ActionDefinition
+		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
+	end,
+	function(): ActionTypes.ActionDefinition
+		return { id = "Action.Fireball", visibility = "ServerOnly" }
+	end,
+	function(): ActionTypes.ActionDefinition
+		return { id = "Action.WaterDragon", visibility = "ServerOnly" }
+	end,
+	function(): ActionTypes.ActionDefinition
+		return { id = "Action.Substitution", visibility = "ServerOnly" }
+	end,
 }
-local started: boolean, failure: Server.StartupFailure? = Server.Init({ actions = definitions })
+local started: boolean, failure: Server.StartupFailure? = Server.Init({ actions = actions })
 if not started then
 	assert(failure ~= nil)
 	error(`KRF startup failed: {failure.system}: {failure.reason}`)
@@ -86,4 +94,5 @@ Grants are runtime state. Game persistence code can restore ownership by calling
 
 - [ActionController API](/api/Action/action-controller)
 - [Action catalog](./action-registry)
+- [Run Actions](./action-lifecycle)
 - [Initializing KRF](../initializing-krf)

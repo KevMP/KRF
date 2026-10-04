@@ -177,7 +177,11 @@ it("KRF.Server.Init validates and publishes Tags, Resources, and Actions as one 
 	local started: boolean, failure: StartupFailure? = Init({
 		tags = { createTagDefinition("Game.Grounded") },
 		resources = { createResourceDefinition("Game.Stamina") },
-		actions = { action },
+		actions = {
+			function()
+				return action
+			end,
+		},
 	})
 
 	expect(started).toBe(true)
@@ -196,7 +200,11 @@ it(
 			controllers = { createControllerDefinition("Game.ValidController", nil) },
 			tags = { createTagDefinition("Game.ValidTag") },
 			resources = { createResourceDefinition("Game.ValidResource") },
-			actions = { invalidAction },
+			actions = {
+				function()
+					return invalidAction
+				end,
+			},
 		})
 
 		expect(started).toBe(false)
@@ -212,7 +220,12 @@ it(
 it("KRF.Server.Init rejects unknown Action Tag, Resource, and Action references before publication", function()
 	local unknownTagAction: ActionDefinition = createActionDefinition("Action.UnknownTag")
 	unknownTagAction.requiredTags = { "Tag.Unknown" }
-	local unknownTagStarted: boolean, unknownTagFailure: StartupFailure? = Init({ actions = { unknownTagAction } })
+	local unknownTagStarted: boolean, unknownTagFailure: StartupFailure? =
+		Init({ actions = {
+			function()
+				return unknownTagAction
+			end,
+		} })
 	expect(unknownTagStarted).toBe(false)
 	expectFailure(unknownTagFailure, "Action", "ActionRequiredTagUnknown:Tag.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)
@@ -221,7 +234,11 @@ it("KRF.Server.Init rejects unknown Action Tag, Resource, and Action references 
 	local unknownResourceAction: ActionDefinition = createActionDefinition("Action.UnknownResource")
 	unknownResourceAction.costs = { ["Resource.Unknown"] = 1 }
 	local unknownResourceStarted: boolean, unknownResourceFailure: StartupFailure? =
-		Init({ actions = { unknownResourceAction } })
+		Init({ actions = {
+			function()
+				return unknownResourceAction
+			end,
+		} })
 	expect(unknownResourceStarted).toBe(false)
 	expectFailure(unknownResourceFailure, "Action", "ActionCostResourceUnknown:Resource.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)
@@ -230,7 +247,11 @@ it("KRF.Server.Init rejects unknown Action Tag, Resource, and Action references 
 	local unknownActionReference: ActionDefinition = createActionDefinition("Action.UnknownReference")
 	unknownActionReference.interruptibleBy = { "Action.Unknown" }
 	local unknownActionStarted: boolean, unknownActionFailure: StartupFailure? =
-		Init({ actions = { unknownActionReference } })
+		Init({ actions = {
+			function()
+				return unknownActionReference
+			end,
+		} })
 	expect(unknownActionStarted).toBe(false)
 	expectFailure(unknownActionFailure, "Action", "ActionInterruptibleByUnknown:Action.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)

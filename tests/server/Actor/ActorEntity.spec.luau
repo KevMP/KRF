@@ -2,7 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local it = JestGlobals.it
+local it: (string, () -> ()) -> () = JestGlobals.it :: any
 local expect = JestGlobals.expect
 
 local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)

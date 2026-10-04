@@ -314,6 +314,86 @@ it("Wait() supports multiple simultaneous waiters (all resume on next fire)", fu
 	expect(r2).toBe("go")
 end)
 
+it("one Wait() consumes only the first of several fires queued before its continuation runs", function()
+	local signal: Signal<string> = SignalModule.new()
+	local event: Event<string> = SignalModule.wrapEvent(signal)
+	local received: { string } = {}
+
+	task.spawn(function()
+		local first: string = event:Wait()
+		table.insert(received, first)
+		local second: string = event:Wait()
+		table.insert(received, second)
+	end)
+	pump(1)
+
+	signal:Fire("first")
+	signal:Fire("second")
+	pump(2)
+	expect(received).toEqual({ "first" })
+
+	signal:Fire("third")
+	pump(2)
+	expect(received).toEqual({ "first", "third" })
+	signal:Destroy()
+end)
+
+it("a queued Wait callback cannot resume the same waiter twice", function()
+	local signal: any = GoodSignal.new()
+	local received: { string } = {}
+	task.spawn(function()
+		local value: string = signal:Wait()
+		table.insert(received, value)
+	end)
+	pump(1)
+
+	-- Exercise two callbacks already queued for the same connection before its continuation runs.
+	local queuedCallback: any = signal._handlerListHead._fn
+	queuedCallback("first")
+	queuedCallback("second")
+	pump(2)
+	expect(received).toEqual({ "first" })
+end)
+
+it("a queued Wait callback ignores a waiter cancelled before delivery", function()
+	local signal: any = GoodSignal.new()
+	local waitingThread: thread? = nil
+	local resumed: boolean = false
+	task.spawn(function()
+		waitingThread = coroutine.running()
+		signal:Wait()
+		resumed = true
+	end)
+	pump(1)
+
+	local queuedCallback: any = signal._handlerListHead._fn
+	task.cancel(waitingThread :: thread)
+	expect(function()
+		queuedCallback("late")
+	end).never.toThrow()
+	pump(2)
+	expect(resumed).toBe(false)
+end)
+
+it("independent waiters each consume one value from the same fire", function()
+	local signal: Signal<string> = SignalModule.new()
+	local event: Event<string> = SignalModule.wrapEvent(signal)
+	local received: { string } = {}
+
+	for _ = 1, 3 do
+		task.spawn(function()
+			local value: string = event:Wait()
+			table.insert(received, value)
+		end)
+	end
+	pump(1)
+	signal:Fire("first")
+	signal:Fire("second")
+	pump(2)
+	expect(received).toEqual({ "first", "first", "first" })
+	signal:Destroy()
+end)
+
 it("Yield-safe: a yielding handler does not prevent other handlers from running", function()
 	local signal: Signal<> = SignalModule.new()
 	local event: Event<> = SignalModule.wrapEvent(signal)

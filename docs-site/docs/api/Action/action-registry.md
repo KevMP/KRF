@@ -24,11 +24,11 @@ local ActionRegistry = require(ReplicatedStorage.Packages.KRF.server.Action.Acti
 
 ### `Get(actionId: string) -> LoadedActionDefinition?` {#get}
 
-Returns the frozen normalized definition, or `nil` for an unknown id.
+Returns frozen normalized static metadata, or `nil` for an unknown id. Callback fields are not part of `LoadedActionDefinition`.
 
 ### `GetAll() -> {LoadedActionDefinition}` {#get-all}
 
-Returns the frozen definition array in declaration order.
+Returns the frozen metadata array in declaration order.
 
 ### `GetAllById() -> {[string]: LoadedActionDefinition}` {#get-all-by-id}
 
