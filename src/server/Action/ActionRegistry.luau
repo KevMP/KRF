@@ -5,12 +5,12 @@ local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
 
 type ActionDefinition = ActionTypes.ActionDefinition
 type ActionFactory = ActionTypes.ActionFactory
-type ActionImplementation = ActionTypes.ActionImplementation
-type ActionRegistry = ActionTypes.ActionRegistry
+type InternalActionImplementation = ActionTypes.InternalActionImplementation
+type InternalActionRegistry = ActionTypes.InternalActionRegistry
 type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 type PreparedActionCatalog = ActionTypes.PreparedActionCatalog
 
-local ActionRegistry = {} :: ActionRegistry
+local ActionRegistry = {} :: InternalActionRegistry
 local isLoaded: boolean = false
 local definitionsById: { [string]: LoadedActionDefinition } = {}
 local orderedDefinitions: { LoadedActionDefinition } = {}
@@ -70,23 +70,22 @@ function ActionRegistry.Prepare(
 	local stagedOrderedDefinitions: { LoadedActionDefinition } = {}
 	local stagedFactoriesById: { [string]: ActionFactory } = {}
 	for index: number, definition: ActionDefinition in definitions do
-		local loadedDefinition: LoadedActionDefinition = table.freeze({
+		local loadedDefinition: LoadedActionDefinition = {
 			id = definition.id,
 			visibility = definition.visibility,
 			autoGrant = if definition.autoGrant ~= nil then definition.autoGrant else false,
-			requiredTags = table.freeze(table.clone(definition.requiredTags or {})),
-			blockedTags = table.freeze(table.clone(definition.blockedTags or {})),
-			costs = table.freeze(table.clone(definition.costs or {})),
-			locks = table.freeze(table.clone(definition.locks or {})),
-			interruptibleBy = table.freeze(table.clone(definition.interruptibleBy or {})),
-			onCanStart = definition.onCanStart,
-			onStart = definition.onStart,
-			onStopRequested = definition.onStopRequested,
-			onUpdate = definition.onUpdate,
-			onEnd = definition.onEnd,
-			onInterrupt = definition.onInterrupt,
-			canBeInterruptedBy = definition.canBeInterruptedBy,
-		}) :: LoadedActionDefinition
+			requiredTags = table.clone(definition.requiredTags or {}),
+			blockedTags = table.clone(definition.blockedTags or {}),
+			costs = table.clone(definition.costs or {}),
+			locks = table.clone(definition.locks or {}),
+			interruptibleBy = table.clone(definition.interruptibleBy or {}),
+		}
+		table.freeze(loadedDefinition.requiredTags)
+		table.freeze(loadedDefinition.blockedTags)
+		table.freeze(loadedDefinition.costs)
+		table.freeze(loadedDefinition.locks)
+		table.freeze(loadedDefinition.interruptibleBy)
+		table.freeze(loadedDefinition)
 		stagedDefinitionsById[loadedDefinition.id] = loadedDefinition
 		stagedFactoriesById[loadedDefinition.id] = factories[index]
 		table.insert(stagedOrderedDefinitions, loadedDefinition)
@@ -123,7 +122,7 @@ function ActionRegistry.Load(
 	return ActionRegistry.Publish(prepared)
 end
 
-function ActionRegistry.CreateExecution(actionId: string): (ActionImplementation?, string?)
+function ActionRegistry.CreateExecution(actionId: string): (InternalActionImplementation?, string?)
 	local factory: ActionFactory? = factoriesById[actionId]
 	if factory == nil then
 		return nil, "UnknownActionId:" .. actionId
@@ -144,7 +143,7 @@ function ActionRegistry.CreateExecution(actionId: string): (ActionImplementation
 		return nil, "ActionFactoryInvalidResult"
 	end
 	local definition: ActionDefinition = result :: ActionDefinition
-	local implementation: ActionImplementation = table.freeze({
+	local implementation: InternalActionImplementation = table.freeze({
 		onCanStart = definition.onCanStart,
 		onStart = definition.onStart,
 		onStopRequested = definition.onStopRequested,
@@ -152,7 +151,7 @@ function ActionRegistry.CreateExecution(actionId: string): (ActionImplementation
 		onEnd = definition.onEnd,
 		onInterrupt = definition.onInterrupt,
 		canBeInterruptedBy = definition.canBeInterruptedBy,
-	}) :: ActionImplementation
+	}) :: InternalActionImplementation
 	return implementation, nil
 end
 

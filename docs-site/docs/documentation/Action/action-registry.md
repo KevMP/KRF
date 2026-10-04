@@ -4,13 +4,13 @@ sidebar_position: 1
 
 # Action catalog
 
-`ActionRegistry` owns the immutable server catalog of Action definitions. Supply Action factories in `actions` to `Server.Init` alongside Tags and Resources; game code reads the catalog through the registry.
+`ActionRegistry` owns the immutable server catalog of Action metadata. Supply Action factories in `actions` to `Server.Init` alongside Tags and Resources; game code reads the catalog through the registry.
 
 This surface stores static metadata only. Registration itself does not grant, activate, or execute an Action. The actor-scoped [`ActionController`](./action-grants) manages grant state from the loaded `autoGrant` baseline and explicit sources. Granting an Action does not execute hooks, acquire locks, spend Resources, or replicate Action state.
 
 ## Definition fields
 
-Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.types` when typing authored and loaded definitions.
+Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.types` when typing authored and loaded definitions. `LoadedActionDefinition` contains only static metadata; callbacks are not available from registry reads.
 
 | Field | Contract |
 | --- | --- |
@@ -50,14 +50,14 @@ local ActionTypes = require(KRF.server.Action.types)
 local actions: { ActionTypes.ActionFactory } = {
 	function(): ActionTypes.ActionDefinition
 		return {
-		id = "Action.Dodge",
-		visibility = "ClientVisible",
-		autoGrant = true,
-		requiredTags = { "Status.Grounded" },
-		blockedTags = { "Status.Stunned" },
-		costs = { ["Resource.Stamina"] = 15 },
-		locks = { "Locomotion" },
-		interruptibleBy = { "Action.Roll" },
+			id = "Action.Dodge",
+			visibility = "ClientVisible",
+			autoGrant = true,
+			requiredTags = { "Status.Grounded" },
+			blockedTags = { "Status.Stunned" },
+			costs = { ["Resource.Stamina"] = 15 },
+			locks = { "Locomotion" },
+			interruptibleBy = { "Action.Roll" },
 		}
 	end,
 	function(): ActionTypes.ActionDefinition
@@ -87,7 +87,7 @@ end
 
 Validation calls factories without yielding, then checks catalog shape and unique ids before validating definitions in declaration order. A factory error or yield fails startup. Field checks use a fixed order; Resource cost keys and unsupported field names are checked alphabetically. Reference validity does not depend on declaration order.
 
-After successful startup, `GetAll()` preserves declaration order, `GetAllById()` provides keyed lookup, and `Get(id)` returns a definition or `nil`. These are startup snapshots, not per-activation callback instances. The definitions, nested collections, and catalog read tables are frozen. Loading copies authored data, so later edits to source tables cannot change the catalog.
+After successful startup, `GetAll()` preserves declaration order, `GetAllById()` provides keyed lookup, and `Get(id)` returns static metadata or `nil`. The metadata, nested collections, and catalog read tables are frozen. Loading copies authored data, so later edits to source tables cannot change the catalog.
 
 Omitting `actions` loads an empty catalog with `IsLoaded() == true`. Before publication, queries return empty frozen collections or `nil`, and `IsLoaded()` is `false`.
 

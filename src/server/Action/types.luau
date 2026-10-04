@@ -52,6 +52,14 @@ export type ActionController = {
 	OnActionInterrupted: SignalTypes.Event<ActionInterruptedEvent>,
 }
 
+export type OnCanStart = (ActionStartContext) -> (boolean, string?)
+export type OnStart = (ActionExecutionContext) -> ()
+export type OnStopRequested = (ActionExecutionContext, ActionStopRequest) -> ()
+export type OnUpdate = (...any) -> ()
+export type OnEnd = (ActionExecutionContext) -> ()
+export type OnInterrupt = (ActionExecutionContext, string) -> ()
+export type CanBeInterruptedBy = (...any) -> boolean
+
 export type ActionDefinition = {
 	id: string,
 	visibility: ActionVisibility,
@@ -61,34 +69,36 @@ export type ActionDefinition = {
 	costs: { [string]: number }?,
 	locks: { string }?,
 	interruptibleBy: { string }?,
-	onCanStart: ((ActionStartContext) -> (boolean, string?))?,
-	onStart: ((ActionExecutionContext) -> ())?,
-	onStopRequested: ((ActionExecutionContext, ActionStopRequest) -> ())?,
-	onUpdate: ((...any) -> ())?,
-	onEnd: ((ActionExecutionContext) -> ())?,
-	onInterrupt: ((ActionExecutionContext, string) -> ())?,
-	canBeInterruptedBy: ((...any) -> boolean)?,
+	onCanStart: OnCanStart?,
+	onStart: OnStart?,
+	onStopRequested: OnStopRequested?,
+	onUpdate: OnUpdate?,
+	onEnd: OnEnd?,
+	onInterrupt: OnInterrupt?,
+	canBeInterruptedBy: CanBeInterruptedBy?,
 }
 
 export type ActionFactory = () -> ActionDefinition
 
-export type ActionImplementation = {
-	onCanStart: ((ActionStartContext) -> (boolean, string?))?,
-	onStart: ((ActionExecutionContext) -> ())?,
-	onStopRequested: ((ActionExecutionContext, ActionStopRequest) -> ())?,
-	onUpdate: ((...any) -> ())?,
-	onEnd: ((ActionExecutionContext) -> ())?,
-	onInterrupt: ((ActionExecutionContext, string) -> ())?,
-	canBeInterruptedBy: ((...any) -> boolean)?,
+export type InternalActionImplementation = {
+	onCanStart: OnCanStart?,
+	onStart: OnStart?,
+	onStopRequested: OnStopRequested?,
+	onUpdate: OnUpdate?,
+	onEnd: OnEnd?,
+	onInterrupt: OnInterrupt?,
+	canBeInterruptedBy: CanBeInterruptedBy?,
 }
 
-export type LoadedActionDefinition = ActionDefinition & {
-	autoGrant: boolean,
-	requiredTags: { string },
-	blockedTags: { string },
-	costs: { [string]: number },
-	locks: { string },
-	interruptibleBy: { string },
+export type LoadedActionDefinition = {
+	read id: string,
+	read visibility: ActionVisibility,
+	read autoGrant: boolean,
+	read requiredTags: { string },
+	read blockedTags: { string },
+	read costs: { [string]: number },
+	read locks: { string },
+	read interruptibleBy: { string },
 }
 
 export type PreparedActionCatalog = {
@@ -98,22 +108,25 @@ export type PreparedActionCatalog = {
 }
 
 export type ActionRegistry = {
+	Get: (actionId: string) -> LoadedActionDefinition?,
+	GetAll: () -> { LoadedActionDefinition },
+	GetAllById: () -> { [string]: LoadedActionDefinition },
+	IsLoaded: () -> boolean,
+}
+
+export type InternalActionRegistry = ActionRegistry & {
 	Load: (
 		factories: { ActionFactory },
 		preparedTagIds: { [string]: boolean },
 		preparedResourceIds: { [string]: boolean }
 	) -> (boolean, string?),
-	Get: (actionId: string) -> LoadedActionDefinition?,
-	GetAll: () -> { LoadedActionDefinition },
-	GetAllById: () -> { [string]: LoadedActionDefinition },
 	Prepare: (
 		factories: { ActionFactory },
 		preparedTagIds: { [string]: boolean },
 		preparedResourceIds: { [string]: boolean }
 	) -> (PreparedActionCatalog?, string?),
 	Publish: (prepared: PreparedActionCatalog) -> (boolean, string?),
-	CreateExecution: (actionId: string) -> (ActionImplementation?, string?),
-	IsLoaded: () -> boolean,
+	CreateExecution: (actionId: string) -> (InternalActionImplementation?, string?),
 	_resetForTests: () -> (),
 }
 

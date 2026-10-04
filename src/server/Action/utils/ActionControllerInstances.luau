@@ -8,12 +8,12 @@ type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
 type ActionLifecycleEvent = ActionTypes.ActionLifecycleEvent
 type ActionInterruptedEvent = ActionTypes.ActionInterruptedEvent
-type ActionImplementation = ActionTypes.ActionImplementation
+type InternalActionImplementation = ActionTypes.InternalActionImplementation
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
 	actionId: string,
-	implementation: ActionImplementation,
+	implementation: InternalActionImplementation,
 	context: ActionExecutionContext,
 	onStartThread: thread?,
 }
@@ -22,7 +22,7 @@ export type ActionControllerInstances = {
 	Start: (
 		self: ActionControllerInstances,
 		actionId: string,
-		implementation: ActionImplementation,
+		implementation: InternalActionImplementation,
 		parameters: any?
 	) -> number,
 	RequestStop: (self: ActionControllerInstances, sequenceId: number, parameters: any?) -> (boolean, string?),
@@ -156,7 +156,7 @@ function ActionControllerInstancesModule.new(
 
 	local function commitActivation(
 		actionId: string,
-		implementation: ActionImplementation,
+		implementation: InternalActionImplementation,
 		parameters: any?
 	): InternalActionInstance
 		local sequenceId: number = nextSequenceId
@@ -219,7 +219,7 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	function instances:Start(actionId: string, implementation: ActionImplementation, parameters: any?): number
+	function instances:Start(actionId: string, implementation: InternalActionImplementation, parameters: any?): number
 		local instance: InternalActionInstance = commitActivation(actionId, implementation, parameters)
 		ownedSignals:WithDeferredDestroy(function()
 			startedSignal:Fire(lifecycleEvent(instance))

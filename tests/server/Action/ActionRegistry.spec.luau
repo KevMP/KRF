@@ -11,10 +11,10 @@ local ActionTypes: any = require(KRF.server.Action.types)
 local ActionRegistry = require(KRF.server.Action.ActionRegistry)
 
 type ActionDefinition = ActionTypes.ActionDefinition
-type ActionRegistry = ActionTypes.ActionRegistry
+type InternalActionRegistry = ActionTypes.InternalActionRegistry
 type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 
-local Registry: ActionRegistry = ActionRegistry
+local Registry: InternalActionRegistry = ActionRegistry
 local preparedTagIds: { [string]: boolean } = { ["Tag.Grounded"] = true }
 local preparedResourceIds: { [string]: boolean } = { ["Resource.Stamina"] = true }
 
@@ -123,7 +123,7 @@ it("owns immutable normalized copies rather than consumer source or registry rea
 	expect(loadedDefinition.locks).toEqual({ "Locomotion" })
 	expect(Registry.Get("Action.Mutated")).toBeNil()
 	local definitionMutable: boolean = pcall(function()
-		loadedDefinition.autoGrant = true
+		(loadedDefinition :: any).autoGrant = true
 	end)
 	expect(definitionMutable).toBe(false)
 	local tagsMutable: boolean = pcall(function()
@@ -148,7 +148,7 @@ it("rejects a second catalog load after publication", function()
 	expect(reason).toBe("ActionDefinitionsAlreadyLoaded")
 end)
 
-it("preserves optional hooks without invoking them and copies every declared collection", function()
+it("keeps loaded definitions metadata-only and snapshots execution hooks", function()
 	local hookCalls: number = 0
 	local definition: any = createAction("Action.Dodge")
 	definition.autoGrant = false
@@ -167,10 +167,14 @@ it("preserves optional hooks without invoking them and copies every declared col
 	expect(reason).toBeNil()
 	local loadedDefinition: LoadedActionDefinition = Registry.Get("Action.Dodge") :: LoadedActionDefinition
 	expect(loadedDefinition.autoGrant).toBe(false)
+	local implementation, executionReason = Registry.CreateExecution("Action.Dodge")
+	expect(executionReason).toBeNil()
+	expect(implementation).never.toBeNil()
 	for _, field: string in hookFields do
-		expect((loadedDefinition :: any)[field]).toBe(definition[field])
+		expect((loadedDefinition :: any)[field]).toBeNil()
+		expect((implementation :: any)[field]).toBe(definition[field])
 		definition[field] = nil
-		expect(type((loadedDefinition :: any)[field])).toBe("function")
+		expect(type((implementation :: any)[field])).toBe("function")
 	end
 	definition.blockedTags[1] = "Tag.Mutated"
 	definition.interruptibleBy[1] = "Action.Mutated"
