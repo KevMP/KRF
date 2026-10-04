@@ -391,6 +391,78 @@ it("commits a multi-owner scoped preemption before the first interruption hook",
 	expect(controller:RequestAction("Action.Roll")).toEqual({ accepted = false, reason = "ActionLockConflict" })
 end)
 
+it("issues all scoped preemption events before an owner hook starts another Action", function()
+	local controller: ActionController? = nil
+	local claimantContext: ActionExecutionContext? = nil
+	local events: { string } = {}
+	local counterRequest: ActionTypes.ActionRequestResult? = nil
+	local counterStarted: boolean = false
+	local counterStartedBeforeReturn: boolean? = nil
+	loadDefinitions({
+		{
+			id = "Action.Channel",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onStart = function(context: ActionExecutionContext): ()
+				claimantContext = context
+			end,
+		},
+		{
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Channel" },
+			onInterrupt = function(): ()
+				counterRequest = (controller :: ActionController):RequestAction("Action.Counter")
+				counterStartedBeforeReturn = counterStarted
+			end,
+		},
+		{
+			id = "Action.Aim",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Combat" },
+			interruptibleBy = { "Action.Channel" },
+		},
+		{
+			id = "Action.Counter",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onStart = function(): ()
+				counterStarted = true
+			end,
+		},
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	local activeController: ActionController = controller :: ActionController
+	expect(activeController:RequestAction("Action.Channel")).toEqual({ accepted = true, sequenceId = 1 })
+	expect(activeController:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 2 })
+	expect(activeController:RequestAction("Action.Aim")).toEqual({ accepted = true, sequenceId = 3 })
+	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
+		table.insert(events, "Interrupted " .. event.actionId)
+	end)
+	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
+		table.insert(events, "Started " .. event.actionId)
+	end)
+	local claim: LockClaim?, reason: string? = (claimantContext :: ActionExecutionContext):ClaimLocks({
+		"Movement",
+		"Combat",
+	})
+	expect(reason).toBeNil()
+	expect(claim).never.toBeNil()
+	expect(counterRequest).toEqual({ accepted = true, sequenceId = 4 })
+	expect(counterStartedBeforeReturn).toBe(true)
+	task.wait()
+	task.wait()
+	expect(events).toEqual({
+		"Interrupted Action.Sprint",
+		"Interrupted Action.Aim",
+		"Started Action.Counter",
+	})
+end)
+
 it("preempting a scoped lock interrupts the whole owner Action", function()
 	local ownerContext: ActionExecutionContext? = nil
 	local interruptedReason: string? = nil

@@ -21,7 +21,6 @@ type InternalActionInstance = {
 	context: ActionExecutionContext,
 	ownedLockReasons: { [string]: number },
 	onStartThread: thread?,
-	startedEmitted: boolean,
 }
 
 export type ActionControllerInstances = {
@@ -119,18 +118,8 @@ function ActionControllerInstancesModule.new(
 		}
 	end
 
-	local function emitStarted(instance: InternalActionInstance): ()
-		if instance.startedEmitted then
-			return
-		end
-		-- A reentrant call may terminate this accepted instance before its outer request reaches Started.
-		instance.startedEmitted = true
-		startedSignal:Fire(lifecycleEvent(instance))
-	end
-
 	local function dispatchEnd(instance: InternalActionInstance): ()
 		ownedSignals:WithDeferredDestroy(function()
-			emitStarted(instance)
 			endedSignal:Fire(lifecycleEvent(instance))
 			local callback = instance.implementation.onEnd
 			if callback ~= nil then
@@ -143,28 +132,30 @@ function ActionControllerInstancesModule.new(
 		end)
 	end
 
+	local function issueInterrupted(instance: InternalActionInstance, reason: string): ()
+		interruptedSignal:Fire({
+			actor = actor,
+			actionId = instance.actionId,
+			sequenceId = instance.sequenceId,
+			reason = reason,
+		})
+	end
+
+	local function invokeInterrupt(instance: InternalActionInstance, reason: string): ()
+		local callback = instance.implementation.onInterrupt
+		if callback ~= nil then
+			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
+				ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
+			if not succeeded then
+				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onInterrupt", failureDetail or failureKind)
+			end
+		end
+	end
+
 	local function dispatchInterrupt(instance: InternalActionInstance, reason: string): ()
 		ownedSignals:WithDeferredDestroy(function()
-			emitStarted(instance)
-			interruptedSignal:Fire({
-				actor = actor,
-				actionId = instance.actionId,
-				sequenceId = instance.sequenceId,
-				reason = reason,
-			})
-			local callback = instance.implementation.onInterrupt
-			if callback ~= nil then
-				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
-					ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
-				if not succeeded then
-					ActionControllerHooks.WarnFailure(
-						actor,
-						instance.actionId,
-						"onInterrupt",
-						failureDetail or failureKind
-					)
-				end
-			end
+			issueInterrupted(instance, reason)
+			invokeInterrupt(instance, reason)
 		end)
 	end
 
@@ -347,7 +338,10 @@ function ActionControllerInstancesModule.new(
 		table.freeze(claim)
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
-				dispatchInterrupt(owner, "ActionLockPreempted")
+				issueInterrupted(owner, "ActionLockPreempted")
+			end
+			for _, owner: InternalActionInstance in conflicts do
+				invokeInterrupt(owner, "ActionLockPreempted")
 			end
 		end)
 		return claim :: LockClaim?, nil
@@ -426,7 +420,6 @@ function ActionControllerInstancesModule.new(
 		instance.context = context
 		instance.ownedLockReasons = {}
 		instance.onStartThread = nil
-		instance.startedEmitted = false
 		activeBySequenceId[sequenceId] = instance
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
@@ -502,10 +495,15 @@ function ActionControllerInstancesModule.new(
 		local instance: InternalActionInstance = commitActivation(actionId, implementation, parameters, definition)
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
-				dispatchInterrupt(owner, "ActionLockPreempted")
+				issueInterrupted(owner, "ActionLockPreempted")
 			end
-			emitStarted(instance)
-			beginStart(instance)
+			startedSignal:Fire(lifecycleEvent(instance))
+			for _, owner: InternalActionInstance in conflicts do
+				invokeInterrupt(owner, "ActionLockPreempted")
+			end
+			if isActive(instance) then
+				beginStart(instance)
+			end
 		end)
 		return instance.sequenceId, nil
 	end

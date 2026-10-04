@@ -435,11 +435,81 @@ it("commits every preemption before callbacks and dispatches in sequence order",
 	expect(reasons).toEqual({ "ActionLockPreempted", "ActionLockPreempted" })
 end)
 
+it("issues every preemption event before an owner hook starts another Action", function()
+	local controller: ActionController? = nil
+	local events: { string } = {}
+	local counterRequest: ActionTypes.ActionRequestResult? = nil
+	local counterStartedBeforeReturn: boolean? = nil
+	local counterStarted: boolean = false
+	local dodgeStarted: boolean = false
+	loadDefinitions({
+		{
+			id = "Action.Sprint",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement" },
+			interruptibleBy = { "Action.Dodge" },
+			onInterrupt = function(): ()
+				counterRequest = (controller :: ActionController):RequestAction("Action.Counter")
+				counterStartedBeforeReturn = counterStarted
+			end,
+		},
+		{
+			id = "Action.Aim",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Combat" },
+			interruptibleBy = { "Action.Dodge" },
+		},
+		{
+			id = "Action.Dodge",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			locks = { "Movement", "Combat" },
+			onStart = function(): ()
+				dodgeStarted = true
+			end,
+		},
+		{
+			id = "Action.Counter",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			onStart = function(): ()
+				counterStarted = true
+			end,
+		},
+	})
+	local _actor: Actor
+	_actor, controller = createController()
+	local activeController: ActionController = controller :: ActionController
+	expect(activeController:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
+	expect(activeController:RequestAction("Action.Aim")).toEqual({ accepted = true, sequenceId = 2 })
+	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
+		table.insert(events, "Interrupted " .. event.actionId)
+	end)
+	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
+		table.insert(events, "Started " .. event.actionId)
+	end)
+	expect(activeController:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
+	expect(counterRequest).toEqual({ accepted = true, sequenceId = 4 })
+	expect(counterStartedBeforeReturn).toBe(true)
+	expect(dodgeStarted).toBe(true)
+	task.wait()
+	task.wait()
+	expect(events).toEqual({
+		"Interrupted Action.Sprint",
+		"Interrupted Action.Aim",
+		"Started Action.Dodge",
+		"Started Action.Counter",
+	})
+end)
+
 it("emits Started before Interrupted when an interruption hook preempts the incoming Action", function()
 	local controller: ActionController? = nil
 	local dodgeEvents: { string } = {}
 	local counterRequest: ActionTypes.ActionRequestResult? = nil
 	local dodgeInterrupted: boolean = false
+	local dodgeStarted: boolean = false
 	local counterStarted: boolean = false
 	local nestedCallbacksRanBeforeReturn: boolean? = nil
 	loadDefinitions({
@@ -460,6 +530,9 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 			autoGrant = true,
 			locks = { "Movement" },
 			interruptibleBy = { "Action.Counter" },
+			onStart = function(): ()
+				dodgeStarted = true
+			end,
 			onInterrupt = function(): ()
 				dodgeInterrupted = true
 			end,
@@ -491,6 +564,7 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 2 })
 	expect(counterRequest).toEqual({ accepted = true, sequenceId = 3 })
 	expect(nestedCallbacksRanBeforeReturn).toBe(true)
+	expect(dodgeStarted).toBe(false)
 	task.wait()
 	task.wait()
 	expect(dodgeEvents).toEqual({ "Started", "Interrupted" })
