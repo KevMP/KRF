@@ -23,7 +23,8 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | `locks` | Optional array of opaque, non-empty game-defined lifetime lock ids. Locks declare concurrency claims. |
 | `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action. Forward references and self-references are valid. |
 | `onCanStart` | Optional function returning `(boolean, string?)`, for an Action-defined start decision. |
-| `onStart`, `onStopRequested`, `onUpdate`, `onEnd`, `onInterrupt` | Optional lifecycle functions. |
+| `onStart`, `onStopRequested`, `onEnd`, `onInterrupt` | Optional lifecycle functions. |
+| `onUpdate` | Optional `(ActionExecutionContext, number) -> ()` hook for [active Action updates](./action-updates). |
 | `canBeInterruptedBy` | Optional function returning `boolean`, refining the static `interruptibleBy` allowlist. |
 
 All lists must be dense arrays without duplicate entries. Their entries must be non-empty strings. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action catalog. Omitted lists and `costs` normalize to empty collections.
@@ -96,6 +97,7 @@ Omitting `actions` loads an empty catalog with `IsLoaded() == true`. Before publ
 - [Action Registry API](/api/Action/action-registry)
 - [Action grants](./action-grants)
 - [Run Actions](./action-lifecycle)
+- [Action updates](./action-updates)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)
 - [Resource Registry](../Resource/resource-registry)

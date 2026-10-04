@@ -89,6 +89,8 @@ end
 
 KRF starts `onStart` before `RequestAction` returns. Returning from `onStart` leaves the Action active; a long-lived Action may set up game behavior and return, then be terminated later by sequence id.
 
+For a long-lived Action that needs recurring work, add optional [`onUpdate(context, deltaTime)`](./action-updates). It runs at most 20 times per second with real elapsed time for that instance. Actions without the hook incur no recurring Action callback work.
+
 An instant Action can finish itself; an Action whose start callback only sets up game behavior stays active until another call terminates it:
 
 ```lua
@@ -104,7 +106,7 @@ local function createDodge(): ActionTypes.ActionDefinition
 end
 ```
 
-Use `ctx:End()` or `EndAction(sequenceId)` for normal completion. Use `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` for interruption. A successful transition makes `ctx:IsActive()` false before `onEnd` or `onInterrupt` runs. These cleanup callbacks must finish synchronously without yielding. Their errors do not undo the transition. A failing `onStart` automatically Interrupts an instance that is still active.
+Use `ctx:End()` or `EndAction(sequenceId)` for normal completion. Use `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` for interruption. A successful transition makes `ctx:IsActive()` false and removes update eligibility before `onEnd` or `onInterrupt` runs. These cleanup callbacks must finish synchronously without yielding. Their errors do not undo the transition. A failing `onStart` automatically Interrupts an instance that is still active.
 
 `ctx:End()` and `ctx:Interrupt()` are ordinary calls: Action code should `return` afterward if it has no more synchronous work to do. KRF retires a suspended `onStart` invocation when its instance terminates. Tasks or connections created separately by game code remain game-owned.
 
@@ -119,3 +121,4 @@ Destroying the controller Interrupts every active Action with `ActionControllerD
 - [ActionController API](/api/Action/action-controller)
 - [Action grants](./action-grants)
 - [Action catalog](./action-registry)
+- [Action updates](./action-updates)
