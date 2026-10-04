@@ -102,10 +102,11 @@ Fires when an active instance Ends. The payload contains `actor`, `actionId`, an
 
 ### `OnActionInterrupted: Event<ActionInterruptedEvent>` {#on-action-interrupted}
 
-Fires when an active instance is Interrupted. The payload contains `actor`, `actionId`, `sequenceId`, and `reason`.
+Fires when an active instance is Interrupted. The payload contains `actor`, `actionId`, `sequenceId`, and `reason`; an update error or yield uses `ActionUpdateFailed`.
 
 ## Related
 
 - [Run Actions guide](/Action/action-lifecycle)
 - [Action grants guide](/Action/action-grants)
+- [Action updates guide](/Action/action-updates)
 - [Action Registry](/api/Action/action-registry)

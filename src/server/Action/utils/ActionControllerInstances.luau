@@ -3,6 +3,7 @@ local ActionTypes = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 local ActionControllerHooks = require(script.Parent.ActionControllerHooks)
+local ActionControllerUpdates = require(script.Parent.ActionControllerUpdates)
 
 type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
@@ -69,6 +70,9 @@ function ActionControllerInstancesModule.new(
 			return false
 		end
 		activeBySequenceId[instance.sequenceId] = nil
+		if instance.implementation.onUpdate ~= nil then
+			ActionControllerUpdates.Remove(instances, instance.sequenceId)
+		end
 		retireStart(instance)
 		return true
 	end
@@ -187,6 +191,18 @@ function ActionControllerInstancesModule.new(
 		instance.context = context
 		instance.onStartThread = nil
 		activeBySequenceId[sequenceId] = instance
+		local updateCallback = implementation.onUpdate
+		if updateCallback ~= nil then
+			ActionControllerUpdates.Register(
+				instances,
+				actor,
+				actionId,
+				sequenceId,
+				context,
+				updateCallback,
+				interruptById
+			)
+		end
 		return instance
 	end
 
