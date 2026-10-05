@@ -58,7 +58,7 @@ Returns a frozen list of effective Action ids in Action registry order.
 
 Requests one Action on this Actor. An accepted result is `{ accepted = true, sequenceId = number }`; a rejected result is `{ accepted = false, reason = string }`.
 
-`RequestAction` does not enforce `requiredTags` or `blockedTags`, or spend `costs`. Those definition fields are registry metadata.
+`RequestAction` checks `requiredTags` and `blockedTags` against the Actor's live Tags before `onCanStart` and again before commit. It applies `activeTags` and `appliedTags` with activation. It does not spend `costs`.
 
 | Rejection reason | Cause |
 | --- | --- |
@@ -67,6 +67,9 @@ Requests one Action on this Actor. An accepted result is `{ accepted = true, seq
 | `ActionIdMustBeString` / `ActionIdCannotBeEmpty` | The Action id is invalid. |
 | `UnknownActionId:<id>` | No loaded definition has this id. |
 | `ActionNotGranted` | This Actor is not granted the Action. |
+| `ActionRequiredTagMissing:<id>` | A required Tag is absent at preflight or final validation. |
+| `ActionBlockedTagPresent:<id>` | A blocked Tag is present at preflight or final validation. |
+| `ActionTagActivationFailed:<id>` | A declarative Tag application cannot commit. No incoming Action or Tag effects remain. |
 | `ActionFactoryFailed` / `ActionFactoryYielded` / `ActionFactoryInvalidResult` | The per-request factory errored, yielded, or returned an invalid Action implementation. No sequence id is consumed. |
 | `ActionCanStartRejected` | `onCanStart` returned `false` without a usable custom reason. |
 | `ActionCanStartFailed` / `ActionCanStartYielded` / `ActionCanStartInvalidResult` | The decision callback errored, attempted to yield, or returned a non-boolean first value. |
@@ -114,4 +117,5 @@ Fires when an active instance is Interrupted. The payload contains `actor`, `act
 - [Action grants guide](/Action/action-grants)
 - [Action updates guide](/Action/action-updates)
 - [Action locks guide](/Action/action-locks)
+- [Action Tags guide](/Action/action-tags)
 - [Action Registry](/api/Action/action-registry)

@@ -40,6 +40,9 @@ export type AddTagOptions = {
 	duration: number?,
 }
 
+export type ActionTagApplication = { id: string, duration: number? }
+export type ActionTagHandle = { tagId: string, record: any, version: number }
+
 export type TagInstanceSnapshot = {
 	tagId: string,
 	duration: number?,
@@ -72,6 +75,18 @@ export type TagController = {
 	HasTag: (any, tagId: string) -> boolean,
 	GetActiveTags: (any) -> { ActiveTagSnapshot },
 	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
+}
+
+export type InternalTagController = TagController & {
+	_beginActionBatch: (self: InternalTagController) -> (),
+	_endActionBatch: (self: InternalTagController) -> (),
+	_canApplyActionTags: (self: InternalTagController, applications: { ActionTagApplication }) -> string?,
+	_addActionTag: (
+		self: InternalTagController,
+		application: ActionTagApplication,
+		ownedHandles: { ActionTagHandle }?
+	) -> (ActionTagHandle?, string?),
+	_removeActionTag: (self: InternalTagController, handle: ActionTagHandle) -> (),
 }
 
 return TagTypes

@@ -4,6 +4,7 @@ local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 local ActionControllerHooks = require(script.Parent.ActionControllerHooks)
 local ActionControllerUpdates = require(script.Parent.ActionControllerUpdates)
+local TagTypes = require(script.Parent.Parent.Parent.Tags.types)
 
 type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
@@ -12,6 +13,8 @@ type ActionInterruptedEvent = ActionTypes.ActionInterruptedEvent
 type InternalActionImplementation = ActionTypes.InternalActionImplementation
 type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 type LockClaim = ActionTypes.LockClaim
+type InternalTagController = TagTypes.InternalTagController
+type ActionTagHandle = TagTypes.ActionTagHandle
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
@@ -21,6 +24,7 @@ type InternalActionInstance = {
 	context: ActionExecutionContext,
 	ownedLockReasons: { [string]: number },
 	onStartThread: thread?,
+	ownedTagHandles: { ActionTagHandle },
 }
 
 export type ActionControllerInstances = {
@@ -57,6 +61,10 @@ function ActionControllerInstancesModule.new(
 	local activeBySequenceId: { [number]: InternalActionInstance } = {}
 	local lockOwners: { [string]: InternalActionInstance } = {}
 
+	local function getTagController(): InternalTagController?
+		return actor:GetController("TagController") :: InternalTagController?
+	end
+
 	local function isActive(instance: InternalActionInstance): boolean
 		return activeBySequenceId[instance.sequenceId] == instance
 	end
@@ -87,6 +95,14 @@ function ActionControllerInstancesModule.new(
 			ActionControllerUpdates.Remove(instances, instance.sequenceId)
 		end
 		retireStart(instance)
+		local tags: InternalTagController? = getTagController()
+		if tags ~= nil and #instance.ownedTagHandles > 0 then
+			tags:_beginActionBatch()
+			for _, handle: ActionTagHandle in instance.ownedTagHandles do
+				tags:_removeActionTag(handle)
+			end
+			tags:_endActionBatch()
+		end
 		return true
 	end
 
@@ -314,11 +330,18 @@ function ActionControllerInstancesModule.new(
 		if controllerState.destroyed or not isActive(instance) then
 			return nil, "ActionInstanceNotActive"
 		end
+		local tags: InternalTagController? = getTagController()
+		if tags ~= nil then
+			tags:_beginActionBatch()
+		end
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
 		end
 		for _, lockId: string in normalized do
 			addLockReason(instance, lockId)
+		end
+		if tags ~= nil then
+			tags:_endActionBatch()
 		end
 		local released: boolean = false
 		local claim: LockClaim = {
@@ -386,7 +409,8 @@ function ActionControllerInstancesModule.new(
 		actionId: string,
 		implementation: InternalActionImplementation,
 		parameters: any?,
-		definition: LoadedActionDefinition
+		definition: LoadedActionDefinition,
+		ownedTagHandles: { ActionTagHandle }
 	): InternalActionInstance
 		local sequenceId: number = nextSequenceId
 		nextSequenceId += 1
@@ -420,6 +444,7 @@ function ActionControllerInstancesModule.new(
 		instance.context = context
 		instance.ownedLockReasons = {}
 		instance.onStartThread = nil
+		instance.ownedTagHandles = ownedTagHandles
 		activeBySequenceId[sequenceId] = instance
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
@@ -489,10 +514,44 @@ function ActionControllerInstancesModule.new(
 		if availabilityReason ~= nil then
 			return nil, availabilityReason
 		end
+		local tags: InternalTagController? = getTagController()
+		if #definition.activeTags > 0 or #definition.appliedTags > 0 then
+			if tags == nil then
+				local first = definition.activeTags[1] or definition.appliedTags[1]
+				return nil, "ActionTagActivationFailed:" .. first.id
+			end
+			local tagReason: string? = tags:_canApplyActionTags(definition.activeTags)
+				or tags:_canApplyActionTags(definition.appliedTags)
+			if tagReason ~= nil then
+				return nil, tagReason
+			end
+		end
+		if tags ~= nil then
+			tags:_beginActionBatch()
+		end
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
 		end
-		local instance: InternalActionInstance = commitActivation(actionId, implementation, parameters, definition)
+		local ownedTagHandles: { ActionTagHandle } = {}
+		if tags ~= nil then
+			for _, application in definition.activeTags do
+				local handle: ActionTagHandle?, applicationReason: string? =
+					tags:_addActionTag(application, ownedTagHandles)
+				assert(applicationReason == nil, applicationReason or "ActionTagActivationFailed")
+				if handle ~= nil then
+					table.insert(ownedTagHandles, handle)
+				end
+			end
+			for _, application in definition.appliedTags do
+				local _, applicationReason: string? = tags:_addActionTag(application)
+				assert(applicationReason == nil, applicationReason or "ActionTagActivationFailed")
+			end
+		end
+		local instance: InternalActionInstance =
+			commitActivation(actionId, implementation, parameters, definition, ownedTagHandles)
+		if tags ~= nil then
+			tags:_endActionBatch()
+		end
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
@@ -551,8 +610,15 @@ function ActionControllerInstancesModule.new(
 		table.sort(activeInstances, function(left: InternalActionInstance, right: InternalActionInstance): boolean
 			return left.sequenceId < right.sequenceId
 		end)
+		local tags: InternalTagController? = getTagController()
+		if tags ~= nil then
+			tags:_beginActionBatch()
+		end
 		for _, instance: InternalActionInstance in activeInstances do
 			commitTerminal(instance)
+		end
+		if tags ~= nil then
+			tags:_endActionBatch()
 		end
 		for _, instance: InternalActionInstance in activeInstances do
 			dispatchInterrupt(instance, "ActionControllerDestroyed")

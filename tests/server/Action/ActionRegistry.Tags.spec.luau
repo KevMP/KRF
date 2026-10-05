@@ -52,7 +52,7 @@ it("rejects unknown Tag ids in either declarative field before publishing", func
 		expect(loaded).toBe(false)
 		expect(type(reason)).toBe("string")
 		expect(reason).never.toBe("ActionFieldUnsupported:" .. field)
-		expect(string.find(reason :: string, "Tag.Unknown", 1, true)).never.toBeNil()
+		expect((string.find(reason :: string, "Tag.Unknown", 1, true))).never.toBeNil()
 		expect(ActionRegistry.IsLoaded()).toBe(false)
 	end
 end)

@@ -232,3 +232,55 @@ it("does not remove later unrelated Tag state after an active Tag expires", func
 	expect((actions:EndAction(started.sequenceId))).toBe(true)
 	expect(tags:HasTag("Tag.Blocking")).toBe(true)
 end)
+
+it("retains ownership when two active applications refresh the same new Tag", function()
+	initialize({
+		{
+			id = "Action.Block",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			activeTags = { "Tag.Blocking", { id = "Tag.Blocking", duration = 4 } },
+		} :: any,
+	}, {
+		{ id = "Tag.Blocking", visibility = "ServerOnly", duplicateBehavior = "Refresh" },
+	})
+	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
+	local started: any = actions:RequestAction("Action.Block")
+	expect(started.accepted).toBe(true)
+	expect(#tags:GetTagInstances("Tag.Blocking")).toBe(1)
+	expect(tags:GetTagInstances("Tag.Blocking")[1].duration).toBe(4)
+	expect((actions:EndAction(started.sequenceId))).toBe(true)
+	expect(tags:HasTag("Tag.Blocking")).toBe(false)
+end)
+
+it("preserves the applied contribution when both fields use the same Tag", function()
+	initialize({
+		{
+			id = "Action.Stack",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			activeTags = { "Tag.Stack" },
+			appliedTags = { "Tag.Stack" },
+		} :: any,
+		{
+			id = "Action.Refresh",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			activeTags = { "Tag.Refresh" },
+			appliedTags = { "Tag.Refresh" },
+		} :: any,
+	}, {
+		{ id = "Tag.Stack", visibility = "ServerOnly", duplicateBehavior = "Stack" },
+		{ id = "Tag.Refresh", visibility = "ServerOnly", duplicateBehavior = "Refresh" },
+	})
+	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
+	local stacked: any = actions:RequestAction("Action.Stack")
+	expect(stacked.accepted).toBe(true)
+	expect(tags:GetActiveTags()[1].stackCount).toBe(2)
+	expect((actions:EndAction(stacked.sequenceId))).toBe(true)
+	expect(tags:GetActiveTags()[1].stackCount).toBe(1)
+	local refreshed: any = actions:RequestAction("Action.Refresh")
+	expect(refreshed.accepted).toBe(true)
+	expect((actions:EndAction(refreshed.sequenceId))).toBe(true)
+	expect(tags:HasTag("Tag.Refresh")).toBe(true)
+end)

@@ -16,6 +16,25 @@ local definitionsById: { [string]: LoadedActionDefinition } = {}
 local orderedDefinitions: { LoadedActionDefinition } = {}
 local factoriesById: { [string]: ActionFactory } = {}
 
+local function normalizeTagApplications(
+	applications: { ActionTypes.ActionTagApplication }?
+): { ActionTypes.ActionTagApplicationOptions }
+	local normalized: { ActionTypes.ActionTagApplicationOptions } = {}
+	for _, application: ActionTypes.ActionTagApplication in applications or {} do
+		local entry: ActionTypes.ActionTagApplicationOptions
+		if type(application) == "string" then
+			entry = { id = application :: string }
+		else
+			local options: ActionTypes.ActionTagApplicationOptions =
+				application :: ActionTypes.ActionTagApplicationOptions
+			entry = { id = options.id, duration = options.duration }
+		end
+		table.freeze(entry)
+		table.insert(normalized, entry)
+	end
+	return table.freeze(normalized)
+end
+
 table.freeze(definitionsById)
 table.freeze(orderedDefinitions)
 table.freeze(factoriesById)
@@ -76,6 +95,8 @@ function ActionRegistry.Prepare(
 			autoGrant = if definition.autoGrant ~= nil then definition.autoGrant else false,
 			requiredTags = table.clone(definition.requiredTags or {}),
 			blockedTags = table.clone(definition.blockedTags or {}),
+			activeTags = normalizeTagApplications(definition.activeTags),
+			appliedTags = normalizeTagApplications(definition.appliedTags),
 			costs = table.clone(definition.costs or {}),
 			locks = table.clone(definition.locks or {}),
 			interruptibleBy = table.clone(definition.interruptibleBy or {}),
