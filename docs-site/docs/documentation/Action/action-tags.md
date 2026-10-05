@@ -99,9 +99,22 @@ Each application can be a Tag id string or `{ id = "Tag.Id", duration = seconds 
 
 KRF checks `requiredTags` and `blockedTags` before `onCanStart` and rechecks them after decision work, before activation. A missing required Tag returns `ActionRequiredTagMissing:<id>`; a present blocked Tag returns `ActionBlockedTagPresent:<id>`. The check uses current Tag state, even when preemption could remove a blocking Action's Tag later. A rejected request consumes no sequence id.
 
-For an accepted request, KRF commits lock ownership, all declarative Tag effects, and the incoming Action before Tag or Action callbacks run. `OnActionStarted` and `onStart` see the committed Tags. On End, Interrupt, preemption, update or start failure, and controller destruction, KRF cleans remaining `activeTags` contributions before terminal callbacks. It leaves `appliedTags` alone.
+For an accepted request, KRF completes the authoritative transaction before any resulting callback runs:
+
+1. Terminate conflicting owners and clean their remaining `activeTags` contributions; acquire incoming locks, apply incoming `activeTags` followed by `appliedTags` in declaration order, and activate the incoming instance.
+2. Issue preempted owners' `OnActionInterrupted` signals in sequence-id order, then the incoming `OnActionStarted` signal.
+3. Dispatch the resulting Tag events in mutation order.
+4. Invoke preempted owners' `onInterrupt` hooks in sequence-id order, then begin incoming `onStart` only if it is still active.
+
+Listeners and hooks may reenter KRF. Nested `RequestAction`, `EndAction`, and `InterruptAction` calls complete synchronously. Started is issued exactly once for every accepted instance, before its terminal signal. If an earlier owner's listener terminates the incoming instance before its normal Started turn, KRF issues its pending Started before that terminal signal. The accepted request still returns its sequence id, and its `onStart` is skipped. Signal issuance does not guarantee that every listener finishes before subsequent signals or hooks.
+
+On End, Interrupt, preemption, update or start failure, and controller destruction, KRF commits all terminal cleanup before callbacks. It then issues terminal lifecycle signals, dispatches Tag events, and invokes terminal hooks. `appliedTags` remain under normal Tag lifetime rules. Tag and Property queries read current committed state; earlier reentrant callbacks may already have changed it.
+
+If declarative Tag activation cannot commit, the request returns `ActionTagActivationFailed:<id>` before preempting owners or consuming a sequence id. No incoming locks or Tag effects remain.
 
 Both effect fields use ordinary Tag Runtime rules. Repeated BattleCry requests refresh one `Buff.Courage` instance. With `Stack`, each request would add an instance below the Tag's stack cap; with `Ignore`, an existing instance would be left alone. `maxStacks`, expiry, ticking, Tag events, and Property modifiers follow the Tag definition. An Action never removes another Action's or system's independently owned Tag state during cleanup.
+
+Cleanup removes only state still attributable to that exact ActionInstance. An ignored application owns no new state. Refreshing an existing unrelated record does not make it Action-owned. A later external refresh, including a refresh at `maxStacks`, prevents cleanup from removing that refreshed record; expiry or consumption likewise cannot make cleanup remove a replacement record. Repeated `activeTags` declarations may refresh a record created by that same activation and retain its cleanup ownership. An `appliedTags` refresh of that record relinquishes its active cleanup ownership.
 
 `Status.Dodging` uses `Stack` so concurrent Dodge instances each own their active Tag. Dodge listens to `OnTagRemoved` because this example applies `Status.Grounded` indefinitely. If your Grounded Tag can expire, also listen to `OnTagExpired`. The handler checks current Tag presence because a removed Tag may be reapplied before its event callback runs. `requiredTags` handles the start check; the listener handles a later loss.
 

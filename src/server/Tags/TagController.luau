@@ -26,8 +26,8 @@ type ActiveTagsById = TagControllerInstanceUtils.ActiveTagsById
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
-type ActionTagApplication = TagTypes.ActionTagApplication
-type ActionTagHandle = TagTypes.ActionTagHandle
+type TagApplication = TagTypes.TagApplication
+type TagMutationReceipt = TagTypes.TagMutationReceipt
 type AdvancingControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
 type StepTagInstanceResult = TagControllerStepUtils.StepTagInstanceResult
 type InternalTagController = TagTypes.InternalTagController & {
@@ -98,8 +98,8 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 	local activeTagsById: ActiveTagsById = {}
 	local destroyed: boolean = false
-	local actionBatchDepth: number = 0
-	local deferredEvents: { { kind: string, tagId: string } } = {}
+	local mutationBatchDepth: number = 0
+	local deferredEvents: { TagTypes.TagMutationEvent } = {}
 	local recordVersions: { [TagInstanceRecord]: number } = setmetatable({}, { __mode = "k" }) :: { [TagInstanceRecord]: number }
 
 	local factoryContext: TagInstanceFactoryContext = {
@@ -120,7 +120,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	controller._activeTagsById = activeTagsById
 
 	local function fireEvent(kind: string, tagId: string): ()
-		if actionBatchDepth > 0 then
+		if mutationBatchDepth > 0 then
 			table.insert(deferredEvents, { kind = kind, tagId = tagId })
 			return
 		end
@@ -135,31 +135,40 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 	end
 
-	function controller:_beginActionBatch(): ()
-		actionBatchDepth += 1
+	function controller:_beginMutationBatch(): ()
+		mutationBatchDepth += 1
 	end
 
-	function controller:_endActionBatch(): ()
-		assert(actionBatchDepth > 0, "ActionTagBatchNotOpen")
-		actionBatchDepth -= 1
-		if actionBatchDepth > 0 then
-			return
+	-- Detach before dispatch so reentrant mutations complete in their own batch.
+	function controller:_finishMutationBatch(): { TagTypes.TagMutationEvent }
+		assert(mutationBatchDepth > 0, "TagMutationBatchNotOpen")
+		mutationBatchDepth -= 1
+		if mutationBatchDepth > 0 then
+			return {}
 		end
-		local events = deferredEvents
+		local events: { TagTypes.TagMutationEvent } = deferredEvents
 		deferredEvents = {}
-		for _, event in events do
+		return events
+	end
+
+	function controller:_dispatchMutationEvents(events: { TagTypes.TagMutationEvent }): ()
+		for _, event: TagTypes.TagMutationEvent in events do
+			if destroyed then
+				break
+			end
 			fireEvent(event.kind, event.tagId)
 		end
 	end
 
-	function controller:_canApplyActionTags(applications: { ActionTagApplication }): string?
-		for _, application: ActionTagApplication in applications do
+	-- Returns the first unavailable application id. Commit must follow without consumer callbacks.
+	function controller:_validateApplications(applications: { TagApplication }): string?
+		for _, application: TagApplication in applications do
 			if destroyed or TagRegistry.Get(application.id) == nil then
-				return "ActionTagActivationFailed:" .. application.id
+				return application.id
 			end
 			local duration: number? = application.duration
 			if duration ~= nil and (not math.isfinite(duration) or duration <= 0) then
-				return "ActionTagActivationFailed:" .. application.id
+				return application.id
 			end
 		end
 		return nil
@@ -171,15 +180,18 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	controller.OnTagChanged = SignalModule.wrapEvent(tagChangedSignal)
 	controller.OnTagExpired = SignalModule.wrapEvent(tagExpiredSignal)
 
-	function controller:AddTag(tagId: string, options: AddTagOptions?): (boolean, string?)
+	function controller:_addTagWithReceipt(
+		tagId: string,
+		options: AddTagOptions?
+	): (boolean, string?, TagMutationReceipt?)
 		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
 
 		if tagDefinition == nil then
-			return false, "UnknownTagId:" .. tagId
+			return false, "UnknownTagId:" .. tagId, nil
 		end
 
 		if options ~= nil and options.duration ~= nil and options.duration <= 0 then
-			return false, "TagDurationMustBePositive"
+			return false, "TagDurationMustBePositive", nil
 		end
 
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
@@ -187,18 +199,18 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		if tagDefinition.duplicateBehavior == "Ignore" then
 			if activeInstances ~= nil and #activeInstances > 0 then
-				return true, nil
+				return true, nil, nil
 			end
 
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			recordVersions[instance] = 0
 			activeTagsById[tagId] = { instance }
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			fireEvent("Added", tagId)
-			return true, nil
+			return true, nil, { tagId = tagId, record = instance, version = 0 }
 		end
 
 		if tagDefinition.duplicateBehavior == "Refresh" then
@@ -212,19 +224,22 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 					activeInstances[1]
 				)
 				UpdateHeartbeatConnection()
+				local version: number = recordVersions[activeInstances[1]]
+				local receipt: TagMutationReceipt =
+					{ tagId = tagId, record = activeInstances[1], version = version, previousVersion = version - 1 }
 				fireEvent("Refreshed", tagId)
-				return true, nil
+				return true, nil, receipt
 			end
 
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 			recordVersions[instance] = 0
 			activeTagsById[tagId] = { instance }
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
 			fireEvent("Added", tagId)
-			return true, nil
+			return true, nil, { tagId = tagId, record = instance, version = 0 }
 		end
 
 		local stackInstances: { TagInstanceRecord }? = activeInstances
@@ -232,11 +247,11 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if stackInstances == nil then
 			activeTagsById[tagId] = {}
 			stackInstances = activeTagsById[tagId]
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 		end
 
 		if stackInstances == nil then
-			return false, "TagActiveInstancesInitFailed:" .. tagId
+			return false, "TagActiveInstancesInitFailed:" .. tagId, nil
 		end
 
 		local maxStacks: number? = tagDefinition.maxStacks
@@ -248,52 +263,30 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			recordVersions[refreshTarget] = (recordVersions[refreshTarget] or 0) + 1
 			TagControllerStepUtils.ReconcileTimedInstance(advancingInstancesByController, self, actor, refreshTarget)
 			UpdateHeartbeatConnection()
+			local version: number = recordVersions[refreshTarget]
+			local receipt: TagMutationReceipt =
+				{ tagId = tagId, record = refreshTarget, version = version, previousVersion = version - 1 }
 			fireEvent("Refreshed", tagId)
-			return true, nil
+			return true, nil, receipt
 		end
 
 		local instance: TagInstanceRecord =
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
 		recordVersions[instance] = 0
 		table.insert(stackInstances, instance)
-		self._activeTagsById = activeTagsById
+		controller._activeTagsById = activeTagsById
 		TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 		UpdateHeartbeatConnection()
 		fireEvent("Added", tagId)
-		return true, nil
+		return true, nil, { tagId = tagId, record = instance, version = 0 }
 	end
 
-	function controller:_addActionTag(
-		application: ActionTagApplication,
-		ownedHandles: { ActionTagHandle }?
-	): (ActionTagHandle?, string?)
-		local existing: { TagInstanceRecord }? = activeTagsById[application.id]
-		local oldCount: number = if existing == nil then 0 else #existing
-		local added: boolean, reason: string? = self:AddTag(application.id, { duration = application.duration })
-		if not added then
-			return nil, reason
-		end
-		local current: { TagInstanceRecord }? = activeTagsById[application.id]
-		if ownedHandles ~= nil and current ~= nil then
-			for _, handle: ActionTagHandle in ownedHandles do
-				if handle.tagId == application.id then
-					for _, record: TagInstanceRecord in current do
-						if record == handle.record then
-							handle.version = recordVersions[record] or 0
-							break
-						end
-					end
-				end
-			end
-		end
-		if current == nil or #current <= oldCount then
-			return nil, nil
-		end
-		local record: TagInstanceRecord = current[#current]
-		return { tagId = application.id, record = record, version = recordVersions[record] or 0 }, nil
+	function controller:AddTag(tagId: string, options: AddTagOptions?): (boolean, string?)
+		local added: boolean, reason: string? = self:_addTagWithReceipt(tagId, options)
+		return added, reason
 	end
 
-	function controller:_removeActionTag(handle: ActionTagHandle): ()
+	function controller:_removeByReceipt(handle: TagMutationReceipt): ()
 		local instances: { TagInstanceRecord }? = activeTagsById[handle.tagId]
 		if instances == nil then
 			return

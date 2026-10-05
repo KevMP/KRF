@@ -49,7 +49,7 @@ Setting a new property name creates custom numeric state. A tag modifier alone n
 
 Stacks repeat their `add` and `multiply` contribution. The highest active minimum and lowest active maximum form the clamp.
 
-Attach `TagController` before `PropertyController`. The property controller applies already-active tags at construction and observes later add, refresh, removal, and expiry events.
+Attach `TagController` before `PropertyController`. The property controller applies already-active tags at construction and observes later add, refresh, removal, and expiry events. Resolved queries read current committed Tag state, including inside Action lifecycle listeners before deferred Tag notifications arrive. Queries do not consume change notifications; those retain their previous resolved value until the Tag event is processed.
 
 ## Changes
 

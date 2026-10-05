@@ -76,18 +76,19 @@ end
 
 When an Actor is registered, the example requests `Action.Sprint` and then `Action.Dodge` through its controller. KRF Interrupts the Sprint instance with `ActionLockPreempted`, transfers `Movement`, and starts Dodge. A non-allowlisted request returns `{ accepted = false, reason = "ActionLockConflict" }` without consuming a sequence id.
 
-For multiple conflicting owners, KRF evaluates distinct owners in ascending sequence-id order. One denial leaves all owners active. On approval, KRF commits every Interrupt, releases old locks, acquires the new locks, and activates the incoming instance before any lifecycle event or hook. For owners A and B and incoming Action C, post-commit dispatch is:
+For multiple conflicting owners, KRF evaluates distinct owners in ascending sequence-id order. One denial leaves all owners active. On approval, KRF commits every Interrupt, releases old locks, cleans Action-owned active Tags, acquires the new locks, and activates the incoming instance with its declarative Tags before any resulting event or hook. For owners A and B and incoming Action C, post-commit dispatch is:
 
 ```text
 A OnActionInterrupted
 B OnActionInterrupted
 C OnActionStarted
+resulting Tag events
 A onInterrupt
 B onInterrupt
 C onStart, if C is still active
 ```
 
-Owner events and hooks each follow ascending sequence-id order. Hooks may synchronously request or terminate Actions; a nested call completes its own lifecycle dispatch before returning. KRF issues C's Started event before running any owner hook, so a hook can terminate C without reversing C's Started and terminal events. Signal listeners run asynchronously and need not finish before hooks run.
+Owner events and hooks each follow ascending sequence-id order. Hooks may synchronously request or terminate Actions; a nested call completes its own lifecycle dispatch before returning. KRF issues C's Started event before running any owner hook, so a hook can terminate C without reversing C's Started and terminal events. Signal listeners may also reenter synchronously and need not finish before hooks run. If a listener terminates C before its normal Started turn, KRF issues C's pending Started before C's terminal signal. This does not defer the nested call.
 
 `canBeInterruptedBy` receives the running instance's `ActionExecutionContext` and a frozen `ActionInterruptionContext` containing the incoming `actor`, `actionId`, and original request `parameters`. For a scoped claim, the incoming parameters are the claiming instance's original request parameters. The hook is synchronous and must return a boolean. An error, yield, or non-boolean return denies preemption and returns `ActionInterruptDecisionFailed`, `ActionInterruptDecisionYielded`, or `ActionInterruptDecisionInvalidResult` respectively. The running Action stays active. KRF uses the callback captured for that exact activation, so it can read the same private factory state as its other callbacks.
 
@@ -111,7 +112,7 @@ onStart = function(ctx: ActionTypes.ActionExecutionContext)
 end
 ```
 
-The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then running their `onInterrupt` hooks in the same order. A scoped claim issues no Started event because the claiming Action is already active.
+The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then dispatching cleanup Tag events and running their `onInterrupt` hooks in the same order. A scoped claim issues no Started event because the claiming Action is already active.
 
 | Claim failure reason | Cause |
 | --- | --- |

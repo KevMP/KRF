@@ -14,7 +14,7 @@ type InternalActionImplementation = ActionTypes.InternalActionImplementation
 type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 type LockClaim = ActionTypes.LockClaim
 type InternalTagController = TagTypes.InternalTagController
-type ActionTagHandle = TagTypes.ActionTagHandle
+type TagMutationReceipt = TagTypes.TagMutationReceipt
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
@@ -24,7 +24,10 @@ type InternalActionInstance = {
 	context: ActionExecutionContext,
 	ownedLockReasons: { [string]: number },
 	onStartThread: thread?,
-	ownedTagHandles: { ActionTagHandle },
+	ownedTagReceipts: { TagMutationReceipt },
+	tagController: InternalTagController?,
+	terminalTagEvents: { TagTypes.TagMutationEvent },
+	startedIssued: boolean,
 }
 
 export type ActionControllerInstances = {
@@ -95,14 +98,15 @@ function ActionControllerInstancesModule.new(
 			ActionControllerUpdates.Remove(instances, instance.sequenceId)
 		end
 		retireStart(instance)
-		local tags: InternalTagController? = getTagController()
-		if tags ~= nil and #instance.ownedTagHandles > 0 then
-			tags:_beginActionBatch()
-			for _, handle: ActionTagHandle in instance.ownedTagHandles do
-				tags:_removeActionTag(handle)
+		local tags: InternalTagController? = instance.tagController
+		if tags ~= nil and #instance.ownedTagReceipts > 0 then
+			tags:_beginMutationBatch()
+			for _, handle: TagMutationReceipt in instance.ownedTagReceipts do
+				tags:_removeByReceipt(handle)
 			end
-			tags:_endActionBatch()
+			instance.terminalTagEvents = tags:_finishMutationBatch()
 		end
+		table.clear(instance.ownedTagReceipts)
 		return true
 	end
 
@@ -134,9 +138,30 @@ function ActionControllerInstancesModule.new(
 		}
 	end
 
+	local function issueStarted(instance: InternalActionInstance): ()
+		if instance.startedIssued then
+			return
+		end
+		-- A prior owner's signal listener can terminate this accepted instance
+		-- before the enclosing activation reaches its Started signal.
+		instance.startedIssued = true
+		startedSignal:Fire(lifecycleEvent(instance))
+	end
+
+	local function dispatchTerminalTags(instance: InternalActionInstance): ()
+		local tags: InternalTagController? = instance.tagController
+		if tags ~= nil then
+			local events: { TagTypes.TagMutationEvent } = instance.terminalTagEvents
+			instance.terminalTagEvents = {}
+			tags:_dispatchMutationEvents(events)
+		end
+	end
+
 	local function dispatchEnd(instance: InternalActionInstance): ()
 		ownedSignals:WithDeferredDestroy(function()
+			issueStarted(instance)
 			endedSignal:Fire(lifecycleEvent(instance))
+			dispatchTerminalTags(instance)
 			local callback = instance.implementation.onEnd
 			if callback ~= nil then
 				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
@@ -149,6 +174,7 @@ function ActionControllerInstancesModule.new(
 	end
 
 	local function issueInterrupted(instance: InternalActionInstance, reason: string): ()
+		issueStarted(instance)
 		interruptedSignal:Fire({
 			actor = actor,
 			actionId = instance.actionId,
@@ -171,6 +197,7 @@ function ActionControllerInstancesModule.new(
 	local function dispatchInterrupt(instance: InternalActionInstance, reason: string): ()
 		ownedSignals:WithDeferredDestroy(function()
 			issueInterrupted(instance, reason)
+			dispatchTerminalTags(instance)
 			invokeInterrupt(instance, reason)
 		end)
 	end
@@ -332,7 +359,7 @@ function ActionControllerInstancesModule.new(
 		end
 		local tags: InternalTagController? = getTagController()
 		if tags ~= nil then
-			tags:_beginActionBatch()
+			tags:_beginMutationBatch()
 		end
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
@@ -340,9 +367,7 @@ function ActionControllerInstancesModule.new(
 		for _, lockId: string in normalized do
 			addLockReason(instance, lockId)
 		end
-		if tags ~= nil then
-			tags:_endActionBatch()
-		end
+		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
 		local released: boolean = false
 		local claim: LockClaim = {
 			Release = function(_self: LockClaim): ()
@@ -362,6 +387,12 @@ function ActionControllerInstancesModule.new(
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
+			end
+			if tags ~= nil then
+				tags:_dispatchMutationEvents(tagEvents)
+			end
+			for _, owner: InternalActionInstance in conflicts do
+				dispatchTerminalTags(owner)
 			end
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")
@@ -410,7 +441,8 @@ function ActionControllerInstancesModule.new(
 		implementation: InternalActionImplementation,
 		parameters: any?,
 		definition: LoadedActionDefinition,
-		ownedTagHandles: { ActionTagHandle }
+		ownedTagReceipts: { TagMutationReceipt },
+		tags: InternalTagController?
 	): InternalActionInstance
 		local sequenceId: number = nextSequenceId
 		nextSequenceId += 1
@@ -444,7 +476,10 @@ function ActionControllerInstancesModule.new(
 		instance.context = context
 		instance.ownedLockReasons = {}
 		instance.onStartThread = nil
-		instance.ownedTagHandles = ownedTagHandles
+		instance.ownedTagReceipts = ownedTagReceipts
+		instance.tagController = tags
+		instance.terminalTagEvents = {}
+		instance.startedIssued = false
 		activeBySequenceId[sequenceId] = instance
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
@@ -520,43 +555,60 @@ function ActionControllerInstancesModule.new(
 				local first = definition.activeTags[1] or definition.appliedTags[1]
 				return nil, "ActionTagActivationFailed:" .. first.id
 			end
-			local tagReason: string? = tags:_canApplyActionTags(definition.activeTags)
-				or tags:_canApplyActionTags(definition.appliedTags)
+			local tagReason: string? = tags:_validateApplications(definition.activeTags)
+				or tags:_validateApplications(definition.appliedTags)
 			if tagReason ~= nil then
-				return nil, tagReason
+				return nil, "ActionTagActivationFailed:" .. tagReason
 			end
 		end
+		-- All fallible Tag validation precedes preemption. No consumer work or
+		-- yielding occurs between validation and the complete authoritative commit.
 		if tags ~= nil then
-			tags:_beginActionBatch()
+			tags:_beginMutationBatch()
 		end
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
 		end
-		local ownedTagHandles: { ActionTagHandle } = {}
+		local ownedTagReceipts: { TagMutationReceipt } = {}
 		if tags ~= nil then
 			for _, application in definition.activeTags do
-				local handle: ActionTagHandle?, applicationReason: string? =
-					tags:_addActionTag(application, ownedTagHandles)
-				assert(applicationReason == nil, applicationReason or "ActionTagActivationFailed")
-				if handle ~= nil then
-					table.insert(ownedTagHandles, handle)
+				local added: boolean, applicationReason: string?, receipt: TagMutationReceipt? =
+					tags:_addTagWithReceipt(application.id, { duration = application.duration })
+				assert(added, applicationReason or "ActionTagActivationFailed")
+				if receipt ~= nil then
+					if receipt.previousVersion == nil then
+						table.insert(ownedTagReceipts, receipt)
+					else
+						-- Only advance ownership of a record already created by this instance.
+						for index: number, owned: TagMutationReceipt in ownedTagReceipts do
+							if owned.record == receipt.record and owned.version == receipt.previousVersion then
+								ownedTagReceipts[index] = receipt
+								break
+							end
+						end
+					end
 				end
 			end
 			for _, application in definition.appliedTags do
-				local _, applicationReason: string? = tags:_addActionTag(application)
-				assert(applicationReason == nil, applicationReason or "ActionTagActivationFailed")
+				local added: boolean, applicationReason: string? =
+					tags:_addTagWithReceipt(application.id, { duration = application.duration })
+				assert(added, applicationReason or "ActionTagActivationFailed")
 			end
 		end
 		local instance: InternalActionInstance =
-			commitActivation(actionId, implementation, parameters, definition, ownedTagHandles)
-		if tags ~= nil then
-			tags:_endActionBatch()
-		end
+			commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
+		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
 			end
-			startedSignal:Fire(lifecycleEvent(instance))
+			issueStarted(instance)
+			if tags ~= nil then
+				tags:_dispatchMutationEvents(tagEvents)
+			end
+			for _, owner: InternalActionInstance in conflicts do
+				dispatchTerminalTags(owner)
+			end
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")
 			end
@@ -612,17 +664,26 @@ function ActionControllerInstancesModule.new(
 		end)
 		local tags: InternalTagController? = getTagController()
 		if tags ~= nil then
-			tags:_beginActionBatch()
+			tags:_beginMutationBatch()
 		end
 		for _, instance: InternalActionInstance in activeInstances do
 			commitTerminal(instance)
 		end
-		if tags ~= nil then
-			tags:_endActionBatch()
-		end
-		for _, instance: InternalActionInstance in activeInstances do
-			dispatchInterrupt(instance, "ActionControllerDestroyed")
-		end
+		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+		ownedSignals:WithDeferredDestroy(function()
+			for _, instance: InternalActionInstance in activeInstances do
+				issueInterrupted(instance, "ActionControllerDestroyed")
+			end
+			if tags ~= nil then
+				tags:_dispatchMutationEvents(tagEvents)
+			end
+			for _, instance: InternalActionInstance in activeInstances do
+				dispatchTerminalTags(instance)
+			end
+			for _, instance: InternalActionInstance in activeInstances do
+				invokeInterrupt(instance, "ActionControllerDestroyed")
+			end
+		end)
 	end
 
 	return instances

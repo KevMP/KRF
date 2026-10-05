@@ -11,6 +11,8 @@ local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 
 local PropertyRecompute = require(utilsFolder.PropertyRecompute)
+local PropertyResolver = require(utilsFolder.PropertyResolver)
+local PropertyModifierCollector = require(utilsFolder.PropertyModifierCollector)
 local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent)
 
 export type PropertyController = PropertyTypes.PropertyController
@@ -141,7 +143,15 @@ function PropertyController.new(actor: Actor): PropertyController
 	function controller:GetResolvedProperty(propertyName: string): number?
 		local propertyRecord: PropertyRecord? = propertiesById[propertyName]
 		if propertyRecord then
-			return propertyRecord.resolvedValue
+			if destroyed then
+				return propertyRecord.resolvedValue
+			end
+			-- Tag mutations may be committed before their notifications are dispatched.
+			-- Keep the notification baseline intact while queries resolve current state.
+			return PropertyResolver.Resolve(
+				propertyRecord.baseValue,
+				PropertyModifierCollector.CollectForProperty(tagController, propertyName)
+			)
 		end
 
 		return nil
@@ -150,7 +160,12 @@ function PropertyController.new(actor: Actor): PropertyController
 	function controller:GetResolvedProperties(): { [string]: number }
 		local resolvedProperties: { [string]: number } = {}
 		for propId: string, propertyRecord: PropertyRecord in propertiesById do
-			resolvedProperties[propId] = propertyRecord.resolvedValue
+			resolvedProperties[propId] = if destroyed
+				then propertyRecord.resolvedValue
+				else PropertyResolver.Resolve(
+					propertyRecord.baseValue,
+					PropertyModifierCollector.CollectForProperty(tagController, propId)
+				)
 		end
 
 		return table.freeze(resolvedProperties)

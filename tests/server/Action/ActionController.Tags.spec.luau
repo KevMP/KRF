@@ -305,7 +305,7 @@ it("dispatches Tag events only after all declarative Tags and the Action are act
 		end
 	end)
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
-	expect(observed).toEqual({ "all tags visible", "all tags visible", "started with tags" })
+	expect(observed).toEqual({ "started with tags", "all tags visible", "all tags visible" })
 end)
 
 it("rejects when onCanStart adds a blocked Tag before final validation", function()
@@ -643,7 +643,7 @@ it("dispatches terminal events after all active Tag cleanup commits", function()
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
 	expect((actions:EndAction(started.sequenceId))).toBe(true)
-	expect(observations).toEqual({ "tag removed after commit", "tag removed after commit", "ended after commit" })
+	expect(observations).toEqual({ "ended after commit", "tag removed after commit", "tag removed after commit" })
 end)
 
 it("lets Action code choose a later Tag reaction through normal lifecycle methods", function()

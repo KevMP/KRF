@@ -58,7 +58,7 @@ Returns a frozen list of effective Action ids in Action registry order.
 
 Requests one Action on this Actor. An accepted result is `{ accepted = true, sequenceId = number }`; a rejected result is `{ accepted = false, reason = string }`.
 
-`RequestAction` checks `requiredTags` and `blockedTags` against the Actor's live Tags before `onCanStart` and again before commit. It applies `activeTags` and `appliedTags` with activation. It does not spend `costs`.
+Checks Tag requirements and commits declarative Tag applications with activation. It does not spend `costs`; see the [Action Tags guide](/Action/action-tags) for transaction and callback order.
 
 | Rejection reason | Cause |
 | --- | --- |
