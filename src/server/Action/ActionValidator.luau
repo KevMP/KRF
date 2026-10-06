@@ -9,6 +9,8 @@ local SUPPORTED_FIELDS: { [string]: boolean } = {
 	autoGrant = true,
 	requiredTags = true,
 	blockedTags = true,
+	activeTags = true,
+	appliedTags = true,
 	costs = true,
 	locks = true,
 	interruptibleBy = true,
@@ -163,6 +165,54 @@ local function ValidateCosts(costs: any, preparedResourceIds: { [string]: boolea
 	return true, nil
 end
 
+local function ValidateTagApplications(
+	applications: any,
+	field: string,
+	preparedTagIds: { [string]: boolean }
+): (boolean, string?)
+	if applications == nil then
+		return true, nil
+	end
+	local valid: boolean, reason: string? = ValidateArray(applications, field)
+	if not valid then
+		return false, reason
+	end
+	for _, application: any in applications do
+		local tagId: any = application
+		local duration: any = nil
+		if type(application) == "table" then
+			for key in application do
+				if key ~= "id" and key ~= "duration" then
+					return false, `{field}OptionUnsupported:{tostring(key)}`
+				end
+			end
+			tagId = application.id
+			duration = application.duration
+		end
+		if type(tagId) ~= "string" then
+			return false, `{field}IdMustBeString`
+		end
+		if tagId == "" then
+			return false, `{field}IdCannotBeEmpty`
+		end
+		if duration ~= nil then
+			if type(duration) ~= "number" then
+				return false, `{field}DurationMustBeNumber`
+			end
+			if not math.isfinite(duration) then
+				return false, `{field}DurationMustBeFiniteNumber`
+			end
+			if duration <= 0 then
+				return false, `{field}DurationMustBePositive`
+			end
+		end
+		if not preparedTagIds[tagId] then
+			return false, `{field}Unknown:{tagId}`
+		end
+	end
+	return true, nil
+end
+
 function ActionValidator.ValidateActionDefinition(
 	definition: unknown,
 	preparedActionIds: { [string]: boolean },
@@ -221,6 +271,14 @@ function ActionValidator.ValidateActionDefinition(
 		preparedTagIds,
 		"ActionBlockedTagUnknown"
 	)
+	if not valid then
+		return false, reason
+	end
+	valid, reason = ValidateTagApplications(fields.activeTags, "ActionActiveTags", preparedTagIds)
+	if not valid then
+		return false, reason
+	end
+	valid, reason = ValidateTagApplications(fields.appliedTags, "ActionAppliedTags", preparedTagIds)
 	if not valid then
 		return false, reason
 	end

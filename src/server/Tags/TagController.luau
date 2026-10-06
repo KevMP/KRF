@@ -26,9 +26,11 @@ type ActiveTagsById = TagControllerInstanceUtils.ActiveTagsById
 type TagControllerEventContext = TagControllerEventUtils.TagControllerEventContext
 type ActiveTagSnapshot = TagTypes.ActiveTagSnapshot
 type TagInstanceSnapshot = TagTypes.TagInstanceSnapshot
+type TagApplication = TagTypes.TagApplication
+type TagMutationReceipt = TagTypes.TagMutationReceipt
 type AdvancingControllerEntry = TagControllerStepUtils.AdvancingControllerEntry
 type StepTagInstanceResult = TagControllerStepUtils.StepTagInstanceResult
-type InternalTagController = TagController & {
+type InternalTagController = TagTypes.InternalTagController & {
 	_activeTagsById: ActiveTagsById,
 	_expireTimedInstance: (self: InternalTagController, tagRecord: TagInstanceRecord) -> boolean,
 }
@@ -96,6 +98,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 	local activeTagsById: ActiveTagsById = {}
 	local destroyed: boolean = false
+	local mutationBatchDepth: number = 0
+	local deferredEvents: { TagTypes.TagMutationEvent } = {}
+	local mutationObservers: { [TagTypes.TagMutationObserver]: boolean } = {}
+	local recordVersions: { [TagInstanceRecord]: number } = setmetatable({}, { __mode = "k" }) :: { [TagInstanceRecord]: number }
 
 	local factoryContext: TagInstanceFactoryContext = {
 		nextAppliedOrder = 0,
@@ -114,21 +120,106 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local controller: InternalTagController = {} :: InternalTagController
 	controller._activeTagsById = activeTagsById
 
+	function controller:_observeMutations(observer: TagTypes.TagMutationObserver): () -> ()
+		mutationObservers[observer] = true
+		return function(): ()
+			mutationObservers[observer] = nil
+		end
+	end
+
+	local function commitDerivedState(events: { TagTypes.TagMutationEvent }): ()
+		for observer: TagTypes.TagMutationObserver in mutationObservers do
+			observer.Commit(events)
+		end
+	end
+
+	local function dispatchDerivedEvents(): ()
+		for observer: TagTypes.TagMutationObserver in mutationObservers do
+			observer.Dispatch()
+		end
+	end
+
+	local function dispatchEvent(kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string): ()
+		if kind == "Added" then
+			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
+		elseif kind == "Removed" then
+			TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
+		elseif kind == "Refreshed" then
+			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
+		else
+			TagControllerEventUtils.FireTagExpired(eventContext, tagId)
+		end
+	end
+
+	local function fireEvent(kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string): ()
+		if mutationBatchDepth > 0 then
+			table.insert(deferredEvents, { kind = kind, tagId = tagId })
+			return
+		end
+		commitDerivedState({ { kind = kind, tagId = tagId } })
+		dispatchEvent(kind, tagId)
+		dispatchDerivedEvents()
+	end
+
+	function controller:_beginMutationBatch(): ()
+		mutationBatchDepth += 1
+	end
+
+	-- Detach before dispatch so reentrant mutations complete in their own batch.
+	function controller:_finishMutationBatch(): { TagTypes.TagMutationEvent }
+		assert(mutationBatchDepth > 0, "TagMutationBatchNotOpen")
+		mutationBatchDepth -= 1
+		if mutationBatchDepth > 0 then
+			return {}
+		end
+		local events: { TagTypes.TagMutationEvent } = deferredEvents
+		deferredEvents = {}
+		commitDerivedState(events)
+		return events
+	end
+
+	function controller:_dispatchMutationEvents(events: { TagTypes.TagMutationEvent }): ()
+		for _, event: TagTypes.TagMutationEvent in events do
+			if destroyed then
+				break
+			end
+			dispatchEvent(event.kind, event.tagId)
+		end
+		dispatchDerivedEvents()
+	end
+
+	-- Returns the first unavailable application id. Commit must follow without consumer callbacks.
+	function controller:_validateApplications(applications: { TagApplication }): string?
+		for _, application: TagApplication in applications do
+			if destroyed or TagRegistry.Get(application.id) == nil then
+				return application.id
+			end
+			local duration: number? = application.duration
+			if duration ~= nil and (not math.isfinite(duration) or duration <= 0) then
+				return application.id
+			end
+		end
+		return nil
+	end
+
 	controller.OnTagAdded = SignalModule.wrapEvent(tagAddedSignal)
 	controller.OnTagRemoved = SignalModule.wrapEvent(tagRemovedSignal)
 	controller.OnTagRefreshed = SignalModule.wrapEvent(tagRefreshedSignal)
 	controller.OnTagChanged = SignalModule.wrapEvent(tagChangedSignal)
 	controller.OnTagExpired = SignalModule.wrapEvent(tagExpiredSignal)
 
-	function controller:AddTag(tagId: string, options: AddTagOptions?): (boolean, string?)
+	function controller:_addTagWithReceipt(
+		tagId: string,
+		options: AddTagOptions?
+	): (boolean, string?, TagMutationReceipt?)
 		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
 
 		if tagDefinition == nil then
-			return false, "UnknownTagId:" .. tagId
+			return false, "UnknownTagId:" .. tagId, nil
 		end
 
 		if options ~= nil and options.duration ~= nil and options.duration <= 0 then
-			return false, "TagDurationMustBePositive"
+			return false, "TagDurationMustBePositive", nil
 		end
 
 		local activeInstances: { TagInstanceRecord }? = activeTagsById[tagId]
@@ -136,22 +227,24 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		if tagDefinition.duplicateBehavior == "Ignore" then
 			if activeInstances ~= nil and #activeInstances > 0 then
-				return true, nil
+				return true, nil, nil
 			end
 
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
+			recordVersions[instance] = 0
 			activeTagsById[tagId] = { instance }
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
-			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
-			return true, nil
+			fireEvent("Added", tagId)
+			return true, nil, { tagId = tagId, record = instance, version = 0 }
 		end
 
 		if tagDefinition.duplicateBehavior == "Refresh" then
 			if activeInstances ~= nil and #activeInstances > 0 then
 				TagControllerInstanceUtils.RefreshTagInstance(activeInstances[1], resolvedDuration)
+				recordVersions[activeInstances[1]] = (recordVersions[activeInstances[1]] or 0) + 1
 				TagControllerStepUtils.ReconcileTimedInstance(
 					advancingInstancesByController,
 					self,
@@ -159,18 +252,22 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 					activeInstances[1]
 				)
 				UpdateHeartbeatConnection()
-				TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
-				return true, nil
+				local version: number = recordVersions[activeInstances[1]]
+				local receipt: TagMutationReceipt =
+					{ tagId = tagId, record = activeInstances[1], version = version, previousVersion = version - 1 }
+				fireEvent("Refreshed", tagId)
+				return true, nil, receipt
 			end
 
 			local instance: TagInstanceRecord =
 				TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
+			recordVersions[instance] = 0
 			activeTagsById[tagId] = { instance }
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 			TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 			UpdateHeartbeatConnection()
-			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
-			return true, nil
+			fireEvent("Added", tagId)
+			return true, nil, { tagId = tagId, record = instance, version = 0 }
 		end
 
 		local stackInstances: { TagInstanceRecord }? = activeInstances
@@ -178,11 +275,11 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if stackInstances == nil then
 			activeTagsById[tagId] = {}
 			stackInstances = activeTagsById[tagId]
-			self._activeTagsById = activeTagsById
+			controller._activeTagsById = activeTagsById
 		end
 
 		if stackInstances == nil then
-			return false, "TagActiveInstancesInitFailed:" .. tagId
+			return false, "TagActiveInstancesInitFailed:" .. tagId, nil
 		end
 
 		local maxStacks: number? = tagDefinition.maxStacks
@@ -191,20 +288,54 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		if isAtMaxStacks then
 			local refreshTarget: TagInstanceRecord = TagControllerInstanceUtils.SelectStackRefreshTarget(stackInstances)
 			TagControllerInstanceUtils.RefreshTagInstance(refreshTarget, resolvedDuration)
+			recordVersions[refreshTarget] = (recordVersions[refreshTarget] or 0) + 1
 			TagControllerStepUtils.ReconcileTimedInstance(advancingInstancesByController, self, actor, refreshTarget)
 			UpdateHeartbeatConnection()
-			TagControllerEventUtils.FireTagRefreshed(eventContext, tagId)
-			return true, nil
+			local version: number = recordVersions[refreshTarget]
+			local receipt: TagMutationReceipt =
+				{ tagId = tagId, record = refreshTarget, version = version, previousVersion = version - 1 }
+			fireEvent("Refreshed", tagId)
+			return true, nil, receipt
 		end
 
 		local instance: TagInstanceRecord =
 			TagControllerInstanceUtils.CreateTagInstance(factoryContext, tagId, resolvedDuration)
+		recordVersions[instance] = 0
 		table.insert(stackInstances, instance)
-		self._activeTagsById = activeTagsById
+		controller._activeTagsById = activeTagsById
 		TagControllerStepUtils.TryAddAdvancingInstance(advancingInstancesByController, self, actor, instance)
 		UpdateHeartbeatConnection()
-		TagControllerEventUtils.FireTagAdded(eventContext, tagId)
-		return true, nil
+		fireEvent("Added", tagId)
+		return true, nil, { tagId = tagId, record = instance, version = 0 }
+	end
+
+	function controller:AddTag(tagId: string, options: AddTagOptions?): (boolean, string?)
+		local added: boolean, reason: string? = self:_addTagWithReceipt(tagId, options)
+		return added, reason
+	end
+
+	function controller:_removeByReceipt(handle: TagMutationReceipt): ()
+		local instances: { TagInstanceRecord }? = activeTagsById[handle.tagId]
+		if instances == nil then
+			return
+		end
+		for index: number, record: TagInstanceRecord in instances do
+			if record == handle.record and (recordVersions[record] or 0) == handle.version then
+				TagControllerStepUtils.RemoveAdvancingInstanceByControllerRecord(
+					advancingInstancesByController,
+					self,
+					record
+				)
+				if #instances == 1 then
+					activeTagsById[handle.tagId] = nil
+				else
+					table.remove(instances, index)
+				end
+				UpdateHeartbeatConnection()
+				fireEvent("Removed", handle.tagId)
+				return
+			end
+		end
 	end
 
 	function controller:RemoveTag(tagId: string): (boolean, string?)
@@ -224,7 +355,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		UpdateHeartbeatConnection()
 		activeTagsById[tagId] = nil
 		self._activeTagsById = activeTagsById
-		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
+		fireEvent("Removed", tagId)
 
 		return true, nil
 	end
@@ -245,7 +376,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			UpdateHeartbeatConnection()
 			activeTagsById[tagId] = nil
 			self._activeTagsById = activeTagsById
-			TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
+			fireEvent("Removed", tagId)
 			return true, nil
 		end
 
@@ -259,7 +390,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		UpdateHeartbeatConnection()
 		table.remove(activeInstances, removeIndex)
 		self._activeTagsById = activeTagsById
-		TagControllerEventUtils.FireTagRemoved(eventContext, tagId)
+		fireEvent("Removed", tagId)
 
 		return true, nil
 	end
@@ -331,6 +462,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		destroyed = true
+		table.clear(mutationObservers)
 		TagControllerStepUtils.ClearAdvancingInstancesForController(advancingInstancesByController, self)
 		UpdateHeartbeatConnection()
 		activeTagsById = {}
@@ -364,7 +496,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 		self._activeTagsById = activeTagsById
 
-		TagControllerEventUtils.FireTagExpired(eventContext, tagRecord.tagId)
+		fireEvent("Expired", tagRecord.tagId)
 		return true
 	end
 

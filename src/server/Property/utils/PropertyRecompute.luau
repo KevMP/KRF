@@ -55,13 +55,23 @@ function PropertyRecompute.RecomputeProperty(
 	}
 end
 
-function PropertyRecompute.RecomputePropertiesAffectedByTag(
+function PropertyRecompute.RecomputePropertiesAffectedByTags(
 	propertiesById: PropertyRecordsById,
 	tagController: TagTypes.TagController?,
-	tagId: string
+	events: { TagTypes.TagMutationEvent }
 ): { ResolvedChange }
 	local changes: { ResolvedChange } = {}
-	local affectedPropertyNames = PropertyModifierCollector.GetAffectedPropertyNames(tagId)
+	local affectedPropertyNames: { string } = {}
+	local seen: { [string]: boolean } = {}
+	for _, event: TagTypes.TagMutationEvent in events do
+		for _, propertyName: string in PropertyModifierCollector.GetAffectedPropertyNames(event.tagId) do
+			if not seen[propertyName] then
+				seen[propertyName] = true
+				table.insert(affectedPropertyNames, propertyName)
+			end
+		end
+	end
+	table.sort(affectedPropertyNames)
 
 	for _, propertyName in affectedPropertyNames do
 		if propertiesById[propertyName] == nil then

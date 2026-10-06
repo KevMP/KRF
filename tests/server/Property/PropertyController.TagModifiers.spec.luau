@@ -648,6 +648,8 @@ it("ignores later tag mutations after the property controller is destroyed", fun
 	expect(baseEventCount).toBe(0)
 	expect(resolvedEventCount).toBe(0)
 	expect(umbrellaEventCount).toBe(0)
+	expect(propertyController:GetResolvedProperty("WalkSpeed")).toBe(16)
+	expect(propertyController:GetResolvedProperties().WalkSpeed).toBe(16)
 
 	baseConnection:Disconnect()
 	resolvedConnection:Disconnect()

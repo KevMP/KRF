@@ -40,6 +40,12 @@ export type AddTagOptions = {
 	duration: number?,
 }
 
+export type TagApplication = { id: string, duration: number? }
+-- A receipt identifies one exact mutation; previousVersion is nil for a new record.
+-- Refresh receipts allow a caller to advance its own existing ownership only.
+export type TagMutationReceipt = { tagId: string, record: {}, version: number, previousVersion: number? }
+export type TagMutationEvent = { kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string }
+
 export type TagInstanceSnapshot = {
 	tagId: string,
 	duration: number?,
@@ -72,6 +78,25 @@ export type TagController = {
 	HasTag: (any, tagId: string) -> boolean,
 	GetActiveTags: (any) -> { ActiveTagSnapshot },
 	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
+}
+
+export type TagMutationObserver = {
+	Commit: (events: { TagMutationEvent }) -> (),
+	Dispatch: () -> (),
+}
+
+export type InternalTagController = TagController & {
+	_observeMutations: (self: InternalTagController, observer: TagMutationObserver) -> () -> (),
+	_beginMutationBatch: (self: InternalTagController) -> (),
+	_finishMutationBatch: (self: InternalTagController) -> { TagMutationEvent },
+	_dispatchMutationEvents: (self: InternalTagController, events: { TagMutationEvent }) -> (),
+	_validateApplications: (self: InternalTagController, applications: { TagApplication }) -> string?,
+	_addTagWithReceipt: (
+		self: InternalTagController,
+		tagId: string,
+		options: AddTagOptions?
+	) -> (boolean, string?, TagMutationReceipt?),
+	_removeByReceipt: (self: InternalTagController, receipt: TagMutationReceipt) -> (),
 }
 
 return TagTypes

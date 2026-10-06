@@ -17,8 +17,10 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | `id` | Required unique, non-empty string. |
 | `visibility` | Required `"ServerOnly"` or `"ClientVisible"` replication metadata. |
 | `autoGrant` | Optional boolean; defaults to `false`. Grants the Action to every Actor when its `ActionController` is created. It does not start the Action or bind input. |
-| `requiredTags` | Optional array of registered Tag ids recorded as requirement metadata. |
-| `blockedTags` | Optional array of registered Tag ids recorded as blocker metadata. Cannot overlap `requiredTags`. |
+| `requiredTags` | Optional array of registered Tag ids that must be present when the Action starts. |
+| `blockedTags` | Optional array of registered Tag ids that must be absent when the Action starts. Cannot overlap `requiredTags`. |
+| `activeTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts and removes any Tag state that Action still owns when it ends or is interrupted. |
+| `appliedTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts; they then follow the standard Tag lifecycle even if the Action ends or is interrupted. |
 | `costs` | Optional Resource-id keyed map of finite, strictly positive cost metadata. |
 | `locks` | Optional array of opaque, non-empty game-defined lock ids, acquired as [lifetime claims](./action-locks) at activation. |
 | `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action when locks conflict. Forward references and self-references are valid. |
@@ -27,9 +29,9 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | `onUpdate` | Optional `(ActionExecutionContext, number) -> ()` hook for [active Action updates](./action-updates). |
 | `canBeInterruptedBy` | Optional `(ActionExecutionContext, ActionInterruptionContext) -> boolean` hook from the running instance, narrowing the static `interruptibleBy` allowlist. |
 
-All lists must be dense arrays without duplicate entries. Their entries must be non-empty strings. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action registry. Omitted lists and `costs` normalize to empty collections.
+All lists must be dense arrays. `requiredTags`, `blockedTags`, `locks`, and `interruptibleBy` cannot contain duplicate entries and require non-empty strings. Each `activeTags` or `appliedTags` entry is either a non-empty Tag id or `{ id = "Tag.Id", duration = positiveFiniteSeconds }`. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action registry. Omitted lists and `costs` normalize to empty collections. Loaded Tag applications are frozen copies in declaration order, with string entries normalized to `{ id = "Tag.Id" }`.
 
-These fields are validated and stored at startup. The current `ActionController` does not evaluate `requiredTags` or `blockedTags` against an Actor, or spend `costs`, when handling `RequestAction`. See [Action Runtime](./action-lifecycle) for the request decision order.
+These fields are validated and stored at startup. `ActionController` checks Tag requirements and applies declarative Tags during `RequestAction`; it does not spend `costs`. See [Action Tags](./action-tags) for Tag lifetime and [Action Runtime](./action-lifecycle) for request order.
 
 KRF has no Action kind taxonomy, static duration, or first-class cooldown metadata. Cooldowns and charges belong in [Resources](../Resource/resource-runtime). Phases, combos, input buffers, priorities, categories, and other unsupported fields are rejected.
 
@@ -100,6 +102,7 @@ Omitting `actions` loads an empty registry with `IsLoaded() == true`. Before pub
 - [Action Grants](./action-grants)
 - [Action Runtime](./action-lifecycle)
 - [Action Updates](./action-updates)
+- [Action Tags](./action-tags)
 - [Action Locks](./action-locks)
 - [Initializing KRF](../initializing-krf)
 - [Tag Registry](../Tags/tag-registry)

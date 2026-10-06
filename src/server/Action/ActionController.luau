@@ -8,6 +8,7 @@ local ActionRegistry = require(script.Parent.ActionRegistry)
 local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
 local ActionControllerGrantsModule = require(script.Parent.utils.ActionControllerGrants)
 local ActionControllerInstancesModule = require(script.Parent.utils.ActionControllerInstances)
+local ActionControllerTagRequirements = require(script.Parent.utils.ActionControllerTagRequirements)
 
 type Actor = ActorTypes.Actor
 type ActionController = ActionTypes.ActionController
@@ -75,6 +76,10 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		if not grants:IsGranted(actionId) then
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
+		local tagReason: string? = ActionControllerTagRequirements.Validate(actor, definition)
+		if tagReason ~= nil then
+			return { accepted = false, reason = tagReason }
+		end
 
 		local implementation, factoryReason = ActionRegistry.CreateExecution(actionId)
 		if implementation == nil then
@@ -133,7 +138,7 @@ function ActionControllerModule.new(actor: Actor): ActionController
 				if not grants:IsGranted(actionId) then
 					return "ActionNotGranted"
 				end
-				return nil
+				return ActionControllerTagRequirements.Validate(actor, definition)
 			end
 		)
 		if sequenceId == nil then

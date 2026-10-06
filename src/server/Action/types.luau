@@ -1,6 +1,8 @@
 --!strict
 
 export type ActionVisibility = "ServerOnly" | "ClientVisible"
+export type ActionTagApplicationOptions = { id: string, duration: number? }
+export type ActionTagApplication = string | ActionTagApplicationOptions
 
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
@@ -77,6 +79,8 @@ export type ActionDefinition = {
 	autoGrant: boolean?,
 	requiredTags: { string }?,
 	blockedTags: { string }?,
+	activeTags: { ActionTagApplication }?,
+	appliedTags: { ActionTagApplication }?,
 	costs: { [string]: number }?,
 	locks: { string }?,
 	interruptibleBy: { string }?,
@@ -107,6 +111,8 @@ export type LoadedActionDefinition = {
 	read autoGrant: boolean,
 	read requiredTags: { string },
 	read blockedTags: { string },
+	read activeTags: { ActionTagApplicationOptions },
+	read appliedTags: { ActionTagApplicationOptions },
 	read costs: { [string]: number },
 	read locks: { string },
 	read interruptibleBy: { string },

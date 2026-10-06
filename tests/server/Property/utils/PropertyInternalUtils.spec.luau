@@ -118,7 +118,7 @@ it("RecomputeProperty returns nil for missing properties and unchanged resolutio
 	expect(unchangedChange).toBeNil()
 end)
 
-it("RecomputePropertiesAffectedByTag skips unstored properties and unchanged recomputes", function()
+it("RecomputePropertiesAffectedByTags skips unstored properties and unchanged recomputes", function()
 	loadMixedTagCatalog()
 
 	local propertiesById: PropertyRecordsById = {
@@ -138,8 +138,11 @@ it("RecomputePropertiesAffectedByTag skips unstored properties and unchanged rec
 		end,
 	} :: any
 
-	local sprintChanges =
-		PropertyRecompute.RecomputePropertiesAffectedByTag(propertiesById, fakeTagController, "Buff.Sprint")
+	local sprintChanges = PropertyRecompute.RecomputePropertiesAffectedByTags(
+		propertiesById,
+		fakeTagController,
+		{ { kind = "Added", tagId = "Buff.Sprint" } }
+	)
 
 	expect(#sprintChanges).toBe(1)
 	expect(sprintChanges[1].propertyName).toBe("WalkSpeed")
@@ -161,58 +164,46 @@ it("RecomputePropertiesAffectedByTag skips unstored properties and unchanged rec
 		end,
 	} :: any
 
-	local stunnedChanges = PropertyRecompute.RecomputePropertiesAffectedByTag(
+	local stunnedChanges = PropertyRecompute.RecomputePropertiesAffectedByTags(
 		unchangedPropertiesById,
 		stunnedTagController,
-		"Status.Stunned"
+		{ { kind = "Added", tagId = "Status.Stunned" } }
 	)
 
 	expect(stunnedChanges).toEqual({})
 end)
 
-it("FireResolvedChanges returns early for empty batches and stops before later changes when asked to stop", function()
+it("discards later changes on destroy while finishing the change already being issued", function()
 	local eventContext: PropertyControllerEventContext, _baseSignal: SignalTypes.Signal<Actor, string, number?, number>, resolvedSignal: SignalTypes.Signal<Actor, string, number?, number>, propertySignal: SignalTypes.Signal<PropertyChange> =
 		createEventContext()
+	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
 	local resolvedEventCount: number = 0
 	local propertyEventCount: number = 0
-	local shouldContinue: boolean = true
-
 	resolvedSignal:Connect(function()
 		resolvedEventCount += 1
+		journal:Destroy()
+		eventContext.ownedSignals:Destroy()
 	end)
 	propertySignal:Connect(function()
 		propertyEventCount += 1
-		shouldContinue = false
 	end)
-
-	PropertyControllerEventUtils.FireResolvedChanges(eventContext, {}, function(): boolean
-		return true
-	end)
-
-	PropertyControllerEventUtils.FireResolvedChanges(eventContext, {
-		{
-			propertyName = "WalkSpeed",
+	journal:Drain()
+	for _, propertyName: string in { "WalkSpeed", "JumpPower" } do
+		journal:Queue({
+			actor = eventContext.actor,
+			propertyName = propertyName,
 			oldBaseValue = 16,
 			newBaseValue = 16,
 			oldResolvedValue = 16,
 			newResolvedValue = 20,
-		},
-		{
-			propertyName = "JumpPower",
-			oldBaseValue = 50,
-			newBaseValue = 50,
-			oldResolvedValue = 50,
-			newResolvedValue = 0,
-		},
-	}, function(): boolean
-		return shouldContinue
-	end)
-
+		}, false, true)
+	end
+	journal:Drain()
 	expect(resolvedEventCount).toBe(1)
 	expect(propertyEventCount).toBe(1)
 end)
 
-it("FirePropertyChanged skips the resolved signal when only the base value should report", function()
+it("the journal skips the resolved signal when only the base value should report", function()
 	local eventContext: PropertyControllerEventContext, baseSignal: SignalTypes.Signal<Actor, string, number?, number>, resolvedSignal: SignalTypes.Signal<Actor, string, number?, number>, propertySignal: SignalTypes.Signal<PropertyChange> =
 		createEventContext()
 	local baseEvents: { { propertyName: string, oldValue: number?, newValue: number } } = {}
@@ -233,7 +224,16 @@ it("FirePropertyChanged skips the resolved signal when only the base value shoul
 		table.insert(propertyChanges, change)
 	end)
 
-	PropertyControllerEventUtils.FirePropertyChanged(eventContext, "WalkSpeed", 10, 16, 10, 10, true, false)
+	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
+	journal:Queue({
+		actor = eventContext.actor,
+		propertyName = "WalkSpeed",
+		oldBaseValue = 10,
+		newBaseValue = 16,
+		oldResolvedValue = 10,
+		newResolvedValue = 10,
+	}, true, false)
+	journal:Drain()
 
 	expect(baseEvents).toEqual({
 		{

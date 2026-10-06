@@ -49,7 +49,7 @@ Setting a new property name creates custom numeric state. A tag modifier alone n
 
 Stacks repeat their `add` and `multiply` contribution. The highest active minimum and lowest active maximum form the clamp.
 
-Attach `TagController` before `PropertyController`. The property controller applies already-active tags at construction and observes later add, refresh, removal, and expiry events.
+Attach `TagController` before `PropertyController`. Already-active Tags apply at construction. Later Tag changes update resolved values before consumer callbacks run.
 
 ## Changes
 
@@ -61,6 +61,8 @@ Attach `TagController` before `PropertyController`. The property controller appl
 | Write or recompute is a no-op | No | No | No |
 
 This lets systems subscribe at the narrowest level they need. A movement adapter normally observes resolved changes; a progression system may care about base changes.
+
+Property notifications report net changes and are journaled in commit order. If a lifecycle or Tag listener synchronously performs another mutation that dispatches Property notifications, older pending notifications are issued first. Nested operations remain synchronous. Queries always return current committed state, even when an event payload describes an older transition.
 
 ## Design rules
 

@@ -15,7 +15,7 @@ local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent
 
 export type PropertyController = PropertyTypes.PropertyController
 type Actor = ActorTypes.Actor
-type TagController = TagTypes.TagController
+type TagController = TagTypes.InternalTagController
 
 type PropertyRecord = PropertyRecompute.PropertyRecord
 type PropertyRecordsById = PropertyRecompute.PropertyRecordsById
@@ -56,19 +56,22 @@ function PropertyController.new(actor: Actor): PropertyController
 	}
 
 	local tagController: TagController? = actor:GetController("TagController") :: TagController?
-	local tagConnections: { SignalTypes.Connection } = {}
+	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
+	local disconnectTagMutations: (() -> ())? = nil
 
-	local function recomputePropertiesAffectedByTag(tagId: string): ()
-		if destroyed then
-			return
-		end
-
+	local function commitTagChanges(events: { TagTypes.TagMutationEvent }): ()
 		local changes: { ResolvedChange } =
-			PropertyRecompute.RecomputePropertiesAffectedByTag(propertiesById, tagController, tagId)
-
-		PropertyControllerEventUtils.FireResolvedChanges(eventContext, changes, function(): boolean
-			return not destroyed
-		end)
+			PropertyRecompute.RecomputePropertiesAffectedByTags(propertiesById, tagController, events)
+		for _, change: ResolvedChange in changes do
+			journal:Queue({
+				actor = actor,
+				propertyName = change.propertyName,
+				oldBaseValue = change.oldBaseValue,
+				newBaseValue = change.newBaseValue,
+				oldResolvedValue = change.oldResolvedValue,
+				newResolvedValue = change.newResolvedValue,
+			}, false, true)
+		end
 	end
 
 	for propertyName: string in propertiesById do
@@ -91,16 +94,15 @@ function PropertyController.new(actor: Actor): PropertyController
 			PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
 			local newResolvedValue: number = propertiesById[propertyName].resolvedValue
 
-			PropertyControllerEventUtils.FirePropertyChanged(
-				eventContext,
-				propertyName,
-				nil,
-				value,
-				nil,
-				newResolvedValue,
-				true,
-				true
-			)
+			journal:Queue({
+				actor = actor,
+				propertyName = propertyName,
+				oldBaseValue = nil,
+				newBaseValue = value,
+				oldResolvedValue = nil,
+				newResolvedValue = newResolvedValue,
+			}, true, true)
+			journal:Drain()
 			return true, nil
 		end
 
@@ -115,17 +117,15 @@ function PropertyController.new(actor: Actor): PropertyController
 		PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
 		local newResolvedValue: number = propertyRecord.resolvedValue
 
-		PropertyControllerEventUtils.FirePropertyChanged(
-			eventContext,
-			propertyName,
-			previousBaseValue,
-			value,
-			previousResolvedValue,
-			newResolvedValue,
-			true,
-			previousResolvedValue ~= newResolvedValue
-		)
-
+		journal:Queue({
+			actor = actor,
+			propertyName = propertyName,
+			oldBaseValue = previousBaseValue,
+			newBaseValue = value,
+			oldResolvedValue = previousResolvedValue,
+			newResolvedValue = newResolvedValue,
+		}, true, previousResolvedValue ~= newResolvedValue)
+		journal:Drain()
 		return true, nil
 	end
 
@@ -167,10 +167,12 @@ function PropertyController.new(actor: Actor): PropertyController
 
 		destroyed = true
 
-		for _, connection: SignalTypes.Connection in tagConnections do
-			connection:Disconnect()
+		local disconnect: (() -> ())? = disconnectTagMutations
+		disconnectTagMutations = nil
+		if disconnect ~= nil then
+			disconnect()
 		end
-		table.clear(tagConnections)
+		journal:Destroy()
 
 		ownedSignals:Destroy()
 	end
@@ -180,21 +182,12 @@ function PropertyController.new(actor: Actor): PropertyController
 	controller.OnPropertyChanged = SignalModule.wrapEvent(OnPropertyChangedSignal)
 
 	if tagController ~= nil then
-		local tagEvents: { SignalTypes.Event<Actor, string> } = {
-			tagController.OnTagAdded,
-			tagController.OnTagRemoved,
-			tagController.OnTagExpired,
-			tagController.OnTagRefreshed,
-		}
-
-		for _, event: SignalTypes.Event<Actor, string> in tagEvents do
-			table.insert(
-				tagConnections,
-				event:Connect(function(_actor: Actor, tagId: string)
-					recomputePropertiesAffectedByTag(tagId)
-				end)
-			)
-		end
+		disconnectTagMutations = tagController:_observeMutations({
+			Commit = commitTagChanges,
+			Dispatch = function(): ()
+				journal:Drain()
+			end,
+		})
 	end
 
 	return controller
