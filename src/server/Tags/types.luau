@@ -44,7 +44,7 @@ export type TagApplication = { id: string, duration: number? }
 -- A receipt identifies one exact mutation; previousVersion is nil for a new record.
 -- Refresh receipts allow a caller to advance its own existing ownership only.
 export type TagMutationReceipt = { tagId: string, record: {}, version: number, previousVersion: number? }
-export type TagMutationEvent = { kind: string, tagId: string }
+export type TagMutationEvent = { kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string }
 
 export type TagInstanceSnapshot = {
 	tagId: string,

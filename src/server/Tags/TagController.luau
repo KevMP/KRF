@@ -139,7 +139,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 	end
 
-	local function dispatchEvent(kind: string, tagId: string): ()
+	local function dispatchEvent(kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string): ()
 		if kind == "Added" then
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		elseif kind == "Removed" then
@@ -151,7 +151,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 	end
 
-	local function fireEvent(kind: string, tagId: string): ()
+	local function fireEvent(kind: "Added" | "Removed" | "Refreshed" | "Expired", tagId: string): ()
 		if mutationBatchDepth > 0 then
 			table.insert(deferredEvents, { kind = kind, tagId = tagId })
 			return

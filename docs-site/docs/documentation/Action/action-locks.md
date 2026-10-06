@@ -76,7 +76,7 @@ end
 
 When an Actor is registered, the example requests `Action.Sprint` and then `Action.Dodge` through its controller. KRF Interrupts the Sprint instance with `ActionLockPreempted`, transfers `Movement`, and starts Dodge. A non-allowlisted request returns `{ accepted = false, reason = "ActionLockConflict" }` without consuming a sequence id.
 
-For multiple conflicting owners, KRF evaluates distinct owners in ascending sequence-id order. One denial leaves all owners active. On approval, KRF commits every Interrupt, releases old locks, cleans Action-owned active Tags, acquires the new locks, and activates the incoming instance with its declarative Tags before any resulting event or hook. For owners A and B and incoming Action C, post-commit dispatch is:
+For multiple conflicting owners, KRF evaluates distinct owners in ascending sequence-id order. One denial leaves all owners active. On approval, KRF commits every Interrupt, releases old locks, cleans Action-owned active Tags, acquires the new locks, and activates the incoming instance with its declarative Tags before any resulting event or hook. For owners A and B and incoming Action C, normal post-commit dispatch is:
 
 ```text
 A OnActionInterrupted
@@ -88,6 +88,8 @@ A onInterrupt
 B onInterrupt
 C onStart, if C is still active
 ```
+
+Reentrant mutations can issue older pending Property notifications before the remaining Tag events; see [Property changes](../Property/property-runtime#changes).
 
 Owner events and hooks each follow ascending sequence-id order. Hooks may synchronously request or terminate Actions; a nested call completes its own lifecycle dispatch before returning. KRF issues C's Started event before running any owner hook, so a hook can terminate C without reversing C's Started and terminal events. Signal listeners may also reenter synchronously and need not finish before hooks run. If a listener terminates C before its normal Started turn, KRF issues C's pending Started before C's terminal signal. This does not defer the nested call.
 

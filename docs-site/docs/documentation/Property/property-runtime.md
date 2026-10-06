@@ -62,7 +62,7 @@ Attach `TagController` before `PropertyController`. Already-active Tags apply at
 
 This lets systems subscribe at the narrowest level they need. A movement adapter normally observes resolved changes; a progression system may care about base changes.
 
-Property notifications report net changes and preserve mutation order, including when a listener makes another change. Event payloads describe the transition; queries return the current value.
+Property notifications report net changes and are journaled in commit order. If a lifecycle or Tag listener synchronously performs another mutation that dispatches Property notifications, older pending notifications are issued first. Nested operations remain synchronous. Queries always return current committed state, even when an event payload describes an older transition.
 
 ## Design rules
 

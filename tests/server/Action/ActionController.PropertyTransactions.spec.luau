@@ -402,3 +402,89 @@ it("keeps Property transitions ordered when a Property listener synchronously st
 	expect(order).toEqual({ "base", "resolved 16->20", "umbrella 16->20", "resolved 20->25", "umbrella 20->25" })
 	expect(beforeReturn).toEqual(order)
 end)
+
+it("preserves Property commit order during reentry before the outer Tag batch finishes", function()
+	local order: { string } = {}
+	initialize({
+		{
+			id = "Buff",
+			visibility = "ServerOnly",
+			autoGrant = true,
+			activeTags = { "Speed", "Momentum" },
+			onStart = function()
+				table.insert(order, "hook")
+			end,
+		},
+	}, {
+		{
+			id = "Speed",
+			visibility = "ServerOnly",
+			duplicateBehavior = "Stack",
+			properties = { WalkSpeed = { add = 5 } },
+		},
+		{
+			id = "Momentum",
+			visibility = "ServerOnly",
+			duplicateBehavior = "Stack",
+			properties = { WalkSpeed = { add = 3 } },
+		},
+		{
+			id = "Extra",
+			visibility = "ServerOnly",
+			duplicateBehavior = "Stack",
+			properties = { WalkSpeed = { add = 2 } },
+		},
+	})
+	local actor: Actor, actions: ActionController, tags: TagController = registerActor()
+	local properties: PropertyTypes.PropertyController =
+		actor:GetController("PropertyController") :: PropertyTypes.PropertyController
+	local nestedResult: boolean? = nil
+	local nestedReason: string? = nil
+	local beforeReturn: { string } = {}
+	local observedValues: { number? } = {}
+	actions.OnActionStarted:Connect(function()
+		table.insert(order, "Started")
+	end)
+	tags.OnTagAdded:Connect(function(_actor: Actor, tagId: string)
+		table.insert(order, "added " .. tagId)
+		if tagId == "Speed" then
+			expect(tags:HasTag("Momentum")).toBe(true)
+			expect(properties:GetResolvedProperty("WalkSpeed")).toBe(24)
+			nestedResult, nestedReason = tags:AddTag("Extra")
+			beforeReturn = table.clone(order)
+			table.insert(order, "nested returned")
+		end
+	end)
+	tags.OnTagChanged:Connect(function(_actor: Actor, tagId: string)
+		table.insert(order, "changed " .. tagId)
+	end)
+	properties.OnResolvedPropertyChanged:Connect(function(_actor: Actor, _name: string, old: number?, new: number)
+		table.insert(order, `resolved {old}->{new}`)
+		table.insert(observedValues, properties:GetResolvedProperty("WalkSpeed"))
+	end)
+	properties.OnPropertyChanged:Connect(function(change: PropertyTypes.PropertyChange)
+		table.insert(order, `umbrella {change.oldResolvedValue}->{change.newResolvedValue}`)
+	end)
+	expect(actions:RequestAction("Buff")).toEqual({ accepted = true, sequenceId = 1 })
+	expect(nestedResult).toBe(true)
+	expect(nestedReason).toBeNil()
+	local nestedEvents: { string } = {
+		"Started",
+		"added Speed",
+		"added Extra",
+		"changed Extra",
+		"resolved 16->24",
+		"umbrella 16->24",
+		"resolved 24->26",
+		"umbrella 24->26",
+	}
+	expect(beforeReturn).toEqual(nestedEvents)
+	local expected: { string } = table.clone(nestedEvents)
+	for _, event: string in { "nested returned", "changed Speed", "added Momentum", "changed Momentum", "hook" } do
+		table.insert(expected, event)
+	end
+	expect(order).toEqual(expected)
+	expect(observedValues).toEqual({ 26, 26 })
+	expect(properties:GetResolvedProperty("WalkSpeed")).toBe(26)
+	expect(tags:HasTag("Extra")).toBe(true)
+end)
