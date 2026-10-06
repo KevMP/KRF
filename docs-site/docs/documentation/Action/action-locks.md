@@ -83,6 +83,7 @@ A OnActionInterrupted
 B OnActionInterrupted
 C OnActionStarted
 resulting Tag events
+Property notifications
 A onInterrupt
 B onInterrupt
 C onStart, if C is still active
@@ -112,7 +113,7 @@ onStart = function(ctx: ActionTypes.ActionExecutionContext)
 end
 ```
 
-The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then dispatching cleanup Tag events and running their `onInterrupt` hooks in the same order. A scoped claim issues no Started event because the claiming Action is already active.
+The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then dispatching cleanup Tag events, Property notifications, and running their `onInterrupt` hooks in the same order. A scoped claim issues no Started event because the claiming Action is already active.
 
 | Claim failure reason | Cause |
 | --- | --- |

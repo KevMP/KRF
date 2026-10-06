@@ -5,7 +5,6 @@ local SignalFolder = serverFolder.Parent.shared.Signal
 local ActorTypes = require(serverFolder.Actor.types)
 local PropertyTypes = require(serverFolder.Property.types)
 local SignalTypes = require(SignalFolder.types)
-local PropertyRecompute = require(serverFolder.Property.utils.PropertyRecompute)
 
 export type PropertyControllerEventContext = {
 	actor: ActorTypes.Actor,
@@ -15,99 +14,98 @@ export type PropertyControllerEventContext = {
 	propertyChangedSignal: SignalTypes.Signal<PropertyTypes.PropertyChange>,
 }
 
+export type PropertyEventJournal = {
+	Queue: (
+		self: PropertyEventJournal,
+		change: PropertyTypes.PropertyChange,
+		baseChanged: boolean,
+		resolvedChanged: boolean
+	) -> (),
+	Drain: (self: PropertyEventJournal) -> (),
+	Destroy: (self: PropertyEventJournal) -> (),
+}
+
+type NotificationGroup = { started: boolean, allowed: boolean }
+type Emission = { group: NotificationGroup, fire: () -> () }
+
 local PropertyControllerEventUtils = {}
 
-function PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
-	eventContext: PropertyControllerEventContext,
-	propertyName: string,
-	oldBaseValue: number?,
-	newBaseValue: number,
-	oldResolvedValue: number?,
-	newResolvedValue: number,
-	shouldFireBaseChanged: boolean,
-	shouldFireResolvedChanged: boolean
-): ()
-	if shouldFireBaseChanged then
-		eventContext.basePropertyChangedSignal:Fire(eventContext.actor, propertyName, oldBaseValue, newBaseValue)
-	end
+function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventContext): PropertyEventJournal
+	local journal: PropertyEventJournal = {} :: PropertyEventJournal
+	local pending: { [number]: Emission } = {}
+	local head: number = 1
+	local tail: number = 0
+	local drainDepth: number = 0
+	local destroyed: boolean = false
 
-	if shouldFireResolvedChanged then
-		eventContext.resolvedPropertyChangedSignal:Fire(
-			eventContext.actor,
-			propertyName,
-			oldResolvedValue,
-			newResolvedValue
-		)
-	end
-
-	eventContext.propertyChangedSignal:Fire({
-		actor = eventContext.actor,
-		propertyName = propertyName,
-		oldBaseValue = oldBaseValue,
-		newBaseValue = newBaseValue,
-		oldResolvedValue = oldResolvedValue,
-		newResolvedValue = newResolvedValue,
-	})
-end
-
-function PropertyControllerEventUtils.FirePropertyChanged(
-	eventContext: PropertyControllerEventContext,
-	propertyName: string,
-	oldBaseValue: number?,
-	newBaseValue: number,
-	oldResolvedValue: number?,
-	newResolvedValue: number,
-	shouldFireBaseChanged: boolean,
-	shouldFireResolvedChanged: boolean
-): ()
-	eventContext.ownedSignals:WithDeferredDestroy(function()
-		PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
-			eventContext,
-			propertyName,
-			oldBaseValue,
-			newBaseValue,
-			oldResolvedValue,
-			newResolvedValue,
-			shouldFireBaseChanged,
-			shouldFireResolvedChanged
-		)
-	end)
-end
-
-function PropertyControllerEventUtils.FireResolvedChangeWithoutDeferred(
-	eventContext: PropertyControllerEventContext,
-	change: PropertyRecompute.ResolvedChange
-): ()
-	PropertyControllerEventUtils.FirePropertyChangedWithoutDeferred(
-		eventContext,
-		change.propertyName,
-		change.oldBaseValue,
-		change.newBaseValue,
-		change.oldResolvedValue,
-		change.newResolvedValue,
-		false,
-		true
-	)
-end
-
-function PropertyControllerEventUtils.FireResolvedChanges(
-	eventContext: PropertyControllerEventContext,
-	changes: { PropertyRecompute.ResolvedChange },
-	shouldContinue: () -> boolean
-): ()
-	if #changes == 0 then
-		return
-	end
-
-	eventContext.ownedSignals:WithDeferredDestroy(function()
-		for _, change: PropertyRecompute.ResolvedChange in changes do
-			if shouldContinue ~= nil and not shouldContinue() then
-				break
-			end
-
-			PropertyControllerEventUtils.FireResolvedChangeWithoutDeferred(eventContext, change)
+	function journal:Queue(change: PropertyTypes.PropertyChange, baseChanged: boolean, resolvedChanged: boolean): ()
+		local group: NotificationGroup = { started = false, allowed = false }
+		local function enqueue(fire: () -> ()): ()
+			tail += 1
+			pending[tail] = { group = group, fire = fire }
 		end
-	end)
+		if baseChanged then
+			enqueue(function()
+				eventContext.basePropertyChangedSignal:Fire(
+					eventContext.actor,
+					change.propertyName,
+					change.oldBaseValue,
+					change.newBaseValue
+				)
+			end)
+		end
+		if resolvedChanged then
+			enqueue(function()
+				eventContext.resolvedPropertyChangedSignal:Fire(
+					eventContext.actor,
+					change.propertyName,
+					change.oldResolvedValue,
+					change.newResolvedValue
+				)
+			end)
+		end
+		enqueue(function()
+			eventContext.propertyChangedSignal:Fire(change)
+		end)
+	end
+
+	function journal:Drain(): ()
+		if head > tail then
+			return
+		end
+		drainDepth += 1
+		eventContext.ownedSignals:WithDeferredDestroy(function()
+			while head <= tail do
+				local emission: Emission = pending[head]
+				pending[head] = nil
+				head += 1
+				local group: NotificationGroup = emission.group
+				if not group.started then
+					group.started = true
+					group.allowed = not destroyed
+				end
+				if group.allowed then
+					emission.fire()
+				end
+			end
+		end)
+		drainDepth -= 1
+		if drainDepth == 0 then
+			head = 1
+			tail = 0
+		end
+	end
+
+	function journal:Destroy(): ()
+		destroyed = true
+		if drainDepth == 0 then
+			table.clear(pending)
+			head = 1
+			tail = 0
+		end
+	end
+
+	return journal
 end
 
 return PropertyControllerEventUtils

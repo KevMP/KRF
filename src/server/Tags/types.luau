@@ -80,7 +80,13 @@ export type TagController = {
 	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
 }
 
+export type TagMutationObserver = {
+	Commit: (events: { TagMutationEvent }) -> (),
+	Dispatch: () -> (),
+}
+
 export type InternalTagController = TagController & {
+	_observeMutations: (self: InternalTagController, observer: TagMutationObserver) -> () -> (),
 	_beginMutationBatch: (self: InternalTagController) -> (),
 	_finishMutationBatch: (self: InternalTagController) -> { TagMutationEvent },
 	_dispatchMutationEvents: (self: InternalTagController, events: { TagMutationEvent }) -> (),

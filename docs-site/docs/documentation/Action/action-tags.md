@@ -103,12 +103,12 @@ For an accepted request, KRF completes the authoritative transaction before any 
 
 1. Terminate conflicting owners and clean their remaining `activeTags` contributions; acquire incoming locks, apply incoming `activeTags` followed by `appliedTags` in declaration order, and activate the incoming instance.
 2. Issue preempted owners' `OnActionInterrupted` signals in sequence-id order, then the incoming `OnActionStarted` signal.
-3. Dispatch the resulting Tag events in mutation order.
+3. Dispatch the resulting Tag events in mutation order, then Property notifications in commit order.
 4. Invoke preempted owners' `onInterrupt` hooks in sequence-id order, then begin incoming `onStart` only if it is still active.
 
 Listeners and hooks may reenter KRF. Nested `RequestAction`, `EndAction`, and `InterruptAction` calls complete synchronously. Started is issued exactly once for every accepted instance, before its terminal signal. If an earlier owner's listener terminates the incoming instance before its normal Started turn, KRF issues its pending Started before that terminal signal. The accepted request still returns its sequence id, and its `onStart` is skipped. Signal issuance does not guarantee that every listener finishes before subsequent signals or hooks.
 
-On End, Interrupt, preemption, update or start failure, and controller destruction, KRF commits all terminal cleanup before callbacks. It then issues terminal lifecycle signals, dispatches Tag events, and invokes terminal hooks. `appliedTags` remain under normal Tag lifetime rules. Tag and Property queries read current committed state; earlier reentrant callbacks may already have changed it.
+On End, Interrupt, preemption, update or start failure, and controller destruction, KRF commits all terminal cleanup before callbacks. It then issues terminal lifecycle signals, dispatches Tag events followed by Property notifications, and invokes terminal hooks. `appliedTags` remain under normal Tag lifetime rules. Tag and Property queries read current committed state; earlier reentrant callbacks may already have changed it.
 
 If declarative Tag activation cannot commit, the request returns `ActionTagActivationFailed:<id>` before preempting owners or consuming a sequence id. No incoming locks or Tag effects remain.
 

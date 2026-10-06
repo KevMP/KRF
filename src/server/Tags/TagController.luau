@@ -100,6 +100,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local destroyed: boolean = false
 	local mutationBatchDepth: number = 0
 	local deferredEvents: { TagTypes.TagMutationEvent } = {}
+	local mutationObservers: { [TagTypes.TagMutationObserver]: boolean } = {}
 	local recordVersions: { [TagInstanceRecord]: number } = setmetatable({}, { __mode = "k" }) :: { [TagInstanceRecord]: number }
 
 	local factoryContext: TagInstanceFactoryContext = {
@@ -119,11 +120,26 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local controller: InternalTagController = {} :: InternalTagController
 	controller._activeTagsById = activeTagsById
 
-	local function fireEvent(kind: string, tagId: string): ()
-		if mutationBatchDepth > 0 then
-			table.insert(deferredEvents, { kind = kind, tagId = tagId })
-			return
+	function controller:_observeMutations(observer: TagTypes.TagMutationObserver): () -> ()
+		mutationObservers[observer] = true
+		return function(): ()
+			mutationObservers[observer] = nil
 		end
+	end
+
+	local function commitDerivedState(events: { TagTypes.TagMutationEvent }): ()
+		for observer: TagTypes.TagMutationObserver in mutationObservers do
+			observer.Commit(events)
+		end
+	end
+
+	local function dispatchDerivedEvents(): ()
+		for observer: TagTypes.TagMutationObserver in mutationObservers do
+			observer.Dispatch()
+		end
+	end
+
+	local function dispatchEvent(kind: string, tagId: string): ()
 		if kind == "Added" then
 			TagControllerEventUtils.FireTagAdded(eventContext, tagId)
 		elseif kind == "Removed" then
@@ -133,6 +149,16 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		else
 			TagControllerEventUtils.FireTagExpired(eventContext, tagId)
 		end
+	end
+
+	local function fireEvent(kind: string, tagId: string): ()
+		if mutationBatchDepth > 0 then
+			table.insert(deferredEvents, { kind = kind, tagId = tagId })
+			return
+		end
+		commitDerivedState({ { kind = kind, tagId = tagId } })
+		dispatchEvent(kind, tagId)
+		dispatchDerivedEvents()
 	end
 
 	function controller:_beginMutationBatch(): ()
@@ -148,6 +174,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 		local events: { TagTypes.TagMutationEvent } = deferredEvents
 		deferredEvents = {}
+		commitDerivedState(events)
 		return events
 	end
 
@@ -156,8 +183,9 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			if destroyed then
 				break
 			end
-			fireEvent(event.kind, event.tagId)
+			dispatchEvent(event.kind, event.tagId)
 		end
+		dispatchDerivedEvents()
 	end
 
 	-- Returns the first unavailable application id. Commit must follow without consumer callbacks.
@@ -434,6 +462,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 
 		destroyed = true
+		table.clear(mutationObservers)
 		TagControllerStepUtils.ClearAdvancingInstancesForController(advancingInstancesByController, self)
 		UpdateHeartbeatConnection()
 		activeTagsById = {}
