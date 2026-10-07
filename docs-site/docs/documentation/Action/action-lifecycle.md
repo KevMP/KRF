@@ -1,100 +1,70 @@
 ---
-sidebar_position: 3
+sidebar_position: 4
 ---
 
-# Action Runtime
+# Action Lifecycle
 
-`ActionController` owns the active Action instances for one Actor. `RequestAction` is its server-side entrypoint; KRF manages each accepted instance through termination. Input handling and networking are separate from this controller.
+`ActionController` creates and terminates activations for one Actor. KRF owns acceptance and terminal cleanup, while authored callbacks supply game behavior.
 
-## The whole lifecycle
+## Request, run, terminate
 
-| Stage | What happens | What it means for the caller |
-| --- | --- | --- |
-| **Register** | `Server.Init` loads an Action factory and stores its static definition in `ActionRegistry`. | The Action exists in the registry, but no Actor can run it just because it is registered. |
-| **Grant** | The Actor's `ActionController` receives an `autoGrant` baseline or explicit grant source. | That Actor may request the Action. Granting does not create an instance. |
-| **Request and decide** | A server-side request reaches `ActionController`. KRF checks the Actor, grant, and start-time Tag requirements, calls the per-request factory and optional `onCanStart`, then resolves lock conflicts and revalidates. | A rejected request returns a reason; it creates no instance and consumes no sequence id. |
-| **Accept and start** | KRF commits the instance, lifetime locks, costs, declarative Tags, and derived state before issuing lifecycle signals, Tag events, Property notifications, Resource notifications, and beginning `onStart` if still active. | The request returns `accepted = true` and the sequence id, even if `onStart` immediately ends the instance. |
-| **Remain active** | The instance holds its acquired locks. Optional `onUpdate` performs recurring work; `RequestStop` can call `onStopRequested`. | Returning from `onStart` or requesting Stop does not end the instance automatically. |
-| **End or Interrupt** | An explicit End completes the instance; an Interrupt can come from game code, a failure, preemption, or controller destruction. KRF makes the instance inactive, releases its locks and remaining Action-owned active Tags, then dispatches the matching event and hook. | End and Interrupt are terminal for that instance. Returning from a callback does not trigger either transition. |
+1. **Request:** check Actor availability, registered identity, grant, Tags, and Resources. A qualifying request gets fresh factory callbacks and an optional `onCanStart` decision.
+2. **Accept:** resolve lock preemption, revalidate availability, and commit upfront costs, owner termination, incoming locks, declarative Tags, and derived state together.
+3. **Run:** issue Started and begin `onStart` if still active. Optional `onUpdate` supplies recurring work. Returning from `onStart` leaves the Action active.
+4. **Terminate:** End or Interrupt makes the activation inactive, releases all locks, removes recurring updates, retires suspended `onStart`, and cleans remaining Action-owned active Tag contributions before terminal callbacks.
 
-Destroying the controller Interrupts its active instances. Revoking a grant prevents later requests but does not terminate an instance already running under that grant. Several instances of the same Action can be active at once when their [lock claims](./action-locks) allow it.
+A rejection creates no activation, emits no Started event, and consumes no sequence id. An accepted result remains accepted even if a listener or `onStart` immediately terminates it. Several activations of the same Action can coexist when their locks allow it.
 
-## When a request reaches the controller
+[`RequestAction`](/api/Action/action-controller#request-action) is the low-level server boundary used by integrations and occasional server-driven behavior. An accepted result carries the activation's `sequenceId`; a rejected result carries its reason. Action authors normally work through definitions and callbacks. Input integration is outside this guide.
 
-The server-side [`RequestAction`](/api/Action/action-controller#request-action) call is the boundary into the Action runtime. The system that receives a gameplay intent decides when to make that call; `ActionController` handles acceptance and the instance lifecycle. A direct request is useful for a server-driven Action, but is not a required input-handling pattern.
+Sequence ids are positive integers scoped to one controller and allocated in acceptance commit order. Parameters are passed unchanged, without copying. Context tables are frozen; a table supplied as `parameters` is not deep-frozen by KRF.
 
-The Action must exist, be granted, satisfy its required and blocked Tags, pass its optional `onCanStart` decision, and acquire its declared locks. KRF calls its factory for this request, then uses that result's callbacks throughout the activation. The factory and `onCanStart` must finish synchronously without yielding. `onCanStart` receives a frozen `ActionStartContext` with `actor`, `actionId`, and the original `parameters`. It may return `false, "GameReason"` to reject with a game-defined reason. KRF rechecks Actor availability, grants, and Tags after decision callbacks, so reentrant changes cannot make an invalid request commit. A rejection creates no instance and consumes no sequence id.
+Start requirements do not continuously enforce themselves. Losing a grant, required Tag, or Resource threshold later does not automatically terminate an activation. Game code can react through events or updates.
 
-`requiredTags`, `blockedTags`, and `resourceRequirements` are start-time checks against current authoritative state. Later changes do not automatically End or Interrupt a running Action. Preemption cannot bypass a currently failing requirement.
+## Work with the execution context {#execution-context}
 
-KRF checks Resource requirements and affordability before the per-request factory, then builds a fresh payment plan after `onCanStart` and interruption decisions. The final plan uses current Resource bounds and resolved multiplier Properties before removing preempted owners' Tags or applying incoming Tags. Those same-transaction effects cannot discount the prepared price or make a failing requirement pass.
+All accepted callbacks share one `ActionExecutionContext`, carrying `actor`, `actionId`, `sequenceId`, and original `parameters`. It exposes `IsActive`, `End`, `Interrupt`, and `ClaimLocks`; see the [context API](/api/Action/action-execution-context) for exact contracts.
 
-Acceptance commits every prepared cost, owner preemption, incoming locks, Tags, final Property values, and derived Resource state before consumer callbacks. A rejection commits none of those incoming effects and consumes no sequence id. Explicit mutations made by decision callbacks remain game-owned and are not rolled back. Use declarative costs for acceptance-time payment rather than spending inside `onCanStart`.
+Keep private state in [factory-local variables](./action-registry#keep-activation-state-in-lexical-locals). The context identifies and controls the activation; it has no `state` field. A retained context cannot reactivate a terminated Action.
 
-Final valid bounds clamp the already-paid current value once. If final Property values produce invalid bounds, KRF retains the Resource's last valid min/max/regen state; the Action remains accepted and committed costs and current-value mutations remain committed. It does not repair bounds or roll back. End, Interrupt, hook failure, and controller destruction never refund costs.
-
-Normal dispatch issues lifecycle signals → Tag events → Property notifications → Resource notifications → hooks. Within one authoritative/batched transaction, each affected Resource publishes at most one net change in deterministic Resource-id order; unchanged current/min/max publishes none. Across transactions, all older pending Resource notifications issue before any newer nested Resource notification, even when a newer Resource id sorts earlier. Nested Resource mutations remain synchronous. Property listeners can already read final Resource state. Reentrant calls may drain older pending Property or Resource notifications before the remaining outer phases; event payloads describe their committed transition while getters read the latest state.
-
-Request parameters are opaque server-side game data. KRF passes the same value to `onCanStart` and the accepted Action; it does not copy or serialize it. Validate client-originated data before calling this server API.
-
-## Work with `ActionExecutionContext` {#execution-context}
-
-KRF creates one frozen `ActionExecutionContext` for each accepted instance. It passes that same context to the instance's `onStart`, `onStopRequested`, `onUpdate`, `onEnd`, and `onInterrupt` callbacks, and to its `canBeInterruptedBy` decision when another Action claims a conflicting lock. `onCanStart` runs before acceptance and receives a smaller `ActionStartContext` without a sequence id or lifecycle methods.
-
-| Context member | What it provides |
-| --- | --- |
-| `actor`, `actionId`, `sequenceId` | The Actor and identity of this activation. The sequence id distinguishes concurrent instances of the same Action. |
-| `parameters` | The original value supplied with the start request. KRF does not copy or serialize it. |
-| `ctx:IsActive()` | Whether this exact instance is still active. It is `false` inside `onEnd` and `onInterrupt`, because termination commits before those callbacks run. |
-| `ctx:End()` | Normally completes this instance. Returns `true` on the first successful End, or `false, reason` if it cannot End. |
-| `ctx:Interrupt(reason)` | Terminates this instance with a non-empty reason. Returns `true` on success, or `false, reason` if it cannot Interrupt. |
-| `ctx:ClaimLocks(lockIds)` | Temporarily claims [scoped locks](./action-locks) while active. Returns a releasable claim or `nil, reason`. |
-
-The context identifies and controls an instance; it is not a mutable state bag. Put private state inside the Action factory so callbacks from one activation share it without sharing it with other activations. An Action can retain its context to query or terminate its own instance later; a retained context cannot reactivate an instance after it ends.
+After calling `End` or `Interrupt`, return explicitly if subsequent callback statements should not execute. When a callback calls another KRF operation that can trigger consumer callbacks, recheck `ctx:IsActive()` before continuing gameplay work.
 
 ## Stop, End, and Interrupt
 
-| Operation | What it means |
-| --- | --- |
-| `RequestStop(sequenceId, parameters?)` | Delivers `onStopRequested(ctx, request)` to an active instance. It is a request, not a terminal transition. |
-| `ctx:End()` or `EndAction(sequenceId)` | Completes one active instance normally, then dispatches `OnActionEnded` and `onEnd`. |
-| `ctx:Interrupt(reason)` or `InterruptAction(sequenceId, reason)` | Terminates one active instance with a reason, then dispatches `OnActionInterrupted` and `onInterrupt`. |
-
-`ctx:End()` targets the sequence id bound to that context. It is the same normal completion path as `actions:EndAction(sequenceId)`. On success, KRF first removes the instance from active state, releases all its lifetime and scoped locks, removes it from recurring updates, retires a suspended `onStart` invocation, and cleans up remaining Action-owned `activeTags` contributions. The normal post-commit order is `OnActionEnded`, Tag events, Property notifications, Resource notifications, then `onEnd(ctx)` if defined. Reentrant mutations can issue older pending [Property notifications](../Property/property-runtime#changes) or [Resource notifications](../Resource/resource-runtime#notifications) earlier. The call returns `true, nil`; a later End returns `false, "ActionInstanceNotActive"` while the controller still exists. Inside `onEnd`, `ctx:IsActive()` is already `false`.
-
-`ctx:Interrupt(reason)` follows the same terminal order, using `OnActionInterrupted` and `onInterrupt(ctx, reason)` instead. Neither terminal hook can undo a committed transition. These hooks must finish without yielding; KRF contains errors and yields.
-
-`RequestStop` calls its optional hook synchronously with `{ parameters = stopParameters }`. It can be called repeatedly while the instance remains active. Returning from `onStopRequested` leaves the instance active unless game code calls `ctx:End()` or `ctx:Interrupt(reason)`. Returning from `onStart` also leaves the instance active. For recurring work, an Action can define [`onUpdate`](./action-updates).
-
-`ctx:End()` and `ctx:Interrupt()` do not return from the surrounding callback. Return explicitly when its remaining statements should not run.
-
-## Hook and event order
-
-All Action hooks are optional. The table shows when KRF calls each one if defined.
-
-| Point in the lifecycle | Hook or event | When it runs |
+| Intent | Operation | Behavior |
 | --- | --- | --- |
-| Effective grant changes | `OnActionGrantChanged` | After `SetGrants` changes an Actor's effective grant. Initial `autoGrant` setup issues no event. This does not start or stop an instance. |
-| Factory execution | Action factory | Once at startup for definition metadata, then once per request that passes the initial Actor and grant checks. Its per-request callbacks are captured for that request. |
-| Request validation | `onCanStart(startContext)` | After the per-request factory returns, before an instance exists. A rejection issues no lifecycle event. |
-| Lock conflict | `canBeInterruptedBy(ownerCtx, incoming)` | On a conflicting active owner during a request or scoped lock claim, after its static `interruptibleBy` allowlist permits the incoming Action and before preemption commits. Denial leaves the owners active. |
-| Activation | `OnActionStarted`, then `onStart(ctx)` | After the instance and lifetime locks are committed. KRF fires Started before beginning `onStart` if the instance is still active. Returning from `onStart` does not End the instance. |
-| Active updates | `onUpdate(ctx, deltaTime)` | Only while active, when the Action defines the hook; at most 20 times per second. An error or yield Interrupts a still-active instance with `ActionUpdateFailed`. |
-| Stop request | `onStopRequested(ctx, request)` | Synchronously when `RequestStop` targets an active instance. There is no Stop event or automatic End. |
-| Normal completion | `OnActionEnded`, then `onEnd(ctx)` | After the instance becomes inactive and releases its locks. The hook sees `ctx:IsActive() == false`. |
-| Interruption | `OnActionInterrupted`, then `onInterrupt(ctx, reason)` | After the same terminal cleanup. This includes manual interruption, lock preemption, controller destruction, and an active `onStart` failure. |
+| Ask a held Action to release | `actions:RequestStop(sequenceId, parameters?)` | Calls optional `onStopRequested(ctx, { parameters = ... })` synchronously. It can be repeated and does not automatically terminate. |
+| Complete normally | `ctx:End()` / `actions:EndAction(sequenceId)` | Terminal completion; emits Ended and calls optional `onEnd`. |
+| Cancel or disrupt | `ctx:Interrupt(reason)` / `actions:InterruptAction(sequenceId, reason)` | Terminal interruption; emits Interrupted and calls optional `onInterrupt`. Reason must be a non-empty string. |
 
-Lifecycle events carry `actor`, `actionId`, and `sequenceId`; `OnActionInterrupted` also carries `reason`. Each instance has at most one terminal event: Ended or Interrupted. KRF fires each signal before invoking the corresponding hook, but signal listeners run through non-blocking scheduling. A listener is not guaranteed to finish before the hook or the controller call returns.
+Stop parameters are separate from start parameters. KRF accepts a Stop request even when no Stop hook exists. There is no Stop lifecycle event.
 
-Lock preemption commits conflicting owners inactive, cleans their Action-owned Tags, and activates the incoming instance with its declarative Tags before callbacks. Normal dispatch issues the owners' Interrupted signals and the incoming Started signal, then Tag events, Property notifications, and Resource notifications. Owner interruption hooks run afterward in sequence-id order; incoming `onStart` runs only if the instance remains active. Started is always issued before an accepted instance's terminal signal, including when a listener reentrantly terminates it before its normal Started turn. Nested lifecycle calls remain synchronous. See [Action Tags](./action-tags) for the full transaction order and reentrant notification exception.
+End and Interrupt are terminal alternatives: an activation has at most one terminal event. `ctx:IsActive()` is already `false` inside `onEnd` and `onInterrupt`. Cleanup hooks cannot undo termination. Costs are never automatically refunded; `appliedTags` follow ordinary Tag lifetime rules.
 
-Destroying the controller Interrupts every active instance with `ActionControllerDestroyed`, cleans their Action-owned Tags, and retires suspended starts. Tasks or connections created separately by game code remain game-owned. Later public Action mutations fail. Removing a grant by itself does not terminate an Action already running under that grant.
+## Hook contracts {#hook-contracts}
 
-## Related
+All hooks are optional. Their presence does not determine lifetime; End and Interrupt do.
 
-- [ActionController API](/api/Action/action-controller)
-- [Action Grants](./action-grants)
-- [Action Registry](./action-registry)
-- [Action Updates](./action-updates)
-- [Action Locks](./action-locks)
-- [Action Tags](./action-tags)
+| Callback | Yieldability | Return/failure behavior |
+| --- | --- | --- |
+| `ActionFactory()` | Non-yielding | Returns a definition. Failure/yield fails startup or rejects the request. |
+| `onCanStart(startCtx)` | Non-yielding | Returns `(boolean, string?)`; `false` rejects, optionally with a game reason. Error, yield, or non-boolean decision rejects. |
+| `canBeInterruptedBy(ownerCtx, incoming)` | Non-yielding | Returns a boolean, narrowing the owner's static allowlist. Failure/yield/invalid decision denies preemption. |
+| `onStart(ctx)` | May remain suspended for the Action lifetime | Returning leaves it active. Error Interrupts a still-active Action with `ActionStartFailed`. External termination retires the suspended invocation. |
+| `onStopRequested(ctx, request)` | Non-yielding | Error/yield is contained; no automatic End or Interrupt. |
+| `onUpdate(ctx, deltaTime)` | Non-yielding | Error/yield Interrupts a still-active Action with `ActionUpdateFailed`. |
+| `onEnd(ctx)` / `onInterrupt(ctx, reason)` | Non-yielding, failure-contained | Errors/yields cannot reverse the committed transition or prevent other activations' cleanup. |
+
+KRF cancels yielded invocations of non-yielding hooks. Separately spawned tasks and connections remain game-owned: release them in both terminal hooks. Put shared cleanup in one local function so End and Interrupt follow the same resource ownership rules.
+
+## Observe lifecycle
+
+`OnActionStarted`, `OnActionEnded`, and `OnActionInterrupted` report activation identity; Interrupted also includes the reason. KRF issues Started before that activation's terminal signal and issues the corresponding signal before its hook. Signal issuance does not guarantee that every listener finishes before a hook or controller call returns.
+
+The consumer guarantee is committed state before callbacks. Read current Tags, Properties, Resources, and context activity rather than reconstructing state from event order. The canonical [Advanced Ordering & Reentrancy](./action-ordering) page documents the detailed transaction and nested-notification guarantees.
+
+## Teardown
+
+Destroying `ActionController` Interrupts every active activation with `ActionControllerDestroyed`; all are inactive before teardown callbacks. Later public mutations fail. Revoking grants alone does not do this.
+
+Next: [Action Tags](./action-tags). Exact returns and event payloads: [ActionController API](/api/Action/action-controller), [Action types](/api/Action/action-types).

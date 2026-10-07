@@ -1,127 +1,62 @@
 ---
-sidebar_position: 1
+sidebar_position: 2
 ---
 
-# Action Registry
+# Defining Actions / Action Registry
 
-`ActionRegistry` owns immutable server definitions for Actions. Supply Action factories in `actions` to `Server.Init` alongside Tags and Resources; game code reads their static metadata through the registry.
+Define an Action with an `ActionFactory`: a non-yielding function returning an `ActionDefinition`. The definition declares requirements, effects, and callbacks; factory-local variables keep each activation's private state.
 
-This surface stores static metadata only. Registration itself does not grant, activate, or execute an Action. The actor-scoped [`ActionController`](./action-grants) manages grant state from the loaded `autoGrant` baseline and explicit sources. Granting an Action does not execute hooks, acquire locks, spend Resources, or replicate Action state.
+## Keep activation state in lexical locals
 
-## Definition fields
-
-Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.types` when typing authored and loaded definitions. `LoadedActionDefinition` contains only static metadata; callbacks are not available from registry reads.
-
-| Field | Contract |
-| --- | --- |
-| `id` | Required unique, non-empty string. |
-| `visibility` | Required `"ServerOnly"` or `"ClientVisible"` replication metadata. |
-| `autoGrant` | Optional boolean; defaults to `false`. Grants the Action to every Actor when its `ActionController` is created. It does not start the Action or bind input. |
-| `requiredTags` | Optional array of registered Tag ids that must be present when the Action starts. |
-| `blockedTags` | Optional array of registered Tag ids that must be absent when the Action starts. Cannot overlap `requiredTags`. |
-| `activeTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts and removes any Tag state that Action still owns when it ends or is interrupted. |
-| `appliedTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts; they then follow the standard Tag lifecycle even if the Action ends or is interrupted. |
-| `resourceRequirements` | Optional Resource-id keyed map of inclusive absolute and normalized start thresholds. |
-| `costs` | Optional Resource-id keyed map of positive numeric costs or structured costs. Paid once on acceptance. |
-| `locks` | Optional array of opaque, non-empty game-defined lock ids, acquired as [lifetime claims](./action-locks) at activation. |
-| `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action when locks conflict. Forward references and self-references are valid. |
-| `onCanStart` | Optional function returning `(boolean, string?)`, for an Action-defined start decision. |
-| `onStart`, `onStopRequested`, `onEnd`, `onInterrupt` | Optional lifecycle functions. |
-| `onUpdate` | Optional `(ActionExecutionContext, number) -> ()` hook for [active Action updates](./action-updates). |
-| `canBeInterruptedBy` | Optional `(ActionExecutionContext, ActionInterruptionContext) -> boolean` hook from the running instance, narrowing the static `interruptibleBy` allowlist. |
-
-All lists must be dense arrays. `requiredTags`, `blockedTags`, `locks`, and `interruptibleBy` cannot contain duplicate entries and require non-empty strings. Each `activeTags` or `appliedTags` entry is either a non-empty Tag id or `{ id = "Tag.Id", duration = positiveFiniteSeconds }`. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action registry. Omitted lists and `costs` normalize to empty collections. Loaded Tag applications are frozen copies in declaration order, with string entries normalized to `{ id = "Tag.Id" }`.
-
-These fields are validated and stored at startup. `ActionController` checks Tag and Resource requirements, spends costs, and applies declarative Tags during `RequestAction`. See [Action Tags](./action-tags) for Tag lifetime and [Action Runtime](./action-lifecycle) for request order.
-
-## Resource requirements and costs
-
-Every referenced Resource must be registered at startup and already assigned to the Actor at request time. Omitted maps normalize to empty frozen maps; loaded requirement and structured cost entries are frozen copies. Runtime checks never assign Resources or create multiplier Properties.
-
-| Entry | Contract |
-| --- | --- |
-| `resourceRequirements[id] = { min?, max?, minPercent?, maxPercent? }` | At least one threshold. All thresholds are finite; percentages are in `[0, 1]`. Authored minimums cannot exceed their matching maximums. All supplied checks must pass, including equality at a threshold. |
-| `costs[id] = 15` | Legacy fixed cost, equivalent to `{ amount = 15 }`. |
-| `costs[id] = { amount = 15, multiplierProperty = "StaminaCostMultiplier" }` | Fixed base amount times the Actor's resolved multiplier Property. |
-| `costs[id] = { percent = 0.25, multiplierProperty = "StaminaCostMultiplier" }` | Fraction of resolved capacity `(max - min)`, times the optional multiplier. |
-
-A structured cost must specify exactly one of `amount` or `percent`, finite and strictly positive. Cost percentages may exceed `1`. An optional multiplier name must be non-empty; its resolved value must exist, be finite, and be non-negative. Zero makes the effective cost free. Requirements and costs reject unsupported fields.
-
-Requirement percentages use `(current - min) / (max - min)` and require a positive range. Percentage costs allow a zero range, producing zero cost. Effective costs must be finite and affordable above the Resource minimum.
-
-Cooldowns and charges use these same Resource rules. A shared cooldown can require `{ minPercent = 1 }` and cost `{ percent = 1 }`, consuming a full meter whose regeneration restores readiness; a charge Resource can require `{ min = 1 }` and cost `1`. Several Actions can reference the same Resource. Action lifetime remains explicit even when cooldown or charge state changes.
-
-KRF has no Action kind taxonomy, static duration, or first-class cooldown metadata. Cooldowns and charges belong in [Resources](../Resource/resource-runtime). Phases, combos, input buffers, priorities, categories, and other unsupported fields are rejected.
-
-All lifecycle hooks are optional; their presence does not define the framework-owned lifecycle. Missing `onCanStart` declares no additional Action-defined rejection; missing `onStart`, `onEnd`, or `onInterrupt` declares no custom behavior for that transition. Missing `onUpdate` does not opt into stepping. Returning from `onStart` does not specify Action lifetime. The preemption hook refines permission only after the incoming id passes `interruptibleBy`.
-
-KRF calls each factory once at startup to load metadata, then once for each granted request that reaches Action-defined validation. Keep `id`, `visibility`, grants, tags, costs, locks, and interruption metadata fixed. The startup values control the registry; per-request results provide fresh callbacks and private lexical state. `onCanStart` receives an `ActionStartContext`; lifecycle callbacks receive an [`ActionExecutionContext`](./action-lifecycle#execution-context) when an Actor runs the Action.
-
-KRF captures the returned callback references for each request before `onCanStart` runs. Changing fields on a returned table afterward does not change an active Action's callbacks.
-
-## Configure the registry
-
-This startup example declares an auto-granted Dodge with Tag and Stamina metadata, a lifetime lock, and a forward interruption reference to Roll.
+This Hold records elapsed time privately and releases on a Stop request. Each activation has a separate `heldSeconds` shared by its callbacks.
 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
-local Server = require(KRF.server)
 local ActionTypes = require(KRF.server.Action.types)
 
-local actions: { ActionTypes.ActionFactory } = {
-	function(): ActionTypes.ActionDefinition
-		return {
-			id = "Action.Dodge",
-			visibility = "ClientVisible",
-			autoGrant = true,
-			requiredTags = { "Status.Grounded" },
-			blockedTags = { "Status.Stunned" },
-			costs = { ["Resource.Stamina"] = 15 },
-			locks = { "Locomotion" },
-			interruptibleBy = { "Action.Roll" },
-		}
-	end,
-	function(): ActionTypes.ActionDefinition
-		return { id = "Action.Roll", visibility = "ClientVisible" }
-	end,
-}
-
-local started: boolean, failure: Server.StartupFailure? = Server.Init({
-	tags = {
-		{ id = "Status.Grounded", visibility = "ServerOnly", duplicateBehavior = "Ignore" },
-		{ id = "Status.Stunned", visibility = "ServerOnly", duplicateBehavior = "Ignore" },
-	},
-	resources = {
-		{ id = "Resource.Stamina", visibility = "ServerOnly", max = { value = 100 }, autoAssign = true },
-	},
-	actions = actions,
-})
-if not started then
-	assert(failure ~= nil)
-	error(`KRF startup failed: {failure.system}: {failure.reason}`)
+local function createHold(): ActionTypes.ActionDefinition
+	local heldSeconds: number = 0
+	return {
+		id = "Action.Hold",
+		visibility = "ServerOnly",
+		autoGrant = true,
+		locks = { "Hands" },
+		onUpdate = function(_ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
+			heldSeconds += deltaTime
+		end,
+		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
+			-- Game code can use heldSeconds to choose the release outcome.
+			print(`Held for {heldSeconds} seconds`)
+			ctx:End()
+		end,
+	}
 end
 ```
 
-## Validation and reads
+Register `createHold` as a factory, not `createHold()` as a definition. There is no mutable context state bag or consumer-owned instance class. Module-level mutable locals would be shared between activations; use them only for deliberately shared game state.
 
-`Server.Init` validates all registries before publication. An Action error returns `false, { system = "Action", reason = ... }` and leaves every registry unpublished. Reasons identify the field and rule, such as `ActionIdAlreadyRegistered`, `ActionRequiredTagUnknown:Status.Grounded`, or `ActionCostMustBePositive`. Correct the configuration and restart after a failed startup attempt.
+## Register the Action
 
-Validation calls factories without yielding, then checks definition shape and unique ids before validating definitions in declaration order. A factory error or yield fails startup. Field checks use a fixed order; Resource cost keys and unsupported field names are checked alphabetically. Reference validity does not depend on declaration order.
+Include `createHold` in the startup configuration's `actions` array. Referenced Tags and Resources belong in the same configuration. See [Initializing KRF](../initializing-krf) for setup and startup failures.
 
-After successful startup, `GetAll()` preserves declaration order, `GetAllById()` provides keyed lookup, and `Get(id)` returns static metadata or `nil`. The metadata, nested collections, and registry read tables are frozen. Loading copies authored data, so later edits to source tables cannot change the registry.
+## Choose metadata by responsibility
 
-Omitting `actions` loads an empty registry with `IsLoaded() == true`. Before publication, queries return empty frozen collections or `nil`, and `IsLoaded()` is `false`.
+| Metadata | Guide |
+| --- | --- |
+| `autoGrant` | [Availability & Grants](./action-grants) |
+| `requiredTags`, `blockedTags`, `activeTags`, `appliedTags` | [Action Tags](./action-tags) |
+| `resourceRequirements`, `costs` | [Action Resources](./action-resources) |
+| `locks`, `interruptibleBy` | [Locks & Preemption](./action-locks) |
+| Callbacks | [Action Lifecycle](./action-lifecycle#hook-contracts), [Action Updates](./action-updates) |
 
-## Related
+`id` must be unique and non-empty; `visibility` is required (`"ServerOnly"` or `"ClientVisible"`). Action references in `interruptibleBy` may refer forward or to the Action itself. KRF has no Action kind, static duration, priority, phase, or first-class cooldown field. Unsupported fields are rejected.
 
-- [Action Registry API](/api/Action/action-registry)
-- [Action Grants](./action-grants)
-- [Action Runtime](./action-lifecycle)
-- [Action Updates](./action-updates)
-- [Action Tags](./action-tags)
-- [Action Locks](./action-locks)
-- [Initializing KRF](../initializing-krf)
-- [Tag Registry](../Tags/tag-registry)
-- [Resource Registry](../Resource/resource-registry)
+The [type reference](/api/Action/action-types#action-definition) owns exact shapes, defaults, and validation constraints.
+
+## Read static metadata
+
+Game code can use [`ActionRegistry.Get`](/api/Action/action-registry#get) for one definition, `GetAll` for declaration order, or `GetAllById` for keyed lookup. Loaded definitions contain no callbacks. All returned metadata and nested collections are frozen copies; modifying authored tables cannot change the catalog.
+
+Registration does not grant or start an Action. Continue with [Availability & Grants](./action-grants).

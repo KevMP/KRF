@@ -1,53 +1,22 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 ---
 
-# Action Grants
+# Availability & Grants
 
-KRF attaches an `ActionController` to each registered Actor as its Action runtime. This guide covers its grant state: which registered Actions that Actor has been granted.
+A grant authorizes an Actor to request a registered Action. Present readiness is decided separately by Tag requirements, Resource requirements and affordability, `onCanStart`, and lock availability.
 
-| System | Responsibility |
+| Question | Supported surface |
 | --- | --- |
-| `ActionRegistry` | Stores loaded Action definitions. A definition's presence alone grants no Actor access. |
-| `ActionController` grant state | Combines the `autoGrant` baseline with that Actor's explicit grant sources. |
+| Does the Action exist? | `ActionRegistry.Get(actionId)` |
+| May this Actor request it? | `IsActionGranted(actionId)` / `GetGrantedActions()` |
+| Can it start now? | `RequestAction(actionId, parameters)` returns an accepted or rejected result. There is no public readiness-preview API. |
 
-A grant is authorization, not an active Action. Grant queries do not decide whether an Action can start under current runtime conditions.
+## Baseline and source grants
 
-An Action with `autoGrant = true` is granted when each Actor's controller is created. Define the baseline alongside other registered Actions at startup:
+Set `autoGrant = true` in the factory's static metadata for an Action available to every Actor. The controller applies this baseline at construction without a grant-change event. Auto-grant does not bind input or start an activation.
 
-```lua
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Server = require(KRF.server)
-local ActionTypes = require(KRF.server.Action.types)
-
-local actions: { ActionTypes.ActionFactory } = {
-	function(): ActionTypes.ActionDefinition
-		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
-	end,
-	function(): ActionTypes.ActionDefinition
-		return { id = "Action.Fireball", visibility = "ServerOnly" }
-	end,
-	function(): ActionTypes.ActionDefinition
-		return { id = "Action.WaterDragon", visibility = "ServerOnly" }
-	end,
-	function(): ActionTypes.ActionDefinition
-		return { id = "Action.Substitution", visibility = "ServerOnly" }
-	end,
-}
-local started: boolean, failure: Server.StartupFailure? = Server.Init({ actions = actions })
-if not started then
-	assert(failure ~= nil)
-	error(`KRF startup failed: {failure.system}: {failure.reason}`)
-end
-```
-
-Auto-grant does not bind input or start the Action. Construction emits no grant-change event.
-
-## Reconcile source sets
-
-Game systems provide complete sets of Action ids through [`SetGrants`](/api/Action/action-controller#set-grants). A source id is an opaque, non-empty, case-sensitive string scoped to one Actor. KRF stores and compares it without interpreting names such as `"Learned"` or `"CurrentMoveset"`.
+Use `SetGrants` for ownership supplied by equipment, progression, or a moveset. Each source replaces its own complete set; other sources remain intact.
 
 ```lua
 --!strict
@@ -55,44 +24,27 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 local ActionTypes = require(KRF.server.Action.types)
 local ActorTypes = require(KRF.server.Actor.types)
-local ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 
-type Actor = ActorTypes.Actor
-
-ActorRuntime.OnActorRegistered:Connect(function(actor: Actor)
-	local actionController: ActionTypes.ActionController = actor:GetController("ActionController") :: ActionTypes.ActionController
-
-	local function reconcile(sourceId: string, actionIds: { string }): ()
-		local success: boolean, reason: string? = actionController:SetGrants(sourceId, actionIds)
-		if not success then
-			error(`Action grant reconciliation failed: {reason}`)
-		end
+local function equipMoveset(actor: ActorTypes.Actor, actionIds: { string }): boolean
+	local actions = actor:GetController("ActionController") :: ActionTypes.ActionController
+	local success, reason = actions:SetGrants("CurrentMoveset", actionIds)
+	if not success then
+		warn(`Moveset grant failed: {reason}`)
 	end
-
-	reconcile("Learned", { "Action.Fireball", "Action.WaterDragon" })
-	reconcile("CurrentMoveset", { "Action.Fireball", "Action.Substitution" })
-	reconcile("Learned", { "Action.WaterDragon" })
-	-- Fireball remains granted by CurrentMoveset.
-	reconcile("CurrentMoveset", {})
-	-- Fireball and Substitution are now revoked; WaterDragon remains granted.
-end)
+	return success
+end
 ```
 
-`SetGrants` replaces only the named source's previous set. Repeated ids collapse to one contribution, and input order has no meaning. An empty list clears that source; clearing an absent source succeeds without an event. Multiple sources may grant the same Action, and explicit sources may include an auto-granted Action without changing its effective state.
+Call this after Actor registration, using ids loaded at startup. A source id is an opaque, non-empty, case-sensitive string scoped to one Actor. An empty Action array clears the source. Duplicate ids collapse to one contribution.
 
-KRF validates the source id, array shape, entries, and registry membership before replacing anything. A failed call returns `false, reason`, preserves all prior grants, and fires no event. On success, the complete new state is committed before any grant-change event fires.
+For example, `Learned` and `CurrentMoveset` can both grant `Action.Fireball`. Removing it from `Learned` preserves access until `CurrentMoveset` also removes it. Explicit sources cannot revoke an auto-grant.
 
-## Read and observe effective grants
+KRF validates the complete replacement before changing grant state. Failure preserves prior grants and emits no event. Success commits the entire set before notifying observers. Revocation prevents future starts but does not terminate existing activations; explicitly Interrupt them if the game requires that behavior.
 
-An Action is granted when `autoGrant` is true or at least one explicit source includes it. `IsActionGranted` returns `false` for an unknown id. `GetGrantedActions` returns each effective id once, in Action registry order, as a frozen list.
+## Observe effective access
 
-`OnActionGrantChanged` reports `(actor, actionId, isGranted)` only when effective access changes. Adding or removing a redundant source contribution produces no event. A callback can query the fully committed grant set; callbacks for multiple changed Actions have no promised order.
+`GetGrantedActions` returns a frozen snapshot in registry order; unknown ids return `false` from `IsActionGranted`. `OnActionGrantChanged(actor, actionId, isGranted)` reports only effective changes, so redundant contributions emit nothing. There is no promised ordering between changed ids in one reconciliation.
 
-Grants are runtime state. Game persistence code can restore ownership by calling `SetGrants` with its own source id after Actor registration. Destroying the controller clears explicit state and its event connections without emitting revocations.
+Persist learned ownership in game code and restore it through a source after Actor registration. Controller destruction clears grants and event connections without synthetic revocation events.
 
-## Related
-
-- [ActionController API](/api/Action/action-controller)
-- [Action Registry](./action-registry)
-- [Action Runtime](./action-lifecycle)
-- [Initializing KRF](../initializing-krf)
+Use the [ActionController reference](/api/Action/action-controller#set-grants) for exact signatures and failure reasons. Continue with [Action Lifecycle](./action-lifecycle).
