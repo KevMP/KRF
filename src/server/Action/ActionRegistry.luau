@@ -16,6 +16,34 @@ local definitionsById: { [string]: LoadedActionDefinition } = {}
 local orderedDefinitions: { LoadedActionDefinition } = {}
 local factoriesById: { [string]: ActionFactory } = {}
 
+local function normalizeRequirements(
+	requirements: { [string]: ActionTypes.ActionResourceRequirement }?
+): { [string]: ActionTypes.ActionResourceRequirement }
+	local owned: { [string]: ActionTypes.ActionResourceRequirement } = {}
+	for id: string, requirement: ActionTypes.ActionResourceRequirement in requirements or {} do
+		local copy: ActionTypes.ActionResourceRequirement = table.clone(requirement)
+		owned[id] = copy
+		table.freeze(copy)
+	end
+	return table.freeze(owned)
+end
+
+local function normalizeCosts(
+	costs: { [string]: number | ActionTypes.ActionResourceCost }?
+): { [string]: number | ActionTypes.ActionResourceCost }
+	local owned: { [string]: number | ActionTypes.ActionResourceCost } = {}
+	for id: string, cost: number | ActionTypes.ActionResourceCost in costs or {} do
+		if type(cost) == "number" then
+			owned[id] = cost
+		else
+			local copy: ActionTypes.ActionResourceCost = table.clone(cost :: ActionTypes.ActionResourceCost)
+			owned[id] = copy
+			table.freeze(copy)
+		end
+	end
+	return table.freeze(owned)
+end
+
 local function normalizeTagApplications(
 	applications: { ActionTypes.ActionTagApplication }?
 ): { ActionTypes.ActionTagApplicationOptions }
@@ -97,13 +125,13 @@ function ActionRegistry.Prepare(
 			blockedTags = table.clone(definition.blockedTags or {}),
 			activeTags = normalizeTagApplications(definition.activeTags),
 			appliedTags = normalizeTagApplications(definition.appliedTags),
-			costs = table.clone(definition.costs or {}),
+			resourceRequirements = normalizeRequirements(definition.resourceRequirements),
+			costs = normalizeCosts(definition.costs),
 			locks = table.clone(definition.locks or {}),
 			interruptibleBy = table.clone(definition.interruptibleBy or {}),
 		}
 		table.freeze(loadedDefinition.requiredTags)
 		table.freeze(loadedDefinition.blockedTags)
-		table.freeze(loadedDefinition.costs)
 		table.freeze(loadedDefinition.locks)
 		table.freeze(loadedDefinition.interruptibleBy)
 		table.freeze(loadedDefinition)

@@ -127,7 +127,7 @@ export type LoadedActionDefinition = {
 	read blockedTags: { string },
 	read activeTags: { ActionTagApplicationOptions },
 	read appliedTags: { ActionTagApplicationOptions },
-	read resourceRequirements: { [string]: ActionResourceRequirement }?,
+	read resourceRequirements: { [string]: ActionResourceRequirement },
 	read costs: { [string]: number | ActionResourceCost },
 	read locks: { string },
 	read interruptibleBy: { string },

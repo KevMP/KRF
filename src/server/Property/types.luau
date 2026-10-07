@@ -31,4 +31,13 @@ export type PropertyController = {
 	Destroy: (self: any) -> (),
 }
 
+export type PropertyMutationObserver = {
+	Commit: (propertyNames: { string }) -> (),
+	Dispatch: () -> (),
+}
+
+export type InternalPropertyController = PropertyController & {
+	_observeResolvedMutations: (self: InternalPropertyController, observer: PropertyMutationObserver) -> () -> (),
+}
+
 return types

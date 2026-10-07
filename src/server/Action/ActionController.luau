@@ -9,6 +9,7 @@ local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
 local ActionControllerGrantsModule = require(script.Parent.utils.ActionControllerGrants)
 local ActionControllerInstancesModule = require(script.Parent.utils.ActionControllerInstances)
 local ActionControllerTagRequirements = require(script.Parent.utils.ActionControllerTagRequirements)
+local ActionControllerResources = require(script.Parent.utils.ActionControllerResources)
 
 type Actor = ActorTypes.Actor
 type ActionController = ActionTypes.ActionController
@@ -79,6 +80,11 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		local tagReason: string? = ActionControllerTagRequirements.Validate(actor, definition)
 		if tagReason ~= nil then
 			return { accepted = false, reason = tagReason }
+		end
+		local _preflightPlan: ActionControllerResources.ResourcePlan?, resourceReason: string? =
+			ActionControllerResources.Resolve(actor, definition)
+		if resourceReason ~= nil then
+			return { accepted = false, reason = resourceReason }
 		end
 
 		local implementation, factoryReason = ActionRegistry.CreateExecution(actionId)

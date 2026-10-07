@@ -101,9 +101,9 @@ KRF checks `requiredTags` and `blockedTags` before `onCanStart` and rechecks the
 
 For an accepted request, KRF completes the authoritative transaction before any resulting callback runs. The normal transaction and post-commit order is:
 
-1. Terminate conflicting owners and clean their remaining `activeTags` contributions; acquire incoming locks, apply incoming `activeTags` followed by `appliedTags` in declaration order, and activate the incoming instance.
+1. Commit prepared Resource costs; terminate conflicting owners and clean their remaining `activeTags` contributions; acquire incoming locks, apply incoming `activeTags` followed by `appliedTags` in declaration order, and activate the incoming instance. Resolve final Properties and affected Resources before callbacks.
 2. Issue preempted owners' `OnActionInterrupted` signals in sequence-id order, then the incoming `OnActionStarted` signal.
-3. Dispatch the resulting Tag events in mutation order, then Property notifications in commit order.
+3. Dispatch the resulting Tag events in mutation order, then Property notifications in commit order, then net Resource notifications in Resource-id order.
 4. Invoke preempted owners' `onInterrupt` hooks in sequence-id order, then begin incoming `onStart` only if it is still active.
 
 Synchronous mutations from lifecycle or Tag listeners can issue older pending Property notifications before the remaining Tag events, preserving Property commit order. See [Property changes](../Property/property-runtime#changes).

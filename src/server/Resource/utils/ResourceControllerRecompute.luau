@@ -102,15 +102,17 @@ function ResourceControllerRecomputeUtils.IndexPropertySources(
 	end
 end
 
-function ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperty(
+function ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperties(
 	resourcesById: ResourceRecordsById,
 	resourceIdsByPropertyName: ResourceIdsByPropertyName,
 	propertyController: PropertyController,
-	propertyName: string
+	propertyNames: { string }
 ): { ResourceRecomputeChange }
-	local resourceIds: { [string]: boolean }? = resourceIdsByPropertyName[propertyName]
-	if resourceIds == nil then
-		return {}
+	local resourceIds: { [string]: boolean } = {}
+	for _, propertyName: string in propertyNames do
+		for resourceId: string in resourceIdsByPropertyName[propertyName] or {} do
+			resourceIds[resourceId] = true
+		end
 	end
 
 	local orderedResourceIds: { string } = {}

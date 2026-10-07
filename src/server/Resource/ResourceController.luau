@@ -11,6 +11,7 @@ local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ResourceRegistry = require(script.Parent.ResourceRegistry)
 local ResourceControllerRecomputeUtils = require(script.Parent.utils.ResourceControllerRecompute)
 local ResourceStateResolver = require(script.Parent.utils.ResourceStateResolver)
+local ResourceControllerEvent = require(script.Parent.utils.ResourceControllerEvent)
 
 local RunService: RunService = game:GetService("RunService")
 local automaticStepIntervalSeconds: number = 0.1
@@ -68,7 +69,7 @@ end
 function ResourceController.new(actor: Actor): ResourceController
 	local propertyController: PropertyController? = actor:GetController("PropertyController") :: PropertyController?
 
-	local controller: ResourceController = {} :: ResourceController
+	local controller: ResourceTypes.InternalResourceController = {} :: ResourceTypes.InternalResourceController
 	local resourcesById: ResourceRecordsById = {}
 	local resourceIdsByPropertyName: ResourceIdsByPropertyName = {}
 
@@ -79,7 +80,84 @@ function ResourceController.new(actor: Actor): ResourceController
 		OwnedSignalsModule.new({ OnResourceAddedSignal, OnResourceChangedSignal })
 
 	local destroyed: boolean = false
-	local propertyConnection: SignalTypes.Connection? = nil
+	local disconnectPropertyMutations: (() -> ())? = nil
+	local journal: ResourceControllerEvent.ResourceEventJournal =
+		ResourceControllerEvent.new(ownedSignals, OnResourceChangedSignal)
+
+	local function queueChange(change: ResourceRecomputeChange): ()
+		journal:Queue({
+			actor = actor,
+			resourceId = change.resourceId,
+			currentOldValue = change.currentOldValue,
+			currentNewValue = change.currentNewValue,
+			minOldValue = change.minOldValue,
+			minNewValue = change.minNewValue,
+			maxOldValue = change.maxOldValue,
+			maxNewValue = change.maxNewValue,
+		})
+	end
+
+	local function commitCurrent(resourceId: string, record: ResourceRecord, value: number): ()
+		local previous: number = record.currentValue
+		record.currentValue = value
+		queueChange({
+			resourceId = resourceId,
+			currentOldValue = previous,
+			currentNewValue = value,
+			minOldValue = record.resolvedMin,
+			minNewValue = record.resolvedMin,
+			maxOldValue = record.resolvedMax,
+			maxNewValue = record.resolvedMax,
+		})
+	end
+
+	function controller:_beginMutationBatch(): ()
+		journal:BeginBatch()
+	end
+	function controller:_isDestroyed(): boolean
+		return destroyed
+	end
+	function controller:_finishMutationBatch(): ()
+		journal:FinishBatch()
+	end
+	function controller:_dispatchChanges(): ()
+		journal:Drain()
+	end
+
+	function controller:_prepareSpends(amounts: { [string]: number }): ((() -> ())?, string?)
+		if destroyed then
+			return nil, "ResourceControllerDestroyed"
+		end
+		local prepared: { { id: string, record: ResourceRecord, previous: number, value: number } } = {}
+		local ids: { string } = {}
+		for id: string in amounts do
+			table.insert(ids, id)
+		end
+		table.sort(ids)
+		for _, id: string in ids do
+			local allowed: boolean, reason: string? = controller:CanSpend(id, amounts[id])
+			if not allowed then
+				return nil, (reason or "InvalidResourceAmount") .. ":" .. id
+			end
+			local record: ResourceRecord = resourcesById[id]
+			local value: number = record.currentValue - amounts[id]
+			if not math.isfinite(value) then
+				return nil, "InvalidResourceValue:" .. id
+			end
+			table.insert(prepared, { id = id, record = record, previous = record.currentValue, value = value })
+		end
+		return function(): ()
+			assert(not destroyed, "ResourceControllerDestroyed")
+			for _, mutation in prepared do
+				assert(
+					resourcesById[mutation.id] == mutation.record and mutation.record.currentValue == mutation.previous,
+					"ResourcePreparedMutationInvalidated"
+				)
+				commitCurrent(mutation.id, mutation.record, mutation.value)
+			end
+		end,
+			nil
+	end
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
@@ -148,20 +226,8 @@ function ResourceController.new(actor: Actor): ResourceController
 			return true, nil
 		end
 
-		resourceRecord.currentValue = nextCurrentValue
-
-		ownedSignals:WithDeferredDestroy(function()
-			OnResourceChangedSignal:Fire({
-				actor = actor,
-				resourceId = resourceId,
-				currentOldValue = previousCurrentValue,
-				currentNewValue = nextCurrentValue,
-				minOldValue = resourceRecord.resolvedMin,
-				minNewValue = resourceRecord.resolvedMin,
-				maxOldValue = resourceRecord.resolvedMax,
-				maxNewValue = resourceRecord.resolvedMax,
-			})
-		end)
+		commitCurrent(resourceId, resourceRecord, nextCurrentValue)
+		journal:Drain()
 
 		return true, nil
 	end
@@ -279,12 +345,13 @@ function ResourceController.new(actor: Actor): ResourceController
 		regeneratingActorsByController[controller] = nil
 		UpdateHeartbeatConnection()
 
-		local connection = propertyConnection
-		if connection ~= nil then
-			connection:Disconnect()
-			propertyConnection = nil
+		local disconnect: (() -> ())? = disconnectPropertyMutations
+		if disconnect ~= nil then
+			disconnect()
+			disconnectPropertyMutations = nil
 		end
 
+		journal:Destroy()
 		ownedSignals:Destroy()
 		table.clear(resourcesById)
 		table.clear(resourceIdsByPropertyName)
@@ -294,42 +361,40 @@ function ResourceController.new(actor: Actor): ResourceController
 	controller.OnResourceChanged = SignalModule.wrapEvent(OnResourceChangedSignal)
 
 	if propertyController ~= nil then
-		local resolvedPropertyChangedEvent: SignalTypes.Event<Actor, string, number?, number>? =
-			propertyController.OnResolvedPropertyChanged
-		if resolvedPropertyChangedEvent ~= nil then
-			propertyConnection = resolvedPropertyChangedEvent:Connect(
-				function(_actor: Actor, propertyName: string, _oldValue: number?, _newValue: number)
-					local changes: { ResourceRecomputeChange } =
-						ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperty(
-							resourcesById,
-							resourceIdsByPropertyName,
-							propertyController,
-							propertyName
-						)
-
-					if #changes == 0 then
-						return
-					end
-
-					ownedSignals:WithDeferredDestroy(function()
-						for _, change: ResourceRecomputeChange in changes do
-							OnResourceChangedSignal:Fire({
-								actor = actor,
-								resourceId = change.resourceId,
-								currentOldValue = change.currentOldValue,
-								currentNewValue = change.currentNewValue,
-								minOldValue = change.minOldValue,
-								minNewValue = change.minNewValue,
-								maxOldValue = change.maxOldValue,
-								maxNewValue = change.maxNewValue,
-							})
-						end
-					end)
+		local function commitProperties(names: { string }): ()
+			local changes: { ResourceRecomputeChange } =
+				ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperties(
+					resourcesById,
+					resourceIdsByPropertyName,
+					propertyController,
+					names
+				)
+			for _, change: ResourceRecomputeChange in changes do
+				queueChange(change)
+			end
+		end
+		local internalProperties: PropertyTypes.InternalPropertyController =
+			propertyController :: PropertyTypes.InternalPropertyController
+		if internalProperties._observeResolvedMutations ~= nil then
+			disconnectPropertyMutations = internalProperties:_observeResolvedMutations({
+				Commit = commitProperties,
+				Dispatch = function(): ()
+					journal:Drain()
+				end,
+			})
+		elseif propertyController.OnResolvedPropertyChanged ~= nil then
+			-- Custom Property controllers can continue to expose only the public event contract.
+			local connection: SignalTypes.Connection = propertyController.OnResolvedPropertyChanged:Connect(
+				function(_actor: Actor, name: string)
+					commitProperties({ name })
+					journal:Drain()
 				end
 			)
+			disconnectPropertyMutations = function(): ()
+				connection:Disconnect()
+			end
 		end
 	end
-
 	for _, definition: LoadedResourceDefinition in ResourceRegistry.GetAll() do
 		if definition.autoAssign then
 			local addOk: boolean, addReason: string? = controller:AddResource(definition.id)

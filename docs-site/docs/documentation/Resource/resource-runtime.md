@@ -47,7 +47,7 @@ performDash(actor)
 
 Current resource value is not a property. Properties supply optional bounds and regeneration rates; the resource retains its own current value.
 
-When a source property changes, KRF recomputes affected resources and clamps current value into new valid bounds. An invalid recompute preserves the last valid resource state.
+When source Properties change, KRF resolves all their final values before recomputing each affected Resource once. Resource getters already expose the resulting state inside Property listeners; getters do not trigger recomputation. Valid bounds clamp current value. Invalid bounds preserve the last valid min/max/regen state, including any current-value mutations already committed. They never repair the range or undo an accepted Action's costs.
 
 | Property change | Resource event? |
 | --- | --- |

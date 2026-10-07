@@ -13,7 +13,7 @@ local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local PropertyRecompute = require(utilsFolder.PropertyRecompute)
 local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent)
 
-export type PropertyController = PropertyTypes.PropertyController
+export type PropertyController = PropertyTypes.InternalPropertyController
 type Actor = ActorTypes.Actor
 type TagController = TagTypes.InternalTagController
 
@@ -58,6 +58,27 @@ function PropertyController.new(actor: Actor): PropertyController
 	local tagController: TagController? = actor:GetController("TagController") :: TagController?
 	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
 	local disconnectTagMutations: (() -> ())? = nil
+	local mutationObservers: { [PropertyTypes.PropertyMutationObserver]: boolean } = {}
+
+	function controller:_observeResolvedMutations(observer: PropertyTypes.PropertyMutationObserver): () -> ()
+		mutationObservers[observer] = true
+		return function(): ()
+			mutationObservers[observer] = nil
+		end
+	end
+
+	local function commitDerivedState(names: { string }): ()
+		for observer: PropertyTypes.PropertyMutationObserver in mutationObservers do
+			observer.Commit(names)
+		end
+	end
+
+	local function dispatchChanges(): ()
+		journal:Drain()
+		for observer: PropertyTypes.PropertyMutationObserver in mutationObservers do
+			observer.Dispatch()
+		end
+	end
 
 	local function commitTagChanges(events: { TagTypes.TagMutationEvent }): ()
 		local changes: { ResolvedChange } =
@@ -72,6 +93,11 @@ function PropertyController.new(actor: Actor): PropertyController
 				newResolvedValue = change.newResolvedValue,
 			}, false, true)
 		end
+		local names: { string } = {}
+		for _, change: ResolvedChange in changes do
+			table.insert(names, change.propertyName)
+		end
+		commitDerivedState(names)
 	end
 
 	for propertyName: string in propertiesById do
@@ -102,7 +128,8 @@ function PropertyController.new(actor: Actor): PropertyController
 				oldResolvedValue = nil,
 				newResolvedValue = newResolvedValue,
 			}, true, true)
-			journal:Drain()
+			commitDerivedState({ propertyName })
+			dispatchChanges()
 			return true, nil
 		end
 
@@ -125,7 +152,10 @@ function PropertyController.new(actor: Actor): PropertyController
 			oldResolvedValue = previousResolvedValue,
 			newResolvedValue = newResolvedValue,
 		}, true, previousResolvedValue ~= newResolvedValue)
-		journal:Drain()
+		if previousResolvedValue ~= newResolvedValue then
+			commitDerivedState({ propertyName })
+		end
+		dispatchChanges()
 		return true, nil
 	end
 
@@ -173,6 +203,7 @@ function PropertyController.new(actor: Actor): PropertyController
 			disconnect()
 		end
 		journal:Destroy()
+		table.clear(mutationObservers)
 
 		ownedSignals:Destroy()
 	end
@@ -184,9 +215,7 @@ function PropertyController.new(actor: Actor): PropertyController
 	if tagController ~= nil then
 		disconnectTagMutations = tagController:_observeMutations({
 			Commit = commitTagChanges,
-			Dispatch = function(): ()
-				journal:Drain()
-			end,
+			Dispatch = dispatchChanges,
 		})
 	end
 
