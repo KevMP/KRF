@@ -38,6 +38,7 @@ Your game owns its world, characters, abilities, items, quests, balance, assets,
 
 - [Initializing KRF](./initializing-krf)
 - [Actor Runtime](./Actor/actor-runtime)
+- [Actions](./Action/actions-overview)
 - [Tags](./Tags/tag-runtime) and [properties](./Property/property-runtime)
 - [Resources](./Resource/resource-runtime)
 - [API Reference](/api/Actor/actor-runtime)

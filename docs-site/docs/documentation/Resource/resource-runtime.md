@@ -60,7 +60,7 @@ When source Properties change, KRF resolves all their final values before recomp
 
 Within one authoritative/batched transaction, `OnResourceChanged` publishes one net transition per changed Resource in deterministic Resource-id order, independent of which Resource mutated first. Across transactions and synchronous reentry, every older pending Resource notification issues before any notification from newer nested work. A nested Resource mutation issues its required notifications before returning.
 
-Normal Action dispatch follows lifecycle signals → Tag events → Property notifications → Resource notifications → hooks. Reentrant calls can issue older pending Property or Resource notifications before the remaining outer phases. Signal issuance order does not guarantee completion order for listeners that yield. Event payloads describe their committed transitions; getters always read current authoritative state, which reentry may already have changed.
+Action acceptance and cleanup commit Resource state before consumer callbacks. Event payloads describe their committed transitions; getters read current authoritative state, which reentry may already have changed. See [Advanced Action Ordering & Reentrancy](../Action/action-ordering) for the canonical dispatch and nested-notification contract, and [Action Resources](../Action/action-resources) for declarative requirements and costs.
 
 ## Regeneration
 
