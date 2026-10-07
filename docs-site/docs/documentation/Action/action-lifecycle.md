@@ -17,7 +17,7 @@ A rejection creates no activation, emits no Started event, and consumes no seque
 
 [`RequestAction`](/api/Action/action-controller#request-action) is the low-level server boundary used by integrations and occasional server-driven behavior. An accepted result carries the activation's `sequenceId`; a rejected result carries its reason. Action authors normally work through definitions and callbacks. Input integration is outside this guide.
 
-Sequence ids are positive integers scoped to one controller and allocated in acceptance commit order. Parameters are passed unchanged, without copying or serialization. Context tables are frozen; a table supplied as `parameters` is not deep-frozen by KRF.
+Sequence ids are positive integers scoped to one controller and allocated in acceptance commit order. Parameters are passed unchanged, without copying. Context tables are frozen; a table supplied as `parameters` is not deep-frozen by KRF.
 
 Start requirements do not continuously enforce themselves. Losing a grant, required Tag, or Resource threshold later does not automatically terminate an activation. Game code can react through events or updates.
 

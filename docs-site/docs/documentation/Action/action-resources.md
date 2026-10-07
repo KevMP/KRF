@@ -10,7 +10,7 @@ Use `resourceRequirements` for start-time meter conditions and `costs` for atomi
 
 | Intent | Declare | Result |
 | --- | --- | --- |
-| Start only below half Health | `resourceRequirements = { Health = { maxPercent = 0.5 } }` | Checks the meter; spends nothing. |
+| Start only at or below half Heat | `resourceRequirements = { Heat = { maxPercent = 0.5 } }` | Checks the meter; spends nothing. |
 | Pay 15 Stamina | `costs = { Stamina = 15 }` | Affordability check and full payment on acceptance. No duplicate requirement is needed just to afford this cost. |
 | Start with at least 30 Mana but pay 10 | Requirements `{ min = 30 }` and cost `10` for Mana | Both checks use pre-spend state. |
 

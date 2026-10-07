@@ -33,7 +33,7 @@ Read-only identity of this activation. Sequence id is a positive integer unique 
 
 ### `parameters: any?` {#parameters}
 
-Original start-request value, passed without copying or serialization; read-only context membership does not freeze nested parameter data.
+Original start-request value, passed without copying; read-only context membership does not freeze nested parameter data.
 
 ## Methods
 

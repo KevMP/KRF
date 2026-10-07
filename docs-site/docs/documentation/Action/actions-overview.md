@@ -74,7 +74,7 @@ Use the declarative primitive when it expresses the requirement. Reserve callbac
 | --- | --- | --- |
 | Learned ability, equipped moveset, universal ability | [Grants](./action-grants): `SetGrants` or `autoGrant` | Authorizes requests; does not measure present readiness. |
 | Must be grounded; cannot act while stunned | [Tags](./action-tags): `requiredTags` / `blockedTags` | Start-time status gates. Later changes need an explicit game reaction. |
-| Require low Health, a full meter, or one charge | [Resources](./action-resources): `resourceRequirements` | Inclusive start-time thresholds; does not spend. |
+| Require low Heat, a full meter, or one charge | [Resources](./action-resources): `resourceRequirements` | Inclusive start-time thresholds; does not spend. |
 | Pay Stamina or Mana when accepted | [Resources](./action-resources): `costs` | Atomic upfront payment across all declared Resources. |
 | Validate a target or a game-specific condition | [Lifecycle](./action-lifecycle): `onCanStart` | Non-yielding additional decision; use requirements/costs for Resource gating/payment. |
 | Publish status while active; apply a lasting buff | [Tags](./action-tags): `activeTags` / `appliedTags` | Active contributions are cleaned up; applied effects follow Tag lifetime rules. |

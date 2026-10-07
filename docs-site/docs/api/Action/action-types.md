@@ -85,7 +85,7 @@ Unsupported fields are rejected. Static metadata is validated and copied at star
 export type ActionVisibility = "ServerOnly" | "ClientVisible"
 ```
 
-Static visibility metadata; it does not establish an input or networking API.
+Static visibility metadata.
 
 ## ActionTagApplication / ActionTagApplicationOptions {#action-tag-application}
 

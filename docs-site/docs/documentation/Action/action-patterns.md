@@ -36,7 +36,7 @@ local function createInteract(): ActionTypes.ActionDefinition
 end
 ```
 
-Use `onCanStart` for a non-yielding game-specific target decision when needed. Validate client-originated parameters before the request. Returning from `onStart` alone would leave this Action active.
+Use `onCanStart` for a non-yielding game-specific target decision when needed. Returning from `onStart` alone would leave this Action active.
 
 ## Held / charged Action {#held-charged-action}
 
