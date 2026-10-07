@@ -13,7 +13,8 @@ local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local PropertyRecompute = require(utilsFolder.PropertyRecompute)
 local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent)
 
-export type PropertyController = PropertyTypes.InternalPropertyController
+export type PropertyController = PropertyTypes.PropertyController
+type InternalPropertyController = PropertyTypes.InternalPropertyController
 type Actor = ActorTypes.Actor
 type TagController = TagTypes.InternalTagController
 
@@ -25,7 +26,7 @@ type PropertyControllerEventContext = PropertyControllerEventUtils.PropertyContr
 local PropertyController = {}
 
 function PropertyController.new(actor: Actor): PropertyController
-	local controller: PropertyController = {} :: PropertyController
+	local controller: InternalPropertyController = {} :: InternalPropertyController
 	local destroyed: boolean = false
 	local propertiesById: PropertyRecordsById = {
 		WalkSpeed = {

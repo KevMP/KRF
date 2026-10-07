@@ -67,6 +67,8 @@ function ResourceControllerEvent.new(
 		if batchDepth > 0 then
 			return
 		end
+		-- One transaction publishes net changes in Resource-id order, independent
+		-- of first-mutation order. Append behind every older pending transaction.
 		local ids: { string } = {}
 		for id: string in batched do
 			table.insert(ids, id)

@@ -175,7 +175,7 @@ it("issues every Resource transition once under recursive mutation and keeps his
 	expect(resources:GetCurrent("Mana")).toBe(60)
 end)
 
-it("drains all older Resource costs before a recursively appended mutation", function()
+it("drains every older Resource cost before a nested mutation whose Resource id sorts earlier", function()
 	ResourceTestUtils.initialize({
 		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
 	}, { mana, { id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 100 } } })
@@ -188,14 +188,14 @@ it("drains all older Resource costs before a recursively appended mutation", fun
 		table.insert(order, `{change.resourceId} {change.currentOldValue}->{change.currentNewValue}`)
 		if change.resourceId == "Chakra" and not mutationRequested then
 			mutationRequested = true
-			mutationSucceeded, mutationReason = resources:Spend("Mana", 10)
+			mutationSucceeded, mutationReason = resources:Spend("Chakra", 10)
 			table.insert(order, "nested returned")
 		end
 	end)
 	expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(mutationSucceeded).toBe(true)
 	expect(mutationReason).toBeNil()
-	expect(order).toEqual({ "Chakra 100->90", "Mana 100->80", "Mana 80->70", "nested returned" })
+	expect(order).toEqual({ "Chakra 100->90", "Mana 100->80", "Chakra 90->80", "nested returned" })
 end)
 
 it("issues outer-before-inner costs when a Resource listener synchronously requests another Action", function()

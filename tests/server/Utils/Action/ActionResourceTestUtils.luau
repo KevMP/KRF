@@ -84,7 +84,8 @@ function ActionResourceTestUtils.registerActor(): (
 		registered:GetController("TagController") :: TagTypes.TagController
 end
 
--- AC7 locks rejection categories and determinism, but leaves new reason spellings open.
+-- Broad contract tests check rejection categories; the focused Resource planning
+-- cases pin the public AC7 reason strings exactly.
 function ActionResourceTestUtils.expectRejected(result: ActionTypes.ActionRequestResult): string
 	expect(result.accepted).toBe(false)
 	if result.accepted then

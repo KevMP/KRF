@@ -540,7 +540,10 @@ for _, changed: string in { "bounds", "multiplier" } do
 end
 
 for _, invalidBounds: string in { "non-finite maximum", "overflowed capacity" } do
-	it("rejects percentage costs from " .. invalidBounds .. " before spending any Resource", function()
+	local name: string = if invalidBounds == "non-finite maximum"
+		then "prices percentage costs from the last valid bounds after a non-finite maximum"
+		else "rejects overflowed percentage costs before spending any Resource"
+	it(name, function()
 		ResourceTestUtils.initialize({
 			{
 				id = "Cast",
@@ -564,9 +567,127 @@ for _, invalidBounds: string in { "non-finite maximum", "overflowed capacity" } 
 		expect(
 			(properties:SetBaseProperty("MaxMana", if invalidBounds == "overflowed capacity" then 1e308 else math.huge))
 		).toBe(true)
-		local reason: string = ResourceTestUtils.expectRejected(actions:RequestAction("Cast"))
-		expect(ResourceTestUtils.expectRejected(actions:RequestAction("Cast"))).toBe(reason)
-		expect(resources:GetCurrent("Mana")).toBe(60)
-		expect(resources:GetCurrent("Chakra")).toBe(100)
+		if invalidBounds == "non-finite maximum" then
+			expect(resources:GetMax("Mana")).toBe(100)
+			expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
+			expect(resources:GetCurrent("Mana")).toBe(35)
+			expect(resources:GetCurrent("Chakra")).toBe(90)
+		else
+			expect(actions:RequestAction("Cast")).toEqual({
+				accepted = false,
+				reason = "ActionResourceCostInvalid:Mana",
+			})
+			expect(resources:GetCurrent("Mana")).toBe(60)
+			expect(resources:GetCurrent("Chakra")).toBe(100)
+		end
+	end)
+end
+
+type RejectionCase = {
+	name: string,
+	reason: string,
+	requirement: ActionTypes.ActionResourceRequirement?,
+	cost: (number | ActionTypes.ActionResourceCost)?,
+	assigned: boolean?,
+	zeroRange: boolean?,
+	maximumOverride: number?,
+	multiplier: number?,
+	unavailable: string?,
+}
+local rejectionCases: { RejectionCase } = {
+	{ name = "unassigned Resource", reason = "ActionResourceNotAssigned:Mana", cost = 10, assigned = false },
+	{ name = "requirement failure", reason = "ActionResourceRequirementNotSatisfied:Mana", requirement = { min = 61 } },
+	{
+		name = "invalid requirement range",
+		reason = "ActionResourceRequirementRangeInvalid:Mana",
+		requirement = { minPercent = 0 },
+		zeroRange = true,
+	},
+	{
+		name = "invalid cost range",
+		reason = "ActionResourceCostRangeInvalid:Mana",
+		cost = { percent = 0.25 },
+		maximumOverride = math.huge,
+	},
+	{
+		name = "missing multiplier",
+		reason = "ActionResourceMultiplierInvalid:Mana:Multiplier",
+		cost = { amount = 20, multiplierProperty = "Multiplier" },
+	},
+	{
+		name = "negative multiplier",
+		reason = "ActionResourceMultiplierInvalid:Mana:Multiplier",
+		cost = { amount = 20, multiplierProperty = "Multiplier" },
+		multiplier = -1,
+	},
+	{
+		name = "invalid effective cost",
+		reason = "ActionResourceCostInvalid:Mana",
+		cost = { amount = 20, multiplierProperty = "Multiplier" },
+		multiplier = 1e308,
+	},
+	{
+		name = "insufficient Resource",
+		reason = "ActionResourcePlanningFailed:InsufficientResourceValue:Mana",
+		cost = 50,
+	},
+	{
+		name = "missing ResourceController",
+		reason = "ActionResourceControllerUnavailable",
+		cost = 10,
+		unavailable = "missing",
+	},
+	{
+		name = "destroyed ResourceController",
+		reason = "ActionResourceControllerUnavailable",
+		cost = 10,
+		unavailable = "destroyed",
+	},
+}
+for _, case: RejectionCase in rejectionCases do
+	it("returns the documented rejection for " .. case.name .. " without consuming an activation", function()
+		local definition: ActionDefinition = { id = "Cast", visibility = "ServerOnly", autoGrant = true }
+		if case.requirement ~= nil then
+			definition.resourceRequirements = { Mana = case.requirement }
+		end
+		if case.cost ~= nil then
+			definition.costs = { Mana = case.cost }
+		end
+		local resource: ResourceTypes.ResourceDefinition = table.clone(mana)
+		resource.autoAssign = case.assigned ~= false
+		if case.zeroRange then
+			resource.max = { value = 20 }
+			resource.initialValue = 20
+		end
+		ResourceTestUtils.initialize(
+			{ definition, { id = "Probe", visibility = "ServerOnly", autoGrant = true } },
+			{ resource }
+		)
+		local actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
+			ResourceTestUtils.registerActor()
+		if case.multiplier ~= nil then
+			expect((properties:SetBaseProperty("Multiplier", case.multiplier))).toBe(true)
+		end
+		if case.maximumOverride ~= nil then
+			-- Exercise the planner's defensive range check without caching invalid
+			-- derived state in the native ResourceController.
+			resources.GetMax = function(_self: any, _resourceId: string): number?
+				return case.maximumOverride
+			end
+		end
+		if case.unavailable == "missing" then
+			expect(actor:RemoveController("ResourceController")).toBe(resources)
+		elseif case.unavailable == "destroyed" then
+			resources:Destroy()
+		end
+		local previous: number? = resources:GetCurrent("Mana")
+		for _attempt: number = 1, 2 do
+			expect(actions:RequestAction("Cast")).toEqual({ accepted = false, reason = case.reason })
+		end
+		expect(resources:GetCurrent("Mana")).toBe(previous)
+		expect(actions:RequestAction("Probe")).toEqual({ accepted = true, sequenceId = 1 })
+		if case.unavailable == "missing" then
+			expect(actor:SetController("ResourceController", resources)).toBe(true)
+		end
 	end)
 end
