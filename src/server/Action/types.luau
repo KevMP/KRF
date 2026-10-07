@@ -4,6 +4,19 @@ export type ActionVisibility = "ServerOnly" | "ClientVisible"
 export type ActionTagApplicationOptions = { id: string, duration: number? }
 export type ActionTagApplication = string | ActionTagApplicationOptions
 
+export type ActionResourceRequirement = {
+	min: number?,
+	max: number?,
+	minPercent: number?,
+	maxPercent: number?,
+}
+
+export type ActionResourceCost = {
+	amount: number?,
+	percent: number?,
+	multiplierProperty: string?,
+}
+
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
@@ -81,7 +94,8 @@ export type ActionDefinition = {
 	blockedTags: { string }?,
 	activeTags: { ActionTagApplication }?,
 	appliedTags: { ActionTagApplication }?,
-	costs: { [string]: number }?,
+	resourceRequirements: { [string]: ActionResourceRequirement }?,
+	costs: { [string]: number | ActionResourceCost }?,
 	locks: { string }?,
 	interruptibleBy: { string }?,
 	onCanStart: OnCanStart?,
@@ -113,7 +127,8 @@ export type LoadedActionDefinition = {
 	read blockedTags: { string },
 	read activeTags: { ActionTagApplicationOptions },
 	read appliedTags: { ActionTagApplicationOptions },
-	read costs: { [string]: number },
+	read resourceRequirements: { [string]: ActionResourceRequirement }?,
+	read costs: { [string]: number | ActionResourceCost },
 	read locks: { string },
 	read interruptibleBy: { string },
 }
