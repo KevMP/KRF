@@ -5,6 +5,8 @@ local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.typ
 local ActionControllerHooks = require(script.Parent.ActionControllerHooks)
 local ActionControllerUpdates = require(script.Parent.ActionControllerUpdates)
 local TagTypes = require(script.Parent.Parent.Parent.Tags.types)
+local ResourceTypes = require(script.Parent.Parent.Parent.Resource.types)
+local ActionControllerResources = require(script.Parent.ActionControllerResources)
 
 type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
@@ -563,6 +565,24 @@ function ActionControllerInstancesModule.new(
 		end
 		-- All fallible Tag validation precedes preemption. No consumer work or
 		-- yielding occurs between validation and the complete authoritative commit.
+		local resourcePlan: ActionControllerResources.ResourcePlan?, resourceReason: string? =
+			ActionControllerResources.Resolve(actor, definition)
+		if resourceReason ~= nil then
+			return nil, resourceReason
+		end
+		local resources: ResourceTypes.InternalResourceController? = if resourcePlan ~= nil
+			then resourcePlan.controller
+			else actor:GetController("ResourceController") :: ResourceTypes.InternalResourceController?
+		if resources ~= nil and resources:_isDestroyed() then
+			resources = nil
+		end
+		if resources ~= nil then
+			resources:_beginMutationBatch()
+		end
+		-- Spend the fixed pre-transaction price before any same-transaction derived changes.
+		if resourcePlan ~= nil then
+			resourcePlan.commit()
+		end
 		if tags ~= nil then
 			tags:_beginMutationBatch()
 		end
@@ -598,6 +618,9 @@ function ActionControllerInstancesModule.new(
 		local instance: InternalActionInstance =
 			commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
 		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+		if resources ~= nil then
+			resources:_finishMutationBatch()
+		end
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
@@ -608,6 +631,9 @@ function ActionControllerInstancesModule.new(
 			end
 			for _, owner: InternalActionInstance in conflicts do
 				dispatchTerminalTags(owner)
+			end
+			if resources ~= nil then
+				resources:_dispatchChanges()
 			end
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")

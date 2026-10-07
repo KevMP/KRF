@@ -84,12 +84,13 @@ B OnActionInterrupted
 C OnActionStarted
 resulting Tag events
 Property notifications
+Resource notifications
 A onInterrupt
 B onInterrupt
 C onStart, if C is still active
 ```
 
-Reentrant mutations can issue older pending Property notifications before the remaining Tag events; see [Property changes](../Property/property-runtime#changes).
+Reentrant mutations can issue older pending Property or Resource notifications before the remaining outer phases; see [Property changes](../Property/property-runtime#changes) and [Resource notifications](../Resource/resource-runtime#notifications).
 
 Owner events and hooks each follow ascending sequence-id order. Hooks may synchronously request or terminate Actions; a nested call completes its own lifecycle dispatch before returning. KRF issues C's Started event before running any owner hook, so a hook can terminate C without reversing C's Started and terminal events. Signal listeners may also reenter synchronously and need not finish before hooks run. If a listener terminates C before its normal Started turn, KRF issues C's pending Started before C's terminal signal. This does not defer the nested call.
 
@@ -115,7 +116,7 @@ onStart = function(ctx: ActionTypes.ActionExecutionContext)
 end
 ```
 
-The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then dispatching cleanup Tag events, Property notifications, and running their `onInterrupt` hooks in the same order. A scoped claim issues no Started event because the claiming Action is already active.
+The claiming Action's id and original parameters are used for owner-side preemption decisions. An approved claim Interrupts each conflicting owner as a whole; claims have no separate interruption policy. KRF commits all owner Interrupts and acquires the claim before issuing every owner's `OnActionInterrupted` event in sequence-id order, then dispatching cleanup Tag events, Property notifications, Resource notifications, and running their `onInterrupt` hooks in the same order, subject to the reentrant notification exception above. A scoped claim issues no Started event because the claiming Action is already active.
 
 | Claim failure reason | Cause |
 | --- | --- |

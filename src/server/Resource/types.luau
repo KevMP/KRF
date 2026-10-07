@@ -81,4 +81,14 @@ export type ResourceController = {
 	GetMin: (self: any, resourceId: string) -> number?,
 }
 
+-- Framework-private mutation and publication seams; callers must commit a
+-- prepared mutation without intervening consumer work or yielding.
+export type InternalResourceController = ResourceController & {
+	_isDestroyed: (self: InternalResourceController) -> boolean,
+	_prepareSpends: (self: InternalResourceController, amounts: { [string]: number }) -> ((() -> ())?, string?),
+	_beginMutationBatch: (self: InternalResourceController) -> (),
+	_finishMutationBatch: (self: InternalResourceController) -> (),
+	_dispatchChanges: (self: InternalResourceController) -> (),
+}
+
 return {}

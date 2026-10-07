@@ -47,7 +47,7 @@ performDash(actor)
 
 Current resource value is not a property. Properties supply optional bounds and regeneration rates; the resource retains its own current value.
 
-When a source property changes, KRF recomputes affected resources and clamps current value into new valid bounds. An invalid recompute preserves the last valid resource state.
+When source Properties change, KRF resolves all their final values before recomputing each affected Resource once. Resource getters already expose the resulting state inside Property listeners; getters do not trigger recomputation. Valid bounds clamp current value. Invalid bounds or non-finite derived min/max/regen values preserve the entire last valid min/max/regen state, including any current-value mutations already committed. They never repair the range or undo an accepted Action's costs. Assignment fails when a Property-backed source resolves to a non-finite value.
 
 | Property change | Resource event? |
 | --- | --- |
@@ -55,6 +55,12 @@ When a source property changes, KRF recomputes affected resources and clamps cur
 | Bounds clamp current value | Yes, in the same payload |
 | Regeneration rate changes by itself | No |
 | Unrelated property changes | No |
+
+## Notifications
+
+Within one authoritative/batched transaction, `OnResourceChanged` publishes one net transition per changed Resource in deterministic Resource-id order, independent of which Resource mutated first. Across transactions and synchronous reentry, every older pending Resource notification issues before any notification from newer nested work. A nested Resource mutation issues its required notifications before returning.
+
+Normal Action dispatch follows lifecycle signals → Tag events → Property notifications → Resource notifications → hooks. Reentrant calls can issue older pending Property or Resource notifications before the remaining outer phases. Signal issuance order does not guarantee completion order for listeners that yield. Event payloads describe their committed transitions; getters always read current authoritative state, which reentry may already have changed.
 
 ## Regeneration
 

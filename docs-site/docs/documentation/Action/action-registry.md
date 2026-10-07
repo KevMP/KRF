@@ -21,7 +21,8 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 | `blockedTags` | Optional array of registered Tag ids that must be absent when the Action starts. Cannot overlap `requiredTags`. |
 | `activeTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts and removes any Tag state that Action still owns when it ends or is interrupted. |
 | `appliedTags` | Optional ordered array of Tag applications. KRF applies them when the Action starts; they then follow the standard Tag lifecycle even if the Action ends or is interrupted. |
-| `costs` | Optional Resource-id keyed map of finite, strictly positive cost metadata. |
+| `resourceRequirements` | Optional Resource-id keyed map of inclusive absolute and normalized start thresholds. |
+| `costs` | Optional Resource-id keyed map of positive numeric costs or structured costs. Paid once on acceptance. |
 | `locks` | Optional array of opaque, non-empty game-defined lock ids, acquired as [lifetime claims](./action-locks) at activation. |
 | `interruptibleBy` | Optional array of exact Action ids permitted to preempt this Action when locks conflict. Forward references and self-references are valid. |
 | `onCanStart` | Optional function returning `(boolean, string?)`, for an Action-defined start decision. |
@@ -31,7 +32,24 @@ Import `ActionDefinition` and `LoadedActionDefinition` from `KRF.server.Action.t
 
 All lists must be dense arrays. `requiredTags`, `blockedTags`, `locks`, and `interruptibleBy` cannot contain duplicate entries and require non-empty strings. Each `activeTags` or `appliedTags` entry is either a non-empty Tag id or `{ id = "Tag.Id", duration = positiveFiniteSeconds }`. Tag and Resource references must exist in the same startup configuration; Action references resolve against the complete Action registry. Omitted lists and `costs` normalize to empty collections. Loaded Tag applications are frozen copies in declaration order, with string entries normalized to `{ id = "Tag.Id" }`.
 
-These fields are validated and stored at startup. `ActionController` checks Tag requirements and applies declarative Tags during `RequestAction`; it does not spend `costs`. See [Action Tags](./action-tags) for Tag lifetime and [Action Runtime](./action-lifecycle) for request order.
+These fields are validated and stored at startup. `ActionController` checks Tag and Resource requirements, spends costs, and applies declarative Tags during `RequestAction`. See [Action Tags](./action-tags) for Tag lifetime and [Action Runtime](./action-lifecycle) for request order.
+
+## Resource requirements and costs
+
+Every referenced Resource must be registered at startup and already assigned to the Actor at request time. Omitted maps normalize to empty frozen maps; loaded requirement and structured cost entries are frozen copies. Runtime checks never assign Resources or create multiplier Properties.
+
+| Entry | Contract |
+| --- | --- |
+| `resourceRequirements[id] = { min?, max?, minPercent?, maxPercent? }` | At least one threshold. All thresholds are finite; percentages are in `[0, 1]`. Authored minimums cannot exceed their matching maximums. All supplied checks must pass, including equality at a threshold. |
+| `costs[id] = 15` | Legacy fixed cost, equivalent to `{ amount = 15 }`. |
+| `costs[id] = { amount = 15, multiplierProperty = "StaminaCostMultiplier" }` | Fixed base amount times the Actor's resolved multiplier Property. |
+| `costs[id] = { percent = 0.25, multiplierProperty = "StaminaCostMultiplier" }` | Fraction of resolved capacity `(max - min)`, times the optional multiplier. |
+
+A structured cost must specify exactly one of `amount` or `percent`, finite and strictly positive. Cost percentages may exceed `1`. An optional multiplier name must be non-empty; its resolved value must exist, be finite, and be non-negative. Zero makes the effective cost free. Requirements and costs reject unsupported fields.
+
+Requirement percentages use `(current - min) / (max - min)` and require a positive range. Percentage costs allow a zero range, producing zero cost. Effective costs must be finite and affordable above the Resource minimum.
+
+Cooldowns and charges use these same Resource rules. A shared cooldown can require `{ minPercent = 1 }` and cost `{ percent = 1 }`, consuming a full meter whose regeneration restores readiness; a charge Resource can require `{ min = 1 }` and cost `1`. Several Actions can reference the same Resource. Action lifetime remains explicit even when cooldown or charge state changes.
 
 KRF has no Action kind taxonomy, static duration, or first-class cooldown metadata. Cooldowns and charges belong in [Resources](../Resource/resource-runtime). Phases, combos, input buffers, priorities, categories, and other unsupported fields are rejected.
 

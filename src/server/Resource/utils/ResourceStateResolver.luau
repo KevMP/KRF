@@ -37,6 +37,11 @@ local function ResolveNumericSource(
 	if resolvedValue == nil then
 		return nil, "ResourcePropertyUnresolved:" .. propertyName
 	end
+	-- Property and Tag arithmetic can produce non-finite values. Keep invalid
+	-- derived state outside Resource Runtime's last valid cached snapshot.
+	if not math.isfinite(resolvedValue) then
+		return nil, "ResourcePropertyNonFinite:" .. propertyName
+	end
 
 	return resolvedValue, nil
 end

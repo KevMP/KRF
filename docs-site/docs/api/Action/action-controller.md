@@ -58,7 +58,7 @@ Returns a frozen list of effective Action ids in Action registry order.
 
 Requests one Action on this Actor. An accepted result is `{ accepted = true, sequenceId = number }`; a rejected result is `{ accepted = false, reason = string }`.
 
-Checks Tag requirements and commits declarative Tag applications with activation. It does not spend `costs`; see the [Action Tags guide](/Action/action-tags) for transaction and callback order.
+Checks Tag and Resource requirements and atomically commits prepared costs and declarative Tag applications with activation. See the [Action Runtime guide](/Action/action-lifecycle) for transaction and callback order.
 
 | Rejection reason | Cause |
 | --- | --- |
@@ -69,6 +69,14 @@ Checks Tag requirements and commits declarative Tag applications with activation
 | `ActionNotGranted` | This Actor is not granted the Action. |
 | `ActionRequiredTagMissing:<id>` | A required Tag is absent at preflight or final validation. |
 | `ActionBlockedTagPresent:<id>` | A blocked Tag is present at preflight or final validation. |
+| `ActionResourceControllerUnavailable` | A Resource-dependent request has no live ResourceController. |
+| `ActionResourceNotAssigned:<id>` | A referenced Resource is not assigned. |
+| `ActionResourceRequirementNotSatisfied:<id>` | An absolute or percentage threshold fails. |
+| `ActionResourceRequirementRangeInvalid:<id>` | A percentage requirement has no positive usable range. |
+| `ActionResourceCostRangeInvalid:<id>` | A percentage cost has invalid resolved bounds. |
+| `ActionResourceMultiplierInvalid:<id>:<property>` | The multiplier Property is missing, non-finite, or negative. |
+| `ActionResourceCostInvalid:<id>` | The effective cost is non-finite or negative. |
+| `ActionResourcePlanningFailed:InsufficientResourceValue:<id>` | An effective cost exceeds available value above the minimum. |
 | `ActionTagActivationFailed:<id>` | A declarative Tag application cannot commit. No incoming Action or Tag effects remain. |
 | `ActionFactoryFailed` / `ActionFactoryYielded` / `ActionFactoryInvalidResult` | The per-request factory errored, yielded, or returned an invalid Action implementation. No sequence id is consumed. |
 | `ActionCanStartRejected` | `onCanStart` returned `false` without a usable custom reason. |

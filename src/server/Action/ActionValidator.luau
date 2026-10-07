@@ -1,5 +1,6 @@
 --!strict
 local ActionTypes = require(script.Parent.types)
+local ActionResourceValidator = require(script.Parent.utils.ActionResourceValidator)
 
 type ActionDefinition = ActionTypes.ActionDefinition
 
@@ -12,6 +13,7 @@ local SUPPORTED_FIELDS: { [string]: boolean } = {
 	activeTags = true,
 	appliedTags = true,
 	costs = true,
+	resourceRequirements = true,
 	locks = true,
 	interruptibleBy = true,
 	onCanStart = true,
@@ -124,42 +126,6 @@ local function ValidateIdList(
 		seen[id] = true
 		if preparedIds ~= nil and not preparedIds[id] then
 			return false, `{unknownPrefix}:{id}`
-		end
-	end
-	return true, nil
-end
-
-local function ValidateCosts(costs: any, preparedResourceIds: { [string]: boolean }): (boolean, string?)
-	if costs == nil then
-		return true, nil
-	end
-	if type(costs) ~= "table" then
-		return false, "ActionCostsMustBeTable"
-	end
-	local resourceIds: { string } = {}
-	for resourceId in costs do
-		if type(resourceId) ~= "string" then
-			return false, "ActionCostResourceIdMustBeString"
-		end
-		table.insert(resourceIds, resourceId)
-	end
-	table.sort(resourceIds)
-	for _, resourceId: string in resourceIds do
-		if resourceId == "" then
-			return false, "ActionCostResourceIdCannotBeEmpty"
-		end
-		local amount: any = costs[resourceId]
-		if type(amount) ~= "number" then
-			return false, "ActionCostMustBeNumber"
-		end
-		if not math.isfinite(amount) then
-			return false, "ActionCostMustBeFiniteNumber"
-		end
-		if amount <= 0 then
-			return false, "ActionCostMustBePositive"
-		end
-		if not preparedResourceIds[resourceId] then
-			return false, `ActionCostResourceUnknown:{resourceId}`
 		end
 	end
 	return true, nil
@@ -291,7 +257,11 @@ function ActionValidator.ValidateActionDefinition(
 			return false, `ActionRequiredAndBlockedTagsOverlap:{tagId}`
 		end
 	end
-	valid, reason = ValidateCosts(fields.costs, preparedResourceIds)
+	valid, reason = ActionResourceValidator.ValidateRequirements(fields.resourceRequirements, preparedResourceIds)
+	if not valid then
+		return false, reason
+	end
+	valid, reason = ActionResourceValidator.ValidateCosts(fields.costs, preparedResourceIds)
 	if not valid then
 		return false, reason
 	end
