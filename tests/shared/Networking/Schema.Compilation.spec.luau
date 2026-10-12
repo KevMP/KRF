@@ -13,6 +13,8 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.SchemaTestUtils)
 type SchemaDefinition = NetworkingTypes.SchemaDefinition
 type CompiledSchema = NetworkingTypes.CompiledSchema
 
+local MAX_SAFE_INTEGER: number = 9007199254740991
+
 local function expectRejected(definition: any, expectedReason: string): ()
 	local compiled: CompiledSchema?, reason: string? = Compiler.Compile(definition)
 	expect(compiled).toBeNil()
@@ -23,6 +25,7 @@ local function expectFiniteBound(compiled: CompiledSchema): ()
 	local maximum: number = compiled.maxEncodedBytes
 	expect(maximum == maximum).toBe(true)
 	expect(maximum < math.huge).toBe(true)
+	expect(maximum <= MAX_SAFE_INTEGER).toBe(true)
 	expect(maximum >= 0).toBe(true)
 	expect(maximum % 1).toBe(0)
 end
@@ -167,6 +170,13 @@ it("rejects complex and Optional Map keys while allowing deterministic string, e
 		expectFiniteBound(compiled)
 	end
 end)
+
+local unsupportedScalarKeys: { SchemaDefinition } = { Schema.Boolean, Schema.F32, Schema.F64 }
+for _, key: SchemaDefinition in unsupportedScalarKeys do
+	it("rejects " .. key.kind .. " Map keys with the stable unsupported-key reason", function()
+		expectRejected({ kind = "Map", key = key, value = Schema.U8, maxEntries = 2 }, "SchemaMapKeyUnsupported")
+	end)
+end
 
 it("rejects direct and indirect recursive definitions without hanging or publishing a partial result", function()
 	local recursive: any = { kind = "Optional" }
@@ -314,10 +324,74 @@ end)
 
 it("rejects nested bounds whose maximum encoded size cannot remain finite", function()
 	local definition: any = { kind = "U8" }
-	for _ = 1, 110 do
-		definition = { kind = "Array", element = definition, maxLength = 1024 }
+	-- Keep structural depth modest so a private depth guard cannot mask size rejection.
+	for _ = 1, 20 do
+		definition = { kind = "Array", element = definition, maxLength = 2 ^ 52 }
 	end
 	expectRejected(definition, "SchemaEncodedSizeInvalid")
+end)
+
+it("rejects finite Array multiplication that exceeds exact safe integer byte accounting", function()
+	-- The cardinality itself is a positive safe integer; eight bytes per element
+	-- already exceed the safe byte maximum before any private collection overhead.
+	local definition: SchemaDefinition = { kind = "Array", element = Schema.F64, maxLength = 2 ^ 50 }
+	expectRejected(definition, "SchemaEncodedSizeInvalid")
+end)
+
+it("rejects finite Map multiplication that exceeds exact safe integer byte accounting", function()
+	local definition: SchemaDefinition = {
+		kind = "Map",
+		key = Schema.U32,
+		value = Schema.F64,
+		maxEntries = 2 ^ 50,
+	}
+	expectRejected(definition, "SchemaEncodedSizeInvalid")
+end)
+
+it("rejects Struct addition of individually bounded children beyond the safe integer byte maximum", function()
+	-- Even with no collection overhead, the mathematical sum is 2^53 + 1.
+	-- Luau rounds that sum, so checking finite/integral arithmetic is insufficient.
+	local child: SchemaDefinition = { kind = "Array", element = Schema.U8, maxLength = 2 ^ 52 }
+	local fields: { [string]: SchemaDefinition } = { first = child, second = child, last = Schema.U8 }
+	local definition: SchemaDefinition = { kind = "Struct", fields = fields }
+	expectRejected(definition, "SchemaEncodedSizeInvalid")
+end)
+
+it("rejects 10000 non-recursive Optional levels cleanly without exposing the private depth limit", function()
+	-- Build raw descriptors iteratively to exercise compiler admission rather than
+	-- constructor recursion or the test fixture's own call stack.
+	local definition: SchemaDefinition = { kind = "U8" }
+	for _ = 1, 10000 do
+		definition = { kind = "Optional", inner = definition }
+	end
+	local compiled: CompiledSchema? = nil
+	local reason: string? = nil
+	local completed: boolean = pcall(function()
+		compiled, reason = Compiler.Compile(definition)
+	end)
+	expect(completed).toBe(true)
+	expect(compiled).toBeNil()
+	expect(reason).toBe("SchemaDepthExceeded")
+	TestUtils.expectValid(TestUtils.compile(Schema.U8), 255)
+end)
+
+it("rejects excessive mixed structural depth even when every collection has a bound of one", function()
+	local definition: SchemaDefinition = { kind = "U8" }
+	for _ = 1, 2500 do
+		local optionalChild: SchemaDefinition = { kind = "Optional", inner = definition }
+		local arrayChild: SchemaDefinition = { kind = "Array", element = optionalChild, maxLength = 1 }
+		local mapChild: SchemaDefinition = { kind = "Map", key = Schema.U8, value = arrayChild, maxEntries = 1 }
+		local fields: { [string]: SchemaDefinition } = { child = mapChild }
+		definition = { kind = "Struct", fields = fields }
+	end
+	local compiled: CompiledSchema? = nil
+	local reason: string? = nil
+	local completed: boolean = pcall(function()
+		compiled, reason = Compiler.Compile(definition)
+	end)
+	expect(completed).toBe(true)
+	expect(compiled).toBeNil()
+	expect(reason).toBe("SchemaDepthExceeded")
 end)
 
 it("a rejected schema does not poison subsequent compilation or mutate its source", function()
