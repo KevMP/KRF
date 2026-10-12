@@ -14,32 +14,32 @@ export type SchemaDefinition =
 
 -- Framework-private metadata for validation, structural diffing, and N2 codecs.
 -- Bounds must conservatively cover encoding; N2 owns the exact wire layout.
-export type CompiledField = { name: string, schema: CompiledSchema }
+export type CompiledField = { read name: string, read schema: CompiledSchema }
 export type CompiledSchema =
 	{ kind: PrimitiveKind, maxEncodedBytes: number }
 	| { kind: "String", maxBytes: number, maxEncodedBytes: number }
-	| { kind: "Enum", values: { string }, maxEncodedBytes: number }
+	| { kind: "Enum", values: { string }, ordinalsByValue: { [string]: number }, maxEncodedBytes: number }
 	| { kind: "Optional", inner: CompiledSchema, maxEncodedBytes: number }
-	| { kind: "Struct", fields: { CompiledField }, maxEncodedBytes: number }
+	| { kind: "Struct", fields: { CompiledField }, fieldsByName: { [string]: CompiledSchema }, maxEncodedBytes: number }
 	| { kind: "Array", element: CompiledSchema, maxLength: number, maxEncodedBytes: number }
 	| { kind: "Map", key: CompiledSchema, value: CompiledSchema, maxEntries: number, maxEncodedBytes: number }
 
 export type Schema = {
-	Boolean: SchemaDefinition,
-	U8: SchemaDefinition,
-	U16: SchemaDefinition,
-	U32: SchemaDefinition,
-	I8: SchemaDefinition,
-	I16: SchemaDefinition,
-	I32: SchemaDefinition,
-	F32: SchemaDefinition,
-	F64: SchemaDefinition,
-	String: (maxBytes: number) -> SchemaDefinition,
-	Enum: (values: { string }) -> SchemaDefinition,
-	Optional: (inner: SchemaDefinition) -> SchemaDefinition,
-	Struct: (fields: { [string]: SchemaDefinition }) -> SchemaDefinition,
-	Array: (element: SchemaDefinition, maxLength: number) -> SchemaDefinition,
-	Map: (key: SchemaDefinition, value: SchemaDefinition, maxEntries: number) -> SchemaDefinition,
+	read Boolean: SchemaDefinition,
+	read U8: SchemaDefinition,
+	read U16: SchemaDefinition,
+	read U32: SchemaDefinition,
+	read I8: SchemaDefinition,
+	read I16: SchemaDefinition,
+	read I32: SchemaDefinition,
+	read F32: SchemaDefinition,
+	read F64: SchemaDefinition,
+	read String: (maxBytes: number) -> SchemaDefinition,
+	read Enum: (values: { string }) -> SchemaDefinition,
+	read Optional: (inner: SchemaDefinition) -> SchemaDefinition,
+	read Struct: (fields: { [string]: SchemaDefinition }) -> SchemaDefinition,
+	read Array: (element: SchemaDefinition, maxLength: number) -> SchemaDefinition,
+	read Map: (key: SchemaDefinition, value: SchemaDefinition, maxEntries: number) -> SchemaDefinition,
 }
 
 export type SchemaCompiler = {

@@ -211,3 +211,18 @@ it("failed preparation leaves consumer definitions mutable and permits corrected
 	expect(prepared.definitionsById[definition.id].audience).toBe("Owner")
 	expect(Registry.IsLoaded()).toBe(false)
 end)
+
+it("rejects packet metadata and undeclared fields in semantic domain definitions", function()
+	local unsupportedFields: { any } = { "wireId", "packetOpcode", "remote", "revision", "flushInterval", 1 }
+	for _, field: any in unsupportedFields do
+		local definition: any = TestUtils.createDomain("Game.Invalid")
+		definition[field] = true
+		expectRejected({ TestUtils.createDomain("Game.Valid"), definition }, "ReplicationDomainFieldUnknown")
+	end
+end)
+
+it("rejects event wire metadata before publishing the containing domain", function()
+	local definition: any = TestUtils.createDomain("Game.Invalid")
+	definition.events = { { id = "Changed", payload = Schema.U8, wireId = 1 } }
+	expectRejected({ TestUtils.createDomain("Game.Valid"), definition }, "ReplicationEventFieldUnknown")
+end)

@@ -1,6 +1,6 @@
 # Server
 
-`Server` initializes KRF's controller, Tag, Resource, and Action registries before Actors are registered.
+`Server` initializes KRF's controller, Tag, Resource, Action, and replication domain registries before Actors are registered.
 
 ## Import
 
@@ -19,7 +19,7 @@ local Server = require(ReplicatedStorage.Packages.KRF.server)
 
 ### `Init(config: ServerStartConfig) -> (boolean, StartupFailure?)` {#init}
 
-Combines KRF's built-in controllers with `config.controllers`, then validates and publishes the controller, Tag, Resource, and Action registries in one startup attempt.
+Combines built-in and game definitions, then validates and publishes the controller, Tag, Resource, Action, and replication domain registries in one startup attempt.
 
 - Returns `true, nil` when all registries load.
 - Returns `false, { system, reason }` when validation or loading fails. The registries remain unpublished for validation failures.
@@ -31,3 +31,4 @@ Combines KRF's built-in controllers with `config.controllers`, then validates an
 - [Controller Registry](../Controllers/controller-registry)
 - [Action Registry](../Action/action-registry)
 - [Action Controller](../Action/action-controller)
+- [Replication Domain Registry](../Networking/replication-domain-registry)

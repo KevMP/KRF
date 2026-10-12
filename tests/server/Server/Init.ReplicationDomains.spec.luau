@@ -370,3 +370,54 @@ it("Server test reset clears domains alongside the existing startup catalogs", f
 	expect(Domains.Get("Game.Old")).toBeNil()
 	expect((Domains.Get("Game.New") :: LoadedDomain).id).toBe("Game.New")
 end)
+
+it("startup owns validated supporting catalogs before Action factories can mutate their sources", function()
+	local tag: TagTypes.TagDefinition = {
+		id = "Game.Grounded",
+		duplicateBehavior = "Ignore",
+		visibility = "ServerOnly",
+		properties = { WalkSpeed = { multiply = 1.25 } },
+	}
+	local resource: ResourceTypes.ResourceDefinition = {
+		id = "Game.Guard",
+		max = { value = 100 },
+		visibility = "ServerOnly",
+	}
+	local sourceTags: { TagTypes.TagDefinition } = { tag }
+	local sourceResources: { ResourceTypes.ResourceDefinition } = { resource }
+	local started: boolean, failure: StartupFailure? = Server.Init({
+		tags = sourceTags,
+		resources = sourceResources,
+		actions = {
+			function(): ActionTypes.ActionDefinition
+				tag.id = "Game.Mutated"
+				(tag.properties :: { [string]: TagTypes.PropertyModifier }).WalkSpeed.multiply = 3
+				resource.max.value = -1
+				table.clear(sourceTags)
+				table.clear(sourceResources)
+				return {
+					id = "Game.Block",
+					visibility = "ServerOnly",
+					requiredTags = { "Game.Grounded" },
+					costs = { ["Game.Guard"] = 1 },
+				}
+			end,
+		},
+		replicationDomains = { TestUtils.createDomain("Game.State") },
+	})
+	expect(started).toBe(true)
+	expect(failure).toBeNil()
+	local loadedTag: TagTypes.TagDefinition? = Tags.Get("Game.Grounded")
+	local loadedResource: ResourceTypes.LoadedResourceDefinition? = Resources.Get("Game.Guard")
+	expect(loadedTag).never.toBeNil()
+	expect(loadedResource).never.toBeNil()
+	expect(
+		((loadedTag :: TagTypes.TagDefinition).properties :: { [string]: TagTypes.PropertyModifier }).WalkSpeed.multiply
+	).toBe(1.25)
+	expect((loadedResource :: ResourceTypes.LoadedResourceDefinition).max.value).toBe(100)
+	expect(Tags.Get("Game.Mutated")).toBeNil()
+	expect(Domains.IsLoaded()).toBe(true)
+	expect((Domains.Get("Game.State") :: LoadedDomain).id).toBe("Game.State")
+	expect(table.isfrozen(tag)).toBe(false)
+	expect(table.isfrozen(resource.max)).toBe(false)
+end)

@@ -1,39 +1,46 @@
 --!strict
 local NetworkingTypes = require(script.Parent.types)
+local SchemaDefinitionNormalizer = require(script.Parent.utils.SchemaDefinitionNormalizer)
 
 export type SchemaDefinition = NetworkingTypes.SchemaDefinition
 type Schema = NetworkingTypes.Schema
 
--- N1 TDD scaffold: descriptors only. Constructor validation and recursive
--- ownership/immutability are intentionally left for the implementation step.
+local function construct(definition: SchemaDefinition): SchemaDefinition
+	local owned: SchemaDefinition?, reason: string? = SchemaDefinitionNormalizer.Normalize(definition)
+	if owned == nil then
+		error(reason :: string, 3)
+	end
+	return owned
+end
+
 local Schema: Schema = {
-	Boolean = { kind = "Boolean" },
-	U8 = { kind = "U8" },
-	U16 = { kind = "U16" },
-	U32 = { kind = "U32" },
-	I8 = { kind = "I8" },
-	I16 = { kind = "I16" },
-	I32 = { kind = "I32" },
-	F32 = { kind = "F32" },
-	F64 = { kind = "F64" },
+	Boolean = construct({ kind = "Boolean" }),
+	U8 = construct({ kind = "U8" }),
+	U16 = construct({ kind = "U16" }),
+	U32 = construct({ kind = "U32" }),
+	I8 = construct({ kind = "I8" }),
+	I16 = construct({ kind = "I16" }),
+	I32 = construct({ kind = "I32" }),
+	F32 = construct({ kind = "F32" }),
+	F64 = construct({ kind = "F64" }),
 	String = function(maxBytes: number): SchemaDefinition
-		return { kind = "String", maxBytes = maxBytes }
+		return construct({ kind = "String", maxBytes = maxBytes })
 	end,
 	Enum = function(values: { string }): SchemaDefinition
-		return { kind = "Enum", values = values }
+		return construct({ kind = "Enum", values = values })
 	end,
 	Optional = function(inner: SchemaDefinition): SchemaDefinition
-		return { kind = "Optional", inner = inner }
+		return construct({ kind = "Optional", inner = inner })
 	end,
 	Struct = function(fields: { [string]: SchemaDefinition }): SchemaDefinition
-		return { kind = "Struct", fields = fields }
+		return construct({ kind = "Struct", fields = fields })
 	end,
 	Array = function(element: SchemaDefinition, maxLength: number): SchemaDefinition
-		return { kind = "Array", element = element, maxLength = maxLength }
+		return construct({ kind = "Array", element = element, maxLength = maxLength })
 	end,
 	Map = function(key: SchemaDefinition, value: SchemaDefinition, maxEntries: number): SchemaDefinition
-		return { kind = "Map", key = key, value = value, maxEntries = maxEntries }
+		return construct({ kind = "Map", key = key, value = value, maxEntries = maxEntries })
 	end,
 }
 
-return Schema
+return table.freeze(Schema)

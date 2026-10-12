@@ -22,19 +22,19 @@ export type ReplicationDomainDefinition = {
 	observe: ((actor: ActorTypes.Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
 }
 
-export type LoadedReplicationEventDefinition = { id: string, payload: NetworkingTypes.CompiledSchema }
+export type LoadedReplicationEventDefinition = { read id: string, read payload: NetworkingTypes.CompiledSchema }
 export type LoadedReplicationDomainDefinition = {
-	id: string,
-	state: NetworkingTypes.CompiledSchema,
-	events: { LoadedReplicationEventDefinition },
-	audience: ReplicationAudience,
-	snapshot: (actor: ActorTypes.Actor) -> any,
-	observe: ((actor: ActorTypes.Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
+	read id: string,
+	read state: NetworkingTypes.CompiledSchema,
+	read events: { LoadedReplicationEventDefinition },
+	read audience: ReplicationAudience,
+	read snapshot: (actor: ActorTypes.Actor) -> any,
+	read observe: ((actor: ActorTypes.Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
 }
 
 export type PreparedReplicationDomainCatalog = {
-	definitionsById: { [string]: LoadedReplicationDomainDefinition },
-	orderedDefinitions: { LoadedReplicationDomainDefinition },
+	read definitionsById: { [string]: LoadedReplicationDomainDefinition },
+	read orderedDefinitions: { LoadedReplicationDomainDefinition },
 }
 
 export type ReplicationDomainRegistry = {

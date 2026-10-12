@@ -161,13 +161,13 @@ it("published domain, event, and compiled schema metadata are recursively immuta
 	local stateSchema: NetworkingTypes.CompiledSchema = loaded.state
 	local eventSchema: NetworkingTypes.CompiledSchema = loaded.events[1].payload
 	local domainMutable: boolean = pcall(function()
-		loaded.audience = "Owner"
+		(loaded :: any).audience = "Owner"
 	end)
 	local eventsMutable: boolean = pcall(function()
 		table.clear(loaded.events)
 	end)
 	local eventMutable: boolean = pcall(function()
-		loaded.events[1].id = "Mutated"
+		(loaded.events[1] :: any).id = "Mutated"
 	end)
 	local schemaMutable: boolean = pcall(function()
 		loaded.state.maxEncodedBytes = math.huge
