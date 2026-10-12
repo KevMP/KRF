@@ -10,6 +10,7 @@ local TagRegistry = require(script.Tags.TagRegistry)
 local TagValidator = require(script.Tags.TagValidator)
 local ResourceRegistry = require(script.Resource.ResourceRegistry)
 local ActionRegistry = require(script.Action.ActionRegistry)
+local ReplicationDomainRegistry = require(script.Replication.ReplicationDomainRegistry)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
 local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
@@ -34,6 +35,8 @@ function Server._IsInitialized(): boolean
 end
 
 function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
+	-- TODO N1: include ReplicationDomainRegistry in startup guards, prepare the
+	-- combined domain catalog before any publication, then publish it atomically.
 	if initAttempted then
 		return false, { system = "Server", reason = "ServerInitAlreadyAttempted" }
 	end
@@ -124,6 +127,7 @@ function Server._ResetForTests(): ()
 	TagRegistry._resetForTests()
 	ResourceRegistry._resetForTests()
 	ActionRegistry._resetForTests()
+	ReplicationDomainRegistry._resetForTests()
 end
 
 return Server

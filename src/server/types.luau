@@ -5,6 +5,7 @@ local ControllerTypes = require(serverFolder.Controller.types)
 local TagTypes = require(serverFolder.Tags.types)
 local ResourceTypes = require(serverFolder.Resource.types)
 local ActionTypes = require(serverFolder.Action.types)
+local ReplicationTypes = require(serverFolder.Replication.types)
 
 local types = {}
 
@@ -13,6 +14,7 @@ export type ServerStartConfig = {
 	tags: { TagTypes.TagDefinition }?,
 	resources: { ResourceTypes.ResourceDefinition }?,
 	actions: { ActionTypes.ActionFactory }?,
+	replicationDomains: { ReplicationTypes.ReplicationDomainDefinition }?,
 }
 
 export type StartupFailure = {
