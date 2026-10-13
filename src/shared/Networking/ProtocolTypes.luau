@@ -29,12 +29,19 @@ export type PreparedProtocol = {
 	bootstrapBuffer: buffer,
 	runtime: ClientProtocol,
 }
+-- Closed framework vocabulary; arbitrary diagnostic strings never enter Reject.
+export type RejectionReason =
+	"ProtocolMismatch"
+	| "MalformedPacket"
+	| "UnsupportedSchema"
+	| "BootstrapTooLarge"
+	| "ReadyRejected"
 export type Message =
 	{ kind: "Hello", version: number }
 	| { kind: "Bootstrap", manifest: ProtocolManifest }
 	| { kind: "Ready" }
 	| { kind: "ReadyAck" }
-	| { kind: "Reject", reason: string }
+	| { kind: "Reject", reason: RejectionReason }
 export type ProtocolCodec = {
 	Encode: (message: Message) -> (buffer?, string?),
 	Decode: (payload: any) -> (Message?, string?),

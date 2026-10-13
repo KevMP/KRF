@@ -28,6 +28,19 @@ not a final startup failure reason.
   Transport, bootstrap and handshake failures use `system = "Networking"`.
   The tests adopt the ticket's named failure categories. Codec validation keeps
   existing N1 reasons; malformed wire values have codec-specific reasons.
+- **Repeated HELLO:** While AwaitReady, duplicate HELLO packets are ignored.
+  They do not resend bootstrap, send repeated rejections, restart compilation,
+  add connection state, or interfere with the original READY transition.
+- **Bounded rejections:** Reject carries one message-kind byte and one code from
+  the framework-owned `RejectionReason` enum. Arbitrary diagnostic strings and
+  unknown reason codes are rejected; a Reject packet is exactly two bytes.
+- **N1/N2 size compatibility:** A codec's `maxSizeBytes` cannot exceed its N1
+  schema's `maxEncodedBytes`. Legal bounds above U32 remain exact in both state
+  and event descriptors throughout server manifest generation and bootstrap.
+  Tests cover odd bounds above 2^40 and 2^52, `MAX_SAFE_INTEGER - 8`, and an
+  empty-Struct Array whose cardinality reaches `MAX_SAFE_INTEGER` itself.
+  The eight-byte allowance matters for N1 encoded-size admission; enormous
+  legal maximum sizes are tested using small runtime values, not giant buffers.
 - **Private choices:** Internal module names, transport paths, packet opcodes,
   numeric code assignments, prefix widths and timeout/budget defaults are not
   consumer API. The stubs propose internal seams that can be refined while
@@ -46,8 +59,10 @@ N6–N8 work; N2 consumes only the explicitly provided domain protocol catalog.
 | --- | --- |
 | Codec values, validation, hostile decode, shared buffers | `tests/shared/Networking/Codec.*.spec.luau` |
 | Buffer framing and client manifest reconstruction | `tests/shared/Networking/Protocol.*.spec.luau` |
+| Closed reason codes and fixed-size rejection packets | `tests/shared/Networking/Protocol.Rejections.spec.luau` |
 | Roblox Instance ownership and collisions | `tests/shared/Networking/Transport.spec.luau` |
 | Deterministic global catalog and bootstrap projection | `tests/server/Networking/Protocol.Codebooks.spec.luau` |
+| Large legal N1 bounds preserved through bootstrap | `tests/server/Networking/Protocol.SchemaBounds.spec.luau` |
 | Server readiness, gating, lifecycle, multi-client reuse | `tests/server/Networking/ServerHandshake.spec.luau` |
 | Startup preparation, rollback, failure observability | `tests/server/Server/Init.Networking.spec.luau` |
 | Client ordering, one attempt, timeouts and cleanup | `tests/client/Client.Init.Handshake.spec.luau`, `Client.Init.Failures.spec.luau` |

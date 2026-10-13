@@ -73,6 +73,42 @@ it("sends the prepared bootstrap for a compatible HELLO without making the conne
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
 end)
 
+for _, repeatCount: number in { 1, 1000 } do
+	it(
+		"ignores " .. tostring(repeatCount) .. " repeated HELLO packets while AwaitReady without amplifying traffic",
+		function()
+			local readyCalls: number = 0
+			getRuntime():ObserveClientReady(function(): ()
+				readyCalls += 1
+			end)
+			hello(players[1])
+			expect(#sent).toBe(1)
+			expect(sent[1].payload).toBe(protocol.bootstrapBuffer)
+			local connectionCount: number = getRuntime():_GetConnectionCountForTests()
+			local compileCalls: number = 0
+			Compiler.Compile = function(
+				schema: SharedNetworkingTypes.CompiledSchema
+			): (SharedNetworkingTypes.CompiledCodec?, string?)
+				compileCalls += 1
+				return originalCompile(schema)
+			end
+			for _ = 1, repeatCount do
+				hello(players[1])
+			end
+			expect(#sent).toBe(1)
+			expect(getRuntime():_GetConnectionCountForTests()).toBe(connectionCount)
+			expect(getRuntime():IsClientReady(players[1])).toBe(false)
+			expect(readyCalls).toBe(0)
+			expect(compileCalls).toBe(0)
+			ready(players[1])
+			expect(getRuntime():IsClientReady(players[1])).toBe(true)
+			expect(readyCalls).toBe(1)
+			expect(#sent).toBe(2)
+			expect(ProtocolTestUtils.decode(sent[2].payload).kind).toBe("ReadyAck")
+		end
+	)
+end
+
 it("rejects an incompatible version and never accepts a subsequent READY", function()
 	getRuntime():Handle(
 		players[1],
