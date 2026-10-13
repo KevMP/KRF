@@ -215,7 +215,13 @@ it("allows empty global catalogs and the same event id in different domains", fu
 	expect(empty.domainsById).toEqual({})
 	expect(empty.domainsByCode).toEqual({})
 	local manifest: ProtocolTypes.ProtocolManifest = TestUtils.manifest()
-	manifest.domains[2].events = { { id = "Changed", code = 0, payload = manifest.domains[1].events[1].payload } }
+	local secondDomain: ProtocolTypes.ManifestDomain = manifest.domains[2]
+	manifest.domains[2] = {
+		id = secondDomain.id,
+		code = secondDomain.code,
+		state = secondDomain.state,
+		events = { { id = "Changed", code = 0, payload = manifest.domains[1].events[1].payload } },
+	}
 	local runtime: ProtocolTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 	expect(reason).toBeNil()
 	assert(runtime ~= nil, "Expected protocol")

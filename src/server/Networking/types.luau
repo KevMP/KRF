@@ -23,6 +23,11 @@ export type ServerHandshakeModule = {
 export type ServerNetworking = {
 	Prepare: (catalog: ReplicationTypes.PreparedReplicationDomainCatalog) -> (ProtocolTypes.PreparedProtocol?, string?),
 	Publish: (protocol: ProtocolTypes.PreparedProtocol) -> (boolean, string?),
+	IsClientReady: (player: Player) -> boolean,
+	ObserveClientReady: (callback: (Player) -> ()) -> () -> (),
+	ObserveClientClosed: (callback: (Player) -> ()) -> () -> (),
+	SendReliable: (player: Player, payload: buffer) -> (boolean, string?),
+	Destroy: () -> (),
 	_IsInitialized: () -> boolean,
 	_ResetForTests: () -> (),
 }

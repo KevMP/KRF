@@ -43,6 +43,7 @@ export type ResourceRegistry = {
 	GetAllById: () -> { [string]: LoadedResourceDefinition },
 
 	_resetForTests: () -> (),
+	_RollbackStartup: () -> (),
 }
 
 export type ResourceChange = {

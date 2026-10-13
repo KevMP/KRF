@@ -12,6 +12,14 @@ local Codec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.Protoco
 
 local ProtocolTestUtils = {}
 
+function ProtocolTestUtils.createPlayer(): Player
+	-- Studio's test runner cannot create Players without WritePlayer capability.
+	-- Injected transports need only an Instance identity and teardown; native
+	-- Player delivery is exercised separately in the engine integration check.
+	local identity: Folder = Instance.new("Folder")
+	return identity :: any
+end
+
 function ProtocolTestUtils.manifest(): ProtocolTypes.ProtocolManifest
 	return {
 		version = Constants.PROTOCOL_VERSION,

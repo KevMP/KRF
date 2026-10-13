@@ -29,7 +29,7 @@ local originalCompile: typeof(Compiler.Compile) = Compiler.Compile
 
 beforeEach(function()
 	Domains._resetForTests()
-	players = { Instance.new("Player"), Instance.new("Player") }
+	players = { ProtocolTestUtils.createPlayer(), ProtocolTestUtils.createPlayer() }
 	sent = {}
 	protocol = TestUtils.prepare({ DomainTestUtils.createDomain("Game.State") })
 	runtime = Handshake.new(protocol, {

@@ -13,6 +13,7 @@ export type Dependencies = {
 	Now: () -> number,
 	DiscoverTransport: (deadline: number) -> (ClientTransport?, string?),
 	ScheduleTimeout: (seconds: number, callback: () -> ()) -> () -> (),
+	Resume: (thread) -> (),
 	InstallConsumers: (protocol: ProtocolTypes.ClientProtocol) -> (boolean, string?, (() -> ())?),
 }
 export type Client = {

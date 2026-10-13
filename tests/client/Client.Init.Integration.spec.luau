@@ -74,7 +74,7 @@ it("completes Client.Init through the real server handshake without sending Acto
 		return nil
 	end
 	local protocol: ProtocolTypes.PreparedProtocol = ServerTestUtils.prepare({ domain })
-	local player: Player = Instance.new("Player")
+	local player: Player = ProtocolTestUtils.createPlayer()
 	table.insert(players, player)
 	local fixture: ClientTestUtils.Fixture = ClientTestUtils.new()
 	local sentKinds: { string } = {}
@@ -131,7 +131,7 @@ it("boots two isolated client modules with the same server codebook and reusable
 		table.insert(clones, module)
 		local client: ClientTypes.Client = requireClient(module)
 		table.insert(clients, client)
-		local player: Player = Instance.new("Player")
+		local player: Player = ProtocolTestUtils.createPlayer()
 		table.insert(players, player)
 		local fixture: ClientTestUtils.Fixture = ClientTestUtils.new()
 		fixtures[player] = fixture

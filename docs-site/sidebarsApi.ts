@@ -9,6 +9,11 @@ const sidebarsApi: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Client',
+      items: ['Client/client'],
+    },
+    {
+      type: 'category',
       label: 'Actor',
       items: [
         'Actor/actor-runtime',

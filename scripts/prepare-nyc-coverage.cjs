@@ -22,6 +22,9 @@ function resolveRepoPath(filePath) {
 		if (fs.existsSync(absoluteBasePath + extension)) {
 			return repoRelativePath + extension;
 		}
+		if (fs.existsSync(path.join(absoluteBasePath, `init${extension}`))) {
+			return path.posix.join(repoRelativePath, `init${extension}`);
+		}
 	}
 
 	return repoRelativePath;

@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Initializing KRF
 
-KRF has separate server and client setup. The server flow below loads the shared definitions used to create Actors.
+KRF has separate server and client setup. Initialize the server once with your game's definitions, then initialize each client before continuing client startup.
 
 Server startup is the boundary between configuration and live Actor state. Your game supplies controller, Tag, Resource, Action, and replication domain definitions once. KRF validates those catalogs together, then uses the loaded controller factories to attach the same eligible controller set to every new Actor.
 
@@ -66,21 +66,43 @@ The example assumes `GameCombatController` is a controller module beside your st
 
 ## Client initialization
 
-TODO
+Call `Client.Init()` from a LocalScript, such as your startup script in `StarterPlayerScripts`. It may yield while the framework transport replicates and the client completes protocol setup.
+
+```lua title="Startup.client.luau"
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local packages = ReplicatedStorage:WaitForChild("Packages")
+packages:WaitForChild("KRF"):WaitForChild("client")
+local Client = require(ReplicatedStorage.Packages.KRF.client)
+
+local started: boolean, failure: Client.StartupFailure? = Client.Init()
+if not started then
+	local detail: string = if failure then failure.system .. ": " .. failure.reason else "Unknown startup failure"
+	error("KRF client startup failed: " .. detail)
+end
+
+-- Continue your game's client startup here.
+```
+
+A successful return means the client has installed the server's protocol catalog and received its readiness acknowledgement. It does not create client Actor views or start Actor state replication. See [Networking startup](./Networking/startup) for ownership, ordering, and failure handling.
+
+`Client.Init` accepts one attempt per client lifetime, including a failed attempt. Discovery and the handshake share a bounded deadline; handle a failure at your startup boundary rather than retrying initialization in a loop.
 
 ## Server startup result
 
-`Server.Init` validates every catalog before publishing them. An invalid definition, missing reference or dependency, or controller cycle leaves all five registries unpublished. The failure identifies the catalog in `system` and the validation error in `reason`.
+`Server.Init` does not yield. It prepares the catalogs and protocol, then publishes the registries and framework transport as one startup operation. An invalid definition, missing reference or dependency, or controller cycle leaves the registries unpublished. If publication fails after it begins, KRF rolls back the catalogs and transport it created. The failure identifies the responsible system in `system` and the error in `reason`.
 
 Supply the optional `actions` array to load the [Action Registry](./Action/action-registry). Its Tag, Resource, and Action references resolve against the complete prepared registries. Omitting `actions` publishes an empty Action registry. Each registered Actor receives an [`ActionController`](./Action/action-grants); `autoGrant` definitions form its initial grant baseline without starting Actions.
 
-Supply the optional `replicationDomains` array to register [replication domains](./Networking/replication-domains). This catalog is independent from controller definitions. Startup compiles its state and event schemas, defaults audiences to `All`, and publishes frozen contracts without invoking `snapshot` or `observe`. A domain validation failure uses `system = "ReplicationDomain"`.
+Supply the optional `replicationDomains` array to register [replication domains](./Networking/replication-domains). This catalog is independent from controller definitions. Startup compiles its state and event schemas, defaults audiences to `All`, and prepares a shared protocol catalog without invoking `snapshot` or `observe`. A domain validation failure uses `system = "ReplicationDomain"`; a protocol preparation or transport failure uses `system = "Networking"`. An empty domain catalog still starts the framework transport.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix startup configuration and restart the server after a failure. After a successful call, [Actor Runtime](./Actor/actor-runtime) can register Actors against the loaded controller catalog.
 
 ## Related
 
 - [Server API](/api/Server/)
+- [Client API](/api/Client/)
+- [Networking startup](./Networking/startup)
 - [Controller Registry](/api/Controllers/controller-registry)
 - [Tag Registry](./Tags/tag-registry)
 - [Resource Registry](./Resource/resource-registry)

@@ -178,10 +178,12 @@ function ControllerRegistry.ResolveOrder(keys: { string }): ({ string }?, string
 	return ResolveOrderInCatalog(keys, byKey, controllerDefKeys)
 end
 
-function ControllerRegistry._ResetForTests(): ()
+function ControllerRegistry._RollbackStartup(): ()
 	isLoaded = false
 	byKey = {}
 	controllerDefKeys = {}
 end
+
+ControllerRegistry._ResetForTests = ControllerRegistry._RollbackStartup
 
 return ControllerRegistry

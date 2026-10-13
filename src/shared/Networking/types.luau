@@ -6,9 +6,9 @@ local types = {}
 export type CompiledCodec = {
 	read fixedSizeBytes: number?,
 	read maxSizeBytes: number,
-	Measure: (value: any) -> (number?, string?),
-	Write: (value: any, destination: buffer, offset: number) -> (number?, string?),
-	Read: (source: buffer, offset: number, limit: number) -> (any?, number?, string?),
+	read Measure: (value: any) -> (number?, string?),
+	read Write: (value: any, destination: buffer, offset: number) -> (number?, string?),
+	read Read: (source: buffer, offset: number, limit: number) -> (any?, number?, string?),
 }
 
 export type CodecCompiler = {

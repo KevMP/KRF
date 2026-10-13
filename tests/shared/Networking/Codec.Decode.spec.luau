@@ -162,3 +162,10 @@ it("returns the end of one value and leaves following bytes for the next codec",
 	expect(secondOffset).toBe(4)
 	expect(secondReason).toBeNil()
 end)
+
+it("rejects enormous zero-byte collection work even when the declared schema bound permits the count", function()
+	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Struct({}), 9007199254740991))
+	local source: buffer = TestUtils.collectionPrefix(codec, {}, 2 ^ 40)
+	TestUtils.expectReadFailure(codec, source, 0, buffer.len(source), "CodecDecodeWorkExceeded")
+	TestUtils.expectRoundTrip(codec, { {}, {} })
+end)

@@ -220,7 +220,7 @@ function ActionRegistry.IsLoaded(): boolean
 	return isLoaded
 end
 
-function ActionRegistry._resetForTests(): ()
+function ActionRegistry._RollbackStartup(): ()
 	isLoaded = false
 	definitionsById = {}
 	orderedDefinitions = {}
@@ -229,5 +229,7 @@ function ActionRegistry._resetForTests(): ()
 	table.freeze(orderedDefinitions)
 	table.freeze(factoriesById)
 end
+
+ActionRegistry._resetForTests = ActionRegistry._RollbackStartup
 
 return ActionRegistry

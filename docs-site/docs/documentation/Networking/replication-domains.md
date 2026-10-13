@@ -6,7 +6,7 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Registering a domain currently publishes its compiled schemas and callback contract only. Registration does not invoke `snapshot` or `observe`, attach the domain to Actors, or create network traffic. There is no domain attachment or publication runtime in the current implementation.
+Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup publishes the compiled catalog and prepares its schema metadata for the client bootstrap. It does not invoke `snapshot` or `observe` or attach domains to Actors. The [networking handshake](./startup) sends protocol metadata; there is no Actor state or event publication runtime in the current implementation.
 
 ## Domain definition {#domain-definition}
 
@@ -229,7 +229,10 @@ KRF combines framework and game domains before startup validation. Duplicate dom
 
 Successful startup publishes immutable catalog metadata. Source-table edits cannot change the loaded contract; live gameplay state stays in the controller. Games cannot register or replace domains at runtime. Definitions contain semantic fields only: games supply no Remote references, wire ids, byte offsets, revisions, or flush settings.
 
+All clients receive the same domain and event schema catalog during protocol startup, including domains whose audience is `Owner`. The bootstrap excludes the stored server callbacks and live Actor values; audience metadata does not conceal schema definitions.
+
 ## Related
 
 - [Bounded schemas](./schemas)
+- [Networking startup](./startup)
 - [Replication Domain Registry API](/api/Networking/replication-domain-registry)

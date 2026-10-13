@@ -160,6 +160,7 @@ export type InternalActionRegistry = ActionRegistry & {
 	Publish: (prepared: PreparedActionCatalog) -> (boolean, string?),
 	CreateExecution: (actionId: string) -> (InternalActionImplementation?, string?),
 	_resetForTests: () -> (),
+	_RollbackStartup: () -> (),
 }
 
 return {}

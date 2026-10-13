@@ -138,3 +138,41 @@ it("destroys only its owned hierarchy and treats repeated cleanup as a no-op", f
 	expect(unrelated.Parent).toBe(parent)
 	expect(#parent:GetChildren()).toBe(1)
 end)
+
+it("rejects a reserved root with the wrong class without modifying it", function()
+	local root: StringValue = Instance.new("StringValue")
+	root.Name = Transport.ROOT_NAME
+	root.Value = "owned elsewhere"
+	root.Parent = parent
+	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
+	expect(owned).toBeNil()
+	expect(reason).toBe("InvalidTransport")
+	expect(root.Value).toBe("owned elsewhere")
+end)
+
+it("client-side transport view cleanup cannot destroy the server-owned hierarchy", function()
+	local owner: ProtocolTypes.OwnedTransport?, createReason: string? = Transport.Create(parent)
+	expect(createReason).toBeNil()
+	assert(owner ~= nil, "Expected owned transport")
+	local view: ProtocolTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
+	expect(locateReason).toBeNil()
+	assert(view ~= nil, "Expected a non-owning transport view")
+	view.Destroy()
+	view.Destroy()
+	expect(owner.root.Parent).toBe(parent)
+	expect(#owner.root:GetChildren()).toBe(2)
+end)
+
+it("surfaces a failed hierarchy publication instead of returning a partially owned transport", function()
+	-- Supply discovery through a structural fixture, then let Roblox reject the
+	-- native Parent assignment. This isolates publication failure from lookup.
+	local invalidParent: any = {
+		GetChildren = function(_self: any): { Instance }
+			return {}
+		end,
+	}
+	local completed: boolean = pcall(function()
+		Transport.Create(invalidParent)
+	end)
+	expect(completed).toBe(false)
+end)

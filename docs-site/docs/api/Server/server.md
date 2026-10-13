@@ -1,6 +1,6 @@
 # Server
 
-`Server` initializes KRF's controller, Tag, Resource, Action, and replication domain registries before Actors are registered.
+`Server` initializes KRF's registries and networking transport before Actors are registered.
 
 ## Import
 
@@ -19,15 +19,17 @@ local Server = require(ReplicatedStorage.Packages.KRF.server)
 
 ### `Init(config: ServerStartConfig) -> (boolean, StartupFailure?)` {#init}
 
-Combines built-in and game definitions, then validates and publishes the controller, Tag, Resource, Action, and replication domain registries in one startup attempt.
+Combines built-in and game definitions, then prepares and publishes the registries and networking transport in one non-yielding startup attempt.
 
-- Returns `true, nil` when all registries load.
-- Returns `false, { system, reason }` when validation or loading fails. The registries remain unpublished for validation failures.
-- Returns a `Server` failure on a repeated attempt, including after a failed first attempt.
+- Returns `true, nil` when all registries and the transport are ready.
+- Returns `false, { system, reason }` when preparation or publication fails; partially published startup state is rolled back.
+- Networking failures use `system = "Networking"`, including `TransportConflict`, `BootstrapManifestTooLarge`, `InvalidProtocolManifest`, and `CodecCompilationFailure`.
+- Returns a `Server` failure with `ServerInitAlreadyAttempted` on a repeated attempt, including after a failed first attempt, or `CatalogAlreadyLoaded` when a registry was loaded before startup.
 
 ## Related
 
 - [Initializing KRF](/initializing-krf)
+- [Networking startup](/Networking/startup)
 - [Controller Registry](../Controllers/controller-registry)
 - [Action Registry](../Action/action-registry)
 - [Action Controller](../Action/action-controller)

@@ -50,8 +50,8 @@ it("fails exact protocol mismatch before reconstructing server schemas", functio
 		error("Mismatched manifests must not be interpreted")
 	end
 	TestUtils.start(fixture)
-	local manifest: ProtocolTypes.ProtocolManifest = ProtocolTestUtils.manifest()
-	manifest.version += 1
+	local compatible: ProtocolTypes.ProtocolManifest = ProtocolTestUtils.manifest()
+	local manifest: ProtocolTypes.ProtocolManifest = { version = compatible.version + 1, domains = compatible.domains }
 	TestUtils.emit(fixture, ProtocolTestUtils.encode({ kind = "Bootstrap", manifest = manifest }))
 	TestUtils.expectFailure(fixture, "ProtocolMismatch")
 	expect(reconstructCalls).toBe(0)

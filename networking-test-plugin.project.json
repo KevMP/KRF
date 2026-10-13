@@ -1,0 +1,4 @@
+{
+  "name": "KRF-Networking-Test-Plugin",
+  "tree": { "$path": "scripts/networking-test-plugin.server.luau" }
+}

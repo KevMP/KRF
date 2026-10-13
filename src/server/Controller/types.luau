@@ -19,5 +19,6 @@ export type ControllerRegistry = {
 	Get: (key: string) -> ControllerDef?,
 	ResolveOrder: (keys: { string }) -> ({ string }?, string?),
 	_ResetForTests: () -> (),
+	_RollbackStartup: () -> (),
 }
 return ControllerTypes

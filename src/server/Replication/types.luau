@@ -64,6 +64,7 @@ export type InternalReplicationDomainRegistry = ReplicationDomainRegistry & {
 	Prepare: (definitions: { ReplicationDomainDefinition }) -> (PreparedReplicationDomainCatalog?, string?),
 	Publish: (catalog: PreparedReplicationDomainCatalog) -> (boolean, string?),
 	_resetForTests: () -> (),
+	_RollbackStartup: () -> (),
 }
 
 return types

@@ -4,30 +4,30 @@ local NetworkingTypes = require(script.Parent.types)
 local types = {}
 
 -- Private wire metadata, deliberately separate from server domain definitions.
-export type ManifestEvent = { id: string, code: number, payload: NetworkingTypes.SchemaDefinition }
+export type ManifestEvent = { read id: string, read code: number, read payload: NetworkingTypes.SchemaDefinition }
 export type ManifestDomain = {
-	id: string,
-	code: number,
-	state: NetworkingTypes.SchemaDefinition,
-	events: { ManifestEvent },
+	read id: string,
+	read code: number,
+	read state: NetworkingTypes.SchemaDefinition,
+	read events: { ManifestEvent },
 }
-export type ProtocolManifest = { version: number, domains: { ManifestDomain } }
-export type ClientEvent = { id: string, code: number, codec: NetworkingTypes.CompiledCodec }
+export type ProtocolManifest = { read version: number, read domains: { ManifestDomain } }
+export type ClientEvent = { read id: string, read code: number, read codec: NetworkingTypes.CompiledCodec }
 export type ClientDomain = {
-	id: string,
-	code: number,
-	stateCodec: NetworkingTypes.CompiledCodec,
-	eventsById: { [string]: ClientEvent },
-	eventsByCode: { [number]: ClientEvent },
+	read id: string,
+	read code: number,
+	read stateCodec: NetworkingTypes.CompiledCodec,
+	read eventsById: { [string]: ClientEvent },
+	read eventsByCode: { [number]: ClientEvent },
 }
 export type ClientProtocol = {
-	domainsById: { [string]: ClientDomain },
-	domainsByCode: { [number]: ClientDomain },
+	read domainsById: { [string]: ClientDomain },
+	read domainsByCode: { [number]: ClientDomain },
 }
 export type PreparedProtocol = {
-	manifest: ProtocolManifest,
-	bootstrapBuffer: buffer,
-	runtime: ClientProtocol,
+	read manifest: ProtocolManifest,
+	read bootstrapBuffer: buffer,
+	read runtime: ClientProtocol,
 }
 -- Closed framework vocabulary; arbitrary diagnostic strings never enter Reject.
 export type RejectionReason =

@@ -64,6 +64,12 @@ function ClientTestUtils.new(): Fixture
 		Now = function(): number
 			return 100
 		end,
+		Resume = function(waitingThread: thread): ()
+			local completed: boolean, reason: any = coroutine.resume(waitingThread)
+			if not completed then
+				error(tostring(reason), 2)
+			end
+		end,
 		DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransport?, string?)
 			expect(deadline > 100 and deadline < math.huge).toBe(true)
 			return fixture.transport, nil
