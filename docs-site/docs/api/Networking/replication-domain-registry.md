@@ -8,6 +8,8 @@ local KRF = ReplicatedStorage.Packages.KRF
 local ReplicationDomainRegistry = require(KRF.server.Replication.ReplicationDomainRegistry)
 ```
 
+Returned type shapes are in [Replication Types](./replication-types#loaded-replication-domain-definition). Before publication, `Get` returns `nil` and collection reads return empty frozen tables. Registration is owned by startup; this read API has no runtime registration method.
+
 ## Members
 
 | Kind | Signature |
@@ -38,5 +40,6 @@ Returns the frozen id-indexed catalog.
 ## Related
 
 - [Replication domains guide](/Networking/replication-domains)
+- [Replication Types](./replication-types)
 - [Server API](/api/Server/)
 - [Schema API](./schema)
