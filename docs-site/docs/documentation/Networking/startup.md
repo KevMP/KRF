@@ -32,7 +32,7 @@ Server and client must have exactly matching internal protocol versions. This co
 
 ## Understand the catalog boundary
 
-Domain codes are assigned in sorted domain-id order; event codes are assigned in sorted event-id order within each domain. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction.
+Domain and event codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction.
 
 The bootstrap carries domain and event identities, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Large legal schema bounds remain exact during serialization; an encoded codec's maximum size stays within the schema's conservative byte bound.
 
