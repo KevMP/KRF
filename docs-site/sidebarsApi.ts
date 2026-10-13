@@ -57,7 +57,6 @@ const sidebarsApi: SidebarsConfig = {
       label: 'Networking',
       items: [
         'Networking/schema',
-        'Networking/replication-types',
         'Networking/replication-domain-registry',
       ],
     },

@@ -4,9 +4,40 @@ sidebar_position: 2
 
 # Replication domains
 
-A replication domain describes the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain projects that state and connects its committed mutations to KRF.
+A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup validates and registers these contracts; it does not call `snapshot`, attach observers, or send Actor state.
+Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Registering a domain currently publishes its compiled schemas and callback contract only. Registration does not invoke `snapshot` or `observe`, attach the domain to Actors, or create network traffic. There is no domain attachment or publication runtime in the current implementation.
+
+## Domain definition {#domain-definition}
+
+Import authored types from `KRF.server.Replication.types`. In the shapes below, `Actor` is `KRF.server.Actor.types.Actor` and `SchemaDefinition` is a definition constructed with [Schema](./schemas).
+
+```lua
+export type ReplicationDomainDefinition = {
+	id: string,
+	state: SchemaDefinition,
+	events: { ReplicationEventDefinition }?,
+	audience: ReplicationAudience?,
+	snapshot: (actor: Actor) -> any,
+	observe: ((actor: Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
+}
+
+export type ReplicationEventDefinition = { id: string, payload: SchemaDefinition }
+export type ReplicationAudience = "All" | "Owner"
+export type ReplicationDomainEvent = { id: string, payload: any }
+export type ReplicationDomainOnCommitted = (events: { ReplicationDomainEvent }?) -> ()
+```
+
+| Field | Authoring contract |
+| --- | --- |
+| `id` | Non-empty string, unique across framework and game domains |
+| `state` | Required bounded schema for complete recoverable state |
+| `events` | Dense array of `{ id, payload }` definitions; ids are unique within the domain, and payloads have bounded schemas; defaults to empty |
+| `audience` | `All` or `Owner` eligibility metadata; defaults to `All` |
+| `snapshot` | Required synchronous, non-yielding projection whose result must match `state` |
+| `observe` | Optional synchronous adapter accepting the Actor and a committed callback; may return a disconnect function |
+
+Unknown domain and event fields reject startup. Startup validates the schemas and callback types without invoking the callbacks or checking their runtime results. The `any` boundaries above erase Luau payload typing; they do not permit values outside the declared schemas.
 
 ## State vs semantic events
 
@@ -25,7 +56,7 @@ events = {
 },
 ```
 
-At the committed mutation boundary, the domain reports the occurrence alongside the state notification:
+The committed callback contract represents an occurrence alongside the state notification as:
 
 ```lua
 onCommitted({
@@ -33,18 +64,18 @@ onCommitted({
 })
 ```
 
-`onCommitted()` reports a mutation with no semantic events. `onCommitted(events)` reports the same state boundary plus ordered occurrences. Networking owns state comparison; the domain supplies neither a state patch nor packets. Events are explicit, never inferred from a changed state value.
+Under this contract, `onCommitted()` reports a mutation with no semantic events. `onCommitted(events)` reports the same state boundary plus ordered occurrences. The domain supplies neither a state patch nor packets. Events are explicit, never inferred from a changed state value.
 
-## Connecting a controller to a domain
+## Committed-observation callback contract
 
-The observation contract has four steps:
+The dynamic example below shows how to author the stored callbacks. It does not demonstrate an active replication runtime. The callback contract assigns these responsibilities:
 
-1. KRF calls the domain's `observe(actor, onCommitted)` to attach it and supplies `onCommitted`.
-2. The domain subscribes to the controller's private committed observers.
-3. After fully committing a mutation, the controller synchronously calls those observers.
-4. The domain calls `onCommitted()`, allowing Networking to capture `snapshot(actor)` before control returns.
+1. `observe(actor, onCommitted)` accepts an Actor and a callback supplied by its attachment caller.
+2. When invoked, the example adapter subscribes to the controller's private committed observers and returns a disconnect function.
+3. After fully committing a mutation, the example controller synchronously calls its registered observers.
+4. The adapter calls the supplied `onCommitted()` to report that boundary. Its contract requires the complete state to be available through `snapshot(actor)` without yielding.
 
-The controller never calls Networking. Its observer method belongs to your game; `_observeCommitted` is the name used in this example, not a required KRF controller API. The domain is the adapter between that method and KRF's callback contract.
+The controller never calls Networking. Its observer method belongs to your game; `_observeCommitted` is the name used in this example, not a required KRF controller API. The domain adapts that method to the declared callback signature.
 
 ### Controller: own and commit gameplay state
 
@@ -119,7 +150,7 @@ return StaminaController
 
 ### Domain: project state and adapt observation
 
-`snapshot` reads the controller without changing it. `observe` subscribes to that same controller and returns its disconnect function, so the attachment can release the subscription.
+When invoked, `snapshot` reads the controller without changing it, and `observe` subscribes to that same controller. The returned disconnect function releases the subscription.
 
 ```lua title="Game/StaminaReplicationDomain.luau"
 --!strict
@@ -180,7 +211,7 @@ end
 
 This registers the contracts. Catalog loading itself does not install the example's observer or start replication. See [Initializing KRF](../initializing-krf) for startup and [Actor Runtime](/api/Actor/actor-runtime) for creating Actors with registered controllers.
 
-## Observation rules
+## Rules for authoring callbacks
 
 Commit all state participating in the projection before notifying observers. Call committed observers before public gameplay callbacks can perform reentrant mutations and obscure that boundary.
 
@@ -201,5 +232,4 @@ Successful startup publishes immutable catalog metadata. Source-table edits cann
 ## Related
 
 - [Bounded schemas](./schemas)
-- [Replication Types API](/api/Networking/replication-types)
 - [Replication Domain Registry API](/api/Networking/replication-domain-registry)
