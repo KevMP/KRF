@@ -146,6 +146,27 @@ it("cancels a Map add then remove when the delivered baseline proves the key was
 	expect(scheduler:GetStreamStatus(stream).queuedBytes).toBe(0)
 end)
 
+it("advances delivered Map truth after drain so a later update and removal cannot cancel", function()
+	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = {} })
+	local added: PublicationTypes.FilteredCommit = TestUtils.patch(1, {
+		kind = "Map",
+		entries = { Haste = 1 },
+		removed = {},
+	})
+	enqueue(added)
+	local firstDrain: PublicationTypes.DrainResult = scheduler:DrainBudgeted(1024, 8)
+	expect(#firstDrain.records).toBe(1)
+	expect(firstDrain.records[1].commit).toEqual(added)
+	enqueue(TestUtils.patch(2, { kind = "Map", entries = { Haste = 2 }, removed = {} }))
+	enqueue(TestUtils.patch(3, { kind = "Map", entries = {}, removed = { "Haste" } }))
+	local secondDrain: PublicationTypes.DrainResult = scheduler:DrainBudgeted(1024, 8)
+	expect(#secondDrain.records).toBe(1)
+	expect(secondDrain.records[1].commit.sequence).toBe(3)
+	expect(secondDrain.records[1].commit.patches).toEqual({
+		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
+	})
+end)
+
 it("keeps Map removal when the baseline key existed instead of cancelling an update then remove", function()
 	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { Haste = 1 } })
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = 2 }, removed = {} }))

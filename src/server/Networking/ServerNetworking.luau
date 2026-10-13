@@ -2,6 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local NetworkingTypes = require(script.Parent.types)
+local PublicationTypes = require(script.Parent.PublicationTypes)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ProtocolTypes = require(script.Parent.Parent.Parent.shared.Networking.ProtocolTypes)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
@@ -197,6 +198,11 @@ end
 
 function ServerNetworking._IsInitialized(): boolean
 	return initialized
+end
+
+function ServerNetworking._GetPublicationRuntimeForTests(): PublicationTypes.Runtime?
+	-- N3 startup wiring will return the installed publication runtime.
+	return nil
 end
 
 ServerNetworking._ResetForTests = ServerNetworking.Destroy

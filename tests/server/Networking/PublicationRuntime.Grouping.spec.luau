@@ -212,9 +212,8 @@ it("rejects the whole grouped publication when one final snapshot is invalid", f
 end)
 
 it("rejects a grouped event at report time without leaking another touched domain's state", function()
-	-- Issue #73 sections 15 and 40 conflict for a malformed event thrown inside a
-	-- group. This contract treats producer violations as atomic publication aborts;
-	-- ordinary authoritative callback failures reconcile touched state above.
+	-- Issue #73 decisions 15 and 40 now give producer contract violations
+	-- precedence over ordinary authoritative callback error reconciliation.
 	attach()
 	local success: boolean = pcall(function(): ()
 		runtime:WithActorCommit(actor, function(): ()
@@ -262,4 +261,34 @@ it("returns from valid grouped capture without yielding", function()
 	expect(coroutine.resume(thread)).toBe(true)
 	expect(coroutine.status(thread)).toBe("dead")
 	expect(#commits).toBe(1)
+end)
+
+it("rejects a yielding grouped callback synchronously and leaves later publication ungrouped", function()
+	attach()
+	local completed: boolean? = nil
+	local failure: any = nil
+	local thread: thread = coroutine.create(function(): ()
+		completed, failure = pcall(function(): ()
+			runtime:WithActorCommit(actor, function(): ()
+				resource.value = 80
+				resource.callbacks[actor]()
+				coroutine.yield()
+			end)
+		end)
+	end)
+	expect(coroutine.resume(thread)).toBe(true)
+	expect(coroutine.status(thread)).toBe("dead")
+	expect(completed).toBe(false)
+	expect(string.find(tostring(failure), "Yield", 1, true) ~= nil).toBe(true)
+	local priorCommits: number = #commits
+	resource.value = 60
+	resource.callbacks[actor]()
+	expect(#commits).toBe(priorCommits + 1)
+	expect(commits[#commits].patches).toEqual({
+		{ domainId = "Game.Resource", patch = { kind = "Replace", value = 60 } },
+	})
+	expect(runtime:CaptureBaseline(actor)).toEqual({
+		sequence = #commits,
+		domains = { ["Game.Resource"] = 60, ["Game.Action"] = false },
+	})
 end)

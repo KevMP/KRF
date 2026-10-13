@@ -92,6 +92,49 @@ for _, case: AttachmentFailureCase in failures do
 	end)
 end
 
+it("rejects a yielding observe adapter synchronously, unwinds attachment, and can attach normally afterward", function()
+	local actor: ActorTypes.Actor = ActorEntity.new()
+	local first: TestUtils.DomainFixture = TestUtils.createDomain("Game.A", Schema.U8, 1)
+	local second: TestUtils.DomainFixture = TestUtils.createDomain("Game.B", Schema.U8, 1)
+	local shouldYield: boolean = true
+	local originalObserve = second.definition.observe
+	assert(originalObserve ~= nil, "Expected fixture observation adapter")
+	second.definition.observe = function(
+		observedActor: ActorTypes.Actor,
+		onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
+	): (() -> ())?
+		if shouldYield then
+			coroutine.yield()
+		end
+		return originalObserve(observedActor, onCommitted)
+	end
+	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition })
+	runtime = publication
+	local commits: { PublicationTypes.Commit } = {}
+	publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+		table.insert(commits, commit)
+	end)
+	local attached: boolean? = nil
+	local reason: string? = nil
+	local thread: thread = coroutine.create(function(): ()
+		attached, reason = publication:AttachActor(actor)
+	end)
+	expect(coroutine.resume(thread)).toBe(true)
+	expect(coroutine.status(thread)).toBe("dead")
+	expect(attached).toBe(false)
+	expect(reason).toBe("PublicationObserveYielded:Game.B")
+	expect(first.disconnectCalls).toBe(1)
+	expect(publication:GetAttachedActors()).toEqual({})
+	shouldYield = false
+	local retrySuccess: boolean, retryReason: string? = publication:AttachActor(actor)
+	expect(retrySuccess).toBe(true)
+	expect(retryReason).toBeNil()
+	second.value = 2
+	second.callbacks[actor]()
+	expect(#commits).toBe(1)
+	expect(commits[1].patches).toEqual({ { domainId = "Game.B", patch = { kind = "Replace", value = 2 } } })
+end)
+
 it("captures domains with no observe adapter or no returned disconnect", function()
 	local actor: ActorTypes.Actor = ActorEntity.new()
 	local first: TestUtils.DomainFixture = TestUtils.createDomain("Game.A", Schema.U8, 1)

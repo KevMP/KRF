@@ -1,6 +1,7 @@
 --!strict
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ProtocolTypes = require(script.Parent.Parent.Parent.shared.Networking.ProtocolTypes)
+local PublicationTypes = require(script.Parent.PublicationTypes)
 
 local types = {}
 
@@ -30,6 +31,8 @@ export type ServerNetworking = {
 	Destroy: () -> (),
 	_IsInitialized: () -> boolean,
 	_ResetForTests: () -> (),
+	-- Framework-private test seam for verifying startup ownership of N3.
+	_GetPublicationRuntimeForTests: () -> PublicationTypes.Runtime?,
 }
 
 return types
