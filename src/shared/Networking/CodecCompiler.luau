@@ -17,6 +17,13 @@ type Plan = {
 }
 type FieldPlan = { name: string, optional: boolean, plan: Plan }
 type NumberIO = { read: (buffer, number) -> number, write: (buffer, number, number) -> () }
+type EnumSchema = { read values: { string }, read ordinalsByValue: { [string]: number } }
+type StringSchema = { read maxBytes: number }
+type OptionalSchema = { read inner: NetworkingTypes.CompiledSchema }
+type StructSchema = {
+	read fields: { NetworkingTypes.CompiledField },
+	read fieldsByName: { [string]: NetworkingTypes.CompiledSchema },
+}
 
 local numberIO: { [string]: NumberIO } = {
 	U8 = { read = buffer.readu8, write = buffer.writeu8 },
@@ -32,243 +39,227 @@ local numberIO: { [string]: NumberIO } = {
 -- Encoding applies the same admission limit so every emitted value can decode.
 local COLLECTION_ENTRY_BUDGET: number = 100000
 
-local function compile(schema: NetworkingTypes.CompiledSchema): Plan
-	local primitive: Primitives.PrimitiveContract? = Primitives[schema.kind]
-	if primitive ~= nil then
-		local width: number = primitive.maxEncodedBytes
-		local io: NumberIO? = numberIO[schema.kind]
-		local function validate(value: any): string?
-			if io == nil then
-				return if type(value) == "boolean" then nil else "SchemaValueTypeInvalid"
-			end
-			if type(value) ~= "number" then
-				return "SchemaValueTypeInvalid"
-			end
-			if value ~= value or value == math.huge or value == -math.huge then
-				return "SchemaNumberMustBeFinite"
-			end
-			if primitive.isInteger and value % 1 ~= 0 then
-				return "SchemaIntegerMustBeIntegral"
-			end
-			if primitive.minimum ~= nil and (value < primitive.minimum or value > (primitive.maximum :: number)) then
-				return if primitive.isInteger then "SchemaIntegerOutOfRange" else "SchemaF32OutOfRange"
-			end
-			return nil
+local compile: (NetworkingTypes.CompiledSchema) -> Plan
+
+local function compilePrimitive(schema: NetworkingTypes.CompiledSchema, primitive: Primitives.PrimitiveContract): Plan
+	local width: number = primitive.maxEncodedBytes
+	local io: NumberIO? = numberIO[schema.kind]
+	local function validate(value: any): string?
+		if io == nil then
+			return if type(value) == "boolean" then nil else "SchemaValueTypeInvalid"
 		end
-		return {
-			fixed = width,
-			maximum = width,
-			minimum = width,
-			measure = function(value: any, _budget: EntryBudget): (number?, string?)
-				local reason: string? = validate(value)
-				return if reason == nil then width else nil, reason
-			end,
-			write = function(value: any, destination: buffer, offset: number): number
-				if io ~= nil then
-					io.write(destination, offset, value)
-				else
-					buffer.writeu8(destination, offset, if value then 1 else 0)
+		if type(value) ~= "number" then
+			return "SchemaValueTypeInvalid"
+		end
+		if value ~= value or value == math.huge or value == -math.huge then
+			return "SchemaNumberMustBeFinite"
+		end
+		if primitive.isInteger and value % 1 ~= 0 then
+			return "SchemaIntegerMustBeIntegral"
+		end
+		if primitive.minimum ~= nil and (value < primitive.minimum or value > (primitive.maximum :: number)) then
+			return if primitive.isInteger then "SchemaIntegerOutOfRange" else "SchemaF32OutOfRange"
+		end
+		return nil
+	end
+	return {
+		fixed = width,
+		maximum = width,
+		minimum = width,
+		measure = function(value: any, _budget: EntryBudget): (number?, string?)
+			local reason: string? = validate(value)
+			return if reason == nil then width else nil, reason
+		end,
+		write = function(value: any, destination: buffer, offset: number): number
+			if io ~= nil then
+				io.write(destination, offset, value)
+			else
+				buffer.writeu8(destination, offset, if value then 1 else 0)
+			end
+			return offset + width
+		end,
+		read = function(source: buffer, offset: number, limit: number, _budget: EntryBudget): (any?, number?, string?)
+			if width > limit - offset then
+				return nil, nil, "CodecTruncated"
+			end
+			if io == nil then
+				local value: number = buffer.readu8(source, offset)
+				if value > 1 then
+					return nil, nil, "CodecBooleanInvalid"
 				end
-				return offset + width
-			end,
-			read = function(
-				source: buffer,
-				offset: number,
-				limit: number,
-				_budget: EntryBudget
-			): (any?, number?, string?)
-				if width > limit - offset then
-					return nil, nil, "CodecTruncated"
+				return value == 1, offset + 1, nil
+			end
+			local value: number = io.read(source, offset)
+			local reason: string? = validate(value)
+			if reason ~= nil then
+				return nil, nil, reason
+			end
+			return value, offset + width, nil
+		end,
+	}
+end
+
+local function compileEnum(schema: EnumSchema): Plan
+	local width: number = BufferUtils.Width(#schema.values - 1)
+	return {
+		fixed = width,
+		maximum = width,
+		minimum = width,
+		measure = function(value: any, _budget: EntryBudget): (number?, string?)
+			if type(value) ~= "string" then
+				return nil, "SchemaValueTypeInvalid"
+			end
+			if schema.ordinalsByValue[value] == nil then
+				return nil, "SchemaEnumValueInvalid"
+			end
+			return width, nil
+		end,
+		write = function(value: any, destination: buffer, offset: number): number
+			return BufferUtils.WriteUnsigned(destination, offset, schema.ordinalsByValue[value], width)
+		end,
+		read = function(source: buffer, offset: number, limit: number, _budget: EntryBudget): (any?, number?, string?)
+			if width > limit - offset then
+				return nil, nil, "CodecTruncated"
+			end
+			local ordinal: number? = BufferUtils.ReadUnsigned(source, offset, width)
+			if ordinal == nil or ordinal >= #schema.values then
+				return nil, nil, "CodecEnumOrdinalInvalid"
+			end
+			return schema.values[ordinal + 1], offset + width, nil
+		end,
+	}
+end
+
+local function compileString(schema: StringSchema): Plan
+	local width: number = BufferUtils.Width(schema.maxBytes)
+	return {
+		maximum = width + schema.maxBytes,
+		minimum = width,
+		measure = function(value: any, _budget: EntryBudget): (number?, string?)
+			if type(value) ~= "string" then
+				return nil, "SchemaValueTypeInvalid"
+			end
+			if #value > schema.maxBytes then
+				return nil, "SchemaStringTooLong"
+			end
+			return width + #value, nil
+		end,
+		write = function(value: any, destination: buffer, offset: number): number
+			local nextOffset: number = BufferUtils.WriteUnsigned(destination, offset, #value, width)
+			buffer.writestring(destination, nextOffset, value)
+			return nextOffset + #value
+		end,
+		read = function(source: buffer, offset: number, limit: number, _budget: EntryBudget): (any?, number?, string?)
+			if width > limit - offset then
+				return nil, nil, "CodecTruncated"
+			end
+			local length: number? = BufferUtils.ReadUnsigned(source, offset, width)
+			if length == nil or length > schema.maxBytes then
+				return nil, nil, "SchemaStringTooLong"
+			end
+			local nextOffset: number = offset + width
+			if length > limit - nextOffset then
+				return nil, nil, "CodecTruncated"
+			end
+			return buffer.readstring(source, nextOffset, length), nextOffset + length, nil
+		end,
+	}
+end
+
+local function compileOptional(schema: OptionalSchema): Plan
+	local inner: Plan = compile(schema.inner)
+	return {
+		fixed = if inner.maximum == 0 then 1 else nil,
+		maximum = 1 + inner.maximum,
+		minimum = 1,
+		measure = function(value: any, budget: EntryBudget): (number?, string?)
+			if value == nil then
+				return 1, nil
+			end
+			local size: number?, reason: string? = inner.measure(value, budget)
+			return if size ~= nil then size + 1 else nil, reason
+		end,
+		write = function(value: any, destination: buffer, offset: number): number
+			buffer.writeu8(destination, offset, if value == nil then 0 else 1)
+			return if value == nil then offset + 1 else inner.write(value, destination, offset + 1)
+		end,
+		read = function(source: buffer, offset: number, limit: number, budget: EntryBudget): (any?, number?, string?)
+			if offset == limit then
+				return nil, nil, "CodecTruncated"
+			end
+			local presence: number = buffer.readu8(source, offset)
+			if presence == 0 then
+				return nil, offset + 1, nil
+			end
+			if presence ~= 1 then
+				return nil, nil, "CodecOptionalPresenceInvalid"
+			end
+			return inner.read(source, offset + 1, limit, budget)
+		end,
+	}
+end
+
+local function compileStruct(schema: StructSchema): Plan
+	local fields: { FieldPlan } = {}
+	local maximum: number = 0
+	local minimum: number = 0
+	local fixed: boolean = true
+	for _, field: NetworkingTypes.CompiledField in schema.fields do
+		local child: Plan = compile(field.schema)
+		table.insert(fields, { name = field.name, optional = field.schema.kind == "Optional", plan = child })
+		maximum += child.maximum
+		minimum += child.minimum
+		fixed = fixed and child.fixed ~= nil
+	end
+	return {
+		fixed = if fixed then maximum else nil,
+		maximum = maximum,
+		minimum = minimum,
+		measure = function(value: any, budget: EntryBudget): (number?, string?)
+			if type(value) ~= "table" then
+				return nil, "SchemaValueTypeInvalid"
+			end
+			for name in next, value do
+				if type(name) ~= "string" or schema.fieldsByName[name] == nil then
+					return nil, "SchemaStructFieldUndeclared"
 				end
-				if io == nil then
-					local value: number = buffer.readu8(source, offset)
-					if value > 1 then
-						return nil, nil, "CodecBooleanInvalid"
-					end
-					return value == 1, offset + 1, nil
+			end
+			local total: number = 0
+			for _, field: FieldPlan in fields do
+				local childValue: any = rawget(value, field.name)
+				if childValue == nil and not field.optional then
+					return nil, "SchemaStructFieldMissing"
 				end
-				local value: number = io.read(source, offset)
-				local reason: string? = validate(value)
-				if reason ~= nil then
+				local size: number?, reason: string? = field.plan.measure(childValue, budget)
+				if size == nil then
+					return nil, reason
+				end
+				total += size
+			end
+			return total, nil
+		end,
+		write = function(value: any, destination: buffer, offset: number): number
+			for _, field: FieldPlan in fields do
+				offset = field.plan.write(rawget(value, field.name), destination, offset)
+			end
+			return offset
+		end,
+		read = function(source: buffer, offset: number, limit: number, budget: EntryBudget): (any?, number?, string?)
+			local result: { [string]: any } = {}
+			for _, field: FieldPlan in fields do
+				local value: any, nextOffset: number?, reason: string? = field.plan.read(source, offset, limit, budget)
+				if nextOffset == nil then
 					return nil, nil, reason
 				end
-				return value, offset + width, nil
-			end,
-		}
-	elseif schema.kind == "Enum" then
-		local width: number = BufferUtils.Width(#schema.values - 1)
-		return {
-			fixed = width,
-			maximum = width,
-			minimum = width,
-			measure = function(value: any, _budget: EntryBudget): (number?, string?)
-				if type(value) ~= "string" then
-					return nil, "SchemaValueTypeInvalid"
-				end
-				if schema.ordinalsByValue[value] == nil then
-					return nil, "SchemaEnumValueInvalid"
-				end
-				return width, nil
-			end,
-			write = function(value: any, destination: buffer, offset: number): number
-				return BufferUtils.WriteUnsigned(destination, offset, schema.ordinalsByValue[value], width)
-			end,
-			read = function(
-				source: buffer,
-				offset: number,
-				limit: number,
-				_budget: EntryBudget
-			): (any?, number?, string?)
-				if width > limit - offset then
-					return nil, nil, "CodecTruncated"
-				end
-				local ordinal: number? = BufferUtils.ReadUnsigned(source, offset, width)
-				if ordinal == nil or ordinal >= #schema.values then
-					return nil, nil, "CodecEnumOrdinalInvalid"
-				end
-				return schema.values[ordinal + 1], offset + width, nil
-			end,
-		}
-	elseif schema.kind == "String" then
-		local width: number = BufferUtils.Width(schema.maxBytes)
-		return {
-			maximum = width + schema.maxBytes,
-			minimum = width,
-			measure = function(value: any, _budget: EntryBudget): (number?, string?)
-				if type(value) ~= "string" then
-					return nil, "SchemaValueTypeInvalid"
-				end
-				if #value > schema.maxBytes then
-					return nil, "SchemaStringTooLong"
-				end
-				return width + #value, nil
-			end,
-			write = function(value: any, destination: buffer, offset: number): number
-				local nextOffset: number = BufferUtils.WriteUnsigned(destination, offset, #value, width)
-				buffer.writestring(destination, nextOffset, value)
-				return nextOffset + #value
-			end,
-			read = function(
-				source: buffer,
-				offset: number,
-				limit: number,
-				_budget: EntryBudget
-			): (any?, number?, string?)
-				if width > limit - offset then
-					return nil, nil, "CodecTruncated"
-				end
-				local length: number? = BufferUtils.ReadUnsigned(source, offset, width)
-				if length == nil or length > schema.maxBytes then
-					return nil, nil, "SchemaStringTooLong"
-				end
-				local nextOffset: number = offset + width
-				if length > limit - nextOffset then
-					return nil, nil, "CodecTruncated"
-				end
-				return buffer.readstring(source, nextOffset, length), nextOffset + length, nil
-			end,
-		}
-	elseif schema.kind == "Optional" then
-		local inner: Plan = compile(schema.inner)
-		return {
-			fixed = if inner.maximum == 0 then 1 else nil,
-			maximum = 1 + inner.maximum,
-			minimum = 1,
-			measure = function(value: any, budget: EntryBudget): (number?, string?)
-				if value == nil then
-					return 1, nil
-				end
-				local size: number?, reason: string? = inner.measure(value, budget)
-				return if size ~= nil then size + 1 else nil, reason
-			end,
-			write = function(value: any, destination: buffer, offset: number): number
-				buffer.writeu8(destination, offset, if value == nil then 0 else 1)
-				return if value == nil then offset + 1 else inner.write(value, destination, offset + 1)
-			end,
-			read = function(
-				source: buffer,
-				offset: number,
-				limit: number,
-				budget: EntryBudget
-			): (any?, number?, string?)
-				if offset == limit then
-					return nil, nil, "CodecTruncated"
-				end
-				local presence: number = buffer.readu8(source, offset)
-				if presence == 0 then
-					return nil, offset + 1, nil
-				end
-				if presence ~= 1 then
-					return nil, nil, "CodecOptionalPresenceInvalid"
-				end
-				return inner.read(source, offset + 1, limit, budget)
-			end,
-		}
-	elseif schema.kind == "Struct" then
-		local fields: { FieldPlan } = {}
-		local maximum: number = 0
-		local minimum: number = 0
-		local fixed: boolean = true
-		for _, field: NetworkingTypes.CompiledField in schema.fields do
-			local child: Plan = compile(field.schema)
-			table.insert(fields, { name = field.name, optional = field.schema.kind == "Optional", plan = child })
-			maximum += child.maximum
-			minimum += child.minimum
-			fixed = fixed and child.fixed ~= nil
-		end
-		return {
-			fixed = if fixed then maximum else nil,
-			maximum = maximum,
-			minimum = minimum,
-			measure = function(value: any, budget: EntryBudget): (number?, string?)
-				if type(value) ~= "table" then
-					return nil, "SchemaValueTypeInvalid"
-				end
-				for name in next, value do
-					if type(name) ~= "string" or schema.fieldsByName[name] == nil then
-						return nil, "SchemaStructFieldUndeclared"
-					end
-				end
-				local total: number = 0
-				for _, field: FieldPlan in fields do
-					local childValue: any = rawget(value, field.name)
-					if childValue == nil and not field.optional then
-						return nil, "SchemaStructFieldMissing"
-					end
-					local size: number?, reason: string? = field.plan.measure(childValue, budget)
-					if size == nil then
-						return nil, reason
-					end
-					total += size
-				end
-				return total, nil
-			end,
-			write = function(value: any, destination: buffer, offset: number): number
-				for _, field: FieldPlan in fields do
-					offset = field.plan.write(rawget(value, field.name), destination, offset)
-				end
-				return offset
-			end,
-			read = function(
-				source: buffer,
-				offset: number,
-				limit: number,
-				budget: EntryBudget
-			): (any?, number?, string?)
-				local result: { [string]: any } = {}
-				for _, field: FieldPlan in fields do
-					local value: any, nextOffset: number?, reason: string? =
-						field.plan.read(source, offset, limit, budget)
-					if nextOffset == nil then
-						return nil, nil, reason
-					end
-					result[field.name] = value
-					offset = nextOffset
-				end
-				return result, offset, nil
-			end,
-		}
-	end
+				result[field.name] = value
+				offset = nextOffset
+			end
+			return result, offset, nil
+		end,
+	}
+end
+
+local function compileCollection(schema: NetworkingTypes.CompiledSchema): Plan
 	assert(schema.kind == "Array" or schema.kind == "Map", "Unsupported compiled schema")
 	local isArray: boolean = schema.kind == "Array"
 	local valuePlan: Plan = compile(if schema.kind == "Array" then schema.element else schema.value)
@@ -389,6 +380,22 @@ local function compile(schema: NetworkingTypes.CompiledSchema): Plan
 			return result, offset, nil
 		end,
 	}
+end
+
+compile = function(schema: NetworkingTypes.CompiledSchema): Plan
+	local primitive: Primitives.PrimitiveContract? = Primitives[schema.kind]
+	if primitive ~= nil then
+		return compilePrimitive(schema, primitive)
+	elseif schema.kind == "Enum" then
+		return compileEnum(schema)
+	elseif schema.kind == "String" then
+		return compileString(schema)
+	elseif schema.kind == "Optional" then
+		return compileOptional(schema)
+	elseif schema.kind == "Struct" then
+		return compileStruct(schema)
+	end
+	return compileCollection(schema)
 end
 
 function CodecCompiler.Compile(schema: NetworkingTypes.CompiledSchema): (NetworkingTypes.CompiledCodec?, string?)
