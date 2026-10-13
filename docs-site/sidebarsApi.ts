@@ -52,6 +52,14 @@ const sidebarsApi: SidebarsConfig = {
       label: 'Controllers',
       items: ['Controllers/controller-registry'],
     },
+    {
+      type: 'category',
+      label: 'Networking',
+      items: [
+        'Networking/schema',
+        'Networking/replication-domain-registry',
+      ],
+    },
   ],
 };
 

@@ -6,7 +6,7 @@ sidebar_position: 2
 
 KRF has separate server and client setup. The server flow below loads the shared definitions used to create Actors.
 
-Server startup is the boundary between configuration and live Actor state. Your game supplies controller, Tag, Resource, and Action definitions once. KRF validates those catalogs together, then uses the loaded controller factories to attach the same eligible controller set to every new Actor.
+Server startup is the boundary between configuration and live Actor state. Your game supplies controller, Tag, Resource, Action, and replication domain definitions once. KRF validates those catalogs together, then uses the loaded controller factories to attach the same eligible controller set to every new Actor.
 
 | Catalog | What it determines |
 | --- | --- |
@@ -14,6 +14,7 @@ Server startup is the boundary between configuration and live Actor state. Your 
 | Tags | Which statuses an Actor's `TagController` can apply |
 | Resources | Which meters an Actor's `ResourceController` can assign |
 | Actions | Static Action metadata, including Tag preconditions, Resource costs, and interruption permissions |
+| Replication domains | Approved state projections, semantic event schemas, observation adapters, and audiences |
 
 ## Server initialization
 
@@ -69,9 +70,11 @@ TODO
 
 ## Server startup result
 
-`Server.Init` validates every catalog before publishing them. An invalid definition, missing reference or dependency, or controller cycle leaves all four registries unpublished. The failure identifies the catalog in `system` and the validation error in `reason`.
+`Server.Init` validates every catalog before publishing them. An invalid definition, missing reference or dependency, or controller cycle leaves all five registries unpublished. The failure identifies the catalog in `system` and the validation error in `reason`.
 
 Supply the optional `actions` array to load the [Action Registry](./Action/action-registry). Its Tag, Resource, and Action references resolve against the complete prepared registries. Omitting `actions` publishes an empty Action registry. Each registered Actor receives an [`ActionController`](./Action/action-grants); `autoGrant` definitions form its initial grant baseline without starting Actions.
+
+Supply the optional `replicationDomains` array to register [replication domains](./Networking/replication-domains). This catalog is independent from controller definitions. Startup compiles its state and event schemas, defaults audiences to `All`, and publishes frozen contracts without invoking `snapshot` or `observe`. A domain validation failure uses `system = "ReplicationDomain"`.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix startup configuration and restart the server after a failure. After a successful call, [Actor Runtime](./Actor/actor-runtime) can register Actors against the loaded controller catalog.
 
@@ -83,3 +86,4 @@ Supply the optional `actions` array to load the [Action Registry](./Action/actio
 - [Resource Registry](./Resource/resource-registry)
 - [Action Registry](./Action/action-registry)
 - [Action grants](./Action/action-grants)
+- [Replication domains](./Networking/replication-domains)
