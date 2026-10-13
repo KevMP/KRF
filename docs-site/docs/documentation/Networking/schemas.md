@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Bounded schemas
 
-`Schema` describes the meaning and limits of replicated state and semantic event payloads. Every accepted schema has a finite maximum encoded size that KRF can account for exactly.
+`Schema` describes the meaning and limits of replicated state and semantic event payloads. Every accepted schema has a finite conservative upper bound on encoded size, calculated with exact safe-integer arithmetic. The bound does not promise an exact byte layout.
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -61,6 +61,8 @@ Map keys support `String`, `Enum`, and the six integer schemas. Boolean, float, 
 ## Ownership and admission
 
 Constructors validate structure and return immutable owned definitions. Changing the source Enum array or Struct field table cannot change the constructed schema, and construction does not freeze those caller-owned tables.
+
+Each schema kind accepts only its declared fields. Unknown fields reject with `SchemaFieldUnknown`, including fields belonging to a different kind. KRF rejects semantics it does not recognize instead of silently accepting a schema with a different meaning.
 
 During [server startup](../initializing-krf), KRF recursively validates and compiles domain state and event schemas. Struct fields and Enum membership use deterministic ordering. Shared child definitions are supported; recursive cycles are rejected.
 

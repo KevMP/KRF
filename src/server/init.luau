@@ -99,7 +99,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	local stagedResources: { [string]: ResourceDefinition } = {}
 	local preparedResourceIds: { [string]: boolean } = {}
-	local preparedResources: { ResourceDefinition } = {}
+	local preparedResources: { ResourceTypes.LoadedResourceDefinition } = {}
 	for _, definition: ResourceDefinition in resources do
 		local valid: boolean, reason: string? =
 			ResourceValidator.ValidateResourceDefinition(definition, stagedResources)
@@ -127,7 +127,28 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	if domainCount == nil then
 		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeArray" }
 	end
-	local domains: { ReplicationDomainDefinition } = table.clone(BuiltInReplicationDomains)
+	local buildCatalogs: ReplicationTypes.ReplicationDomainBuildCatalogs = {
+		tags = table.freeze(preparedTags),
+		resources = table.freeze(preparedResources),
+		actions = preparedActions.orderedDefinitions,
+	}
+	table.freeze(buildCatalogs)
+	local builtInDomains: { ReplicationDomainDefinition }?, buildReason: string? =
+		BuiltInReplicationDomains.Build(buildCatalogs)
+	if builtInDomains == nil then
+		return false, { system = "ReplicationDomain", reason = buildReason or "ReplicationDomainBuildFailed" }
+	end
+	if type(builtInDomains) ~= "table" then
+		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeTable" }
+	end
+	local builtInCount: number? = SchemaCollectionUtils.GetArrayLength(builtInDomains)
+	if builtInCount == nil then
+		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeArray" }
+	end
+	local domains: { ReplicationDomainDefinition } = {}
+	for index: number = 1, builtInCount do
+		table.insert(domains, rawget(builtInDomains, index) :: ReplicationDomainDefinition)
+	end
 	for index: number = 1, domainCount do
 		table.insert(domains, rawget(gameDomains, index) :: ReplicationDomainDefinition)
 	end
@@ -147,7 +168,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Tag", reason = reason :: string }
 	end
 
-	loaded, reason = ResourceRegistry.Load(preparedResources)
+	loaded, reason = ResourceRegistry.Load(preparedResources :: { ResourceDefinition })
 	if not loaded then
 		return false, { system = "Resource", reason = reason :: string }
 	end

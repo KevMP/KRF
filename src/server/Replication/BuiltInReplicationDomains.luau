@@ -1,8 +1,15 @@
 --!strict
 local ReplicationTypes = require(script.Parent.types)
 
--- N6-N8 add framework projections here. They share the game's domain namespace
--- and pass through the same startup validation and publication transaction.
-local definitions: { ReplicationTypes.ReplicationDomainDefinition } = {}
+local BuiltInReplicationDomains = {} :: ReplicationTypes.BuiltInReplicationDomainBuilder
 
-return table.freeze(definitions)
+function BuiltInReplicationDomains.Build(
+	_catalogs: ReplicationTypes.ReplicationDomainBuildCatalogs
+): ({ ReplicationTypes.ReplicationDomainDefinition }?, string?)
+	-- N6-N8 select ClientVisible entries from these staged catalogs and construct
+	-- KRF.Tags/Resources/Actions definitions here. No registry reads or publication.
+	-- All generated definitions join game domains before one validation transaction.
+	return {}, nil
+end
+
+return BuiltInReplicationDomains

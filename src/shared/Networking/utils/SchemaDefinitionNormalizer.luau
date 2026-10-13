@@ -24,6 +24,22 @@ local mapKeyKinds: { [string]: boolean } = {
 }
 table.freeze(mapKeyKinds)
 
+local fieldsByKind: { [string]: { [string]: boolean } } = {
+	String = { kind = true, maxBytes = true },
+	Enum = { kind = true, values = true },
+	Optional = { kind = true, inner = true },
+	Struct = { kind = true, fields = true },
+	Array = { kind = true, element = true, maxLength = true },
+	Map = { kind = true, key = true, value = true, maxEntries = true },
+}
+for kind: string in SchemaPrimitives do
+	fieldsByKind[kind] = { kind = true }
+end
+for _, fields: { [string]: boolean } in fieldsByKind do
+	table.freeze(fields)
+end
+table.freeze(fieldsByKind)
+
 local function normalize(definition: any, depth: number, context: NormalizationContext): (NormalizedNode?, string?)
 	if definition == nil then
 		return nil, "SchemaDefinitionMissing"
@@ -46,6 +62,15 @@ local function normalize(definition: any, depth: number, context: NormalizationC
 	end
 	context.active[definition] = true
 	local kind: any = rawget(definition, "kind")
+	local allowedFields: { [string]: boolean }? = if type(kind) == "string" then fieldsByKind[kind] else nil
+	if allowedFields == nil then
+		return nil, "SchemaKindInvalid"
+	end
+	for field in next, definition do
+		if type(field) ~= "string" or not allowedFields[field] then
+			return nil, "SchemaFieldUnknown"
+		end
+	end
 	local owned: SchemaDefinition
 	local height: number = 1
 	if type(kind) == "string" and SchemaPrimitives[kind] ~= nil then

@@ -1,6 +1,9 @@
 --!strict
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local NetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local TagTypes = require(script.Parent.Parent.Tags.types)
+local ResourceTypes = require(script.Parent.Parent.Resource.types)
+local ActionTypes = require(script.Parent.Parent.Action.types)
 
 local types = {}
 
@@ -35,6 +38,18 @@ export type LoadedReplicationDomainDefinition = {
 export type PreparedReplicationDomainCatalog = {
 	read definitionsById: { [string]: LoadedReplicationDomainDefinition },
 	read orderedDefinitions: { LoadedReplicationDomainDefinition },
+}
+
+-- Framework-private input for building catalog-dependent built-in projections.
+-- These are validated owned snapshots; public registries are still unloaded.
+export type ReplicationDomainBuildCatalogs = {
+	read tags: { TagTypes.TagDefinition },
+	read resources: { ResourceTypes.LoadedResourceDefinition },
+	read actions: { ActionTypes.LoadedActionDefinition },
+}
+
+export type BuiltInReplicationDomainBuilder = {
+	Build: (catalogs: ReplicationDomainBuildCatalogs) -> ({ ReplicationDomainDefinition }?, string?),
 }
 
 export type ReplicationDomainRegistry = {
