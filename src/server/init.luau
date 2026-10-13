@@ -20,6 +20,8 @@ local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
 local ResourceController = require(script.Resource.ResourceController)
 local ActionController = require(script.Action.ActionController)
+local ServerNetworking = require(script.Networking.ServerNetworking)
+local ProtocolTypes = require(script.Parent.shared.Networking.ProtocolTypes)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
 export type StartupFailure = ServerStartTypes.StartupFailure
@@ -35,6 +37,15 @@ type PreparedReplicationDomainCatalog = ReplicationTypes.PreparedReplicationDoma
 local Server = {}
 local initAttempted: boolean = false
 local initialized: boolean = false
+
+local function rollbackStartup(): ()
+	ServerNetworking.Destroy()
+	ControllerRegistry._RollbackStartup()
+	TagRegistry._RollbackStartup()
+	ResourceRegistry._RollbackStartup()
+	ActionRegistry._RollbackStartup()
+	ReplicationDomainRegistry._RollbackStartup()
+end
 
 local function copyTagDefinition(definition: TagDefinition): TagDefinition
 	local owned: TagDefinition = table.clone(definition)
@@ -158,29 +169,51 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "ReplicationDomain", reason = domainReason :: string }
 	end
 
-	local loaded: boolean, reason: string? = ControllerRegistry.Load(controllers)
-	if not loaded then
-		return false, { system = "Controller", reason = reason :: string }
+	local prepared: boolean, protocol: ProtocolTypes.PreparedProtocol?, networkingReason: string? =
+		pcall(ServerNetworking.Prepare, preparedDomains)
+	if not prepared then
+		return false, { system = "Networking", reason = "StartupInternalFailure:" .. tostring(protocol) }
+	end
+	if protocol == nil then
+		return false, { system = "Networking", reason = networkingReason :: string }
 	end
 
-	loaded, reason = TagRegistry.Load(preparedTags)
-	if not loaded then
-		return false, { system = "Tag", reason = reason :: string }
-	end
-
-	loaded, reason = ResourceRegistry.Load(preparedResources :: { ResourceDefinition })
-	if not loaded then
-		return false, { system = "Resource", reason = reason :: string }
-	end
-
-	loaded, reason = ActionRegistry.Publish(preparedActions :: PreparedActionCatalog)
-	if not loaded then
-		return false, { system = "Action", reason = reason :: string }
-	end
-
-	loaded, reason = ReplicationDomainRegistry.Publish(preparedDomains :: PreparedReplicationDomainCatalog)
-	if not loaded then
-		return false, { system = "ReplicationDomain", reason = reason :: string }
+	local publicationSystem: string = "Controller"
+	local published: boolean, loaded: boolean, reason: string? = pcall(function(): (boolean, string?)
+		local success: boolean, failure: string? = ControllerRegistry.Load(controllers)
+		if not success then
+			return false, failure
+		end
+		publicationSystem = "Tag"
+		success, failure = TagRegistry.Load(preparedTags)
+		if not success then
+			return false, failure
+		end
+		publicationSystem = "Resource"
+		success, failure = ResourceRegistry.Load(preparedResources :: { ResourceDefinition })
+		if not success then
+			return false, failure
+		end
+		publicationSystem = "Action"
+		success, failure = ActionRegistry.Publish(preparedActions :: PreparedActionCatalog)
+		if not success then
+			return false, failure
+		end
+		publicationSystem = "ReplicationDomain"
+		success, failure = ReplicationDomainRegistry.Publish(preparedDomains :: PreparedReplicationDomainCatalog)
+		if not success then
+			return false, failure
+		end
+		publicationSystem = "Networking"
+		return ServerNetworking.Publish(protocol :: ProtocolTypes.PreparedProtocol)
+	end)
+	if not published or not loaded then
+		rollbackStartup()
+		return false,
+			{
+				system = publicationSystem,
+				reason = if published then reason :: string else "StartupInternalFailure:" .. tostring(loaded),
+			}
 	end
 
 	initialized = true
@@ -190,11 +223,7 @@ end
 function Server._ResetForTests(): ()
 	initAttempted = false
 	initialized = false
-	ControllerRegistry._ResetForTests()
-	TagRegistry._resetForTests()
-	ResourceRegistry._resetForTests()
-	ActionRegistry._resetForTests()
-	ReplicationDomainRegistry._resetForTests()
+	rollbackStartup()
 end
 
 return Server

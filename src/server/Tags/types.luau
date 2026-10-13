@@ -34,6 +34,7 @@ export type TagRegistry = {
 	GetAllById: () -> { [string]: TagDefinition },
 	IsLoaded: () -> boolean,
 	_resetForTests: () -> (),
+	_RollbackStartup: () -> (),
 }
 
 export type AddTagOptions = {

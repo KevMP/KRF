@@ -55,10 +55,12 @@ function TagRegistry.IsLoaded(): boolean
 	return isLoaded
 end
 
-function TagRegistry._resetForTests(): ()
+function TagRegistry._RollbackStartup(): ()
 	isLoaded = false
 	definitionsById = {}
 	orderedDefinitions = {}
 end
+
+TagRegistry._resetForTests = TagRegistry._RollbackStartup
 
 return TagRegistry

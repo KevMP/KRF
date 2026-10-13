@@ -337,7 +337,7 @@ it("startup does not invoke Actor snapshot or observation callbacks", function()
 	expect(callbackCalls).toBe(0)
 end)
 
-it("N1 startup adds no RemoteEvent, RemoteFunction, or UnreliableRemoteEvent instances", function()
+it("startup adds only the framework reliable and reserved unreliable transport pair", function()
 	local existingRemotes: { [Instance]: boolean } = {}
 	for _, instance: Instance in game:GetDescendants() do
 		if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("UnreliableRemoteEvent") then
@@ -348,11 +348,24 @@ it("N1 startup adds no RemoteEvent, RemoteFunction, or UnreliableRemoteEvent ins
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.State") } })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+	local reliableCount: number = 0
+	local unreliableCount: number = 0
+	local remoteFunctionCount: number = 0
 	for _, instance: Instance in game:GetDescendants() do
-		if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("UnreliableRemoteEvent") then
-			expect(existingRemotes[instance]).toBe(true)
+		if existingRemotes[instance] then
+			continue
+		end
+		if instance.ClassName == "RemoteEvent" then
+			reliableCount += 1
+		elseif instance.ClassName == "UnreliableRemoteEvent" then
+			unreliableCount += 1
+		elseif instance.ClassName == "RemoteFunction" then
+			remoteFunctionCount += 1
 		end
 	end
+	expect(reliableCount).toBe(1)
+	expect(unreliableCount).toBe(1)
+	expect(remoteFunctionCount).toBe(0)
 end)
 
 it("Server test reset clears domains alongside the existing startup catalogs", function()

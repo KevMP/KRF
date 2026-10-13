@@ -184,10 +184,12 @@ function ReplicationDomainRegistry.IsLoaded(): boolean
 	return isLoaded
 end
 
-function ReplicationDomainRegistry._resetForTests(): ()
+function ReplicationDomainRegistry._RollbackStartup(): ()
 	isLoaded = false
 	definitionsById = table.freeze({} :: { [string]: LoadedReplicationDomainDefinition })
 	orderedDefinitions = table.freeze({} :: { LoadedReplicationDomainDefinition })
 end
+
+ReplicationDomainRegistry._resetForTests = ReplicationDomainRegistry._RollbackStartup
 
 return ReplicationDomainRegistry

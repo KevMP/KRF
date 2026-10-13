@@ -63,10 +63,12 @@ function ResourceRegistry.IsLoaded(): boolean
 	return isLoaded
 end
 
-function ResourceRegistry._resetForTests(): ()
+function ResourceRegistry._RollbackStartup(): ()
 	isLoaded = false
 	definitionsById = {}
 	orderedDefinitions = {}
 end
+
+ResourceRegistry._resetForTests = ResourceRegistry._RollbackStartup
 
 return ResourceRegistry

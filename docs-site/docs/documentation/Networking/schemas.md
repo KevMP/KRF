@@ -65,6 +65,8 @@ local Effects = Schema.Map(
 
 Here, `{ Burn = { stacks = 2, remaining = 1.5 } }` is valid. `Burn` is the entry's identity, not its position. Map keys support bounded `String`, `Enum`, and the six integer schemas; Boolean, float, Optional, and collection keys are unsupported.
 
+Optional collection values must still be present. Decoding an absent Optional Array element or Map value rejects the collection rather than creating a hole or dropping an entry. Use an Optional Struct field for nullable data inside a collection; an Optional top-level value can also be absent.
+
 ## Set practical bounds
 
 Every String, Array, and Map declares a positive integer maximum. Choose the limit your gameplay actually needs: for example, 64 bytes for a target id, eight ranked targets, or 16 concurrent effects. Bounds apply to each nested collection independently.
@@ -77,7 +79,7 @@ Explicit limits let KRF reject oversized values and determine a conservative upp
 
 Constructors validate definitions and return immutable owned copies. Changing a source Enum array, Struct field table, or child descriptor cannot change the constructed schema; KRF does not freeze those caller-owned tables. Each kind permits only its declared fields. Unknown fields, including fields belonging to another kind, reject with `SchemaFieldUnknown`.
 
-During [server startup](../initializing-krf), KRF recursively validates and compiles domain state and event schemas. Struct fields and Enum membership have deterministic ordering. Shared child definitions are supported; recursive cycles are not. Runtime value validation does not coerce, freeze, or modify supplied values.
+During [server startup](../initializing-krf), KRF recursively validates and compiles domain state and event schemas into reusable buffer codecs. Each client reconstructs those codecs from the shared bootstrap catalog. Struct fields and Enum membership have deterministic ordering. Shared child definitions are supported; recursive cycles are not. Runtime value validation does not coerce, freeze, or modify supplied values.
 
 | Admission failure | Meaning |
 | --- | --- |
@@ -88,7 +90,10 @@ During [server startup](../initializing-krf), KRF recursively validates and comp
 
 The byte bound includes conservative encoding overhead; it is an upper bound, not a promise of an exact encoded layout. A finite, integer-looking result is insufficient if its arithmetic exceeds the safe-integer range. Structurally valid constructors can still produce a schema rejected by this aggregate startup check.
 
+Legal maximum bounds are preserved exactly in the bootstrap, including bounds above 32-bit integer range. They describe admitted schema metadata, not guaranteed packet capacity or unlimited collection processing. Encoding and decoding also enforce a shared private limit on total collection entries, including nested collections and zero-byte records. Keep authored bounds tied to practical gameplay values.
+
 ## Related
 
 - [Schema API](/api/Networking/schema)
 - [Replication domains](./replication-domains)
+- [Networking startup](./startup)

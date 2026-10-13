@@ -1,6 +1,20 @@
 --!strict
 local types = {}
 
+-- Framework-private N2 codec contract. Read limits are exclusive byte offsets.
+-- A nil decoded Optional is successful when newOffset is present and reason is nil.
+export type CompiledCodec = {
+	read fixedSizeBytes: number?,
+	read maxSizeBytes: number,
+	read Measure: (value: any) -> (number?, string?),
+	read Write: (value: any, destination: buffer, offset: number) -> (number?, string?),
+	read Read: (source: buffer, offset: number, limit: number) -> (any?, number?, string?),
+}
+
+export type CodecCompiler = {
+	Compile: (schema: CompiledSchema) -> (CompiledCodec?, string?),
+}
+
 export type PrimitiveKind = "Boolean" | "U8" | "U16" | "U32" | "I8" | "I16" | "I32" | "F32" | "F64"
 
 export type SchemaDefinition =
