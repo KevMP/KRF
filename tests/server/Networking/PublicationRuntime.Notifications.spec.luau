@@ -205,6 +205,43 @@ do
 	end)
 end
 
+for _, invalidReport: { name: string, events: any } in
+	{
+		{ name = "unknown event", events = { { id = "Unknown", payload = {} } } },
+		{
+			name = "sparse event array",
+			events = {
+				[1] = { id = "Changed", payload = { count = 1 } },
+				[3] = { id = "Changed", payload = { count = 2 } },
+			},
+		},
+	}
+do
+	it("publishes a valid group after rejecting an ordinary " .. invalidReport.name, function()
+		attach()
+		local accepted: boolean, failure: any = pcall(function(): ()
+			domain.callbacks[actor](invalidReport.events)
+		end)
+		expect(accepted).toBe(false)
+		expect(failure).toBe("InvalidPublicationEvent:Game.State")
+		expect(commits).toEqual({})
+		expect(runtime:GetActorSequence(actor)).toBe(0)
+		runtime:WithActorCommit(actor, function(): ()
+			domain.value.active = true
+			domain.callbacks[actor]()
+		end)
+		expect(#commits).toBe(1)
+		expect(commits[1].sequence).toBe(1)
+		expect(commits[1].patches).toEqual({
+			{
+				domainId = "Game.State",
+				patch = { kind = "Struct", fields = { active = { kind = "Replace", value = true } } },
+			},
+		})
+		expect(baseline().domains["Game.State"].value).toEqual({ active = true })
+	end)
+end
+
 it("does not replay a valid event prefix from a rejected report on the next notification", function()
 	attach()
 	local accepted: boolean = pcall(function(): ()

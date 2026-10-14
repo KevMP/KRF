@@ -52,7 +52,9 @@ local function eventsFor(
 	local stagedEvents: { PublicationTypes.Event } = {}
 	local count: number? = SchemaCollectionUtils.GetArrayLength(reported)
 	if count == nil then
-		attachment.poisoned = true
+		if attachment.depth > 0 then
+			attachment.poisoned = true
+		end
 		fault(self, actor, domainId, "InvalidPublicationEvent")
 		error("InvalidPublicationEvent:" .. domainId, 0)
 	end
@@ -61,7 +63,9 @@ local function eventsFor(
 		local plan = if type(event) == "table" then definitions[event.id] else nil
 		local captured = if plan ~= nil then plan:Capture(event.payload, nil) else nil
 		if captured == nil then
-			attachment.poisoned = true
+			if attachment.depth > 0 then
+				attachment.poisoned = true
+			end
 			fault(self, actor, domainId, "InvalidPublicationEvent")
 			error("InvalidPublicationEvent:" .. domainId, 0)
 		end

@@ -214,26 +214,36 @@ it("rejects the whole grouped publication when one final snapshot is invalid", f
 	expect(#commits[1].patches).toBe(2)
 end)
 
-it("rejects a grouped event at report time without leaking another touched domain's state", function()
-	-- Issue #73 decisions 15 and 40 now give producer contract violations
-	-- precedence over ordinary authoritative callback error reconciliation.
-	attach()
-	local success: boolean = pcall(function(): ()
-		runtime:WithActorCommit(actor, function(): ()
-			resource.value = 80
-			resource.callbacks[actor]()
-			action.callbacks[actor]({ { id = "Unknown", payload = {} } })
+for _, invalidReport: { name: string, events: any } in
+	{
+		{ name = "unknown event", events = { { id = "Unknown", payload = {} } } },
+		{
+			name = "sparse event array",
+			events = { [1] = { id = "Started", payload = {} }, [3] = { id = "Started", payload = {} } },
+		},
+	}
+do
+	it("rejects a grouped " .. invalidReport.name .. " without leaking another touched domain's state", function()
+		-- Issue #73 decisions 15 and 40 now give producer contract violations
+		-- precedence over ordinary authoritative callback error reconciliation.
+		attach()
+		local success: boolean = pcall(function(): ()
+			runtime:WithActorCommit(actor, function(): ()
+				resource.value = 80
+				resource.callbacks[actor]()
+				action.callbacks[actor](invalidReport.events)
+			end)
 		end)
+		expect(success).toBe(false)
+		expect(commits).toEqual({})
+		expect(runtime:GetActorSequence(actor)).toBe(0)
+		local captured: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+		assert(captured ~= nil, "Expected existing canonical baseline")
+		expect(captured.domains["Game.Resource"].value).toBe(100)
+		resource.callbacks[actor]()
+		expect(commits[1].sequence).toBe(1)
 	end)
-	expect(success).toBe(false)
-	expect(commits).toEqual({})
-	expect(runtime:GetActorSequence(actor)).toBe(0)
-	local captured: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
-	assert(captured ~= nil, "Expected existing canonical baseline")
-	expect(captured.domains["Game.Resource"].value).toBe(100)
-	resource.callbacks[actor]()
-	expect(commits[1].sequence).toBe(1)
-end)
+end
 
 it("treats reentrant authoritative work from a commit observer as the next standalone commit", function()
 	attach()
