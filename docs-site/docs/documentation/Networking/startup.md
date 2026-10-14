@@ -12,7 +12,7 @@ KRF owns the transport and protocol setup for the server and each client. Your g
 | --- | --- |
 | Game startup | Supply controller and domain definitions; handle initialization failures |
 | Replication domain catalog | Describe approved state shapes and semantic event payloads |
-| Networking | Compile codecs, assign protocol codes, create transport, and establish client readiness |
+| Networking | Compile codecs, assign protocol codes, create transport, attach server publication domains, and establish client readiness |
 | Controllers | Own live Actor state and gameplay mutations |
 
 The framework creates one reliable `RemoteEvent` and one reserved `UnreliableRemoteEvent`. The handshake uses the reliable transport; the unreliable transport has no gameplay behavior. All framework packets, including the bootstrap catalog, are buffers. Games do not create, rename, replace, or send directly through these remotes, and KRF creates no `RemoteFunction` for startup.
@@ -21,7 +21,7 @@ The framework creates one reliable `RemoteEvent` and one reserved `UnreliableRem
 
 Follow the server Script and client LocalScript patterns in [Initializing KRF](../initializing-krf). Keep each call at one startup boundary and continue dependent setup only after it returns successfully.
 
-1. `Server.Init(config)` validates the domain catalog, compiles its state and event codecs, and prepares an immutable global protocol catalog before activating the transport. It does not yield.
+1. `Server.Init(config)` validates the domain catalog and event size bounds, compiles state and event codecs, and installs an immutable global protocol catalog and server publication runtime before returning success. It does not yield.
 2. `Client.Init()` waits for the framework transport within a bounded deadline. It installs its receive listener before requesting bootstrap data.
 3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs once and finishes framework consumer setup before declaring readiness.
 4. The server marks the client ready and sends its acknowledgement before notifying framework readiness observers. `Client.Init()` returns success only after receiving that acknowledgement.
@@ -34,11 +34,11 @@ Server and client must have exactly matching internal protocol versions. This co
 
 Domain and event codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction.
 
-The bootstrap carries domain and event identities, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Large legal schema bounds remain exact during serialization; an encoded codec's maximum size stays within the schema's conservative byte bound.
+The bootstrap carries domain and event identities, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Legal schema bounds remain exact during serialization, but server startup rejects an event whose conservative maximum encoded size exceeds the publication limit.
 
 `audience = "Owner"` describes eligibility for Actor data; it does not hide a domain's identity or schema from other clients. Treat protocol metadata as shared. Live state remains in server controllers.
 
-Successful initialization establishes protocol readiness. The current runtime does not attach domains to Actors, call `snapshot` or `observe`, publish Actor snapshots or events, construct client Actor views, or provide a gameplay command API. Declaring a domain therefore does not make its state visible on a client.
+Successful initialization establishes protocol readiness and installs server publication. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers. The current client runtime does not receive Actor snapshots or events, construct client Actor views, or provide a gameplay command API. Declaring a domain therefore does not make its state visible on a client.
 
 ## Handle startup failures
 

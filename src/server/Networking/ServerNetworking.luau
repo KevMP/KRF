@@ -2,6 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local NetworkingTypes = require(script.Parent.types)
+local PublicationTypes = require(script.Parent.PublicationTypes)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ProtocolTypes = require(script.Parent.Parent.Parent.shared.Networking.ProtocolTypes)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
@@ -11,11 +12,15 @@ local ProtocolCodec = require(script.Parent.Parent.Parent.shared.Networking.Prot
 local CodecCompiler = require(script.Parent.Parent.Parent.shared.Networking.CodecCompiler)
 local SchemaProjection = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaProjection)
 local Handshake = require(script.Parent.ServerHandshake)
+local PublicationRuntime = require(script.Parent.PublicationRuntime)
+local PublicationLifecycle = require(script.Parent.ActorPublicationLifecycle)
 
 local ServerNetworking = {} :: NetworkingTypes.ServerNetworking
 local initialized: boolean = false
 local owned: ProtocolTypes.OwnedTransport? = nil
 local runtime: NetworkingTypes.ServerHandshake? = nil
+local publication: PublicationTypes.Runtime? = nil
+local preparedCatalog: ReplicationTypes.PreparedReplicationDomainCatalog? = nil
 local listeners: { RBXScriptConnection } = {}
 
 function ServerNetworking.Prepare(
@@ -115,6 +120,7 @@ function ServerNetworking.Prepare(
 	local prepared: ProtocolTypes.PreparedProtocol =
 		{ manifest = manifest, bootstrapBuffer = bootstrapBuffer, runtime = codecs }
 	table.freeze(prepared)
+	preparedCatalog = catalog
 	return prepared, nil
 end
 
@@ -128,6 +134,10 @@ function ServerNetworking.Publish(protocol: ProtocolTypes.PreparedProtocol): (bo
 	end
 	owned = transports
 	local completed: boolean, failure: any = pcall(function()
+		if preparedCatalog ~= nil then
+			publication = PublicationRuntime.new(preparedCatalog)
+			PublicationLifecycle.Install(publication)
+		end
 		local handshake: NetworkingTypes.ServerHandshake = Handshake.new(protocol, {
 			SendReliable = function(player: Player, payload: buffer): ()
 				transports.reliable:FireClient(player, payload)
@@ -181,6 +191,12 @@ end
 
 function ServerNetworking.Destroy(): ()
 	initialized = false
+	PublicationLifecycle.Install(nil)
+	if publication ~= nil then
+		publication:Destroy()
+		publication = nil
+	end
+	preparedCatalog = nil
 	for _, listener: RBXScriptConnection in listeners do
 		listener:Disconnect()
 	end
@@ -197,6 +213,10 @@ end
 
 function ServerNetworking._IsInitialized(): boolean
 	return initialized
+end
+
+function ServerNetworking._GetPublicationRuntimeForTests(): PublicationTypes.Runtime?
+	return publication
 end
 
 ServerNetworking._ResetForTests = ServerNetworking.Destroy

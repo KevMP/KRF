@@ -21,6 +21,7 @@ local TagController = require(script.Tags.TagController)
 local ResourceController = require(script.Resource.ResourceController)
 local ActionController = require(script.Action.ActionController)
 local ServerNetworking = require(script.Networking.ServerNetworking)
+local PublicationRuntime = require(script.Networking.PublicationRuntime)
 local ProtocolTypes = require(script.Parent.shared.Networking.ProtocolTypes)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
@@ -167,6 +168,10 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		ReplicationDomainRegistry.Prepare(domains)
 	if preparedDomains == nil then
 		return false, { system = "ReplicationDomain", reason = domainReason :: string }
+	end
+	local eventsValid: boolean, eventReason: string? = PublicationRuntime.ValidateEventBounds(preparedDomains, 65536)
+	if not eventsValid then
+		return false, { system = "Networking", reason = eventReason :: string }
 	end
 
 	local prepared: boolean, protocol: ProtocolTypes.PreparedProtocol?, networkingReason: string? =
