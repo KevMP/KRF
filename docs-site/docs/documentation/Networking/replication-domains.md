@@ -6,7 +6,7 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run. The current client runtime does not receive Actor state or semantic events.
+Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run. [Actor replication](./actor-replication) filters and delivers the resulting records to framework-private client consumers; public client state accessors are unavailable.
 
 ## Domain definition {#domain-definition}
 
@@ -223,7 +223,7 @@ Omit `observe` only for state that remains static for the Actor's lifetime. A ch
 
 ## Audience and ownership
 
-`audience = "All"` means all eligible recipients for that Actor; `"Owner"` means only its owning player is eligible. `All` is the default. Audience does not establish Actor awareness or make every player a recipient.
+`audience = "All"` means every ready client aware of that Actor; `"Owner"` means only the Player whose current Character is its registered Model. `All` is the default. Owner eligibility uses direct runtime objects, never numeric user ids. Awareness remains independent of audience: a client can know an Actor exists without receiving its Owner domains. See [Actor replication](./actor-replication) for Character changes, replacement baselines, and Model streaming.
 
 `snapshot` receives only the Actor, so its result is independent of the recipient. Use separate public and private domains when their projections differ. One domain may read several systems, and a controller may have no domain.
 

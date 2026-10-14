@@ -21,10 +21,11 @@ Complete [server initialization](../initializing-krf) before registering any Act
 1. Create a disabled Actor.
 2. Bind the Actor and model in `ActorRegistry`.
 3. Resolve and attach all loaded auto-attach controllers in dependency order.
-4. Set `actor.enabled = true`.
-5. Fire `OnActorRegistered`.
+4. Capture publication domains, attach their observers, and install Model identity metadata.
+5. Set `actor.enabled = true` and synchronously establish awareness for ready clients.
+6. Fire `OnActorRegistered`.
 
-If binding or controller attachment fails, the call returns no Actor. Controllers created by the failed attempt are destroyed and the model binding is cleared.
+If binding, controller attachment, publication setup, or identity installation fails, the call returns no Actor. Work owned by the failed attempt is released and the model binding is cleared.
 
 ```lua
 --!strict
@@ -48,9 +49,10 @@ A respawned character is a new model and a new Actor lifecycle.
 
 1. Set `actor.enabled = false`.
 2. Fire `OnActorUnregistering`.
-3. Remove and destroy every controller.
-4. Clear model and registry bindings.
-5. Fire `OnActorUnregistered`.
+3. Retire recipient awareness, remove Model identity metadata, and detach publication observers.
+4. Remove and destroy every controller.
+5. Clear model and registry bindings.
+6. Fire `OnActorUnregistered`.
 
 Calling it again returns `AlreadyUnregistered` without repeating teardown.
 

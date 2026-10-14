@@ -160,7 +160,10 @@ it("encodes identity on initial Begin and omits it from a replacement Begin for 
 	local replacementBytes: buffer = TestUtils.encode(codec, replacement)
 	expect(TestUtils.decode(codec, initialBytes)).toEqual(initial)
 	expect(TestUtils.decode(codec, replacementBytes)).toEqual(replacement)
-	expect(string.find(buffer.tostring(initialBytes), "IdentityOnlyInFirstBegin", 1, true)).never.toBeNil()
-	expect(string.find(buffer.tostring(replacementBytes), "IdentityOnlyInFirstBegin", 1, true)).toBeNil()
+	local initialIdentity: number? = string.find(buffer.tostring(initialBytes), "IdentityOnlyInFirstBegin", 1, true)
+	local replacementIdentity: number? =
+		string.find(buffer.tostring(replacementBytes), "IdentityOnlyInFirstBegin", 1, true)
+	expect(initialIdentity).never.toBeNil()
+	expect(replacementIdentity).toBeNil()
 	expect(buffer.len(replacementBytes) < buffer.len(initialBytes)).toBe(true)
 end)

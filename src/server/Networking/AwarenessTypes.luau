@@ -25,6 +25,7 @@ export type Options = {
 	maxEvents: number,
 	maxHandle: number,
 	maxRevision: number,
+	maxGeneration: number?,
 }
 export type Runtime = {
 	OnActorRegistered: (self: Runtime, actor: ActorTypes.Actor) -> (),

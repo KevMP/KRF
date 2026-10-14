@@ -18,6 +18,8 @@ local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ControllerRegistry = require(script.Parent.Parent.Controller.ControllerRegistry)
 local Server = require(script.Parent.Parent)
 local PublicationLifecycle = require(script.Parent.Parent.Networking.ActorPublicationLifecycle)
+local AwarenessLifecycle = require(script.Parent.Parent.Networking.ActorAwarenessLifecycle)
+local Marker = require(script.Parent.Parent.Networking.ActorModelMarker)
 
 local ActorRuntime = {} :: ActorRuntime
 
@@ -66,7 +68,16 @@ function ActorRuntime.RegisterActor(model: Model, _opts: RegisterActorOpts?): (A
 			return nil, publicationReason
 		end
 
+		local marked: boolean, markerReason: string? = Marker.Install(actor)
+		if not marked then
+			Marker.Remove(actor)
+			PublicationLifecycle.DetachActor(actor)
+			ActorRuntime.DetachAllControllers(actor)
+			ActorRegistry.UnbindModel(actor)
+			return nil, markerReason
+		end
 		actor.enabled = true
+		AwarenessLifecycle.Register(actor)
 		ownedSignals:WithDeferredDestroy(function()
 			ActorRegisteredSignal:Fire(actor)
 		end)
@@ -84,6 +95,8 @@ function ActorRuntime.UnregisterActor(actor: Actor, reason: string?): (boolean, 
 	actor.enabled = false
 	ownedSignals:WithDeferredDestroy(function()
 		ActorUnregisteringSignal:Fire(actor, reason)
+		AwarenessLifecycle.Unregister(actor)
+		Marker.Remove(actor)
 		PublicationLifecycle.DetachActor(actor)
 		ActorRuntime.DetachAllControllers(actor)
 		ActorRegistry.UnbindModel(actor)

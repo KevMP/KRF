@@ -21,6 +21,7 @@ export type Record =
 	| { kind: "ActorRemove", handle: number }
 export type Codec = {
 	Encode: (records: { Record }) -> (buffer?, string?),
+	Measure: (records: { Record }) -> (number?, string?),
 	Decode: (payload: any) -> ({ Record }?, string?),
 	EncodeBaseline: (domains: { [string]: DomainTruth }) -> (buffer?, string?),
 	DecodeBaseline: (payload: buffer) -> ({ [string]: DomainTruth }?, string?),

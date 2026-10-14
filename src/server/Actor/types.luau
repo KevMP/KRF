@@ -43,9 +43,7 @@ export type ActorRegistry = {
 	SetModelGoneHandler: (handler: ((actor: Actor, reason: string) -> ())?) -> (),
 }
 
-export type RegisterActorOpts = {
-	ownerUserId: number?, -- reserved for future Networking/Input ownership semantics
-}
+export type RegisterActorOpts = {}
 
 export type ActorRuntime = {
 	RegisterActor: (model: Model, opts: RegisterActorOpts?) -> (Actor?, string?),

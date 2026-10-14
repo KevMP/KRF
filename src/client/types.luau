@@ -14,7 +14,11 @@ export type Dependencies = {
 	DiscoverTransport: (deadline: number) -> (ClientTransport?, string?),
 	ScheduleTimeout: (seconds: number, callback: () -> ()) -> () -> (),
 	Resume: (thread) -> (),
-	InstallConsumers: (protocol: ProtocolTypes.ClientProtocol) -> (boolean, string?, (() -> ())?),
+	InstallConsumers: (
+		protocol: ProtocolTypes.ClientProtocol,
+		manifest: ProtocolTypes.ProtocolManifest?,
+		installActorReceiver: (((any) -> ()) -> ())?
+	) -> (boolean, string?, (() -> ())?),
 }
 export type Client = {
 	Init: () -> (boolean, StartupFailure?),

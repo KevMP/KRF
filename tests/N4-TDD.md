@@ -1,11 +1,11 @@
-# N4 red-phase contract
+# N4 contract suite
 
 Source: [issue #74](https://github.com/KevMP/KRF/issues/74).
 
-This branch adds executable contract tests and typed private stubs only. Existing
-startup, Actor lifecycle, publication, transport, and client implementations are
-unchanged. Implement the named `N4NotImplemented` seams and their lifecycle wiring
-to make the suite green; do not skip specs or lower coverage thresholds.
+The red pass established the contracts below before implementation. This branch
+now implements the private codec, awareness, assembly, association, discovery and
+production lifecycle seams. N5 still owns public ActorViews, patch application,
+revision expectations and client resync requests.
 
 ## Test map
 
@@ -32,6 +32,14 @@ to make the suite green; do not skip specs or lower coverage thresholds.
 | Real server marker to native client discovery/binding bridge | `client/ActorStream.ModelDiscovery.Integration.spec.luau` |
 | Logical records, patch semantics, Optional domain presence and codebooks | `shared/Networking/ActorStreamCodec.RoundTrips.spec.luau` |
 | Packet truncation, foreign codes, schema bounds and Instance rejection | `shared/Networking/ActorStreamCodec.Hardening.spec.luau` |
+| Native Character-source observation, session removal and cleanup | `server/Networking/NativePlayerAssociation.spec.luau` |
+| Halted sends, failed captures, counter exhaustion and insufficient budgets | `server/Networking/ActorAwareness.Failures.spec.luau` |
+| Uninstalled private lifecycle hooks | `server/Networking/ActorAwarenessLifecycle.spec.luau` |
+| Real production handshake, baseline/live traffic and oversized truth | `server/Networking/ServerNetworking.ActorTraffic.spec.luau` |
+| Physical batching, 1,200-Actor packet splitting and reentrant delivery | `server/Networking/ActorAwareness.Packets.spec.luau` |
+| Early removal, corrupt assembly and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
+| Invalid native markers, identity mutations and observer cleanup | `client/ActorModelDiscovery.Validation.spec.luau` |
+| Schema-specific patch rejection and allocation-free packet measurement | `shared/Networking/ActorPatchCompiler.spec.luau` |
 
 All paths in the table are relative to `tests/`.
 
@@ -102,10 +110,9 @@ All paths in the table are relative to `tests/`.
   monotonically increasing attempt per recipient/Actor. Specs require generation
   isolation and increasing generations on replacement of the same stream. They
   permit either a shared connection allocator or an independent stream allocator.
-- Existing `RegisterActorOpts.ownerUserId` is a dead reservation, and the ticket
-  expressly rejects promoting it into authority. The new suite uses direct Player
-  objects. Removing that reservation and updating its API reference remain
-  implementation work; the current `opts` argument is ignored by ActorRuntime.
+- `RegisterActorOpts.ownerUserId` had no framework consumer and has been removed.
+  The optional `opts` parameter remains an empty compatibility shape; ownership
+  uses direct Player objects and native Character changes.
 - Shared public/owner projections are requested "where practical." Specs enforce
   immutability and correct recipient results without requiring internal table
   identity or a particular caching algorithm.
@@ -116,24 +123,26 @@ All paths in the table are relative to `tests/`.
 ## Validation and remaining checks
 
 Run `npm run test:unit` after focused changes and `npm test` before committing.
-Expected red failures must come from N4 stubs or missing N4 lifecycle wiring,
-not syntax errors, invalid fixtures, or regressions in existing suites.
+Historical red-phase validation: `npm test` passed lint (zero errors/warnings/parse errors)
+and typechecking, then reported 147 expected failures across the 20 new suites.
+All 1,385 existing tests across 95 suites passed. Coverage instrumentation emitted a
+report, but the failing unit command prevented the coverage threshold stage from
+running.
 
-Red-phase validation: `npm test` passes lint (zero errors/warnings/parse errors)
-and typechecking, then reports 147 expected failures across the 20 new suites.
-All 1,385 existing tests across 95 suites pass. Coverage instrumentation emits a
-report, but the failing unit command prevents the coverage threshold stage from
-running; no coverage improvement is claimed.
+Implementation validation: `npm test` passes lint with zero warnings,
+typechecking and all 1,569 tests across 123 suites, including the original 1,385
+tests. Per-file coverage gates remain at 90% and pass. The docs-site
+production build succeeds. The internal protocol compatibility version was bumped
+for the Actor wire contract.
 
 These unit specs do not prove real StreamingEnabled behavior across server/client
-DataModels, CPU/allocation performance, or projection-cache efficiency. Add engine
-integration checks and
-implementation-specific regression tests when those adapters exist. In particular,
-real `ServerNetworking.Publish` must install/own N4 and wire private Actor lifecycle
-hooks; a standalone runtime passing unit tests is insufficient.
+DataModels or CPU/allocation performance. Production lifecycle integration is
+covered independently from runtime units. Canonical sequence caches reuse public
+and Owner baseline bodies; immutable commit projections are built once per
+visibility class. Packet measurement allocates no output buffer.
 
-Consumer documentation requested by the story belongs to the implementation
-phase. N4 must not expose ActorViews or add client domain patch application here.
+Consumer documentation is in the Networking Actor replication guide. No public
+ActorView or client domain patch application is added.
 
 ## Real Character source fixture
 
@@ -145,7 +154,9 @@ It creates two real client sessions and ends with a structured result. The fixtu
 never calls `RefreshPlayerAssociation` or manually emits the association observer.
 It also checks that domain snapshots are not rerun for ownership reconciliation.
 
-The fixture place was built and its source typechecked. The multiplayer fixture
-has not been executed in this red pass; its required native source/runtime remain
-explicit stubs. `npm test` runs the unit/production-wiring contracts, not this
-separate Edit-mode multiplayer launch. No native runtime pass is claimed.
+The two-client multiplayer fixture passes with real engine Players and real
+Character property transitions, including an unregistered Character. Its result
+is `{ success = true, snapshots = 4 }`: only the initial canonical captures ran.
+`npm test` runs the unit/production-wiring contracts; this separate Edit-mode
+fixture uses `scripts/n4-association-test-plugin.server.luau` or the command-bar
+launcher above.

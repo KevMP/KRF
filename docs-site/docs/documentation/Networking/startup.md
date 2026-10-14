@@ -38,7 +38,7 @@ The bootstrap carries domain and event identities, protocol codes, and semantic 
 
 `audience = "Owner"` describes eligibility for Actor data; it does not hide a domain's identity or schema from other clients. Treat protocol metadata as shared. Live state remains in server controllers.
 
-Successful initialization establishes protocol readiness and installs server publication. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers. The current client runtime does not receive Actor snapshots or events, construct client Actor views, or provide a gameplay command API. Declaring a domain therefore does not make its state visible on a client.
+Successful initialization establishes protocol readiness and installs Actor publication, recipient streams, and client assembly/binding. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers. [Actor replication](./actor-replication) delivers filtered baselines and live records to private client consumers. Public Actor views, client state accessors, and a gameplay command API are unavailable.
 
 ## Handle startup failures
 

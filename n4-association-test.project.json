@@ -3,6 +3,7 @@
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
+      "N4AssociationTestControl": { "$className": "Folder" },
       "Packages": { "$className": "Folder", "KRF": { "$path": "src" } }
     },
     "ServerScriptService": {
