@@ -273,6 +273,25 @@ it("removes obsolete stream work idempotently without disturbing other active st
 	expect(scheduler:GetStreamStatus(stream).queuedBytes).toBe(0)
 end)
 
+it("releases a recipient bucket when its last Actor stream is removed", function()
+	local recipient: {} = {}
+	local otherRecipient: {} = {}
+	local first: PublicationTypes.StreamKey = { recipient = recipient, actor = "ActorA" }
+	local second: PublicationTypes.StreamKey = { recipient = recipient, actor = "ActorB" }
+	local unrelated: PublicationTypes.StreamKey = { recipient = otherRecipient, actor = "ActorA" }
+	for _, key: PublicationTypes.StreamKey in { first, second, unrelated } do
+		expect(scheduler:Enqueue(key, TestUtils.scalar(1, "Game.State", 1, nil))).toBe(true)
+	end
+	scheduler:RemoveStream(first)
+	expect((scheduler :: any).streams[recipient]).never.toBeNil()
+	expect(scheduler:GetStreamStatus(second).pendingRecords).toBe(1)
+	scheduler:RemoveStream(second)
+	scheduler:RemoveStream(second)
+	expect((scheduler :: any).streams[recipient]).toBeNil()
+	expect((scheduler :: any).streams[otherRecipient]).never.toBeNil()
+	expect(scheduler:DrainBudgeted(1024, 8).records[1].stream).toEqual(unrelated)
+end)
+
 it("bounds representative state churn by live streams rather than mutation count", function()
 	for sequence: number = 1, 100 do
 		for actorIndex: number = 1, 64 do

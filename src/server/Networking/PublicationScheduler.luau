@@ -292,7 +292,11 @@ function PublicationScheduler.RemoveStream(self: any, key: PublicationTypes.Stre
 		return
 	end
 	deactivate(self, stream)
-	self.streams[key.recipient][key.actor] = nil
+	local actors = self.streams[key.recipient]
+	actors[key.actor] = nil
+	if next(actors) == nil then
+		self.streams[key.recipient] = nil
+	end
 end
 
 function PublicationScheduler.GetStreamStatus(self: any, key: PublicationTypes.StreamKey): PublicationTypes.StreamStatus

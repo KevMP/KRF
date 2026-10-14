@@ -330,3 +330,40 @@ it("rejects a non-array event report without publishing changed state", function
 		reason = "InvalidPublicationEvent",
 	})
 end)
+
+for _, invalidReport: { name: string, events: any } in
+	{
+		{
+			name = "sparse",
+			events = {
+				[1] = { id = "Changed", payload = { count = 1 } },
+				[3] = { id = "Changed", payload = { count = 3 } },
+			},
+		},
+		{
+			name = "dictionary-shaped",
+			events = { First = { id = "Changed", payload = { count = 1 } } },
+		},
+	}
+do
+	it("rejects a " .. invalidReport.name .. " event collection atomically", function()
+		attach()
+		domain.value.active = true
+		local accepted: boolean, failure: any = pcall(function(): ()
+			(domain.callbacks[actor] :: any)(invalidReport.events)
+		end)
+		expect(accepted).toBe(false)
+		expect(failure).toBe("InvalidPublicationEvent:Game.State")
+		expect(commits).toEqual({})
+		expect(runtime:GetActorSequence(actor)).toBe(0)
+		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
+		expect(faults[#faults]).toEqual({
+			actorId = actor:GetId(),
+			domainId = "Game.State",
+			reason = "InvalidPublicationEvent",
+		})
+		domain.callbacks[actor]()
+		expect(#commits).toBe(1)
+		expect(commits[1].events).toEqual({})
+	end)
+end

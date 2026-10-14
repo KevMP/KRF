@@ -3,6 +3,7 @@ local PublicationTypes = require(script.Parent.PublicationTypes)
 local PublicationCapture = require(script.Parent.PublicationCapture)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local SchemaCollectionUtils = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
 
 local PublicationRuntime = {}
 PublicationRuntime.__index = PublicationRuntime
@@ -49,12 +50,14 @@ local function eventsFor(
 	end
 	local definitions = self.eventsByDomain[domainId]
 	local stagedEvents: { PublicationTypes.Event } = {}
-	if type(reported) ~= "table" then
+	local count: number? = SchemaCollectionUtils.GetArrayLength(reported)
+	if count == nil then
 		attachment.poisoned = true
 		fault(self, actor, domainId, "InvalidPublicationEvent")
 		error("InvalidPublicationEvent:" .. domainId, 0)
 	end
-	for _, event in reported do
+	for index: number = 1, count do
+		local event: any = rawget(reported, index)
 		local plan = if type(event) == "table" then definitions[event.id] else nil
 		local captured = if plan ~= nil then plan:Capture(event.payload, nil) else nil
 		if captured == nil then
