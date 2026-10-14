@@ -60,4 +60,11 @@ export type SchedulingModule = {
 	ObserveStep: (() -> ()) -> () -> (),
 }
 
+export type AssociationSource = {
+	GetPlayerFromCharacter: (Model) -> Player?,
+	ObserveAssociationChanged: ((Model) -> ()) -> () -> (),
+	Destroy: () -> (),
+}
+export type AssociationModule = { new: (players: Players?) -> AssociationSource }
+
 return types

@@ -64,7 +64,7 @@ it("unbinds only the Model on stream-out and rebinds the same awareness record o
 	expect(runtime:GetByModel(second.model)).toBe(record)
 	expect(#fixture.baselines).toBe(1)
 	expect(fixture.baselines[1].revision).toBe(7)
-	TestUtils.establish(fixture, 1, "ActorA", 2, 9)
+	TestUtils.replace(fixture, 1, 2, 9)
 	expect(runtime:GetByHandle(1)).toBe(record)
 	expect(record.model).toBe(second.model)
 end)

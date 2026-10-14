@@ -50,7 +50,7 @@ it("replaces an incomplete generation at the pending limit without charging a se
 	local body: buffer = TestUtils.body(fixture)
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
-		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 2, totalBytes = buffer.len(body) },
+		{ kind = "BaselineBegin", handle = 1, generation = 2, totalBytes = buffer.len(body) },
 	})).toBe(true)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 2, actorId = "ActorB", generation = 1, totalBytes = buffer.len(body) },
@@ -117,7 +117,6 @@ for _, generation: number in { 2, 3 } do
 				{
 					kind = "BaselineBegin",
 					handle = 1,
-					actorId = "ActorA",
 					generation = generation,
 					totalBytes = buffer.len(body),
 				},
@@ -127,7 +126,7 @@ for _, generation: number in { 2, 3 } do
 			expect(runtime:GetByHandle(1)).toBe(original)
 			expect(#fixture.baselines).toBe(1)
 			expect(fixture.baselines[1].revision).toBe(7)
-			TestUtils.establish(fixture, 1, "ActorA", 4, 10)
+			TestUtils.replace(fixture, 1, 4, 10)
 			expect(runtime:GetByHandle(1)).toBe(original)
 			expect(#fixture.baselines).toBe(2)
 			expect(fixture.baselines[2].revision).toBe(10)

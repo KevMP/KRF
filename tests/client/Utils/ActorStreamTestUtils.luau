@@ -164,6 +164,29 @@ function TestUtils.body(fixture: Fixture): buffer
 	return body
 end
 
+local function deliverBaseline(
+	fixture: Fixture,
+	handle: number,
+	actorId: string?,
+	generation: number,
+	revision: number
+): ()
+	local body: buffer = TestUtils.body(fixture)
+	local success: boolean, reason: string? = TestUtils.send(fixture, {
+		{
+			kind = "BaselineBegin",
+			handle = handle,
+			actorId = actorId,
+			generation = generation,
+			totalBytes = buffer.len(body),
+		},
+		{ kind = "BaselineChunk", handle = handle, generation = generation, offset = 0, bytes = body },
+		{ kind = "BaselineEnd", handle = handle, generation = generation, revision = revision },
+	})
+	expect(success).toBe(true)
+	expect(reason).toBeNil()
+end
+
 function TestUtils.establish(
 	fixture: Fixture,
 	handle: number?,
@@ -171,20 +194,11 @@ function TestUtils.establish(
 	generation: number?,
 	revision: number?
 ): ()
-	local body: buffer = TestUtils.body(fixture)
-	local success: boolean, reason: string? = TestUtils.send(fixture, {
-		{
-			kind = "BaselineBegin",
-			handle = handle or 1,
-			actorId = actorId or "ActorA",
-			generation = generation or 1,
-			totalBytes = buffer.len(body),
-		},
-		{ kind = "BaselineChunk", handle = handle or 1, generation = generation or 1, offset = 0, bytes = body },
-		{ kind = "BaselineEnd", handle = handle or 1, generation = generation or 1, revision = revision or 1 },
-	})
-	expect(success).toBe(true)
-	expect(reason).toBeNil()
+	deliverBaseline(fixture, handle or 1, actorId or "ActorA", generation or 1, revision or 1)
+end
+
+function TestUtils.replace(fixture: Fixture, handle: number, generation: number, revision: number): ()
+	deliverBaseline(fixture, handle, nil, generation, revision)
 end
 
 function TestUtils.candidate(fixture: Fixture, actorId: string, existingModel: Model?): Types.Candidate

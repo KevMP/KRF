@@ -148,3 +148,19 @@ it("preserves each Actor's logical record order when physical packets batch Acto
 	}
 	expect(TestUtils.decode(codec, TestUtils.encode(codec, records))).toEqual(records)
 end)
+
+it("encodes identity on initial Begin and omits it from a replacement Begin for the same handle", function()
+	local initial: { Types.Record } = {
+		{ kind = "BaselineBegin", handle = 17, actorId = "IdentityOnlyInFirstBegin", generation = 1, totalBytes = 3 },
+	}
+	local replacement: { Types.Record } = {
+		{ kind = "BaselineBegin", handle = 17, generation = 2, totalBytes = 3 },
+	}
+	local initialBytes: buffer = TestUtils.encode(codec, initial)
+	local replacementBytes: buffer = TestUtils.encode(codec, replacement)
+	expect(TestUtils.decode(codec, initialBytes)).toEqual(initial)
+	expect(TestUtils.decode(codec, replacementBytes)).toEqual(replacement)
+	expect(string.find(buffer.tostring(initialBytes), "IdentityOnlyInFirstBegin", 1, true)).never.toBeNil()
+	expect(string.find(buffer.tostring(replacementBytes), "IdentityOnlyInFirstBegin", 1, true)).toBeNil()
+	expect(buffer.len(replacementBytes) < buffer.len(initialBytes)).toBe(true)
+end)

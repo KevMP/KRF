@@ -66,7 +66,7 @@ it("discards an incomplete older generation and cannot mix its chunks into a rep
 	local body: buffer = TestUtils.body(fixture)
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
-		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 2, totalBytes = buffer.len(body) },
+		{ kind = "BaselineBegin", handle = 1, generation = 2, totalBytes = buffer.len(body) },
 	})).toBe(true)
 	local success: boolean, reason: string? =
 		TestUtils.send(fixture, { { kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body } })
@@ -79,6 +79,30 @@ it("discards an incomplete older generation and cannot mix its chunks into a rep
 	})).toBe(true)
 	expect(#fixture.baselines).toBe(1)
 	expect(fixture.baselines[1].revision).toBe(9)
+end)
+
+it("completes a replacement using only its known handle and preserves the established actorId record", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	TestUtils.establish(fixture, 1, "ActorA", 1, 7)
+	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	TestUtils.replace(fixture, 1, 2, 9)
+	expect(runtime:GetByHandle(1)).toBe(original)
+	expect(runtime:GetByActorId("ActorA")).toBe(original)
+	expect(#fixture.baselines).toBe(2)
+	expect(fixture.baselines[2].actor).toBe(original)
+	expect(fixture.baselines[2].revision).toBe(9)
+end)
+
+it("rejects a handle-only Begin for an unknown handle without inventing identity", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local body: buffer = TestUtils.body(fixture)
+	local success: boolean, reason: string? = TestUtils.send(fixture, {
+		{ kind = "BaselineBegin", handle = 99, generation = 1, totalBytes = buffer.len(body) },
+	})
+	expect(success).toBe(false)
+	expect(reason).toBe("UnknownActorHandle")
+	expect(runtime:GetByHandle(99)).toBeNil()
+	expect(fixture.baselines).toEqual({})
 end)
 
 it("rejects an oversized Begin before creating awareness or consuming later work", function()

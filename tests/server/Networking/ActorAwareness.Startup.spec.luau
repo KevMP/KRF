@@ -16,6 +16,7 @@ local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
 local ServerTypes = require(KRF.server.types)
 local Awareness: Types.RuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Scheduling: Types.SchedulingModule = require(KRF.server.Networking.AwarenessScheduling)
+local Association: Types.AssociationModule = require(KRF.server.Networking.NativePlayerAssociation)
 local Marker: Types.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
@@ -27,6 +28,7 @@ local originalRemove: typeof(Marker.Remove) = Marker.Remove
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
 local originalBudget: typeof(Scheduling.GetBudget) = Scheduling.GetBudget
 local originalObserveStep: typeof(Scheduling.ObserveStep) = Scheduling.ObserveStep
+local originalAssociation: typeof(Association.new) = Association.new
 local created: number = 0
 local destroyed: number = 0
 local timeline: { string } = {}
@@ -37,6 +39,11 @@ local stepCallback: (() -> ())? = nil
 local driverConnections: number = 0
 local driverDisconnections: number = 0
 local driverActive: boolean = false
+local associationCreated: number = 0
+local associationDestroyed: number = 0
+local associationObservers: { (Model) -> () } = {}
+local modelLookups: { Model } = {}
+local installedDependencies: Types.Dependencies? = nil
 
 beforeEach(function()
 	Server._ResetForTests()
@@ -49,6 +56,32 @@ beforeEach(function()
 	driverConnections = 0
 	driverDisconnections = 0
 	driverActive = false
+	associationCreated = 0
+	associationDestroyed = 0
+	associationObservers = {}
+	modelLookups = {}
+	installedDependencies = nil
+	Association.new = function(_players: Players?): Types.AssociationSource
+		associationCreated += 1
+		return {
+			GetPlayerFromCharacter = function(model: Model): Player?
+				table.insert(modelLookups, model)
+				return nil
+			end,
+			ObserveAssociationChanged = function(callback: (Model) -> ()): () -> ()
+				table.insert(associationObservers, callback)
+				return function(): ()
+					local index: number? = table.find(associationObservers, callback)
+					if index ~= nil then
+						table.remove(associationObservers, index)
+					end
+				end
+			end,
+			Destroy = function(): ()
+				associationDestroyed += 1
+			end,
+		}
+	end
 	Scheduling.GetBudget = function(): Types.StepBudget
 		return { maxBytes = 96, maxRecords = 2 }
 	end
@@ -72,6 +105,7 @@ beforeEach(function()
 	): Types.Runtime
 		created += 1
 		publication = canonical
+		installedDependencies = _dependencies
 		-- Record only framework lifecycle calls; all recipient behavior uses the real runtime specs.
 		return {
 			OnActorRegistered = function(_self: Types.Runtime, actor: ActorTypes.Actor): ()
@@ -129,10 +163,48 @@ afterEach(function()
 	Marker.Remove = originalRemove
 	Scheduling.GetBudget = originalBudget
 	Scheduling.ObserveStep = originalObserveStep
+	Association.new = originalAssociation
 	for _, model: Model in models do
 		model:Destroy()
 	end
 	models = {}
+end)
+
+it("installs and owns the native Character association source used by the production awareness runtime", function()
+	expect(Server.Init({})).toBe(true)
+	expect(associationCreated).toBe(1)
+	assert(installedDependencies ~= nil, "Expected production N4 dependencies")
+	local character: Model = Instance.new("Model")
+	table.insert(models, character)
+	expect(installedDependencies.GetPlayerFromCharacter(character)).toBeNil()
+	expect(modelLookups).toEqual({ character })
+	local changed: { Model } = {}
+	local unsubscribe: () -> () = installedDependencies.ObserveAssociationChanged(function(model: Model): ()
+		table.insert(changed, model)
+	end)
+	expect(#associationObservers).toBe(1)
+	associationObservers[1](character)
+	expect(changed).toEqual({ character })
+	unsubscribe()
+	expect(associationObservers).toEqual({})
+	Server._ResetForTests()
+	Server._ResetForTests()
+	expect(associationDestroyed).toBe(1)
+end)
+
+it("destroys the native association source when later startup activation rolls back", function()
+	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+		local success: boolean, reason: string? = originalPublish(protocol)
+		if not success then
+			return false, reason
+		end
+		return false, "ForcedAssociationRollback"
+	end
+	local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})
+	expect(started).toBe(false)
+	expect(failure).toEqual({ system = "Networking", reason = "ForcedAssociationRollback" })
+	expect(associationCreated).toBe(1)
+	expect(associationDestroyed).toBe(1)
 end)
 
 it("drives one bounded awareness Step from each production scheduling event", function()

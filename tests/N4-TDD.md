@@ -15,10 +15,13 @@ to make the suite green; do not skip specs or lower coverage thresholds.
 | Direct Player identity, All/Owner visibility and reassociation | `server/Networking/ActorAwareness.Ownership.spec.luau` |
 | Handle allocation, retirement, connection isolation, replacement admission | `server/Networking/ActorAwareness.Handles.spec.luau` |
 | Canonical capture, sequence fence, chunking, replacement, pressure and fairness | `server/Networking/ActorAwareness.Baselines.spec.luau` |
+| Initial identity versus handle-only replacement and cancellation timing | `server/Networking/ActorAwareness.BaselineIdentity.spec.luau` |
+| Cross-recipient join/replacement backlog fairness under small budgets | `server/Networking/ActorAwareness.RecipientFairness.spec.luau` |
 | Filtered revisions, state coalescing, event barriers, immutable source commits | `server/Networking/ActorAwareness.Live.spec.luau` |
 | Cancelled history, reliable removal and destroyed-runtime cleanup | `server/Networking/ActorAwareness.Removal.spec.luau` |
 | Real N2 ACK ordering and real Actor registration/rollback | `server/Networking/ActorAwareness.Integration.spec.luau` |
 | Startup ownership, private Actor hooks and awareness rollback | `server/Networking/ActorAwareness.Startup.spec.luau` |
+| Production native Character association-source installation and cleanup | `server/Networking/ActorAwareness.Startup.spec.luau` |
 | Production Step driver, injected budgets, native-frame scheduling and teardown | `server/Networking/ActorAwareness.Startup.spec.luau`, `server/Networking/AwarenessScheduling.spec.luau` |
 | Marker ownership, idempotency, conflict, cloning and destruction | `server/Networking/ActorModelMarker.spec.luau` |
 | Complete generation assembly, bounds and conflicting identities | `client/ActorStream.Assembly.spec.luau` |
@@ -52,6 +55,20 @@ All paths in the table are relative to `tests/`.
   Each call must use the configured byte/record budget. Teardown/rollback must
   stop the driver, including callbacks already queued before teardown. Separate
   native-frame specs exercise the scheduling adapter's event connection.
+- Initial Begin carries `actorId` to establish the handle mapping; replacement
+  Begin omits it and uses the known handle. Cancellation before any Begin is sent
+  must retain initial identity. Cancellation after Begin was sent must omit it on
+  recapture. Client replacement fixtures no longer resend identity; unknown
+  handle-only Begins reject without inventing an Actor record.
+- Native association production wiring is covered separately from the runtime's
+  injected observer. The multiplayer fixture under `integration/N4Association`
+  uses the real default native source, real engine-created Players, the real
+  Character property, real ActorRegistry bindings and N3 canonical publication.
+  Changing Character old-to-new must replace both affected Owner domain sets;
+  changing to an unregistered Model must safely clear only the previous mapping.
+- Cross-recipient fairness specs cover a late joiner and an earlier connection
+  with many replacement baselines. Under a one-record budget, another recipient's
+  already-live Actor must be serviced before the baseline backlog fully drains.
 - The client consumes a compiled Actor codec, discovery events and an N5 fake
   consumer. It delivers complete decoded truth and patches without applying them.
   Revision-gap detection deliberately stays with N5.
@@ -103,17 +120,32 @@ Expected red failures must come from N4 stubs or missing N4 lifecycle wiring,
 not syntax errors, invalid fixtures, or regressions in existing suites.
 
 Red-phase validation: `npm test` passes lint (zero errors/warnings/parse errors)
-and typechecking, then reports 137 expected failures across the 18 new suites.
+and typechecking, then reports 147 expected failures across the 20 new suites.
 All 1,385 existing tests across 95 suites pass. Coverage instrumentation emits a
 report, but the failing unit command prevents the coverage threshold stage from
 running; no coverage improvement is claimed.
 
-These specs do not prove real StreamingEnabled behavior across server/client
-DataModels, native Player Character change notifications, CPU/allocation
-performance, or projection-cache efficiency. Add engine integration checks and
+These unit specs do not prove real StreamingEnabled behavior across server/client
+DataModels, CPU/allocation performance, or projection-cache efficiency. Add engine
+integration checks and
 implementation-specific regression tests when those adapters exist. In particular,
 real `ServerNetworking.Publish` must install/own N4 and wire private Actor lifecycle
 hooks; a standalone runtime passing unit tests is insufficient.
 
 Consumer documentation requested by the story belongs to the implementation
 phase. N4 must not expose ActorViews or add client domain patch application here.
+
+## Real Character source fixture
+
+Build `n4-association-test.project.json` into
+`build/KRF-N4-Association-Tests.rbxl`. In that place's Edit DataModel, run
+`scripts/run-n4-association-tests.luau` through a command bar or local plugin with
+StudioTestService access, following the existing native networking launcher pattern.
+It creates two real client sessions and ends with a structured result. The fixture
+never calls `RefreshPlayerAssociation` or manually emits the association observer.
+It also checks that domain snapshots are not rerun for ownership reconciliation.
+
+The fixture place was built and its source typechecked. The multiplayer fixture
+has not been executed in this red pass; its required native source/runtime remain
+explicit stubs. `npm test` runs the unit/production-wiring contracts, not this
+separate Edit-mode multiplayer launch. No native runtime pass is claimed.

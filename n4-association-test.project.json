@@ -1,0 +1,12 @@
+{
+  "name": "KRF-N4-Association-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } }
+    },
+    "ServerScriptService": {
+      "AssociationTestServer": { "$path": "tests/integration/N4Association/Server.server.luau" }
+    }
+  }
+}

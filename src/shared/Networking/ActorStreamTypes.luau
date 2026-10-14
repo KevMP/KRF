@@ -13,7 +13,8 @@ export type DomainTruth = { read value: any }
 export type DomainPatch = { read domainId: string, read patch: Patch }
 export type Event = { read domainId: string, read eventId: string, read payload: any }
 export type Record =
-	{ kind: "BaselineBegin", handle: number, actorId: string, generation: number, totalBytes: number }
+	-- Identity appears only when the connection first learns a handle. Replacement Begins omit it.
+	{ kind: "BaselineBegin", handle: number, actorId: string?, generation: number, totalBytes: number }
 	| { kind: "BaselineChunk", handle: number, generation: number, offset: number, bytes: buffer }
 	| { kind: "BaselineEnd", handle: number, generation: number, revision: number }
 	| { kind: "Commit", handle: number, revision: number, patches: { DomainPatch }, events: { Event } }
