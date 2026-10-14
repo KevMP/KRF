@@ -37,6 +37,7 @@ export type Fixture = {
 	faults: { Types.Fault },
 	readyObservers: { (Player) -> () },
 	closedObservers: { (Player) -> () },
+	associationObservers: { (Model) -> () },
 	instances: { Instance },
 	options: Types.Options,
 	dependencies: Types.Dependencies,
@@ -73,6 +74,7 @@ function TestUtils.new(): Fixture
 		faults = {},
 		readyObservers = {},
 		closedObservers = {},
+		associationObservers = {},
 		instances = {},
 		options = {
 			maxBaselineBytes = 512,
@@ -112,6 +114,15 @@ function TestUtils.new(): Fixture
 		end,
 		GetPlayerFromCharacter = function(model: Model): Player?
 			return fixture.owners[model]
+		end,
+		ObserveAssociationChanged = function(callback: (Model) -> ()): () -> ()
+			table.insert(fixture.associationObservers, callback)
+			return function(): ()
+				local index: number? = table.find(fixture.associationObservers, callback)
+				if index ~= nil then
+					table.remove(fixture.associationObservers, index)
+				end
+			end
 		end,
 		ReportFault = function(fault: Types.Fault): ()
 			table.insert(fixture.faults, fault)
@@ -166,6 +177,15 @@ function TestUtils.close(fixture: Fixture, player: Player): ()
 	fixture.readyPlayers[player] = nil
 	for _, callback: (Player) -> () in table.clone(fixture.closedObservers) do
 		callback(player)
+	end
+end
+
+function TestUtils.associate(fixture: Fixture, actor: ActorTypes.Actor, player: Player?): ()
+	assert(actor.model ~= nil, "Expected Character Model")
+	fixture.owners[actor.model] = player
+	-- Publish the dependency event. The fixture never calls the runtime's refresh method.
+	for _, callback: (Model) -> () in table.clone(fixture.associationObservers) do
+		callback(actor.model)
 	end
 end
 

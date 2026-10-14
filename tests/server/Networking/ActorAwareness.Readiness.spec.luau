@@ -121,3 +121,27 @@ it("does not enumerate attached Actors again during idle scheduler passes", func
 	TestUtils.drain(fixture)
 	expect(calls).toBe(initializationCalls)
 end)
+
+it("touches only current Ready recipients when a new Actor registers after another connection closes", function()
+	local departed: Player = TestUtils.player(fixture)
+	local remaining: Player = TestUtils.player(fixture)
+	local checked: { Player } = {}
+	local original: typeof(fixture.dependencies.IsClientReady) = fixture.dependencies.IsClientReady
+	fixture.dependencies.IsClientReady = function(player: Player): boolean
+		table.insert(checked, player)
+		return original(player)
+	end
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	TestUtils.ready(fixture, departed)
+	TestUtils.ready(fixture, remaining)
+	TestUtils.close(fixture, departed)
+	checked = {}
+	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	TestUtils.drain(fixture)
+	expect(table.find(checked, departed)).toBeNil()
+	expect(TestUtils.records(fixture, departed)).toEqual({})
+	expect(runtime:GetHandle(departed, actor)).toBeNil()
+	expect(runtime:IsAware(remaining, actor)).toBe(true)
+	expect(#TestUtils.kind(fixture, remaining, "BaselineBegin")).toBe(1)
+	expect(#TestUtils.kind(fixture, remaining, "BaselineEnd")).toBe(1)
+end)

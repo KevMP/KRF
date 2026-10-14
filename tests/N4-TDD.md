@@ -19,10 +19,14 @@ to make the suite green; do not skip specs or lower coverage thresholds.
 | Cancelled history, reliable removal and destroyed-runtime cleanup | `server/Networking/ActorAwareness.Removal.spec.luau` |
 | Real N2 ACK ordering and real Actor registration/rollback | `server/Networking/ActorAwareness.Integration.spec.luau` |
 | Startup ownership, private Actor hooks and awareness rollback | `server/Networking/ActorAwareness.Startup.spec.luau` |
+| Production Step driver, injected budgets, native-frame scheduling and teardown | `server/Networking/ActorAwareness.Startup.spec.luau`, `server/Networking/AwarenessScheduling.spec.luau` |
 | Marker ownership, idempotency, conflict, cloning and destruction | `server/Networking/ActorModelMarker.spec.luau` |
 | Complete generation assembly, bounds and conflicting identities | `client/ActorStream.Assembly.spec.luau` |
+| Pending-baseline admission and completed-generation monotonicity | `client/ActorStream.Admission.spec.luau` |
+| Production pre-READY N4 installation, post-READY routing and startup cleanup | `client/Client.Init.ActorStream.spec.luau` |
 | N5 delivery seam, revision-gap scope, removal and handle retirement | `client/ActorStream.Records.spec.luau` |
 | Marker arrival orders, stream-out/rebind, ambiguity and stale markers | `client/ActorStream.ModelBinding.spec.luau` |
+| Real server marker to native client discovery/binding bridge | `client/ActorStream.ModelDiscovery.Integration.spec.luau` |
 | Logical records, patch semantics, Optional domain presence and codebooks | `shared/Networking/ActorStreamCodec.RoundTrips.spec.luau` |
 | Packet truncation, foreign codes, schema bounds and Instance rejection | `shared/Networking/ActorStreamCodec.Hardening.spec.luau` |
 
@@ -34,9 +38,30 @@ All paths in the table are relative to `tests/`.
   real prepared N2 catalog. The fixture injects private connection callbacks,
   direct Character-to-Player resolution and reliable sends. A separate spec
   bridges the real N2 handshake and checks ACK ordering.
+- Reassociation specs emit an injected Model association-change event consumed by
+  the runtime. They never call `RefreshPlayerAssociation` to trigger reconciliation.
+  Teardown must release the subscription, and registration after a connection
+  closes must avoid even checking historical recipients.
+- Production client specs call `Client.Init` with its default native dependency
+  table and leave `NativeClientDependencies.InstallConsumers` intact. Only
+  transport, clock, timeout/resume and runtime/discovery factories are controlled.
+  Real codec-produced Actor packets must reach the installed runtime after ACK;
+  failure/reset must destroy the runtime and discovery, and stale callbacks halt.
+- Production server startup specs emit scheduling events through an injected
+  native scheduling adapter and observe the installed runtime's `Step` calls.
+  Each call must use the configured byte/record budget. Teardown/rollback must
+  stop the driver, including callbacks already queued before teardown. Separate
+  native-frame specs exercise the scheduling adapter's event connection.
 - The client consumes a compiled Actor codec, discovery events and an N5 fake
   consumer. It delivers complete decoded truth and patches without applying them.
   Revision-gap detection deliberately stays with N5.
+- `maxPendingBaselines` limits concurrent incomplete assemblies. Completion and
+  ActorRemove release capacity; rejected Begins consume none; replacing a pending
+  generation occupies its existing slot. A completed generation remains a fence:
+  same/older Begin rejects, while a newer generation can complete on the same record.
+- Marker bridge specs use the actual `ActorModelMarker` and `ActorModelDiscovery`
+  modules, the actual marker Instance and real hierarchy events. No independent
+  fake Candidate is supplied to these bridge tests.
 - Partial-patch codecs receive compiled N1 schemas explicitly. Existing N2 value
   codecs expose opaque Measure/Write/Read functions; those functions alone do not
   expose the field metadata required to encode/decode partial Struct/Map patches.
@@ -78,13 +103,13 @@ Expected red failures must come from N4 stubs or missing N4 lifecycle wiring,
 not syntax errors, invalid fixtures, or regressions in existing suites.
 
 Red-phase validation: `npm test` passes lint (zero errors/warnings/parse errors)
-and typechecking, then reports 113 expected failures across the 14 new suites.
+and typechecking, then reports 137 expected failures across the 18 new suites.
 All 1,385 existing tests across 95 suites pass. Coverage instrumentation emits a
 report, but the failing unit command prevents the coverage threshold stage from
 running; no coverage improvement is claimed.
 
-These specs do not prove real StreamingEnabled behavior, native marker
-tag/discovery wiring, native Player Character change notifications, CPU/allocation
+These specs do not prove real StreamingEnabled behavior across server/client
+DataModels, native Player Character change notifications, CPU/allocation
 performance, or projection-cache efficiency. Add engine integration checks and
 implementation-specific regression tests when those adapters exist. In particular,
 real `ServerNetworking.Publish` must install/own N4 and wire private Actor lifecycle

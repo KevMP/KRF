@@ -17,6 +17,8 @@ export type Discovery = {
 	ObserveAdded: ((Candidate) -> ()) -> () -> (),
 	ObserveRemoved: ((Instance) -> ()) -> () -> (),
 }
+export type DiscoveryAdapter = Discovery & { Destroy: () -> () }
+export type DiscoveryModule = { new: (root: Instance?) -> DiscoveryAdapter }
 export type Options = { maxBaselineBytes: number, maxPendingBaselines: number, ReportFault: (string) -> () }
 export type Runtime = {
 	Handle: (self: Runtime, payload: any) -> (boolean, string?),

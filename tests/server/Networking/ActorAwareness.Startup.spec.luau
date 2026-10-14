@@ -15,6 +15,7 @@ local NetworkingTypes = require(KRF.server.Networking.types)
 local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
 local ServerTypes = require(KRF.server.types)
 local Awareness: Types.RuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
+local Scheduling: Types.SchedulingModule = require(KRF.server.Networking.AwarenessScheduling)
 local Marker: Types.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
@@ -24,11 +25,18 @@ local originalNew: typeof(Awareness.new) = Awareness.new
 local originalInstall: typeof(Marker.Install) = Marker.Install
 local originalRemove: typeof(Marker.Remove) = Marker.Remove
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
+local originalBudget: typeof(Scheduling.GetBudget) = Scheduling.GetBudget
+local originalObserveStep: typeof(Scheduling.ObserveStep) = Scheduling.ObserveStep
 local created: number = 0
 local destroyed: number = 0
 local timeline: { string } = {}
 local models: { Model } = {}
 local publication: PublicationTypes.Runtime? = nil
+local steps: { Types.StepBudget } = {}
+local stepCallback: (() -> ())? = nil
+local driverConnections: number = 0
+local driverDisconnections: number = 0
+local driverActive: boolean = false
 
 beforeEach(function()
 	Server._ResetForTests()
@@ -36,6 +44,25 @@ beforeEach(function()
 	destroyed = 0
 	timeline = {}
 	publication = nil
+	steps = {}
+	stepCallback = nil
+	driverConnections = 0
+	driverDisconnections = 0
+	driverActive = false
+	Scheduling.GetBudget = function(): Types.StepBudget
+		return { maxBytes = 96, maxRecords = 2 }
+	end
+	Scheduling.ObserveStep = function(callback: () -> ()): () -> ()
+		driverConnections += 1
+		driverActive = true
+		stepCallback = callback
+		return function(): ()
+			if driverActive then
+				driverDisconnections += 1
+			end
+			driverActive = false
+		end
+	end
 	Awareness.new = function(
 		canonical: PublicationTypes.Runtime,
 		_catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
@@ -78,7 +105,9 @@ beforeEach(function()
 			): (boolean, string?)
 				return false, "UnknownActorHandle"
 			end,
-			Step = function(_self: Types.Runtime, _maxBytes: number, _maxRecords: number): () end,
+			Step = function(_self: Types.Runtime, maxBytes: number, maxRecords: number): ()
+				table.insert(steps, { maxBytes = maxBytes, maxRecords = maxRecords })
+			end,
 			Destroy = function(_self: Types.Runtime): ()
 				destroyed += 1
 			end,
@@ -98,10 +127,59 @@ afterEach(function()
 	Awareness.new = originalNew
 	Marker.Install = originalInstall
 	Marker.Remove = originalRemove
+	Scheduling.GetBudget = originalBudget
+	Scheduling.ObserveStep = originalObserveStep
 	for _, model: Model in models do
 		model:Destroy()
 	end
 	models = {}
+end)
+
+it("drives one bounded awareness Step from each production scheduling event", function()
+	expect(Server.Init({})).toBe(true)
+	expect(driverConnections).toBe(1)
+	expect(steps).toEqual({})
+	assert(stepCallback ~= nil, "Production Publish must subscribe to scheduling")
+	for _ = 1, 3 do
+		stepCallback()
+	end
+	expect(steps).toEqual({
+		{ maxBytes = 96, maxRecords = 2 },
+		{ maxBytes = 96, maxRecords = 2 },
+		{ maxBytes = 96, maxRecords = 2 },
+	})
+end)
+
+it("stops the production driver on teardown and ignores an already queued callback", function()
+	expect(Server.Init({})).toBe(true)
+	assert(stepCallback ~= nil, "Expected installed scheduling callback")
+	local retained: () -> () = stepCallback
+	retained()
+	expect(#steps).toBe(1)
+	Server._ResetForTests()
+	Server._ResetForTests()
+	expect(driverActive).toBe(false)
+	expect(driverDisconnections).toBe(1)
+	expect(destroyed).toBe(1)
+	retained()
+	expect(#steps).toBe(1)
+end)
+
+it("disconnects the driver when startup rolls back after Networking activation", function()
+	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+		local success: boolean, reason: string? = originalPublish(protocol)
+		if not success then
+			return false, reason
+		end
+		return false, "ForcedDriverRollback"
+	end
+	local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})
+	expect(started).toBe(false)
+	expect(failure).toEqual({ system = "Networking", reason = "ForcedDriverRollback" })
+	expect(driverConnections).toBe(1)
+	expect(driverDisconnections).toBe(1)
+	expect(driverActive).toBe(false)
+	expect(destroyed).toBe(1)
 end)
 
 it("creates and owns one awareness runtime alongside the startup-owned N3 publication runtime", function()

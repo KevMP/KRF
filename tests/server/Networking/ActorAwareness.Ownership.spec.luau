@@ -88,8 +88,7 @@ it("replaces old and new owner baselines without replacing an unrelated recipien
 	TestUtils.drain(fixture)
 	fixture.deliveries = {}
 	assert(actor.model ~= nil, "Expected Character")
-	fixture.owners[actor.model] = other
-	runtime:RefreshPlayerAssociation(actor)
+	TestUtils.associate(fixture, actor, other)
 	TestUtils.drain(fixture)
 	local oldHandle: number? = runtime:GetHandle(owner, actor)
 	local newHandle: number? = runtime:GetHandle(other, actor)
@@ -114,8 +113,7 @@ for _, toNil: boolean in { true, false } do
 			end
 			start()
 			fixture.deliveries = {}
-			fixture.owners[actor.model] = if toNil then nil else owner
-			runtime:RefreshPlayerAssociation(actor)
+			TestUtils.associate(fixture, actor, if toNil then nil else owner)
 			TestUtils.drain(fixture)
 			expect(#TestUtils.kind(fixture, owner, "BaselineBegin")).toBe(1)
 			expect(TestUtils.records(fixture, other)).toEqual({})
@@ -126,8 +124,8 @@ end
 it("deduplicates unchanged association notifications without consuming a generation", function()
 	start()
 	fixture.deliveries = {}
-	runtime:RefreshPlayerAssociation(actor)
-	runtime:RefreshPlayerAssociation(actor)
+	TestUtils.associate(fixture, actor, owner)
+	TestUtils.associate(fixture, actor, owner)
 	TestUtils.drain(fixture)
 	expect(fixture.deliveries).toEqual({})
 end)
@@ -138,8 +136,7 @@ it("captures the latest visibility once when reassociation overlaps a pending re
 	assert(handle ~= nil and actor.model ~= nil, "Expected owner stream")
 	fixture.deliveries = {}
 	expect(runtime:RequestReplacementBaseline(owner, handle, "TestRecovery")).toBe(true)
-	fixture.owners[actor.model] = other
-	runtime:RefreshPlayerAssociation(actor)
+	TestUtils.associate(fixture, actor, other)
 	TestUtils.drain(fixture)
 	expect(#TestUtils.kind(fixture, owner, "BaselineEnd")).toBe(1)
 	expect(TestUtils.baseline(fixture, owner, handle)).toEqual({ ["Game.Public"] = { value = 10 } })
@@ -148,11 +145,21 @@ end)
 it("unregistering an old character does not erase the player's replacement Actor mapping", function()
 	start()
 	assert(actor.model ~= nil, "Expected old Model")
-	fixture.owners[actor.model] = nil
-	runtime:RefreshPlayerAssociation(actor)
+	TestUtils.associate(fixture, actor, nil)
 	local replacement: ActorTypes.Actor = TestUtils.actor(fixture, owner)
 	runtime:OnActorUnregistering(actor)
 	expect(runtime:GetActorForPlayer(owner)).toBe(replacement)
 	expect(runtime:GetPlayerForActor(actor)).toBeNil()
 	expect(runtime:GetPlayerForActor(replacement)).toBe(owner)
+end)
+
+it("subscribes to association changes and disconnects the event on teardown", function()
+	start()
+	expect(#fixture.associationObservers).toBe(1)
+	runtime:Destroy()
+	fixture.runtime = nil
+	expect(fixture.associationObservers).toEqual({})
+	fixture.deliveries = {}
+	TestUtils.associate(fixture, actor, other)
+	expect(fixture.deliveries).toEqual({})
 end)

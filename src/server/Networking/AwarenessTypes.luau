@@ -13,6 +13,8 @@ export type Dependencies = {
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
 	SendReliable: (Player, buffer) -> (boolean, string?),
 	GetPlayerFromCharacter: (Model) -> Player?,
+	-- Notify both the previous and current Character Model when their association changes.
+	ObserveAssociationChanged: ((Model) -> ()) -> () -> (),
 	ReportFault: (Fault) -> (),
 }
 -- Small injected limits exercise boundaries without large allocations. Defaults are private tuning.
@@ -50,6 +52,12 @@ export type MarkerModule = {
 	Remove: (actor: ActorTypes.Actor) -> (),
 	GetActorId: (marker: Instance) -> string?,
 	GetMarker: (model: Model) -> Instance?,
+}
+
+export type StepBudget = { read maxBytes: number, read maxRecords: number }
+export type SchedulingModule = {
+	GetBudget: () -> StepBudget,
+	ObserveStep: (() -> ()) -> () -> (),
 }
 
 return types
