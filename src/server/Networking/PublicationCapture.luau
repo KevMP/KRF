@@ -2,124 +2,178 @@
 local PublicationTypes = require(script.Parent.PublicationTypes)
 local SchemaTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local SchemaValidator = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaValidator)
+local SchemaCollectionUtils = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
 local CodecCompiler = require(script.Parent.Parent.Parent.shared.Networking.CodecCompiler)
 
 local PublicationCapture = {}
 local CapturePlan = {}
 CapturePlan.__index = CapturePlan
 
-local function own(schema: SchemaTypes.CompiledSchema, value: any): any
-	if value == nil then
-		return nil
-	end
-	if schema.kind == "F32" then
-		local bytes = buffer.create(4)
-		buffer.writef32(bytes, 0, value)
-		return buffer.readf32(bytes, 0)
-	elseif schema.kind == "Optional" then
-		return own(schema.inner, value)
-	elseif schema.kind == "Struct" then
-		local copied: { [string]: any } = {}
-		for _, field in schema.fields do
-			copied[field.name] = own(field.schema, value[field.name])
-		end
-		return table.freeze(copied)
-	elseif schema.kind == "Array" then
-		local copied: { any } = {}
-		for index, item in value do
-			copied[index] = own(schema.element, item)
-		end
-		return table.freeze(copied)
-	elseif schema.kind == "Map" then
-		local copied: { [any]: any } = {}
-		for key, item in value do
-			copied[key] = own(schema.value, item)
-		end
-		return table.freeze(copied)
-	end
-	return value
-end
+type CaptureNode = (value: any, previous: any, hadPrevious: boolean) -> (any, PublicationTypes.Patch?, string?)
 
-local function same(schema: SchemaTypes.CompiledSchema, first: any, second: any): boolean
-	if first == second then
-		return true
-	end
-	if first == nil or second == nil or type(first) ~= "table" or type(second) ~= "table" then
-		return false
-	end
-	if schema.kind == "Optional" then
-		return same(schema.inner, first, second)
-	elseif schema.kind == "Struct" then
-		for _, field in schema.fields do
-			if not same(field.schema, first[field.name], second[field.name]) then
-				return false
-			end
-		end
-		return true
-	elseif schema.kind == "Array" then
-		if #first ~= #second then
-			return false
-		end
-		for index, item in first do
-			if not same(schema.element, item, second[index]) then
-				return false
-			end
-		end
-		return true
-	elseif schema.kind == "Map" then
-		for key, item in first do
-			if second[key] == nil or not same(schema.value, item, second[key]) then
-				return false
-			end
-		end
-		for key in second do
-			if first[key] == nil then
-				return false
-			end
-		end
-		return true
-	end
-	return false
-end
-
-local function diff(schema: SchemaTypes.CompiledSchema, value: any, previous: any): PublicationTypes.Patch?
-	if same(schema, value, previous) then
-		return nil
-	end
-	if schema.kind == "Struct" and previous ~= nil then
-		local fields: { [string]: PublicationTypes.Patch } = {}
-		for _, field in schema.fields do
-			local patch = diff(field.schema, value[field.name], previous[field.name])
-			if patch ~= nil then
-				fields[field.name] = patch
-			end
-		end
-		return table.freeze({ kind = "Struct", fields = table.freeze(fields) }) :: any
-	elseif schema.kind == "Map" and previous ~= nil then
-		local entries: { [any]: any } = {}
-		local removed: { any } = {}
-		for key, item in value do
-			if previous[key] == nil or not same(schema.value, item, previous[key]) then
-				entries[key] = item
-			end
-		end
-		for key in previous do
-			if value[key] == nil then
-				table.insert(removed, key)
-			end
-		end
-		table.sort(removed, function(a: any, b: any): boolean
-			return a < b
-		end)
-		return table.freeze({ kind = "Map", entries = table.freeze(entries), removed = table.freeze(removed) }) :: any
-	end
+local function replacement(value: any): PublicationTypes.Patch
 	return table.freeze({ kind = "Replace", value = value }) :: any
+end
+
+local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
+	if schema.kind == "Optional" then
+		local inner = compileNode(schema.inner)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+			if value == nil then
+				return nil, if hadPrevious and previous ~= nil then replacement(nil) else nil, nil
+			end
+			return inner(value, previous, hadPrevious)
+		end
+	elseif schema.kind == "Struct" then
+		local fields: { { name: string, node: CaptureNode, optional: boolean } } = {}
+		for _, field in schema.fields do
+			table.insert(fields, {
+				name = field.name,
+				node = compileNode(field.schema),
+				optional = field.schema.kind == "Optional",
+			})
+		end
+		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+			if type(value) ~= "table" then
+				return nil, nil, "SchemaValueTypeInvalid"
+			end
+			for name in next, value do
+				if type(name) ~= "string" or schema.fieldsByName[name] == nil then
+					return nil, nil, "SchemaStructFieldUndeclared"
+				end
+			end
+			local canonical: { [string]: any } = {}
+			local changedFields: { [string]: PublicationTypes.Patch } = {}
+			local canDiffFields = hadPrevious and previous ~= nil
+			for _, field in fields do
+				local item = rawget(value, field.name)
+				if item == nil and not field.optional then
+					return nil, nil, "SchemaStructFieldMissing"
+				end
+				local prior = if canDiffFields then previous[field.name] else nil
+				local owned, patch, reason = field.node(item, prior, canDiffFields)
+				if reason ~= nil then
+					return nil, nil, reason
+				end
+				canonical[field.name] = owned
+				if patch ~= nil then
+					changedFields[field.name] = patch
+				end
+			end
+			table.freeze(canonical)
+			if not hadPrevious then
+				return canonical, nil, nil
+			elseif not canDiffFields then
+				return canonical, replacement(canonical), nil
+			elseif next(changedFields) ~= nil then
+				return canonical, table.freeze({ kind = "Struct", fields = table.freeze(changedFields) }) :: any, nil
+			end
+			return canonical, nil, nil
+		end
+	elseif schema.kind == "Array" then
+		local element = compileNode(schema.element)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+			if type(value) ~= "table" then
+				return nil, nil, "SchemaValueTypeInvalid"
+			end
+			local length = SchemaCollectionUtils.GetArrayLength(value)
+			if length == nil then
+				return nil, nil, "SchemaArrayMustBeDense"
+			elseif length > schema.maxLength then
+				return nil, nil, "SchemaArrayTooLong"
+			end
+			local canonical: { any } = {}
+			local canCompare = hadPrevious and previous ~= nil
+			local changed = canCompare and length ~= #previous
+			for index = 1, length do
+				local owned, patch, reason =
+					element(rawget(value, index), if canCompare then previous[index] else nil, canCompare)
+				if reason ~= nil then
+					return nil, nil, reason
+				end
+				canonical[index] = owned
+				if patch ~= nil then
+					changed = true
+				end
+			end
+			table.freeze(canonical)
+			return canonical, if hadPrevious and (not canCompare or changed) then replacement(canonical) else nil, nil
+		end
+	elseif schema.kind == "Map" then
+		local entry = compileNode(schema.value)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+			if type(value) ~= "table" then
+				return nil, nil, "SchemaValueTypeInvalid"
+			end
+			local canonical: { [any]: any } = {}
+			local entries: { [any]: any } = {}
+			local removed: { any } = {}
+			local canDiffEntries = hadPrevious and previous ~= nil
+			local count = 0
+			for key, item in next, value do
+				count += 1
+				if count > schema.maxEntries then
+					return nil, nil, "SchemaMapTooLarge"
+				end
+				local keyValid, keyReason = SchemaValidator.Validate(schema.key, key)
+				if not keyValid then
+					return nil, nil, keyReason
+				end
+				local prior = if canDiffEntries then previous[key] else nil
+				local existed = canDiffEntries and prior ~= nil
+				local owned, patch, reason = entry(item, prior, existed)
+				if reason ~= nil then
+					return nil, nil, reason
+				end
+				canonical[key] = owned
+				if canDiffEntries and (not existed or patch ~= nil) then
+					entries[key] = owned
+				end
+			end
+			if canDiffEntries then
+				for key in previous do
+					if value[key] == nil then
+						table.insert(removed, key)
+					end
+				end
+				table.sort(removed)
+			end
+			table.freeze(canonical)
+			if not hadPrevious then
+				return canonical, nil, nil
+			elseif not canDiffEntries then
+				return canonical, replacement(canonical), nil
+			elseif next(entries) ~= nil or #removed > 0 then
+				return canonical,
+					table.freeze({
+						kind = "Map",
+						entries = table.freeze(entries),
+						removed = table.freeze(removed),
+					}) :: any,
+					nil
+			end
+			return canonical, nil, nil
+		end
+	end
+	return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+		local valid, reason = SchemaValidator.Validate(schema, value)
+		if not valid then
+			return nil, nil, reason
+		end
+		local canonical = value
+		if schema.kind == "F32" then
+			local bytes = buffer.create(4)
+			buffer.writef32(bytes, 0, value)
+			canonical = buffer.readf32(bytes, 0)
+		end
+		return canonical, if hadPrevious and canonical ~= previous then replacement(canonical) else nil, nil
+	end
 end
 
 function PublicationCapture.Compile(schema: SchemaTypes.CompiledSchema): PublicationTypes.CapturePlan
 	local codec: SchemaTypes.CompiledCodec?, reason: string? = CodecCompiler.Compile(schema)
 	assert(codec ~= nil, reason or "CodecCompilationFailure")
-	return setmetatable({ schema = schema, codec = codec }, CapturePlan) :: any
+	return setmetatable({ capture = compileNode(schema), codec = codec }, CapturePlan) :: any
 end
 
 function CapturePlan.Capture(
@@ -127,11 +181,11 @@ function CapturePlan.Capture(
 	value: any,
 	previous: PublicationTypes.CaptureResult?
 ): (PublicationTypes.CaptureResult?, string?)
-	local valid: boolean, reason: string? = SchemaValidator.Validate(self.schema, value)
-	if not valid then
+	local canonical, patch, reason =
+		self.capture(value, if previous ~= nil then previous.value else nil, previous ~= nil)
+	if reason ~= nil then
 		return nil, reason
 	end
-	local canonical = own(self.schema, value)
 	local encodedSizeBytes: number?
 	if self.codec.fixedSizeBytes ~= nil then
 		encodedSizeBytes = self.codec.fixedSizeBytes
@@ -141,7 +195,6 @@ function CapturePlan.Capture(
 	if encodedSizeBytes == nil then
 		return nil, reason
 	end
-	local patch = if previous == nil then nil else diff(self.schema, canonical, previous.value)
 	return table.freeze({ value = canonical, patch = patch, encodedSizeBytes = encodedSizeBytes }) :: any, nil
 end
 

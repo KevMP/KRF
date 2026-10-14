@@ -59,7 +59,7 @@ it("loads the real domain before RegisterActor returns and publishes its immedia
 	expect(domain.callbacks[actor]).never.toBeNil()
 	expect(publication:CaptureBaseline(actor)).toEqual({
 		sequence = 0,
-		domains = { ["Game.Stamina"] = { current = 100 } },
+		domains = { ["Game.Stamina"] = { value = { current = 100 } } },
 	})
 	domain.value.current = 80
 	domain.callbacks[actor]()
@@ -74,7 +74,7 @@ it("loads the real domain before RegisterActor returns and publishes its immedia
 	})
 	expect(publication:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
-		domains = { ["Game.Stamina"] = { current = 80 } },
+		domains = { ["Game.Stamina"] = { value = { current = 80 } } },
 	})
 end)
 

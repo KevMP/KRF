@@ -9,7 +9,7 @@ type Stream = {
 	key: PublicationTypes.StreamKey,
 	records: { Pending },
 	needsBaseline: boolean,
-	delivered: { [string]: any },
+	delivered: { [string]: PublicationTypes.DomainTruth },
 	active: boolean,
 }
 
@@ -47,7 +47,7 @@ end
 local function merge(
 	first: PublicationTypes.Patch,
 	second: PublicationTypes.Patch,
-	delivered: any
+	delivered: PublicationTypes.DomainTruth?
 ): PublicationTypes.Patch?
 	if second.kind == "Replace" or first.kind ~= second.kind then
 		return second
@@ -56,9 +56,11 @@ local function merge(
 		local fields: { [string]: PublicationTypes.Patch } = table.clone(first.fields)
 		for field, change in second.fields do
 			local earlier = fields[field]
-			fields[field] = if earlier == nil
-				then change
-				else merge(earlier, change, if delivered ~= nil then delivered[field] else nil)
+			local fieldTruth: PublicationTypes.DomainTruth? = nil
+			if delivered ~= nil and type(delivered.value) == "table" then
+				fieldTruth = { value = delivered.value[field] }
+			end
+			fields[field] = if earlier == nil then change else merge(earlier, change, fieldTruth)
 		end
 		return { kind = "Struct", fields = fields }
 	end
@@ -74,7 +76,7 @@ local function merge(
 		end
 		for _, key in second.removed do
 			entries[key] = nil
-			if delivered ~= nil and delivered[key] == nil then
+			if delivered ~= nil and type(delivered.value) == "table" and delivered.value[key] == nil then
 				removals[key] = nil
 			else
 				removals[key] = true
@@ -98,7 +100,7 @@ end
 local function combine(
 	first: PublicationTypes.FilteredCommit?,
 	second: PublicationTypes.FilteredCommit,
-	delivered: { [string]: any }
+	delivered: { [string]: PublicationTypes.DomainTruth }
 ): PublicationTypes.FilteredCommit
 	if first == nil then
 		return second
@@ -145,11 +147,24 @@ local function pendingStats(stream: Stream): (number, number)
 	return events, bytes
 end
 
-local function truthBeforeTail(stream: Stream): { [string]: any }
-	local truth: { [string]: any } = copy(stream.delivered)
+local function applyKnown(
+	truth: { [string]: PublicationTypes.DomainTruth },
+	domainId: string,
+	patch: PublicationTypes.Patch
+): ()
+	local previous = truth[domainId]
+	if previous ~= nil then
+		truth[domainId] = { value = apply(previous.value, patch) }
+	elseif patch.kind == "Replace" then
+		truth[domainId] = { value = copy(patch.value) }
+	end
+end
+
+local function truthBeforeTail(stream: Stream): { [string]: PublicationTypes.DomainTruth }
+	local truth: { [string]: PublicationTypes.DomainTruth } = copy(stream.delivered)
 	for index = 1, #stream.records - 1 do
 		for _, item in stream.records[index].commit.patches do
-			truth[item.domainId] = apply(truth[item.domainId], item.patch)
+			applyKnown(truth, item.domainId, item.patch)
 		end
 	end
 	return truth
@@ -262,7 +277,7 @@ end
 function PublicationScheduler.ResetAfterBaseline(
 	self: any,
 	key: PublicationTypes.StreamKey,
-	domains: { [string]: any }
+	domains: { [string]: PublicationTypes.DomainTruth }
 ): ()
 	local stream: Stream = find(self, key, true) :: Stream
 	table.clear(stream.records)
@@ -317,7 +332,7 @@ function PublicationScheduler.DrainBudgeted(
 			table.insert(records, { stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes })
 			encodedBytes += pending.bytes
 			for _, item in pending.commit.patches do
-				stream.delivered[item.domainId] = apply(stream.delivered[item.domainId], item.patch)
+				applyKnown(stream.delivered, item.domainId, item.patch)
 			end
 			if #stream.records > 0 then
 				remainingVisits += 1

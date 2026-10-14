@@ -59,8 +59,27 @@ it("captures initial truth exactly once without a commit or historical event", f
 	attach()
 	expect(domain.snapshotCalls).toBe(1)
 	expect(commits).toEqual({})
-	expect(baseline()).toEqual({ sequence = 0, domains = { ["Game.State"] = { active = false } } })
+	expect(baseline()).toEqual({ sequence = 0, domains = { ["Game.State"] = { value = { active = false } } } })
 	expect(runtime:GetActorSequence(actor)).toBe(0)
+end)
+
+it("keeps a top-level Optional nil domain present in every baseline", function()
+	local optional: TestUtils.DomainFixture = TestUtils.createDomain("Game.Optional", Schema.Optional(Schema.U8), nil)
+	runtime:Destroy()
+	runtime = TestUtils.createRuntime({ optional.definition })
+	local attached: boolean, reason: string? = runtime:AttachActor(actor)
+	expect(attached).toBe(true)
+	expect(reason).toBeNil()
+	local initial: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+	assert(initial ~= nil, "Expected attached Actor baseline")
+	expect(initial).toEqual({ sequence = 0, domains = { ["Game.Optional"] = {} } })
+	expect(initial.domains["Game.Optional"]).never.toBeNil()
+	optional.value = 7
+	optional.callbacks[actor]()
+	optional.value = nil
+	optional.callbacks[actor]()
+	local current: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+	expect(current).toEqual({ sequence = 2, domains = { ["Game.Optional"] = {} } })
 end)
 
 it("captures an ordinary notification before returning and preserves two immediate lifecycle boundaries", function()
@@ -120,8 +139,8 @@ it("retains stable baseline truth and its matching sequence while later source s
 	local before: PublicationTypes.Baseline = baseline()
 	domain.value.active = true
 	domain.callbacks[actor]()
-	expect(before).toEqual({ sequence = 0, domains = { ["Game.State"] = { active = false } } })
-	expect(baseline()).toEqual({ sequence = 1, domains = { ["Game.State"] = { active = true } } })
+	expect(before).toEqual({ sequence = 0, domains = { ["Game.State"] = { value = { active = false } } } })
+	expect(baseline()).toEqual({ sequence = 1, domains = { ["Game.State"] = { value = { active = true } } } })
 	local thread: thread = coroutine.create(function(): ()
 		runtime:CaptureBaseline(actor)
 	end)
@@ -133,9 +152,9 @@ it("does not expose canonical tables as mutable baseline truth", function()
 	attach()
 	local exposed: PublicationTypes.Baseline = baseline()
 	local _mutated: boolean = pcall(function(): ()
-		exposed.domains["Game.State"].active = true
+		exposed.domains["Game.State"].value.active = true
 	end)
-	expect(baseline().domains["Game.State"]).toEqual({ active = false })
+	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 end)
 
@@ -174,7 +193,7 @@ do
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
-		expect(baseline().domains["Game.State"]).toEqual({ active = false })
+		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 		expect(faults[#faults]).toEqual({
 			actorId = actor:GetId(),
 			domainId = "Game.State",
@@ -182,7 +201,7 @@ do
 		})
 		domain.callbacks[actor]()
 		expect(commits[1].sequence).toBe(1)
-		expect(baseline().domains["Game.State"]).toEqual({ active = true })
+		expect(baseline().domains["Game.State"].value).toEqual({ active = true })
 	end)
 end
 
@@ -212,7 +231,7 @@ it(
 		end)
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
-		expect(baseline().domains["Game.State"]).toEqual({ active = false })
+		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 		expect(runtime:GetActorSequence(actor)).toBe(0)
 		expect(faults[#faults]).toEqual({
 			actorId = actor:GetId(),
@@ -255,7 +274,7 @@ it("isolates a throwing snapshot from other Actors and domains", function()
 		reason = "PublicationSnapshotError",
 	})
 	expect(runtime:GetActorSequence(actor)).toBe(0)
-	expect(baseline().domains["Game.State"]).toEqual({ active = false })
+	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 	other.value = 2
 	other.callbacks[actor]()
 	expect(commits[1].patches).toEqual({ { domainId = "Game.Other", patch = { kind = "Replace", value = 2 } } })
@@ -304,7 +323,7 @@ it("rejects a non-array event report without publishing changed state", function
 	expect(accepted).toBe(false)
 	expect(commits).toEqual({})
 	expect(runtime:GetActorSequence(actor)).toBe(0)
-	expect(baseline().domains["Game.State"]).toEqual({ active = false })
+	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 	expect(faults[#faults]).toEqual({
 		actorId = actor:GetId(),
 		domainId = "Game.State",

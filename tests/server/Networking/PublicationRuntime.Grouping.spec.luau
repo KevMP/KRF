@@ -70,7 +70,7 @@ it("seals two domains as one coherent commit and captures each only once at clos
 	})
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
-		domains = { ["Game.Resource"] = 60, ["Game.Action"] = true },
+		domains = { ["Game.Resource"] = { value = 60 }, ["Game.Action"] = { value = true } },
 	})
 end)
 
@@ -151,7 +151,7 @@ it("dispatches a group only after all canonical domains and its sequence are com
 		observed = runtime:CaptureBaseline(actor)
 		expect(observed).toEqual({
 			sequence = commit.sequence,
-			domains = { ["Game.Resource"] = 80, ["Game.Action"] = true },
+			domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = true } },
 		})
 	end)
 	runtime:WithActorCommit(actor, function(): ()
@@ -160,7 +160,10 @@ it("dispatches a group only after all canonical domains and its sequence are com
 		action.value = true
 		action.callbacks[actor]({ { id = "Started", payload = {} } })
 	end)
-	expect(observed).toEqual({ sequence = 1, domains = { ["Game.Resource"] = 80, ["Game.Action"] = true } })
+	expect(observed).toEqual({
+		sequence = 1,
+		domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = true } },
+	})
 end)
 
 it("unwinds an errored group, reconciles reported mutations and preserves the original error", function()
@@ -178,7 +181,7 @@ it("unwinds an errored group, reconciles reported mutations and preserves the or
 	expect(#commits).toBe(1)
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
-		domains = { ["Game.Resource"] = 80, ["Game.Action"] = false },
+		domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = false } },
 	})
 	resource.value = 60
 	resource.callbacks[actor]()
@@ -200,7 +203,7 @@ it("rejects the whole grouped publication when one final snapshot is invalid", f
 	expect(commits).toEqual({})
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 0,
-		domains = { ["Game.Resource"] = 100, ["Game.Action"] = false },
+		domains = { ["Game.Resource"] = { value = 100 }, ["Game.Action"] = { value = false } },
 	})
 	action.value = true
 	runtime:WithActorCommit(actor, function(): ()
@@ -227,7 +230,7 @@ it("rejects a grouped event at report time without leaking another touched domai
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 	local captured: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
 	assert(captured ~= nil, "Expected existing canonical baseline")
-	expect(captured.domains["Game.Resource"]).toBe(100)
+	expect(captured.domains["Game.Resource"].value).toBe(100)
 	resource.callbacks[actor]()
 	expect(commits[1].sequence).toBe(1)
 end)
@@ -248,6 +251,41 @@ it("treats reentrant authoritative work from a commit observer as the next stand
 	expect(commits[1].patches).toEqual({ { domainId = "Game.Action", patch = { kind = "Replace", value = true } } })
 	expect(commits[2].patches).toEqual({ { domainId = "Game.Action", patch = { kind = "Replace", value = false } } })
 	expect(commits[2].sequence).toBe(2)
+end)
+
+it("delivers reentrant commits in Actor sequence order to every observer", function()
+	attach()
+	local laterObserverSequences: { number } = {}
+	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+		if commit.sequence == 1 then
+			action.value = false
+			action.callbacks[actor]()
+		end
+	end)
+	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+		table.insert(laterObserverSequences, commit.sequence)
+	end)
+	action.value = true
+	action.callbacks[actor]()
+	expect(laterObserverSequences).toEqual({ 1, 2 })
+	expect(runtime:GetActorSequence(actor)).toBe(2)
+end)
+
+it("closes a yielding callback so scheduled work cannot resume after rejection", function()
+	attach()
+	local resumedAfterYield: boolean = false
+	local accepted: boolean = pcall(function(): ()
+		runtime:WithActorCommit(actor, function(): ()
+			task.wait(0.01)
+			resumedAfterYield = true
+		end)
+	end)
+	expect(accepted).toBe(false)
+	task.wait(0.05)
+	expect(resumedAfterYield).toBe(false)
+	action.value = true
+	action.callbacks[actor]()
+	expect(runtime:GetActorSequence(actor)).toBe(1)
 end)
 
 it("returns from valid grouped capture without yielding", function()
@@ -289,7 +327,7 @@ it("rejects a yielding grouped callback synchronously and leaves later publicati
 	})
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = #commits,
-		domains = { ["Game.Resource"] = 60, ["Game.Action"] = false },
+		domains = { ["Game.Resource"] = { value = 60 }, ["Game.Action"] = { value = false } },
 	})
 end)
 

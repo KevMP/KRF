@@ -153,7 +153,10 @@ it("captures domains with no observe adapter or no returned disconnect", functio
 	expect(reason).toBeNil()
 	expect(first.snapshotCalls).toBe(1)
 	expect(second.snapshotCalls).toBe(1)
-	expect(publication:CaptureBaseline(actor)).toEqual({ sequence = 0, domains = { ["Game.A"] = 1, ["Game.B"] = 2 } })
+	expect(publication:CaptureBaseline(actor)).toEqual({
+		sequence = 0,
+		domains = { ["Game.A"] = { value = 1 }, ["Game.B"] = { value = 2 } },
+	})
 	publication:DetachActor(actor)
 	publication:DetachActor(actor)
 	expect(publication:GetAttachedActors()).toEqual({})
@@ -271,7 +274,10 @@ it("rejects a yielding live snapshot synchronously and preserves the last valid 
 	expect(coroutine.resume(thread)).toBe(true)
 	expect(coroutine.status(thread)).toBe("dead")
 	expect(accepted).toBe(false)
-	expect(publication:CaptureBaseline(actor)).toEqual({ sequence = 0, domains = { ["Game.State"] = 1 } })
+	expect(publication:CaptureBaseline(actor)).toEqual({
+		sequence = 0,
+		domains = { ["Game.State"] = { value = 1 } },
+	})
 	expect(faults[#faults]).toEqual({
 		actorId = actor:GetId(),
 		domainId = "Game.State",

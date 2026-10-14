@@ -25,6 +25,7 @@ local function runSync(callback: () -> ...any): (boolean, string, ...any)
 		return false, "Error", first
 	end
 	if coroutine.status(thread) ~= "dead" then
+		coroutine.close(thread)
 		return false, "Yielded"
 	end
 	return true, "", first, second
@@ -97,6 +98,32 @@ local function captureDomain(
 	return captured
 end
 
+local function dispatchCommits(self: any): ()
+	if self.dispatching then
+		return
+	end
+	self.dispatching = true
+	local failed = false
+	local failure: any = nil
+	while #self.pendingCommits > 0 and not self.destroyed do
+		local commit: PublicationTypes.Commit = table.remove(self.pendingCommits, 1) :: PublicationTypes.Commit
+		for _, observer in table.clone(self.observers) do
+			if self.destroyed then
+				break
+			end
+			local success, reason = pcall(observer, commit)
+			if not success and not failed then
+				failed = true
+				failure = reason
+			end
+		end
+	end
+	self.dispatching = false
+	if failed then
+		error(failure, 0)
+	end
+end
+
 local function publish(self: any, actor: ActorTypes.Actor, attachment: Attachment): ()
 	local touched = attachment.touched
 	local events = attachment.events
@@ -126,9 +153,8 @@ local function publish(self: any, actor: ActorTypes.Actor, attachment: Attachmen
 		patches = table.freeze(patches),
 		events = table.freeze(events),
 	})
-	for _, observer in self.observers do
-		observer(commit)
-	end
+	table.insert(self.pendingCommits, commit)
+	dispatchCommits(self)
 end
 
 function PublicationRuntime.new(
@@ -163,6 +189,8 @@ function PublicationRuntime.new(
 		attachments = {},
 		orderedActors = {},
 		observers = {},
+		pendingCommits = {},
+		dispatching = false,
 		destroyed = false,
 	}, PublicationRuntime) :: any
 end
@@ -269,9 +297,9 @@ function PublicationRuntime.CaptureBaseline(self: any, actor: ActorTypes.Actor):
 	if attachment == nil then
 		return nil
 	end
-	local domains: { [string]: any } = {}
+	local domains: { [string]: PublicationTypes.DomainTruth } = {}
 	for domainId, captured in attachment.captures do
-		domains[domainId] = captured.value
+		domains[domainId] = table.freeze({ value = captured.value })
 	end
 	return table.freeze({ sequence = attachment.sequence, domains = table.freeze(domains) })
 end
@@ -324,6 +352,7 @@ function PublicationRuntime.Destroy(self: any): ()
 		return
 	end
 	self.destroyed = true
+	table.clear(self.pendingCommits)
 	for _, actor in table.clone(self.orderedActors) do
 		self:DetachActor(actor)
 	end

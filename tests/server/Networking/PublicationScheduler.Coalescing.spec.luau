@@ -139,15 +139,26 @@ it("collapses Map add then update to the final whole-entry value", function()
 end)
 
 it("cancels a Map add then remove when the delivered baseline proves the key was absent", function()
-	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = {} })
+	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = {} } })
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = 1 }, removed = {} }))
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = {}, removed = { "Haste" } }))
 	expect(scheduler:DrainBudgeted(1024, 8).records).toEqual({})
 	expect(scheduler:GetStreamStatus(stream).queuedBytes).toBe(0)
 end)
 
+it("keeps Map removal when no delivered baseline established absence", function()
+	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = 1 }, removed = {} }))
+	enqueue(TestUtils.patch(2, { kind = "Map", entries = {}, removed = { "Haste" } }))
+	local drained: PublicationTypes.DrainResult = scheduler:DrainBudgeted(1024, 8)
+	expect(#drained.records).toBe(1)
+	expect(drained.records[1].commit.sequence).toBe(2)
+	expect(drained.records[1].commit.patches).toEqual({
+		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
+	})
+end)
+
 it("advances delivered Map truth after drain so a later update and removal cannot cancel", function()
-	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = {} })
+	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = {} } })
 	local added: PublicationTypes.FilteredCommit = TestUtils.patch(1, {
 		kind = "Map",
 		entries = { Haste = 1 },
@@ -168,7 +179,7 @@ it("advances delivered Map truth after drain so a later update and removal canno
 end)
 
 it("keeps a Map removal after an undrained event barrier added the key", function()
-	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = {} })
+	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = {} } })
 	enqueue({
 		sequence = 1,
 		patches = { { domainId = "Game.State", patch = { kind = "Map", entries = { Haste = 1 }, removed = {} } } },
@@ -184,7 +195,7 @@ it("keeps a Map removal after an undrained event barrier added the key", functio
 end)
 
 it("keeps Map removal when the baseline key existed instead of cancelling an update then remove", function()
-	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { Haste = 1 } })
+	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = { Haste = 1 } } })
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = 2 }, removed = {} }))
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = {}, removed = { "Haste" } }))
 	local drained: PublicationTypes.DrainResult = scheduler:DrainBudgeted(1024, 8)

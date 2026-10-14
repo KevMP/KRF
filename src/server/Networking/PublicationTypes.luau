@@ -5,8 +5,7 @@ local SchemaTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 
 local types = {}
 
--- N3 framework-private draft contracts. No wire revisions, handles, or recipients
--- are allocated here. All behavior remains unimplemented for the TDD handoff.
+-- Framework-private publication contracts. N4 owns recipient filtering and wire records.
 export type Patch =
 	{ read kind: "Replace", read value: any }
 	| { read kind: "Struct", read fields: { [string]: Patch } }
@@ -24,7 +23,9 @@ export type Commit = {
 	read patches: { DomainPatch },
 	read events: { Event },
 }
-export type Baseline = { read sequence: number, read domains: { [string]: any } }
+-- The wrapper preserves a present domain whose Optional state is nil.
+export type DomainTruth = { read value: any }
+export type Baseline = { read sequence: number, read domains: { [string]: DomainTruth } }
 export type Fault = { read actorId: string, read domainId: string, read reason: string }
 export type RuntimeOptions = { ReportFault: ((fault: Fault) -> ())? }
 export type Runtime = {
@@ -75,7 +76,7 @@ export type Scheduler = {
 	Enqueue: (self: Scheduler, stream: StreamKey, commit: FilteredCommit) -> (boolean, string?),
 	MarkBaselinePending: (self: Scheduler, stream: StreamKey) -> (),
 	-- Delivered visible truth permits cancellation of net-zero Map tail changes.
-	ResetAfterBaseline: (self: Scheduler, stream: StreamKey, domains: { [string]: any }) -> (),
+	ResetAfterBaseline: (self: Scheduler, stream: StreamKey, domains: { [string]: DomainTruth }) -> (),
 	RemoveStream: (self: Scheduler, stream: StreamKey) -> (),
 	GetStreamStatus: (self: Scheduler, stream: StreamKey) -> StreamStatus,
 	DrainBudgeted: (self: Scheduler, maxBytes: number, maxRecords: number) -> DrainResult,
