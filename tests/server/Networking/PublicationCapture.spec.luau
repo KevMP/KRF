@@ -139,6 +139,13 @@ it("distinguishes a false Map entry from an absent key", function()
 	expect(capture(plan, {}, added).patch).toEqual({ kind = "Map", entries = {}, removed = { 0 } })
 end)
 
+it("orders multiple Map removals deterministically for the same final truth", function()
+	local plan: PublicationTypes.CapturePlan = compile(Schema.Map(Schema.String(8), Schema.U8, 3))
+	local initial: PublicationTypes.CaptureResult = capture(plan, { Zebra = 1, Alpha = 2, Kept = 3 }, nil)
+	local changed: PublicationTypes.CaptureResult = capture(plan, { Kept = 3 }, initial)
+	expect(changed.patch).toEqual({ kind = "Map", entries = {}, removed = { "Alpha", "Zebra" } })
+end)
+
 it("replaces a changed Array as one ordered value including reordering and clearing", function()
 	local plan: PublicationTypes.CapturePlan = compile(Schema.Array(Schema.U8, 3))
 	local initial: PublicationTypes.CaptureResult = capture(plan, { 1, 2 }, nil)

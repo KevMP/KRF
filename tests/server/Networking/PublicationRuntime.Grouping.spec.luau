@@ -292,3 +292,17 @@ it("rejects a yielding grouped callback synchronously and leaves later publicati
 		domains = { ["Game.Resource"] = 60, ["Game.Action"] = false },
 	})
 end)
+
+it("enforces the non-yield contract before an Actor is attached", function()
+	local completed: boolean, failure: any = pcall(function(): ()
+		runtime:WithActorCommit(actor, function(): ()
+			coroutine.yield()
+		end)
+	end)
+	expect(completed).toBe(false)
+	expect(string.find(tostring(failure), "Yield", 1, true) ~= nil).toBe(true)
+	attach()
+	resource.value = 80
+	resource.callbacks[actor]()
+	expect(commits[1].sequence).toBe(1)
+end)

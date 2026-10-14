@@ -186,6 +186,22 @@ do
 	end)
 end
 
+it("does not replay a valid event prefix from a rejected report on the next notification", function()
+	attach()
+	local accepted: boolean = pcall(function(): ()
+		domain.callbacks[actor]({
+			{ id = "Changed", payload = { count = 1 } },
+			{ id = "Unknown", payload = {} },
+		})
+	end)
+	expect(accepted).toBe(false)
+	domain.callbacks[actor]({ { id = "Changed", payload = { count = 2 } } })
+	expect(#commits).toBe(1)
+	expect(commits[1].events).toEqual({
+		{ domainId = "Game.State", eventId = "Changed", payload = { count = 2 } },
+	})
+end)
+
 it(
 	"rejects an invalid snapshot without partial canonical mutation and reconciles on the next valid notification",
 	function()
@@ -277,4 +293,21 @@ it("accepts an empty event catalog without inventing an event payload", function
 	local success: boolean, reason: string? = Runtime.ValidateEventBounds(catalog, 0)
 	expect(success).toBe(true)
 	expect(reason).toBeNil()
+end)
+
+it("rejects a non-array event report without publishing changed state", function()
+	attach()
+	domain.value.active = true
+	local accepted: boolean = pcall(function(): ()
+		(domain.callbacks[actor] :: any)("invalid")
+	end)
+	expect(accepted).toBe(false)
+	expect(commits).toEqual({})
+	expect(runtime:GetActorSequence(actor)).toBe(0)
+	expect(baseline().domains["Game.State"]).toEqual({ active = false })
+	expect(faults[#faults]).toEqual({
+		actorId = actor:GetId(),
+		domainId = "Game.State",
+		reason = "InvalidPublicationEvent",
+	})
 end)

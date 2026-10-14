@@ -179,3 +179,14 @@ it("stops publication before controller destruction when the Actor Model disappe
 	expect(order).toEqual({ "DetachPublication", "DestroyController" })
 	expect(actor.enabled).toBe(false)
 end)
+
+it("allows a lifecycle seam call after startup reset without retaining the old runtime", function()
+	Server._ResetForTests()
+	Lifecycle.AttachActor = originalAttach
+	Lifecycle.DetachActor = originalDetach
+	local actor: ActorTypes.Actor = require(KRF.server.Actor.ActorEntity).new()
+	local attached: boolean, reason: string? = Lifecycle.AttachActor(actor)
+	expect(attached).toBe(true)
+	expect(reason).toBeNil()
+	Lifecycle.DetachActor(actor)
+end)

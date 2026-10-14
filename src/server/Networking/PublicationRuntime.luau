@@ -1,65 +1,333 @@
 --!strict
 local PublicationTypes = require(script.Parent.PublicationTypes)
+local PublicationCapture = require(script.Parent.PublicationCapture)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local PublicationRuntime = {}
 PublicationRuntime.__index = PublicationRuntime
 
+type Attachment = {
+	sequence: number,
+	captures: { [string]: PublicationTypes.CaptureResult },
+	disconnects: { { domainId: string, callback: () -> () } },
+	active: boolean,
+	depth: number,
+	touched: { [string]: boolean },
+	events: { PublicationTypes.Event },
+	poisoned: boolean,
+}
+
+local function runSync(callback: () -> ...any): (boolean, string, ...any)
+	local thread = coroutine.create(callback)
+	local success, first, second = coroutine.resume(thread)
+	if not success then
+		return false, "Error", first
+	end
+	if coroutine.status(thread) ~= "dead" then
+		return false, "Yielded"
+	end
+	return true, "", first, second
+end
+
+local function fault(self: any, actor: ActorTypes.Actor, domainId: string, reason: string): ()
+	if self.options ~= nil and self.options.ReportFault ~= nil then
+		pcall(self.options.ReportFault, { actorId = actor:GetId(), domainId = domainId, reason = reason })
+	end
+end
+
+local function eventsFor(
+	self: any,
+	actor: ActorTypes.Actor,
+	attachment: Attachment,
+	domainId: string,
+	reported: any
+): ()
+	if reported == nil then
+		return
+	end
+	local definitions = self.eventsByDomain[domainId]
+	local stagedEvents: { PublicationTypes.Event } = {}
+	if type(reported) ~= "table" then
+		attachment.poisoned = true
+		fault(self, actor, domainId, "InvalidPublicationEvent")
+		error("InvalidPublicationEvent:" .. domainId, 0)
+	end
+	for _, event in reported do
+		local plan = if type(event) == "table" then definitions[event.id] else nil
+		local captured = if plan ~= nil then plan:Capture(event.payload, nil) else nil
+		if captured == nil then
+			attachment.poisoned = true
+			fault(self, actor, domainId, "InvalidPublicationEvent")
+			error("InvalidPublicationEvent:" .. domainId, 0)
+		end
+		table.insert(
+			stagedEvents,
+			table.freeze({
+				domainId = domainId,
+				eventId = event.id,
+				payload = captured.value,
+			})
+		)
+	end
+	for _, event in stagedEvents do
+		table.insert(attachment.events, event)
+	end
+end
+
+local function captureDomain(
+	self: any,
+	actor: ActorTypes.Actor,
+	domain: ReplicationTypes.LoadedReplicationDomainDefinition,
+	previous: PublicationTypes.CaptureResult?
+): PublicationTypes.CaptureResult
+	local ok, kind, value = runSync(function(): any
+		return domain.snapshot(actor)
+	end)
+	if not ok then
+		local reason = "PublicationSnapshot" .. kind
+		fault(self, actor, domain.id, reason)
+		error(reason .. ":" .. domain.id, 0)
+	end
+	local captured = self.plans[domain.id]:Capture(value, previous)
+	if captured == nil then
+		fault(self, actor, domain.id, "InvalidPublicationSnapshot")
+		error("InvalidPublicationSnapshot:" .. domain.id, 0)
+	end
+	return captured
+end
+
+local function publish(self: any, actor: ActorTypes.Actor, attachment: Attachment): ()
+	local touched = attachment.touched
+	local events = attachment.events
+	attachment.touched = {}
+	attachment.events = {}
+	local staged: { [string]: PublicationTypes.CaptureResult } = {}
+	local patches: { PublicationTypes.DomainPatch } = {}
+	for _, domain in self.domains do
+		if touched[domain.id] then
+			local captured = captureDomain(self, actor, domain, attachment.captures[domain.id])
+			staged[domain.id] = captured
+			if captured.patch ~= nil then
+				table.insert(patches, table.freeze({ domainId = domain.id, patch = captured.patch }))
+			end
+		end
+	end
+	if #patches == 0 and #events == 0 then
+		return
+	end
+	for domainId, captured in staged do
+		attachment.captures[domainId] = captured
+	end
+	attachment.sequence += 1
+	local commit = table.freeze({
+		actor = actor,
+		sequence = attachment.sequence,
+		patches = table.freeze(patches),
+		events = table.freeze(events),
+	})
+	for _, observer in self.observers do
+		observer(commit)
+	end
+end
+
 function PublicationRuntime.new(
-	_catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	_options: PublicationTypes.RuntimeOptions?
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	options: PublicationTypes.RuntimeOptions?
 ): PublicationTypes.Runtime
-	return setmetatable({}, PublicationRuntime) :: any
+	local domains = table.clone(catalog.orderedDefinitions)
+	table.sort(
+		domains,
+		function(
+			a: ReplicationTypes.LoadedReplicationDomainDefinition,
+			b: ReplicationTypes.LoadedReplicationDomainDefinition
+		): boolean
+			return a.id < b.id
+		end
+	)
+	local plans: { [string]: PublicationTypes.CapturePlan } = {}
+	local eventsByDomain: { [string]: { [string]: PublicationTypes.CapturePlan } } = {}
+	for _, domain in domains do
+		plans[domain.id] = PublicationCapture.Compile(domain.state)
+		local eventPlans: { [string]: PublicationTypes.CapturePlan } = {}
+		for _, event in domain.events do
+			eventPlans[event.id] = PublicationCapture.Compile(event.payload)
+		end
+		eventsByDomain[domain.id] = eventPlans
+	end
+	return setmetatable({
+		domains = domains,
+		plans = plans,
+		eventsByDomain = eventsByDomain,
+		options = options,
+		attachments = {},
+		orderedActors = {},
+		observers = {},
+		destroyed = false,
+	}, PublicationRuntime) :: any
 end
 
 function PublicationRuntime.ValidateEventBounds(
-	_catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	_maxEventBytes: number
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	maxEventBytes: number
 ): (boolean, string?)
-	error("N3NotImplemented", 2)
+	for _, domain in catalog.orderedDefinitions do
+		for _, event in domain.events do
+			if event.payload.maxEncodedBytes > maxEventBytes then
+				return false, "PublicationEventTooLarge:" .. domain.id .. ":" .. event.id
+			end
+		end
+	end
+	return true, nil
 end
 
-function PublicationRuntime.AttachActor(_self: PublicationTypes.Runtime, _actor: ActorTypes.Actor): (boolean, string?)
-	error("N3NotImplemented", 2)
+function PublicationRuntime.AttachActor(self: any, actor: ActorTypes.Actor): (boolean, string?)
+	if self.destroyed then
+		return false, "PublicationRuntimeDestroyed"
+	end
+	if self.attachments[actor] ~= nil then
+		return true, nil
+	end
+	local attachment: Attachment = {
+		sequence = 0,
+		captures = {},
+		disconnects = {},
+		active = true,
+		depth = 0,
+		touched = {},
+		events = {},
+		poisoned = false,
+	}
+	local success, failure = pcall(function()
+		for _, domain in self.domains do
+			attachment.captures[domain.id] = captureDomain(self, actor, domain, nil)
+			if domain.observe ~= nil then
+				local ok, kind, disconnect = runSync(function(): (() -> ())?
+					return domain.observe(actor, function(reported: { ReplicationTypes.ReplicationDomainEvent }?): ()
+						if not attachment.active then
+							return
+						end
+						eventsFor(self, actor, attachment, domain.id, reported)
+						attachment.touched[domain.id] = true
+						if attachment.depth == 0 then
+							publish(self, actor, attachment)
+						end
+					end)
+				end)
+				if not ok then
+					error("PublicationObserve" .. kind .. ":" .. domain.id, 0)
+				end
+				if disconnect ~= nil then
+					table.insert(attachment.disconnects, { domainId = domain.id, callback = disconnect })
+				end
+			end
+		end
+	end)
+	if not success then
+		attachment.active = false
+		for _, connection in attachment.disconnects do
+			pcall(connection.callback)
+		end
+		return false, tostring(failure)
+	end
+	self.attachments[actor] = attachment
+	table.insert(self.orderedActors, actor)
+	return true, nil
 end
 
-function PublicationRuntime.DetachActor(_self: PublicationTypes.Runtime, _actor: ActorTypes.Actor): ()
-	error("N3NotImplemented", 2)
+function PublicationRuntime.DetachActor(self: any, actor: ActorTypes.Actor): ()
+	local attachment: Attachment? = self.attachments[actor]
+	if attachment == nil then
+		return
+	end
+	self.attachments[actor] = nil
+	attachment.active = false
+	for index, attachedActor in self.orderedActors do
+		if attachedActor == actor then
+			table.remove(self.orderedActors, index)
+			break
+		end
+	end
+	for _, connection in attachment.disconnects do
+		if not pcall(connection.callback) then
+			fault(self, actor, connection.domainId, "PublicationDisconnectError")
+		end
+	end
 end
 
-function PublicationRuntime.GetActorSequence(_self: PublicationTypes.Runtime, _actor: ActorTypes.Actor): number
-	error("N3NotImplemented", 2)
+function PublicationRuntime.GetActorSequence(self: any, actor: ActorTypes.Actor): number
+	local attachment: Attachment? = self.attachments[actor]
+	return if attachment == nil then 0 else attachment.sequence
 end
 
-function PublicationRuntime.GetAttachedActors(_self: PublicationTypes.Runtime): { ActorTypes.Actor }
-	error("N3NotImplemented", 2)
+function PublicationRuntime.GetAttachedActors(self: any): { ActorTypes.Actor }
+	return table.clone(self.orderedActors)
 end
 
-function PublicationRuntime.CaptureBaseline(
-	_self: PublicationTypes.Runtime,
-	_actor: ActorTypes.Actor
-): PublicationTypes.Baseline?
-	error("N3NotImplemented", 2)
+function PublicationRuntime.CaptureBaseline(self: any, actor: ActorTypes.Actor): PublicationTypes.Baseline?
+	local attachment: Attachment? = self.attachments[actor]
+	if attachment == nil then
+		return nil
+	end
+	local domains: { [string]: any } = {}
+	for domainId, captured in attachment.captures do
+		domains[domainId] = captured.value
+	end
+	return table.freeze({ sequence = attachment.sequence, domains = table.freeze(domains) })
 end
 
-function PublicationRuntime.ObserveCommits(
-	_self: PublicationTypes.Runtime,
-	_observer: (commit: PublicationTypes.Commit) -> ()
-): () -> ()
-	error("N3NotImplemented", 2)
+function PublicationRuntime.ObserveCommits(self: any, observer: (PublicationTypes.Commit) -> ()): () -> ()
+	table.insert(self.observers, observer)
+	local active = true
+	return function(): ()
+		if not active then
+			return
+		end
+		active = false
+		for index, existing in self.observers do
+			if existing == observer then
+				table.remove(self.observers, index)
+				break
+			end
+		end
+	end
 end
 
-function PublicationRuntime.WithActorCommit(
-	_self: PublicationTypes.Runtime,
-	_actor: ActorTypes.Actor,
-	_callback: () -> ()
-): ()
-	error("N3NotImplemented", 2)
+function PublicationRuntime.WithActorCommit(self: any, actor: ActorTypes.Actor, callback: () -> ()): ()
+	local attachment: Attachment? = self.attachments[actor]
+	if attachment == nil then
+		local ok, kind, failure = runSync(callback)
+		if not ok then
+			error(if kind == "Yielded" then "PublicationCommitYielded" else failure, 0)
+		end
+		return
+	end
+	attachment.depth += 1
+	local ok, kind, failure = runSync(callback)
+	attachment.depth -= 1
+	if attachment.depth == 0 then
+		if attachment.poisoned then
+			attachment.touched = {}
+			attachment.events = {}
+			attachment.poisoned = false
+		else
+			publish(self, actor, attachment)
+		end
+	end
+	if not ok then
+		error(if kind == "Yielded" then "PublicationCommitYielded" else failure, 0)
+	end
 end
 
-function PublicationRuntime.Destroy(_self: PublicationTypes.Runtime): ()
-	-- Empty instance: no resources exist yet.
+function PublicationRuntime.Destroy(self: any): ()
+	if self.destroyed then
+		return
+	end
+	self.destroyed = true
+	for _, actor in table.clone(self.orderedActors) do
+		self:DetachActor(actor)
+	end
+	table.clear(self.observers)
 end
 
 return PublicationRuntime

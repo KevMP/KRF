@@ -225,6 +225,23 @@ it("destroys all live attachments idempotently without retaining Actor history",
 	expect(publication:CaptureBaseline(firstActor)).toBeNil()
 end)
 
+it("keeps a duplicate attachment idempotent and refuses attachment after destruction", function()
+	local actor: ActorTypes.Actor = ActorEntity.new()
+	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.State", Schema.U8, 1)
+	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ domain.definition })
+	runtime = publication
+	expect(publication:AttachActor(actor)).toBe(true)
+	expect(publication:AttachActor(actor)).toBe(true)
+	expect(domain.snapshotCalls).toBe(1)
+	publication:DetachActor(actor)
+	expect(domain.disconnectCalls).toBe(1)
+	expect(publication:GetActorSequence(actor)).toBe(0)
+	publication:Destroy()
+	local attached: boolean, reason: string? = publication:AttachActor(actor)
+	expect(attached).toBe(false)
+	expect(reason).toBe("PublicationRuntimeDestroyed")
+end)
+
 it("rejects a yielding live snapshot synchronously and preserves the last valid baseline", function()
 	local actor: ActorTypes.Actor = ActorEntity.new()
 	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.State", Schema.U8, 1)
