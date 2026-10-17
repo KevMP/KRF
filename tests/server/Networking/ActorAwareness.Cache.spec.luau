@@ -35,7 +35,7 @@ for _, ownerOnly: boolean in { false, true } do
 			TestUtils.ready(fixture, owner)
 			TestUtils.ready(fixture, observer)
 			-- Inspect retention directly; garbage collection timing cannot prove cache eviction reliably.
-			local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).baselines
+			local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).projections.baselines
 			local initial: CachedBaseline = reusable[actor]
 			local other: CachedBaseline = reusable[unaffected]
 			assert(initial.public ~= nil and initial.owner ~= nil, "Expected cached public and Owner projections")
@@ -83,7 +83,7 @@ it("releases stale encoded bodies on a commit even when no Ready recipients rema
 	local runtime: Types.Runtime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
-	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).baselines
+	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).projections.baselines
 	expect(reusable[actor]).never.toBeNil()
 	TestUtils.close(fixture, player)
 	fixture.deliveries = {}
@@ -114,7 +114,7 @@ it("retains a current-sequence cache captured by an earlier committed observer",
 	handle = runtime:GetHandle(owner, actor)
 	fixture.publicDomain.value = 11
 	fixture.publicDomain.callbacks[actor]()
-	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).baselines
+	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).projections.baselines
 	expect(reusable[actor].sequence).toBe(fixture.publication:GetActorSequence(actor))
 	TestUtils.drain(fixture)
 	assert(handle ~= nil, "Expected stable handle")

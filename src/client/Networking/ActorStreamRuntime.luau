@@ -7,7 +7,23 @@ type State = { record: { actorId: string, handle: number, model: Model? }, gener
 local ActorStreamRuntime = {}
 ActorStreamRuntime.__index = ActorStreamRuntime
 
-function ActorStreamRuntime._unbind(self: any, state: State): ()
+type RuntimeState = {
+	codec: WireTypes.Codec,
+	consumer: Types.Consumer?,
+	options: Types.Options,
+	handles: { [number]: State },
+	ids: { [string]: State },
+	models: { [Model]: State },
+	candidates: { [Instance]: Types.Candidate },
+	retired: { [number]: boolean },
+	pendingCount: number,
+	destroyed: boolean,
+	missingReported: boolean,
+	disconnects: { () -> () },
+}
+type Runtime = typeof(setmetatable({} :: RuntimeState, ActorStreamRuntime))
+
+function ActorStreamRuntime._unbind(self: Runtime, state: State): ()
 	local model: Model? = state.record.model
 	if model == nil then
 		return
@@ -19,7 +35,7 @@ function ActorStreamRuntime._unbind(self: any, state: State): ()
 	end
 end
 
-function ActorStreamRuntime._bind(self: any, state: State): ()
+function ActorStreamRuntime._bind(self: Runtime, state: State): ()
 	for _, candidate: Types.Candidate in self.candidates do
 		if candidate.actorId ~= state.record.actorId then
 			continue
@@ -42,7 +58,9 @@ function ActorStreamRuntime._bind(self: any, state: State): ()
 	end
 end
 
-function ActorStreamRuntime._record(self: any, record: WireTypes.Record): string?
+function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): string?
+	local consumer: Types.Consumer? = self.consumer
+	assert(consumer ~= nil, "Expected installed Actor consumer")
 	if self.retired[record.handle] then
 		return "RetiredActorHandle"
 	end
@@ -106,13 +124,13 @@ function ActorStreamRuntime._record(self: any, record: WireTypes.Record): string
 		self.retired[record.handle] = true
 		self.handles[record.handle] = nil
 		self.ids[state.record.actorId] = nil
-		self.consumer.OnActorRemoved(state.record)
+		consumer.OnActorRemoved(state.record)
 		return nil
 	elseif record.kind == "Commit" then
 		if state.pending ~= nil then
 			return "BaselineNotComplete"
 		end
-		self.consumer.OnCommitReady(state.record, record.revision, record.patches, record.events)
+		consumer.OnCommitReady(state.record, record.revision, record.patches, record.events)
 		return nil
 	end
 	local pending: Assembly? = state.pending
@@ -147,11 +165,11 @@ function ActorStreamRuntime._record(self: any, record: WireTypes.Record): string
 	end
 	state.pending = nil
 	self.pendingCount -= 1
-	self.consumer.OnBaselineReady(state.record, record.revision, domains)
+	consumer.OnBaselineReady(state.record, record.revision, domains)
 	return nil
 end
 
-function ActorStreamRuntime.Handle(self: any, payload: any): (boolean, string?)
+function ActorStreamRuntime.Handle(self: Runtime, payload: any): (boolean, string?)
 	if self.destroyed then
 		return false, "ActorStreamDestroyed"
 	end
@@ -176,22 +194,22 @@ function ActorStreamRuntime.Handle(self: any, payload: any): (boolean, string?)
 	return true, nil
 end
 
-function ActorStreamRuntime.GetByHandle(self: any, handle: number): Types.ActorRecord?
+function ActorStreamRuntime.GetByHandle(self: Runtime, handle: number): Types.ActorRecord?
 	local state: State? = self.handles[handle]
 	return if state ~= nil then state.record else nil
 end
 
-function ActorStreamRuntime.GetByActorId(self: any, actorId: string): Types.ActorRecord?
+function ActorStreamRuntime.GetByActorId(self: Runtime, actorId: string): Types.ActorRecord?
 	local state: State? = self.ids[actorId]
 	return if state ~= nil then state.record else nil
 end
 
-function ActorStreamRuntime.GetByModel(self: any, model: Model): Types.ActorRecord?
+function ActorStreamRuntime.GetByModel(self: Runtime, model: Model): Types.ActorRecord?
 	local state: State? = self.models[model]
 	return if state ~= nil then state.record else nil
 end
 
-function ActorStreamRuntime.Destroy(self: any): ()
+function ActorStreamRuntime.Destroy(self: Runtime): ()
 	if self.destroyed then
 		return
 	end
@@ -217,7 +235,7 @@ function ActorStreamRuntime.new(
 	discovery: Types.Discovery,
 	options: Types.Options
 ): Types.Runtime
-	local self: any = setmetatable({
+	local runtimeState: RuntimeState = {
 		codec = codec,
 		consumer = consumer,
 		options = options,
@@ -230,7 +248,8 @@ function ActorStreamRuntime.new(
 		destroyed = false,
 		missingReported = false,
 		disconnects = {},
-	}, ActorStreamRuntime)
+	}
+	local self: Runtime = setmetatable(runtimeState, ActorStreamRuntime)
 	local function added(candidate: Types.Candidate): ()
 		if self.destroyed or self.candidates[candidate.marker] ~= nil then
 			return
@@ -263,6 +282,7 @@ function ActorStreamRuntime.new(
 	for _, candidate: Types.Candidate in discovery.GetCandidates() do
 		added(candidate)
 	end
+	-- The public interface erases private state; Luau treats metatable method receivers invariantly.
 	return self :: Types.Runtime
 end
 

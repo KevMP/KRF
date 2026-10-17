@@ -6,7 +6,9 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run. [Actor replication](./actor-replication) filters and delivers the resulting records to framework-private client consumers; public client state accessors are unavailable.
+Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run.
+
+[Actor replication](./actor-replication) filters and sends the resulting records to ready clients. Default client startup installs no Actor-data consumer and rejects these packets before assembly. Declaring a domain does not make its state available to client gameplay code.
 
 ## Domain definition {#domain-definition}
 

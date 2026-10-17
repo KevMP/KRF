@@ -46,16 +46,36 @@ it("batches different Actors' baseline and live records while preserving each st
 	end
 end)
 
-it("splits a large join pass into packets bounded by the codec's physical limit", function()
+it("completes a large join within packet and concurrent baseline limits", function()
 	local player: Player = TestUtils.player(fixture)
+	local actors: { ActorTypes.Actor } = {}
 	for _ = 1, 1200 do
-		TestUtils.actor(fixture, nil)
+		table.insert(actors, TestUtils.actor(fixture, nil))
 	end
 	local runtime: Types.Runtime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(Constants.MAX_PACKET_BYTES * 2, 1200)
+	expect(#TestUtils.kind(fixture, player, "BaselineBegin")).toBe(Constants.MAX_PENDING_BASELINES)
+	for _ = 1, 300 do
+		runtime:Step(Constants.MAX_PACKET_BYTES * 2, 1200)
+	end
+	expect(#TestUtils.kind(fixture, player, "BaselineEnd")).toBe(1200)
+	for _, delivery: TestUtils.Delivery in fixture.deliveries do
+		expect(buffer.len(delivery.payload) <= Constants.MAX_PACKET_BYTES).toBe(true)
+	end
+	fixture.deliveries = {}
+	fixture.publicDomain.value = 11
+	for _, actor: ActorTypes.Actor in actors do
+		fixture.publicDomain.callbacks[actor]({
+			{ id = "Changed", payload = 1 },
+			{ id = "Changed", payload = 2 },
+			{ id = "Changed", payload = 3 },
+			{ id = "Changed", payload = 4 },
+		})
+	end
+	runtime:Step(Constants.MAX_PACKET_BYTES * 2, 1200)
 	expect(#fixture.deliveries > 1).toBe(true)
-	expect(#TestUtils.kind(fixture, player, "BaselineBegin")).toBe(1200)
+	expect(#TestUtils.kind(fixture, player, "Commit")).toBe(1200)
 	for _, delivery: TestUtils.Delivery in fixture.deliveries do
 		expect(buffer.len(delivery.payload) <= Constants.MAX_PACKET_BYTES).toBe(true)
 	end
