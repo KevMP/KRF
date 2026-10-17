@@ -3,7 +3,12 @@ local Types = require(script.Parent.ActorStreamTypes)
 local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
 
 type Assembly = { generation: number, bytes: buffer, received: number, occupied: buffer }
-type State = { record: { actorId: string, handle: number, model: Model? }, generation: number, pending: Assembly? }
+type State = {
+	record: { actorId: string, handle: number, model: Model? },
+	generation: number,
+	pending: Assembly?,
+	halted: boolean,
+}
 local ActorStreamRuntime = {}
 ActorStreamRuntime.__index = ActorStreamRuntime
 
@@ -15,6 +20,7 @@ type RuntimeState = {
 	ids: { [string]: State },
 	models: { [Model]: State },
 	candidates: { [Instance]: Types.Candidate },
+	candidatesByActorId: { [string]: { [Instance]: Types.Candidate } },
 	retired: { [number]: boolean },
 	pendingCount: number,
 	destroyed: boolean,
@@ -36,10 +42,11 @@ function ActorStreamRuntime._unbind(self: Runtime, state: State): ()
 end
 
 function ActorStreamRuntime._bind(self: Runtime, state: State): ()
-	for _, candidate: Types.Candidate in self.candidates do
-		if candidate.actorId ~= state.record.actorId then
-			continue
-		end
+	local candidates: { [Instance]: Types.Candidate }? = self.candidatesByActorId[state.record.actorId]
+	if candidates == nil then
+		return
+	end
+	for _, candidate: Types.Candidate in candidates do
 		if state.record.model ~= nil then
 			if state.record.model ~= candidate.model then
 				self.options.ReportFault("ActorModelConflict")
@@ -65,6 +72,9 @@ function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): st
 		return "RetiredActorHandle"
 	end
 	local state: State? = self.handles[record.handle]
+	if state ~= nil and state.halted and record.kind ~= "ActorRemove" and record.kind ~= "ActorHalt" then
+		return "ActorStreamHalted"
+	end
 	if record.kind == "BaselineBegin" then
 		if record.totalBytes > self.options.maxBaselineBytes then
 			return "ActorBaselineTooLarge"
@@ -90,6 +100,7 @@ function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): st
 				record = { actorId = record.actorId, handle = record.handle, model = nil },
 				generation = 0,
 				pending = nil,
+				halted = false,
 			}
 			state = created
 			self.handles[record.handle] = state
@@ -125,6 +136,13 @@ function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): st
 		self.handles[record.handle] = nil
 		self.ids[state.record.actorId] = nil
 		consumer.OnActorRemoved(state.record)
+		return nil
+	elseif record.kind == "ActorHalt" then
+		if state.pending ~= nil then
+			state.pending = nil
+			self.pendingCount -= 1
+		end
+		state.halted = true
 		return nil
 	elseif record.kind == "Commit" then
 		if state.pending ~= nil then
@@ -224,6 +242,7 @@ function ActorStreamRuntime.Destroy(self: Runtime): ()
 	table.clear(self.ids)
 	table.clear(self.models)
 	table.clear(self.candidates)
+	table.clear(self.candidatesByActorId)
 	table.clear(self.retired)
 	table.clear(self.disconnects)
 	self.pendingCount = 0
@@ -243,6 +262,7 @@ function ActorStreamRuntime.new(
 		ids = {},
 		models = {},
 		candidates = {},
+		candidatesByActorId = {},
 		retired = {},
 		pendingCount = 0,
 		destroyed = false,
@@ -255,6 +275,9 @@ function ActorStreamRuntime.new(
 			return
 		end
 		self.candidates[candidate.marker] = candidate
+		local candidates: { [Instance]: Types.Candidate } = self.candidatesByActorId[candidate.actorId] or {}
+		self.candidatesByActorId[candidate.actorId] = candidates
+		candidates[candidate.marker] = candidate
 		local state: State? = self.ids[candidate.actorId]
 		if state ~= nil then
 			self:_bind(state)
@@ -272,6 +295,13 @@ function ActorStreamRuntime.new(
 				return
 			end
 			self.candidates[marker] = nil
+			local candidates: { [Instance]: Types.Candidate }? = self.candidatesByActorId[candidate.actorId]
+			if candidates ~= nil then
+				candidates[marker] = nil
+				if next(candidates) == nil then
+					self.candidatesByActorId[candidate.actorId] = nil
+				end
+			end
 			local state: State? = self.ids[candidate.actorId]
 			if state ~= nil and state.record.model == candidate.model then
 				self:_unbind(state)

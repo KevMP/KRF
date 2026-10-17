@@ -19,6 +19,8 @@ export type Record =
 	| { kind: "BaselineEnd", handle: number, generation: number, revision: number }
 	| { kind: "Commit", handle: number, revision: number, patches: { DomainPatch }, events: { Event } }
 	| { kind: "ActorRemove", handle: number }
+	-- Terminal stream failure releases an assembly without removing Actor awareness.
+	| { kind: "ActorHalt", handle: number }
 export type Codec = {
 	Encode: (records: { Record }) -> (buffer?, string?),
 	Measure: (records: { Record }) -> (number?, string?),

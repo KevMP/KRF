@@ -20,7 +20,7 @@ type Connection = {
 	active: { Stream },
 	queued: boolean,
 	-- Reserved work is staged; Pending may still occupy a client assembly after local recapture/fault.
-	-- Only a confirmed End/Remove or connection close releases Pending capacity.
+	-- A reliably queued End/Halt/Remove precedes new Begins; connection close also releases capacity.
 	transfers: { [Stream]: "Reserved" | "Pending" },
 }
 type Delivery = { stream: Stream, record: WireTypes.Record }
@@ -46,7 +46,7 @@ type Runtime = typeof(setmetatable({} :: RuntimeState, ActorAwarenessRuntime))
 
 function ActorAwarenessRuntime._activate(self: Runtime, stream: Stream): ()
 	local connection: Connection? = self.connections[stream.player]
-	if connection == nil or (stream.failed and not stream.removed) or stream.active then
+	if connection == nil or (stream.failed and not stream.removed and not stream.haltPending) or stream.active then
 		return
 	end
 	stream.active = true
@@ -205,10 +205,11 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		return
 	end
 	local visits: number = 0
+	local deliveryBudget: number = maxBytes
 	local limit: number = maxRecords * 2
 	local packets: { Packet } = {}
 	local currentPackets: { [Connection]: Packet } = {}
-	local staged: { [Stream]: boolean } = {}
+	local visited: { [Stream]: boolean } = {}
 	while #self.active > 0 and maxRecords > 0 and maxBytes > 0 and visits < limit do
 		visits += 1
 		local connection: Connection = table.remove(self.active, 1) :: Connection
@@ -222,7 +223,11 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 				count += 1
 			end
 			local canBegin: boolean = connection.transfers[stream] ~= nil or count < Constants.MAX_PENDING_BASELINES
-			local record: WireTypes.Record? = if staged[stream] then nil else stream:Prepare(maxBytes, canBegin)
+			local record: WireTypes.Record? = nil
+			if not visited[stream] then
+				visited[stream] = true
+				record = stream:Prepare(maxBytes, canBegin, deliveryBudget)
+			end
 			if record ~= nil then
 				local size: number?, reason: string? = self.codec.Measure({ record })
 				if size == nil then
@@ -244,7 +249,6 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 					packet.bytes += size
 					table.insert(packet.records, record)
 					table.insert(packet.deliveries, { stream = stream, record = record })
-					staged[stream] = true
 					maxBytes -= size
 					maxRecords -= 1
 				end
@@ -272,7 +276,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 				local record: WireTypes.Record = delivery.record
 				if record.kind == "BaselineBegin" then
 					packet.connection.transfers[delivery.stream] = "Pending"
-				elseif record.kind == "BaselineEnd" or record.kind == "ActorRemove" then
+				elseif record.kind == "BaselineEnd" or record.kind == "ActorRemove" or record.kind == "ActorHalt" then
 					packet.connection.transfers[delivery.stream] = nil
 				end
 				delivery.stream:Sent(record)

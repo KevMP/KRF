@@ -19,12 +19,14 @@ The server tracks every ready client as aware of every registered Actor. A clien
 1. After readiness is acknowledged, KRF captures an Actor's current canonical truth and filters its domains for the recipient. Joining or recovering clients do not rerun game snapshot callbacks.
 2. Networking sends that baseline in bounded chunks before sending live work for the Actor.
 3. Visible committed state and semantic events follow the baseline in Actor order. State-only work may coalesce; required event boundaries remain ordered.
-4. If queued work exceeds its limits or a live record exceeds the delivery budget, KRF discards obsolete unsent history and captures a newer baseline. Recovery restores current truth; occurrences before that capture are not replayed.
+4. If queued work exceeds its limits or a live record repeatedly exceeds the complete delivery budget, KRF discards obsolete unsent history and captures a newer baseline. A temporarily small budget waits. Recovery restores current truth; occurrences before that capture are not replayed.
 5. Unregistering an Actor discards unsent work and reliably retires its awareness and handle.
 
 Each recipient has an independent revision sequence for each Actor. Filtering and state coalescing happen before revision allocation, so hidden Owner work consumes no revision for other clients. A complete replacement baseline establishes a newer authoritative revision.
 
 Oversized baselines, exhausted stream counters, and failed reliable sends halt the affected recipient's Actor stream and emit a warning. Automatic baseline recovery handles oversized live work and queue pressure; it does not restart a halted stream. The server Actor remains registered even when delivery fails.
+
+Terminal cleanup is sent reliably and retried before pending transfer capacity is reused, so halted Actors do not indefinitely block unrelated transfers. Cleanup preserves Actor awareness and any existing Model binding.
 
 ## All and Owner audiences
 

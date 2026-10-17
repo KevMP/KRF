@@ -72,7 +72,7 @@ it("reports a detached canonical Actor instead of inventing replacement truth", 
 	expect(reason).toBe("ActorStreamHalted")
 	expect(fixture.faults).toEqual({ { player = player, actorId = actor:GetId(), reason = "ActorBaselineMissing" } })
 	TestUtils.drain(fixture)
-	expect(fixture.deliveries).toEqual({})
+	expect(TestUtils.records(fixture, player)).toEqual({ { kind = "ActorHalt", handle = handle } })
 end)
 
 it("rejects invalid canonical truth before returning baseline bytes", function()
@@ -101,7 +101,7 @@ it("fails generation exhaustion without reusing an earlier completed generation"
 	expect(success).toBe(false)
 	expect(reason).toBe("ActorStreamHalted")
 	TestUtils.drain(fixture)
-	expect(fixture.deliveries).toEqual({})
+	expect(TestUtils.records(fixture, player)).toEqual({ { kind = "ActorHalt", handle = handle } })
 	expect(fixture.faults).toEqual({ { player = player, actorId = actor:GetId(), reason = "ActorGenerationExhausted" } })
 end)
 

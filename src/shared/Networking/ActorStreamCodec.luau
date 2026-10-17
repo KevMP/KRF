@@ -9,7 +9,7 @@ local Collections = require(script.Parent.utils.SchemaCollectionUtils)
 local ActorStreamCodec = {} :: Types.CodecModule
 
 local kinds: { [string]: number } =
-	{ BaselineBegin = 0, BaselineChunk = 1, BaselineEnd = 2, Commit = 3, ActorRemove = 4 }
+	{ BaselineBegin = 0, BaselineChunk = 1, BaselineEnd = 2, Commit = 3, ActorRemove = 4, ActorHalt = 5 }
 
 local function protected<T>(callback: () -> T, fallback: string): (T?, string?)
 	local success: boolean, result: any = pcall(callback)
@@ -154,6 +154,9 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 			end
 			cursor.context = "MalformedActorPacket"
 			return { kind = "Commit", handle = handle, revision = revision, patches = patches, events = events }
+		end
+		if kind == 5 then
+			return { kind = "ActorHalt", handle = handle }
 		end
 		assert(kind == 4, "MalformedActorPacket")
 		return { kind = "ActorRemove", handle = handle }

@@ -23,8 +23,10 @@ type StreamState = {
 	identitySent: boolean,
 	baseline: Baseline?,
 	recapture: boolean,
+	blockedBudget: number?,
 	removed: boolean,
 	failed: boolean,
+	haltPending: boolean,
 	active: boolean,
 	scheduler: PublicationTypes.Scheduler,
 	key: PublicationTypes.StreamKey,
@@ -40,8 +42,17 @@ function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 	self.failed = true
 	self.baseline = nil
 	self.recapture = false
-	self.removed = false
+	self.blockedBudget = nil
+	-- A known identity needs reliable cleanup, even if failure happened after End.
+	-- Failed cleanup remains pending until its reliable send succeeds.
+	self.removed = self.removed and self.identitySent
+	if not reported then
+		self.haltPending = self.identitySent and not self.removed
+	end
 	self.scheduler:Destroy()
+	if self.haltPending or self.removed then
+		self.dependencies.Activate(self)
+	end
 	if not reported then
 		self.dependencies.ReportFault({ player = self.player, actorId = self.actor:GetId(), reason = reason })
 	end
@@ -67,6 +78,7 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 	self.fence = sequence
 	self.baseline = { body = body, offset = 0, phase = "Begin" }
 	self.recapture = false
+	self.blockedBudget = nil
 	self.scheduler:ResetAfterBaseline(self.key, projected.domains)
 	self.dependencies.Activate(self)
 	return true
@@ -101,8 +113,10 @@ function ActorRecipientStream.new(
 		identitySent = false,
 		baseline = nil,
 		recapture = false,
+		blockedBudget = nil,
 		removed = false,
 		failed = false,
+		haltPending = false,
 		active = false,
 		scheduler = scheduler,
 		key = { recipient = player, actor = actor },
@@ -112,9 +126,17 @@ function ActorRecipientStream.new(
 	return setmetatable(state, ActorRecipientStream)
 end
 
-function ActorRecipientStream.Prepare(self: Stream, maxBytes: number, canBegin: boolean): WireTypes.Record?
+function ActorRecipientStream.Prepare(
+	self: Stream,
+	maxBytes: number,
+	canBegin: boolean,
+	deliveryBudget: number
+): WireTypes.Record?
 	if self.removed then
 		return { kind = "ActorRemove", handle = self.handle }
+	end
+	if self.haltPending then
+		return { kind = "ActorHalt", handle = self.handle }
 	end
 	if self.failed then
 		return nil
@@ -171,15 +193,20 @@ function ActorRecipientStream.Prepare(self: Stream, maxBytes: number, canBegin: 
 		return nil
 	end
 	local nextBytes: number? = self.scheduler:GetNextRecordBytes(self.key)
-	if nextBytes ~= nil and nextBytes > Constants.STEP_BYTES then
-		-- This record cannot fit any pass. Recover canonical truth through bounded chunks;
-		-- event barriers are discarded by the same recovery contract as queue overload.
+	if nextBytes ~= nil and nextBytes > deliveryBudget then
+		-- Give a transiently small pass a chance to recover its budget. Repeated
+		-- insufficient full passes recover truth; a small remaining budget only waits.
+		if self.blockedBudget == nil or deliveryBudget > self.blockedBudget then
+			self.blockedBudget = deliveryBudget
+			return nil
+		end
 		self.recapture = true
 		if not self:Capture() then
 			return nil
 		end
-		return self:Prepare(maxBytes, canBegin)
+		return self:Prepare(maxBytes, canBegin, deliveryBudget)
 	end
+	self.blockedBudget = nil
 	local drained: PublicationTypes.DrainResult = self.scheduler:DrainBudgeted(maxBytes, 1)
 	local record: PublicationTypes.Record? = drained.records[1]
 	if record == nil then
@@ -198,6 +225,11 @@ function ActorRecipientStream.Sent(self: Stream, record: WireTypes.Record): ()
 	local pending: Baseline? = self.baseline
 	if record.kind == "BaselineBegin" then
 		self.identitySent = true
+		-- A fault can occur reentrantly before the Begin send returns successfully.
+		if self.failed and not self.removed then
+			self.haltPending = true
+			self.dependencies.Activate(self)
+		end
 		if pending ~= nil and record.generation == self.generation then
 			pending.phase = "Chunks"
 		end
@@ -212,8 +244,11 @@ function ActorRecipientStream.Sent(self: Stream, record: WireTypes.Record): ()
 		self.revision = record.revision
 	elseif record.kind == "Commit" then
 		self.revision = record.revision
+	elseif record.kind == "ActorHalt" then
+		self.haltPending = false
 	else
 		self.removed = false
+		self.haltPending = false
 	end
 end
 
@@ -235,6 +270,7 @@ function ActorRecipientStream.Retire(self: Stream): ()
 	self.scheduler:Destroy()
 	self.baseline = nil
 	self.recapture = false
+	self.haltPending = false
 	self.removed = true
 	self.dependencies.Activate(self)
 end
@@ -243,6 +279,7 @@ function ActorRecipientStream.HasWork(self: Stream): boolean
 	return self.baseline ~= nil
 		or self.recapture
 		or self.removed
+		or self.haltPending
 		or self.scheduler:GetStreamStatus(self.key).pendingRecords > 0
 end
 

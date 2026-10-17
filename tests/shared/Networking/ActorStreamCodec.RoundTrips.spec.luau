@@ -14,7 +14,7 @@ beforeEach(function()
 	codec = TestUtils.codec()
 end)
 
-it("round-trips Begin, Chunk, End, live Commit and Remove records in one buffer", function()
+it("round-trips Begin, Chunk, End, live Commit, Halt and Remove records in one buffer", function()
 	local records: { Types.Record } = {
 		{ kind = "BaselineBegin", handle = 17, actorId = "ActorA", generation = 3, totalBytes = 3 },
 		{ kind = "BaselineChunk", handle = 17, generation = 3, offset = 0, bytes = buffer.fromstring("abc") },
@@ -31,6 +31,7 @@ it("round-trips Begin, Chunk, End, live Commit and Remove records in one buffer"
 			},
 			events = { { domainId = "Game.State", eventId = "Changed", payload = { count = 2 } } },
 		},
+		{ kind = "ActorHalt", handle = 17 },
 		{ kind = "ActorRemove", handle = 17 },
 	}
 	local payload: buffer = TestUtils.encode(codec, records)

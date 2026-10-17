@@ -53,6 +53,60 @@ it("rejects live work before baseline completion without delivering it to N5", f
 	expect(fixture.commits).toEqual({})
 end)
 
+it("idempotently halts an incomplete assembly and frees capacity without removing its identity or Model", function()
+	fixture.options.maxPendingBaselines = 1
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	TestUtils.add(fixture, candidate)
+	expect(TestUtils.send(fixture, {
+		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 4 },
+	})).toBe(true)
+	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	assert(original ~= nil, "Expected admitted Actor")
+	expect(TestUtils.send(fixture, {
+		{ kind = "ActorHalt", handle = 1 },
+		{ kind = "ActorHalt", handle = 1 },
+	})).toBe(true)
+	TestUtils.establish(fixture, 2, "ActorB")
+	expect(runtime:GetByHandle(1)).toBe(original)
+	expect(runtime:GetByModel(candidate.model)).toBe(original)
+	expect(#fixture.baselines).toBe(1)
+	expect(fixture.baselines[1].actor.actorId).toBe("ActorB")
+	expect(fixture.removed).toEqual({})
+	expect(fixture.unbound).toEqual({})
+	expect(fixture.faults).toEqual({})
+end)
+
+it("rejects further data for a halted stream while still accepting its eventual removal", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local success: boolean, reason: string? = TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 } })
+	expect(success).toBe(false)
+	expect(reason).toBe("UnknownActorHandle")
+	expect(runtime:GetByHandle(1)).toBeNil()
+	expect(TestUtils.send(fixture, {
+		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 4 },
+		{ kind = "ActorHalt", handle = 1 },
+	})).toBe(true)
+	success, reason = TestUtils.send(fixture, {
+		{ kind = "Commit", handle = 1, revision = 1, patches = {}, events = {} },
+	})
+	expect(success).toBe(false)
+	expect(reason).toBe("ActorStreamHalted")
+	success, reason = TestUtils.send(fixture, {
+		{ kind = "BaselineBegin", handle = 1, generation = 2, totalBytes = 4 },
+	})
+	expect(success).toBe(false)
+	expect(reason).toBe("ActorStreamHalted")
+	expect(fixture.baselines).toEqual({})
+	expect(fixture.commits).toEqual({})
+	expect(TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })).toBe(true)
+	expect(runtime:GetByHandle(1)).toBeNil()
+	expect(#fixture.removed).toBe(1)
+	success, reason = TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 } })
+	expect(success).toBe(false)
+	expect(reason).toBe("RetiredActorHandle")
+end)
+
 it("rejects zero-length chunks and corrupt completed bodies, then accepts a fresh valid generation", function()
 	TestUtils.start(fixture)
 	expect(

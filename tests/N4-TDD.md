@@ -19,6 +19,7 @@ revision expectations and client resync requests.
 | Canonical capture, sequence fence, chunking, replacement, pressure and fairness | `server/Networking/ActorAwareness.Baselines.spec.luau` |
 | Initial identity versus handle-only replacement and cancellation timing | `server/Networking/ActorAwareness.BaselineIdentity.spec.luau` |
 | Cross-recipient join/replacement backlog fairness under small budgets | `server/Networking/ActorAwareness.RecipientFairness.spec.luau` |
+| Server-to-client admission beyond concurrent assembly capacity, actual delivery budgets, reliable terminal cleanup and reentrant faults | `server/Networking/ActorAwareness.ClientDelivery.spec.luau` |
 | Filtered revisions, state coalescing, event barriers, immutable source commits | `server/Networking/ActorAwareness.Live.spec.luau` |
 | Cancelled history, reliable removal and destroyed-runtime cleanup | `server/Networking/ActorAwareness.Removal.spec.luau` |
 | Real N2 ACK ordering and real Actor registration/rollback | `server/Networking/ActorAwareness.Integration.spec.luau` |
@@ -30,16 +31,16 @@ revision expectations and client resync requests.
 | Pending-baseline admission and completed-generation monotonicity | `client/ActorStream.Admission.spec.luau` |
 | Production pre-READY N4 installation, post-READY routing and startup cleanup | `client/Client.Init.ActorStream.spec.luau` |
 | N5 delivery seam, revision-gap scope, removal and handle retirement | `client/ActorStream.Records.spec.luau` |
-| Marker arrival orders, stream-out/rebind, ambiguity and stale markers | `client/ActorStream.ModelBinding.spec.luau` |
+| Actor-ID-indexed marker binding, arrival orders, stream-out/rebind, duplicate markers, ambiguity and stale markers | `client/ActorStream.ModelBinding.spec.luau` |
 | Real server marker to native client discovery/binding bridge | `client/ActorStream.ModelDiscovery.Integration.spec.luau` |
-| Logical records, patch semantics, Optional domain presence and codebooks | `shared/Networking/ActorStreamCodec.RoundTrips.spec.luau` |
+| Logical records including terminal Halt, patch semantics, Optional domain presence and codebooks | `shared/Networking/ActorStreamCodec.RoundTrips.spec.luau` |
 | Packet truncation, foreign codes, schema bounds and Instance rejection | `shared/Networking/ActorStreamCodec.Hardening.spec.luau` |
 | Native Character-source observation, session removal and cleanup | `server/Networking/NativePlayerAssociation.spec.luau` |
 | Halted sends, failed captures, counter exhaustion and insufficient budgets | `server/Networking/ActorAwareness.Failures.spec.luau` |
 | Uninstalled private lifecycle hooks | `server/Networking/ActorAwarenessLifecycle.spec.luau` |
 | Real production handshake, baseline/live traffic, oversized truth and private recovery entrypoint | `server/Networking/ServerNetworking.ActorTraffic.spec.luau` |
 | Physical batching, 1,200-Actor packet splitting and reentrant delivery | `server/Networking/ActorAwareness.Packets.spec.luau` |
-| Early removal, corrupt assembly and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
+| Early removal, corrupt assembly, idempotent terminal halt, halted-stream rejection and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
 | Invalid native markers, identity mutations and observer cleanup | `client/ActorModelDiscovery.Validation.spec.luau` |
 | Schema-specific patch rejection and allocation-free packet measurement | `shared/Networking/ActorPatchCompiler.spec.luau` |
 
@@ -81,11 +82,34 @@ All paths in the table are relative to `tests/`.
   already-live Actor must be serviced before the baseline backlog fully drains.
 - The client consumes a compiled Actor codec, discovery events and an N5 fake
   consumer. It delivers complete decoded truth and patches without applying them.
-  Revision-gap detection deliberately stays with N5.
+  Revision-gap detection deliberately stays with N5. Default client startup has
+  no installed Actor-data consumer and rejects Actor packets before decoding;
+  the connected runtime tests install the private consumer explicitly.
 - `maxPendingBaselines` limits concurrent incomplete assemblies. Completion and
-  ActorRemove release capacity; rejected Begins consume none; replacing a pending
+  ActorHalt/ActorRemove release capacity; rejected Begins consume none; replacing a pending
   generation occupies its existing slot. A completed generation remains a fence:
   same/older Begin rejects, while a newer generation can complete on the same record.
+- Server-to-client delivery specs connect the real awareness runtime, Actor codec
+  and client assembly runtime with production limits. A join with 25 Actors must
+  complete without client admission failures. Staged Begins reserve capacity;
+  an accepted reliable End, Halt or Remove releases it in reliable message order.
+- Terminal faults after Begin queue a reliable ActorHalt, which drops incomplete
+  assembly and permanently rejects further data on that handle while preserving
+  Actor identity and Model binding until removal. Failed cleanup sends retry;
+  server capacity stays occupied until cleanup succeeds or the connection closes.
+  Saturation specs fault all 16 pending streams, fail their cleanup sends, and
+  prove unrelated Actors can then complete baselines and receive live commits
+  without unregistering the failed Actors. Faults raised before a Begin send
+  returns and failed removal of an incomplete assembly have separate regressions.
+- Live-record recovery compares the head record with the full budget supplied
+  to Step, separately from the remaining budget after other records. A transient
+  small pass waits; repeated insufficient full passes recapture canonical truth.
+  Smaller sustained budgets must progress through chunks, while a larger valid
+  budget must deliver the original commit and its events without recapture.
+- Model discovery retains a marker lookup and an Actor-ID candidate index.
+  Binding examines only candidates for that Actor; discovery removal updates both
+  indexes and deletes empty groups. Streaming, duplicate marker, conflicting
+  Model and stale marker behavior remains independent of baseline lifetime.
 - Marker bridge specs use the actual `ActorModelMarker` and `ActorModelDiscovery`
   modules, the actual marker Instance and real hierarchy events. No independent
   fake Candidate is supplied to these bridge tests.
@@ -133,11 +157,13 @@ All 1,385 existing tests across 95 suites passed. Coverage instrumentation emitt
 report, but the failing unit command prevented the coverage threshold stage from
 running.
 
-Implementation validation: `npm test` passes lint with zero warnings,
-typechecking and all 1,578 tests across 125 suites, including the original 1,385
-tests. Per-file coverage gates remain at 90% and pass. The docs-site
-production build succeeds. The internal protocol compatibility version was bumped
-for the Actor wire contract.
+Current validation: `npm test` passes lint with zero errors or warnings,
+typechecking and all 1,593 tests across 126 suites. Per-file coverage gates remain
+at 90% and pass. `npm run build` from `docs-site` also succeeds. The suite includes
+delivery-budget regressions below and above the production default, terminal
+cleanup saturation and retries, and Actor-ID candidate-index lifecycle checks.
+The internal protocol compatibility version was bumped for the terminal Halt
+record, so older receivers cannot accept the extended wire contract silently.
 
 These unit specs do not prove real StreamingEnabled behavior across server/client
 DataModels or CPU/allocation performance. Production lifecycle integration is
@@ -161,9 +187,9 @@ It creates two real client sessions and ends with a structured result. The fixtu
 never calls `RefreshPlayerAssociation` or manually emits the association observer.
 It also checks that domain snapshots are not rerun for ownership reconciliation.
 
-The two-client multiplayer fixture passes with real engine Players and real
-Character property transitions, including an unregistered Character. Its result
-is `{ success = true, snapshots = 4 }`: only the initial canonical captures ran.
+Earlier two-client multiplayer validation passed with real engine Players and
+real Character property transitions, including an unregistered Character. Its
+recorded result is `{ success = true, snapshots = 4 }`: only the initial canonical captures ran.
 `npm test` runs the unit/production-wiring contracts; this separate Edit-mode
 fixture uses `scripts/n4-association-test-plugin.server.luau` or the command-bar
 launcher above.
