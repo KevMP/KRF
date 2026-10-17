@@ -34,6 +34,7 @@ export type Fixture = {
 	options: Types.Options,
 	baselines: { BaselineDelivery },
 	commits: { CommitDelivery },
+	halted: { Types.ActorRecord },
 	removed: { Types.ActorRecord },
 	bound: { Binding },
 	unbound: { Binding },
@@ -65,6 +66,7 @@ function TestUtils.new(): Fixture
 		options = {} :: Types.Options,
 		baselines = {},
 		commits = {},
+		halted = {},
 		removed = {},
 		bound = {},
 		unbound = {},
@@ -97,6 +99,9 @@ function TestUtils.new(): Fixture
 			events: { WireTypes.Event }
 		): ()
 			table.insert(fixture.commits, { actor = actor, revision = revision, patches = patches, events = events })
+		end,
+		OnActorHalted = function(actor: Types.ActorRecord): ()
+			table.insert(fixture.halted, actor)
 		end,
 		OnActorRemoved = function(actor: Types.ActorRecord): ()
 			table.insert(fixture.removed, actor)

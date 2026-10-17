@@ -77,6 +77,59 @@ it("idempotently halts an incomplete assembly and frees capacity without removin
 	expect(fixture.faults).toEqual({})
 end)
 
+for _, completedBaseline: boolean in { false, true } do
+	it(
+		"notifies the consumer once of terminal failure with completed baseline=" .. tostring(completedBaseline),
+		function()
+			local notifications: { string } = {}
+			local onHalted: typeof(fixture.consumer.OnActorHalted) = fixture.consumer.OnActorHalted
+			local onRemoved: typeof(fixture.consumer.OnActorRemoved) = fixture.consumer.OnActorRemoved
+			fixture.consumer.OnActorHalted = function(actor: Types.ActorRecord): ()
+				table.insert(notifications, "Halted")
+				-- Terminal status must already hold when N5 receives the notification.
+				local accepted: boolean, reason: string? = TestUtils.send(fixture, {
+					{ kind = "Commit", handle = actor.handle, revision = 2, patches = {}, events = {} },
+				})
+				expect(accepted).toBe(false)
+				expect(reason).toBe("ActorStreamHalted")
+				onHalted(actor)
+			end
+			fixture.consumer.OnActorRemoved = function(actor: Types.ActorRecord): ()
+				table.insert(notifications, "Removed")
+				onRemoved(actor)
+			end
+			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+			TestUtils.add(fixture, candidate)
+			if completedBaseline then
+				TestUtils.establish(fixture)
+			else
+				expect(TestUtils.send(fixture, {
+					{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 4 },
+				})).toBe(true)
+			end
+			local original: Types.ActorRecord? = runtime:GetByHandle(1)
+			assert(original ~= nil, "Expected admitted Actor identity")
+			expect(TestUtils.send(fixture, {
+				{ kind = "ActorHalt", handle = 1 },
+				{ kind = "ActorHalt", handle = 1 },
+			})).toBe(true)
+			expect(fixture.halted).toEqual({ original })
+			expect(notifications).toEqual({ "Halted" })
+			expect(#fixture.baselines).toBe(if completedBaseline then 1 else 0)
+			expect(fixture.commits).toEqual({})
+			expect(fixture.removed).toEqual({})
+			expect(fixture.unbound).toEqual({})
+			expect(runtime:GetByModel(candidate.model)).toBe(original)
+			expect(TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })).toBe(true)
+			expect(notifications).toEqual({ "Halted", "Removed" })
+			expect(fixture.removed).toEqual({ original })
+			expect(#fixture.unbound).toBe(1)
+			expect(runtime:GetByHandle(1)).toBeNil()
+		end
+	)
+end
+
 it("rejects further data for a halted stream while still accepting its eventual removal", function()
 	local runtime: Types.Runtime = TestUtils.start(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 } })

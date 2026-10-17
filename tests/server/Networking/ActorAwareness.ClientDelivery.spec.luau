@@ -226,6 +226,43 @@ for _, faultSource: string in { "revision", "send" } do
 	end)
 end
 
+for _, completedBaseline: boolean in { false, true } do
+	it(
+		"delivers terminal server failure to the consumer with completed baseline=" .. tostring(completedBaseline),
+		function()
+			local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+			if completedBaseline then
+				fixture.options.maxGeneration = 1
+			else
+				fixture.options.maxRevision = 0
+			end
+			local runtime: Types.Runtime = connect()
+			drain(runtime)
+			if completedBaseline then
+				local handle: number? = runtime:GetHandle(player, actor)
+				assert(handle ~= nil, "Expected established stream")
+				local accepted: boolean, reason: string? = runtime:RequestReplacementBaseline(player, handle)
+				expect(accepted).toBe(false)
+				expect(reason).toBe("ActorStreamHalted")
+				drain(runtime)
+			end
+			assert(client.runtime ~= nil, "Expected connected receiver")
+			local record: ClientTypes.ActorRecord? = client.runtime:GetByActorId(actor:GetId())
+			assert(record ~= nil, "Terminal failure must preserve awareness")
+			expect(client.halted).toEqual({ record })
+			expect(#client.baselines).toBe(if completedBaseline then 1 else 0)
+			expect(client.removed).toEqual({})
+			expect(#fixture.faults).toBe(1)
+			fixture.publicDomain.value = 12
+			fixture.publicDomain.callbacks[actor]()
+			drain(runtime)
+			expect(client.halted).toEqual({ record })
+			expect(client.commits).toEqual({})
+			expect(client.faults).toEqual({})
+		end
+	)
+end
+
 it("cleans faults raised reentrantly before the initial Begin send returns", function()
 	local actors: { ActorTypes.Actor } = {}
 	for _ = 1, Constants.MAX_PENDING_BASELINES do

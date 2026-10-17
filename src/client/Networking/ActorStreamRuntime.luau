@@ -138,11 +138,15 @@ function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): st
 		consumer.OnActorRemoved(state.record)
 		return nil
 	elseif record.kind == "ActorHalt" then
+		if state.halted then
+			return nil
+		end
 		if state.pending ~= nil then
 			state.pending = nil
 			self.pendingCount -= 1
 		end
 		state.halted = true
+		consumer.OnActorHalted(state.record)
 		return nil
 	elseif record.kind == "Commit" then
 		if state.pending ~= nil then
@@ -304,6 +308,15 @@ function ActorStreamRuntime.new(
 			end
 			local state: State? = self.ids[candidate.actorId]
 			if state ~= nil and state.record.model == candidate.model then
+				-- Marker lifetime is separate from Model lifetime. Another marker for
+				-- this Actor may still support the current binding.
+				if candidates ~= nil then
+					for _, remaining: Types.Candidate in candidates do
+						if remaining.model == candidate.model then
+							return
+						end
+					end
+				end
 				self:_unbind(state)
 				self:_bind(state)
 			end

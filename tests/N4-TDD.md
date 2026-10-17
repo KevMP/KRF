@@ -19,7 +19,7 @@ revision expectations and client resync requests.
 | Canonical capture, sequence fence, chunking, replacement, pressure and fairness | `server/Networking/ActorAwareness.Baselines.spec.luau` |
 | Initial identity versus handle-only replacement and cancellation timing | `server/Networking/ActorAwareness.BaselineIdentity.spec.luau` |
 | Cross-recipient join/replacement backlog fairness under small budgets | `server/Networking/ActorAwareness.RecipientFairness.spec.luau` |
-| Server-to-client admission beyond concurrent assembly capacity, actual delivery budgets, reliable terminal cleanup and reentrant faults | `server/Networking/ActorAwareness.ClientDelivery.spec.luau` |
+| Server-to-client admission beyond concurrent assembly capacity, actual delivery budgets, reliable terminal cleanup, consumer notification and reentrant faults | `server/Networking/ActorAwareness.ClientDelivery.spec.luau` |
 | Filtered revisions, state coalescing, event barriers, immutable source commits | `server/Networking/ActorAwareness.Live.spec.luau` |
 | Cancelled history, reliable removal and destroyed-runtime cleanup | `server/Networking/ActorAwareness.Removal.spec.luau` |
 | Real N2 ACK ordering and real Actor registration/rollback | `server/Networking/ActorAwareness.Integration.spec.luau` |
@@ -31,7 +31,7 @@ revision expectations and client resync requests.
 | Pending-baseline admission and completed-generation monotonicity | `client/ActorStream.Admission.spec.luau` |
 | Production pre-READY N4 installation, post-READY routing and startup cleanup | `client/Client.Init.ActorStream.spec.luau` |
 | N5 delivery seam, revision-gap scope, removal and handle retirement | `client/ActorStream.Records.spec.luau` |
-| Actor-ID-indexed marker binding, arrival orders, stream-out/rebind, duplicate markers, ambiguity and stale markers | `client/ActorStream.ModelBinding.spec.luau` |
+| Actor-ID-indexed marker binding, arrival orders, stream-out/rebind, duplicate-marker notification counts, ambiguity and stale markers | `client/ActorStream.ModelBinding.spec.luau` |
 | Real server marker to native client discovery/binding bridge | `client/ActorStream.ModelDiscovery.Integration.spec.luau` |
 | Logical records including terminal Halt, patch semantics, Optional domain presence and codebooks | `shared/Networking/ActorStreamCodec.RoundTrips.spec.luau` |
 | Packet truncation, foreign codes, schema bounds and Instance rejection | `shared/Networking/ActorStreamCodec.Hardening.spec.luau` |
@@ -40,7 +40,7 @@ revision expectations and client resync requests.
 | Uninstalled private lifecycle hooks | `server/Networking/ActorAwarenessLifecycle.spec.luau` |
 | Real production handshake, baseline/live traffic, oversized truth and private recovery entrypoint | `server/Networking/ServerNetworking.ActorTraffic.spec.luau` |
 | Physical batching, 1,200-Actor packet splitting and reentrant delivery | `server/Networking/ActorAwareness.Packets.spec.luau` |
-| Early removal, corrupt assembly, idempotent terminal halt, halted-stream rejection and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
+| Early removal, corrupt assembly, once-only terminal consumer notification before/after baseline completion, halted-stream rejection and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
 | Invalid native markers, identity mutations and observer cleanup | `client/ActorModelDiscovery.Validation.spec.luau` |
 | Schema-specific patch rejection and allocation-free packet measurement | `shared/Networking/ActorPatchCompiler.spec.luau` |
 
@@ -108,8 +108,12 @@ All paths in the table are relative to `tests/`.
   budget must deliver the original commit and its events without recapture.
 - Model discovery retains a marker lookup and an Actor-ID candidate index.
   Binding examines only candidates for that Actor; discovery removal updates both
-  indexes and deletes empty groups. Streaming, duplicate marker, conflicting
-  Model and stale marker behavior remains independent of baseline lifetime.
+  indexes and deletes empty groups. Removing a marker keeps the current binding
+  while another candidate for that Actor still references the same Model, without
+  unbind/rebind notifications. Removing the final supporting marker produces one
+  unbind, followed by one bind only if a replacement Model is available.
+  Streaming, conflicting Model and stale marker behavior remains independent of
+  baseline lifetime.
 - Marker bridge specs use the actual `ActorModelMarker` and `ActorModelDiscovery`
   modules, the actual marker Instance and real hierarchy events. No independent
   fake Candidate is supplied to these bridge tests.
@@ -126,6 +130,25 @@ All paths in the table are relative to `tests/`.
 - Player fixtures follow existing KRF tests: Folder identities for injected
   adapters, and two table identities with equal UserId for the session-identity
   regression. Native Roblox Player/Character discovery needs an engine check.
+
+## Private terminal consumer contract
+
+`Consumer.OnActorHalted(record: ActorRecord)` is required by the private N4-to-N5
+seam. N4 calls it synchronously once for the first accepted ActorHalt, after
+discarding incomplete assembly and marking the handle terminal. It fires even
+when no baseline was ever delivered. Duplicate Halts do not repeat it, and data
+for that handle is rejected before reaching baseline or commit callbacks.
+
+| Condition | N5 responsibility |
+| --- | --- |
+| Recoverable desync, such as a revision gap detected by N5 | Mark the view desynchronized while deciding on recovery; a replacement baseline can restore authoritative state. |
+| `OnActorHalted(record)` | Discard cached authoritative domain state, mark any ActorView terminal and unavailable, and stop resync attempts for this handle. If no view exists yet, remember the terminal handle so later Model-binding callbacks cannot expose a ready view. |
+| `OnActorRemoved(record)` | Retire the Actor identity and view, and release associated terminal-status bookkeeping. |
+
+A halt preserves the Actor record and Model binding. Model streaming callbacks
+continue independently, and eventual removal remains a separate notification.
+The Halt record carries no diagnostic cause; server fault reporting retains that
+detail. This contract does not add a public ActorView implementation.
 
 ## Ticket tensions and implementation decisions
 
@@ -158,10 +181,11 @@ report, but the failing unit command prevented the coverage threshold stage from
 running.
 
 Current validation: `npm test` passes lint with zero errors or warnings,
-typechecking and all 1,593 tests across 126 suites. Per-file coverage gates remain
+typechecking and all 1,597 tests across 126 suites. Per-file coverage gates remain
 at 90% and pass. `npm run build` from `docs-site` also succeeds. The suite includes
 delivery-budget regressions below and above the production default, terminal
-cleanup saturation and retries, and Actor-ID candidate-index lifecycle checks.
+cleanup saturation and retries, once-only consumer notification before and after
+baseline completion, and exact duplicate-marker bind/unbind notification counts.
 The internal protocol compatibility version was bumped for the terminal Halt
 record, so older receivers cannot accept the extended wire contract silently.
 
