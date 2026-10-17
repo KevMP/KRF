@@ -6,7 +6,7 @@ sidebar_position: 3
 
 KRF turns authoritative Actor publication into a separate reliable stream for each ready client. Roblox owns physical Model replication and `StreamingEnabled` independently.
 
-Default client startup establishes protocol readiness but installs no Actor-data consumer. Actor packets are rejected before decoding or assembly, with one `ActorStreamConsumerMissing` warning. Public Actor views, client state accessors, semantic event subscriptions, and client resync requests are unavailable.
+Default client startup installs the Actor decoder and [ActorView runtime](./actor-views) before declaring readiness. A complete baseline publishes a read-only client ActorView; later committed work updates that same view.
 
 ## Awareness and identity
 
@@ -43,7 +43,7 @@ Audience filters values and occurrences, not protocol metadata: every client sti
 
 ## Model streaming
 
-Physical Model arrival is independent of server awareness. A Model can arrive before or after its Actor stream starts. Streaming it out does not retire or reset that stream; Actor teardown or connection closure ends it. Default client startup exposes no local Actor record or Model-to-Actor lookup.
+Physical Model arrival is independent of server awareness. A Model can arrive before or after its Actor stream starts. Streaming it out does not retire or reset that stream; Actor teardown or connection closure ends it. `ActorViewRegistry.GetActorViewByModel(model)` resolves a published view while the Model is locally bound. Lookup by actorId remains available while its Model is absent.
 
 Successful Actor registration installs framework identity metadata before returning; teardown removes it. Model clones do not inherit that metadata. Leave it under framework ownership and register new gameplay Models through Actor Runtime.
 

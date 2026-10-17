@@ -9,14 +9,17 @@ local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
 local SignalTypes = require(KRF.shared.Signal.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
+local GoodSignal: any = require(KRF.shared.Signal.GoodSignal)
 
 local fixture: TestUtils.Fixture
 local suspended: { thread }
+local signalEnvironment: any = getfenv(GoodSignal.Fire)
 beforeEach(function()
 	fixture = TestUtils.new()
 	suspended = {}
 end)
 afterEach(function()
+	setfenv(GoodSignal.Fire, signalEnvironment)
 	for _, handler: thread in suspended do
 		if coroutine.status(handler) ~= "dead" then
 			task.cancel(handler)
@@ -105,6 +108,19 @@ it("permits a consumer to yield from OnChanged without delaying later semantic F
 end)
 
 it("does not roll back or desync when a public consumer throws", function()
+	-- Keep the real Signal runner and capture errors at the host task boundary.
+	-- An expected unhandled Studio error otherwise fails run-in-roblox even when
+	-- Jest succeeds. The yielding cases above retain the native task scheduler.
+	local errors: { string } = {}
+	local scheduler: any = table.clone(task)
+	scheduler.spawn = function(runner: thread, ...: any): thread
+		local completed: boolean, reason: any = coroutine.resume(runner, ...)
+		if not completed then
+			table.insert(errors, tostring(reason))
+		end
+		return runner
+	end
+	setfenv(GoodSignal.Fire, setmetatable({ task = scheduler }, { __index = signalEnvironment }))
 	TestUtils.baseline(fixture)
 	local domain: PublicTypes.DomainView = TestUtils.domain(fixture)
 	local calls: number = 0
@@ -118,6 +134,7 @@ it("does not roll back or desync when a public consumer throws", function()
 	TestUtils.commit(fixture, 11, { TestUtils.patch(75) })
 	TestUtils.commit(fixture, 12, { TestUtils.patch(50) })
 	expect(calls).toBe(2)
+	expect(errors).toEqual({ "N5ExpectedConsumerFailure", "N5ExpectedConsumerFailure" })
 	expect(domain:GetState().current).toBe(50)
 	expect(fixture.requests).toEqual({})
 	expect(fixture.faults).toEqual({})

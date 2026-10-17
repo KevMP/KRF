@@ -17,7 +17,8 @@ export type Dependencies = {
 	InstallConsumers: (
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
-		installActorReceiver: (((any) -> ()) -> ())?
+		installActorReceiver: (((any) -> ()) -> ())?,
+		sendReliable: ((buffer) -> ())?
 	) -> (boolean, string?, (() -> ())?),
 }
 export type Client = {

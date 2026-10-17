@@ -2,9 +2,10 @@
 
 Source: [issue #75](https://github.com/KevMP/KRF/issues/75), grounded in the KRF
 charter and the implemented N1–N4 schema, bootstrap, publication and Actor-stream
-contracts. This commit is the **red phase**. It adds loadable, typed placeholders
-and executable tests; it does not apply Actor state, publish ActorViews, install
-N5 during startup, encode resync requests or implement server recovery admission.
+contracts. The suite began as a **red phase** with typed placeholders. The current
+branch implements immutable views, atomic revision application, automatic startup
+installation and bounded server recovery. Historical red results remain below
+to distinguish the original missing behavior from implementation regressions.
 
 ## Contract map
 
@@ -89,7 +90,7 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
   Signals. Public lookup methods are `read` and public events remain wrapped.
 - `client/Actor/ActorView` owns identity, Model, visible DomainViews and Actor-level
   events. `client/Actor/DomainView` owns immutable state, change/semantic events
-  and teardown. Their typed constructors remain `N5NotImplemented` scaffolds.
+  and teardown. Their typed constructors create private owners and frozen public views.
   Private owners separate installation from notification so Networking can stage
   all state and indexes before firing events. `ActorViewRuntime` owns N4 callbacks,
   revision validation, recovery coordination and atomic publication;
@@ -135,8 +136,12 @@ The server observes real factories and injects one discontinuous, valid Commit
 through the framework Reliable transport; it never simulates a recovery request
 or replacement callback. Recovery must use the real client-to-server buffer path
 and server admission, retain view identity, restore current truth and avoid event
-replay. Both clients verify Owner visibility across loss/gain, stale private view
-invalidation, authoritative removal and repeated client reset. The orchestration
+replay. Both clients verify private Owner visibility, stale private view
+invalidation, authoritative removal, distinct respawn and reset with a live view.
+Real Character reassignment removes the old engine Model, so the fixture retires
+its Actor before respawn; it does not try to preserve an Actor whose Model was
+destroyed. Same-Actor Owner loss/gain remains covered by the N3/N4/N5 integration
+suite. The orchestration
 RemoteEvent carries only test phases/reports, never Actor state delivery.
 
 On the pulled main baseline, `npm run test:unit` passed **126 suites / 1,597
@@ -177,5 +182,29 @@ lookup correctness and idle-work counters alone cannot prove asymptotic lookup
 complexity or the absence of every possible empty per-frame scan. The implementation
 must satisfy those architectural requirements as well as the executable tests.
 
-Consumer documentation from the ticket belongs with the implementation. This
-red-phase test map does not advertise unimplemented APIs as usable functionality.
+## Implementation validation
+
+The implementation adds behavioral regression cases for reentrant private-owner
+teardown, registry collisions, malformed decoded containers, invalid initial
+revisions, stale lifecycle callbacks, equal composite replacements, Map no-ops
+and framed zero-handle recovery requests. The suite reports **144 suites / 1,786
+tests passing**, with all per-file coverage thresholds unchanged and satisfied.
+Latest measured coverage: **98.64% statements/lines, 96.56% branches, 99.28% functions**.
+
+The original red suite masked several fixture errors. Assertions now pass only
+the success value from `pcall` to Jest. Duplicate ActorRemove traffic explicitly
+asserts N4's existing `RetiredActorHandle` rejection before checking N5's single
+removal lifecycle. The throwing-consumer case retains the real Signal runner and
+captures its expected errors at the host task boundary; native scheduling remains
+in the yielding-consumer cases. No assertions or tests were removed or skipped.
+
+The native two-client test now passes through `Reset`, with one accepted real
+resync request after fault injection. Both clients use production startup,
+decoding, view installation and Reliable delivery. Client reset is checked while
+a respawned ActorView is still live, including invalidation of held private state.
+The new control record increments the private protocol version to 4 so older
+builds that cannot process recovery cannot complete a compatible handshake.
+
+Consumer documentation is in `docs-site/docs/documentation/Networking/actor-views.md`
+and the ActorViewRegistry, ActorView and DomainView API pages. Startup, replication
+domain and Actor lifecycle guides describe the installed runtime.

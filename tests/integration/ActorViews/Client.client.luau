@@ -117,34 +117,6 @@ local function runPhase(message: any): ()
 		assert(Registry.GetActorViewById(actorId) == view, "Resync replaced ActorView identity")
 		assert((view :: Types.ActorView):GetDomain("Game.NativeState") == domain, "Resync replaced retained DomainView")
 		assert(#semantic == 1, "Replacement replayed semantic history")
-	elseif phase == "OwnerLost" then
-		waitFor(function(): boolean
-			return (view :: Types.ActorView):GetDomain("Game.NativeOwner") == nil
-		end, "Owner visibility loss did not remove private truth")
-		checkVisibility(false)
-		if private ~= nil then
-			local readable: boolean, state: any = pcall(function(): any
-				return (private :: Types.DomainView):GetState()
-			end)
-			assert(not readable or state == nil, "Stale private truth remained queryable")
-			assert(not pcall(function()
-				(private :: Types.DomainView).OnChanged:Connect(function(_change: Types.DomainChange) end)
-			end), "Removed private domain kept live events")
-		end
-	elseif phase == "OwnerRestored" then
-		if owned then
-			waitFor(function(): boolean
-				return (view :: Types.ActorView):GetDomain("Game.NativeOwner") ~= nil
-			end, "Owner visibility gain did not restore private truth")
-		end
-		checkVisibility(owned)
-		if owned then
-			assert(
-				(view :: Types.ActorView):GetDomain("Game.NativeOwner") ~= private,
-				"Retired private DomainView was revived"
-			)
-		end
-		assert(Registry.GetActorViewById(actorId) == view, "Ownership changes replaced the ActorView")
 	elseif phase == "Removed" then
 		waitFor(function(): boolean
 			return Registry.GetActorViewById(actorId) == nil and removed == 1
@@ -157,10 +129,31 @@ local function runPhase(message: any): ()
 		assert(not pcall(function()
 			(domain :: Types.DomainView).OnChanged:Connect(function(_change: Types.DomainChange) end)
 		end), "Removed domain signals remain live")
+		if private ~= nil then
+			assert(private:GetState() == nil, "Removed Actor retained private Owner truth")
+		end
+	elseif phase == "Respawn" then
+		local previous: Types.ActorView? = view
+		waitFor(function(): boolean
+			return Registry.GetActorViewById(actorId) ~= nil
+		end, "Respawn did not create a distinct ActorView")
+		view = Registry.GetActorViewById(actorId)
+		assert(view ~= nil and view ~= previous, "Respawn reused a retired ActorView")
+		domain = view:GetDomain("Game.NativeState")
+		assert(domain ~= nil and domain:GetState().current == 30, "Respawn baseline truth differs")
+		checkVisibility(owned)
+		if owned then
+			assert(view:GetDomain("Game.NativeOwner") ~= private, "Respawn revived a retired private DomainView")
+		end
+		private = view:GetDomain("Game.NativeOwner")
 	elseif phase == "Reset" then
 		Client._ResetForTests()
 		Client._ResetForTests()
 		assert(#Registry.GetAllActorViews() == 0, "Native client teardown retained views")
+		assert(domain ~= nil and domain:GetState() == nil, "Native reset retained live domain truth")
+		if private ~= nil then
+			assert(private:GetState() == nil, "Native reset retained private Owner truth")
+		end
 		for _, connection: SignalTypes.Connection in connections do
 			connection:Disconnect()
 		end

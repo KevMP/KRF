@@ -19,6 +19,9 @@ const sidebarsApi: SidebarsConfig = {
         'Actor/actor-runtime',
         'Actor/actor',
         'Actor/actor-registry',
+        'Actor/actor-view-registry',
+        'Actor/actor-view',
+        'Actor/domain-view',
       ],
     },
     {

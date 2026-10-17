@@ -17,6 +17,7 @@ local AwarenessLifecycle = require(script.Parent.utils.ActorAwarenessLifecycle)
 local Scheduling = require(script.Parent.utils.AwarenessScheduling)
 local NativeAssociation = require(script.Parent.utils.NativePlayerAssociation)
 local ActorConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
+local Resync = require(script.Parent.ResyncRuntime)
 
 local ServerNetworking = {} :: Types.ServerNetworking
 local initialized: boolean = false
@@ -28,6 +29,7 @@ local listeners: { RBXScriptConnection } = {}
 local awareness: Types.ActorAwarenessRuntime? = nil
 local association: Types.PlayerAssociationSource? = nil
 local stopDriver: (() -> ())? = nil
+local resync: Types.ResyncRuntime? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog
@@ -180,6 +182,16 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			})
 			awareness = created
 			AwarenessLifecycle.Install(created)
+			resync = Resync.new({
+				Now = os.clock,
+				IsClientReady = ServerNetworking.IsClientReady,
+				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
+				RequestReplacementBaseline = ServerNetworking.RequestReplacementBaseline,
+			}, {
+				windowSeconds = ActorConstants.RESYNC_WINDOW_SECONDS,
+				maxRequestsPerClient = ActorConstants.MAX_RESYNC_PER_CLIENT,
+				maxRequestsPerActor = ActorConstants.MAX_RESYNC_PER_ACTOR,
+			})
 			local budget: Types.AwarenessStepBudget = Scheduling.GetBudget()
 			stopDriver = Scheduling.ObserveStep(function()
 				if initialized and awareness == created then
@@ -191,7 +203,16 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			listeners,
 			transports.reliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
 				if initialized and player.Parent == Players then
-					handshake:Handle(player, payload, ...)
+					if
+						resync ~= nil
+						and typeof(payload) == "buffer"
+						and buffer.len(payload) > 0
+						and buffer.readu8(payload, 0) == ActorConstants.RESYNC_PACKET_KIND
+					then
+						resync:Handle(player, payload, ...)
+					else
+						handshake:Handle(player, payload, ...)
+					end
 				end
 			end)
 		)
@@ -245,6 +266,10 @@ end
 
 function ServerNetworking.Destroy(): ()
 	initialized = false
+	if resync ~= nil then
+		resync:Destroy()
+		resync = nil
+	end
 	AwarenessLifecycle.Install(nil)
 	if stopDriver ~= nil then
 		stopDriver()

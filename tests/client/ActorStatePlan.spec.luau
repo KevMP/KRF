@@ -329,3 +329,31 @@ it("owns composite replacement values without leaving mutable patch aliases into
 	expect(result.value).toEqual({ { count = 2 } })
 	expect(previous.value).toEqual({ { count = 1 } })
 end)
+
+it("reuses equal immutable composite replacements and copies a replacement that removes Array entries", function()
+	local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(Schema.Array(Schema.U8, 3)))
+	local previous: StatePlan.Result?, reason: string? = plan.Snapshot({ 1, 2 })
+	assert(previous ~= nil, reason)
+	local equal: StatePlan.Result?
+	equal, reason = plan.Apply(previous.value, { kind = "Replace", value = { 1, 2 } })
+	assert(equal ~= nil, reason)
+	expect(rawequal(equal.value, previous.value)).toBe(true)
+	local shortened: StatePlan.Result?
+	shortened, reason = plan.Apply(previous.value, { kind = "Replace", value = { 1 } })
+	assert(shortened ~= nil, reason)
+	expect(shortened.value).toEqual({ 1 })
+	expect(previous.value).toEqual({ 1, 2 })
+	expect(table.isfrozen(shortened.value)).toBe(true)
+end)
+
+it("treats equal Map entries and removal of an absent key as unchanged truth", function()
+	local plan: StatePlan.Plan =
+		StatePlan.Compile(SchemaUtils.compile(Schema.Map(Schema.U8, Schema.Struct({ count = Schema.U8 }), 3)))
+	local previous: StatePlan.Result?, reason: string? = plan.Snapshot({ [1] = { count = 2 } })
+	assert(previous ~= nil, reason)
+	local result: StatePlan.Result?
+	result, reason = plan.Apply(previous.value, { kind = "Map", entries = { [1] = { count = 2 } }, removed = { 2 } })
+	assert(result ~= nil, reason)
+	expect(rawequal(result.value, previous.value)).toBe(true)
+	expect(rawequal(result.value[1], previous.value[1])).toBe(true)
+end)

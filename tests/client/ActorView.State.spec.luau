@@ -27,11 +27,12 @@ it("exposes stable domain ids, declared events and read-only event surfaces", fu
 	assert(event ~= nil, "Declared semantic event must be available before it ever fires")
 	expect(domain:GetEvent("Depleted")).toBe(event)
 	expect(domain:GetEvent("Undeclared")).toBeNil()
-	expect(pcall(function()
+	local replaced: boolean = pcall(function()
 		(domain :: any).GetState = function(): any
 			return {}
 		end
-	end)).toBe(false)
+	end)
+	expect(replaced).toBe(false)
 	for _, surface: any in
 		{
 			event,
@@ -138,11 +139,12 @@ it("keeps handles, revisions, mutation and future typed views out of the public 
 	if readable then
 		expect(byHandle).toBeNil()
 	end
-	expect(pcall(function()
+	local replaced: boolean = pcall(function()
 		(view :: any).GetId = function(): string
 			return "corrupted"
 		end
-	end)).toBe(false)
+	end)
+	expect(replaced).toBe(false)
 	expect(view:GetId()).toBe("ActorA")
 end)
 
@@ -190,7 +192,8 @@ for _, case: MutationCase in mutations do
 		TestUtils.baseline(fixture)
 		local domain: PublicTypes.DomainView = TestUtils.domain(fixture)
 		local state: any = domain:GetState()
-		expect(pcall(case.mutate, state)).toBe(false)
+		local mutated: boolean = pcall(case.mutate, state)
+		expect(mutated).toBe(false)
 		expect(domain:GetState()).toEqual(TestUtils.truth()["Game.Stamina"].value)
 	end)
 end

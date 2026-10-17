@@ -15,7 +15,7 @@ local rejectionCodes: { [Types.ProtocolRejectionReason]: number } = {
 table.freeze(rejectionCodes)
 
 return table.freeze({
-	PROTOCOL_VERSION = 3,
+	PROTOCOL_VERSION = 4,
 	MAX_BOOTSTRAP_BYTES = 65536,
 	INIT_TIMEOUT_SECONDS = 10,
 	REJECT_PACKET_BYTES = 2,

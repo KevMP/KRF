@@ -74,3 +74,14 @@ it("cannot confuse bootstrap or server Actor traffic with a resync request", fun
 		expect(reason).toBe("MalformedResyncRequest")
 	end
 end)
+
+it("rejects a framed zero handle rather than admitting the connection's reserved identity", function()
+	local payload: buffer?, reason: string? = Codec.Encode(1)
+	assert(payload ~= nil, reason)
+	-- Retain the private record kind and clear its handle body.
+	buffer.fill(payload, 1, 0)
+	local request: Codec.Request?
+	request, reason = Codec.Decode(payload)
+	expect(request).toBeNil()
+	expect(reason).toBe("MalformedResyncRequest")
+end)

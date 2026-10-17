@@ -2,44 +2,269 @@
 local Types = require(script.Parent.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local Registry = require(script.Parent.Parent.Actor.ActorViewRegistry)
+local PublicTypes = require(script.Parent.Parent.Actor.types)
+local Actors = require(script.Parent.Parent.Actor.ActorView)
+local RegistryOwner = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
+local Publication = require(script.Parent.utils.ActorViewPublication)
+local Resync = require(script.Parent.Parent.Parent.shared.Networking.utils.ResyncCodec)
+local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
 local ActorViewRuntime = {}
 
--- Deliberately inert N5 skeleton. N4 can deliver every callback without a missing
--- member/require failure. Tests assert the publication and recovery still missing.
--- Owns N4 callbacks, revision/recovery bookkeeping and staged atomic publication.
--- Individual view state/signals belong to ActorView/DomainView private owners;
--- indexed publication belongs to Actor.utils.ActorViewRegistryState.
+type State = {
+	actor: Types.ActorStreamRecord,
+	model: Model?,
+	owner: PublicTypes.ActorViewOwner?,
+	domains: { [string]: PublicTypes.DomainViewOwner },
+	revision: number?,
+	status: "Live" | "AwaitingBaseline" | "Halted",
+	requested: boolean,
+}
+
+local function validRevision(revision: number): boolean
+	return type(revision) == "number" and revision >= 0 and revision <= Constants.MAX_COUNTER and revision % 1 == 0
+end
+
 function ActorViewRuntime.new(
-	_protocol: SharedNetworkingTypes.ClientProtocol,
-	_schemas: SharedNetworkingTypes.ActorSchemaCatalog,
-	_options: Types.ActorViewOptions
+	protocol: SharedNetworkingTypes.ClientProtocol,
+	schemas: SharedNetworkingTypes.ActorSchemaCatalog,
+	options: Types.ActorViewOptions
 ): Types.ActorViewRuntime
+	local plan: Publication.Plan = Publication.Compile(protocol, schemas)
+	local states: { [number]: State } = {}
+	-- N4 owns handle retirement. Weak record tombstones additionally protect
+	-- retained private callbacks without duplicating its lifetime-growing handle set.
+	local retired: { [Types.ActorStreamRecord]: boolean } = setmetatable({}, { __mode = "k" })
+	local destroyed: boolean = false
+	local function report(actor: Types.ActorStreamRecord, reason: string): ()
+		pcall(options.ReportFault, { actorId = actor.actorId, reason = reason })
+	end
+	local function stateFor(actor: Types.ActorStreamRecord): State?
+		if destroyed or retired[actor] then
+			return nil
+		end
+		local state: State? = states[actor.handle]
+		if state ~= nil then
+			if state.actor ~= actor then
+				report(actor, "ActorHandleConflict")
+				return nil
+			end
+			return state
+		end
+		local created: State = {
+			actor = actor,
+			model = actor.model,
+			owner = nil,
+			domains = {},
+			revision = nil,
+			status = "AwaitingBaseline",
+			requested = false,
+		}
+		states[actor.handle] = created
+		return created
+	end
+	local function recover(state: State, reason: string): ()
+		state.status = "AwaitingBaseline"
+		report(state.actor, reason)
+		if state.requested then
+			return
+		end
+		-- Install recovery bookkeeping before sending: an adapter may deliver the
+		-- replacement synchronously, and a failed send must not allow a retry storm.
+		state.requested = true
+		local payload: buffer?, encodeReason: string? = Resync.Encode(state.actor.handle)
+		if payload == nil then
+			report(state.actor, encodeReason or "InvalidActorHandle")
+			return
+		end
+		local sent: boolean, sendReason: any = pcall(options.SendReliable, payload)
+		if not sent then
+			report(state.actor, "ResyncSendFailed:" .. tostring(sendReason))
+		end
+	end
+	local function remove(actor: Types.ActorStreamRecord): ()
+		if retired[actor] then
+			return
+		end
+		retired[actor] = true
+		local state: State? = states[actor.handle]
+		if state == nil or state.actor ~= actor then
+			return
+		end
+		states[actor.handle] = nil
+		local owner: PublicTypes.ActorViewOwner? = state.owner
+		if owner ~= nil then
+			RegistryOwner.Removing:Fire(owner.view)
+			RegistryOwner.Remove(owner.view)
+			owner:Destroy()
+		end
+	end
+	local function notify(stage: Publication.Stage): ()
+		for _, changed: Publication.Change in stage.changes do
+			changed.owner:NotifyChanged(changed.change)
+		end
+		for _, event: Publication.Event in stage.events do
+			event.owner:FireEvent(event.id, event.payload)
+		end
+	end
+	local function modelChanged(actor: Types.ActorStreamRecord, model: Model?): ()
+		local state: State? = stateFor(actor)
+		if state == nil then
+			return
+		end
+		local owner: PublicTypes.ActorViewOwner? = state.owner
+		if owner == nil then
+			state.model = model
+			return
+		end
+		local previous: Model? = owner.view:GetModel()
+		if previous == model then
+			return
+		end
+		local installed: boolean, reason: string? = RegistryOwner.InstallModel(owner.view, previous, model)
+		if not installed then
+			report(actor, reason or "ActorModelConflict")
+			return
+		end
+		state.model = model
+		owner:InstallModel(model)
+		owner:NotifyModelChanged(previous, model)
+	end
 	return {
 		registry = Registry,
 		consumer = {
 			OnBaselineReady = function(
-				_actor: Types.ActorStreamRecord,
-				_revision: number,
-				_domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }
+				actor: Types.ActorStreamRecord,
+				revision: number,
+				domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }
 			): ()
+				local state: State? = stateFor(actor)
+				if state == nil or state.status == "Halted" then
+					return
+				end
+				if not validRevision(revision) then
+					recover(state, "InvalidActorRevision")
+					return
+				end
+				local prepared: boolean, stage: Publication.Stage?, reason: string? =
+					pcall(plan.Baseline, state.domains, domains)
+				if not prepared or stage == nil then
+					recover(state, if prepared then reason or "InvalidActorState" else "InvalidActorState")
+					return
+				end
+				local owner: PublicTypes.ActorViewOwner? = state.owner
+				if owner == nil then
+					owner = Actors.new(actor.actorId, state.model, stage.domains)
+					assert(owner ~= nil, "ActorViewConstructionFailed")
+					local installed: boolean
+					installed, reason = RegistryOwner.Install(owner.view)
+					if not installed then
+						owner:Destroy()
+						state.status = "Halted"
+						report(actor, reason or "ActorIdConflict")
+						return
+					end
+					state.owner = owner
+					state.domains = stage.domains
+					state.revision = revision
+					state.status = "Live"
+					state.requested = false
+					RegistryOwner.Added:Fire(owner.view)
+					return
+				end
+				local previous: { [string]: PublicTypes.DomainViewOwner } = state.domains
+				for _, changed: Publication.Change in stage.changes do
+					changed.owner:InstallState(changed.change.current)
+				end
+				owner:InstallDomains(stage.domains)
+				state.domains = stage.domains
+				state.revision = revision
+				state.status = "Live"
+				state.requested = false
+				for id: string, domain: PublicTypes.DomainViewOwner in previous do
+					if stage.domains[id] == nil then
+						domain:Destroy()
+					end
+				end
+				notify(stage)
 			end,
 			OnCommitReady = function(
-				_actor: Types.ActorStreamRecord,
-				_revision: number,
-				_patches: { SharedNetworkingTypes.ActorDomainPatch },
-				_events: { SharedNetworkingTypes.ActorEvent }
+				actor: Types.ActorStreamRecord,
+				revision: number,
+				patches: { SharedNetworkingTypes.ActorDomainPatch },
+				events: { SharedNetworkingTypes.ActorEvent }
 			): ()
+				local state: State? = stateFor(actor)
+				if state == nil or state.status ~= "Live" then
+					return
+				end
+				if
+					not validRevision(revision)
+					or state.revision == Constants.MAX_COUNTER
+					or revision ~= (state.revision :: number) + 1
+				then
+					recover(state, "UnexpectedActorRevision")
+					return
+				end
+				local prepared: boolean, stage: Publication.Stage?, reason: string? =
+					pcall(plan.Commit, state.domains, patches, events)
+				if not prepared or stage == nil then
+					recover(state, if prepared then reason or "InvalidActorPatch" else "InvalidActorPatch")
+					return
+				end
+				for _, changed: Publication.Change in stage.changes do
+					changed.owner:InstallState(changed.change.current)
+				end
+				state.revision = revision
+				notify(stage)
 			end,
-			OnActorHalted = function(_actor: Types.ActorStreamRecord): () end,
-			OnActorRemoved = function(_actor: Types.ActorStreamRecord): () end,
-			OnModelBound = function(_actor: Types.ActorStreamRecord, _model: Model): () end,
-			OnModelUnbound = function(_actor: Types.ActorStreamRecord, _model: Model): () end,
+			OnActorHalted = function(actor: Types.ActorStreamRecord): ()
+				local state: State? = stateFor(actor)
+				if state == nil or state.status == "Halted" then
+					return
+				end
+				state.status = "Halted"
+				for _, domain: PublicTypes.DomainViewOwner in state.domains do
+					domain:Destroy()
+				end
+				state.domains = {}
+				if state.owner ~= nil then
+					state.owner:InstallDomains({})
+				end
+				report(actor, "ActorStreamHalted")
+			end,
+			OnActorRemoved = function(actor: Types.ActorStreamRecord): ()
+				if not destroyed then
+					remove(actor)
+				end
+			end,
+			OnModelBound = function(actor: Types.ActorStreamRecord, model: Model): ()
+				modelChanged(actor, model)
+			end,
+			OnModelUnbound = function(actor: Types.ActorStreamRecord, model: Model): ()
+				local state: State? = states[actor.handle]
+				if state ~= nil and state.model == model then
+					modelChanged(actor, nil)
+				end
+			end,
 		},
-		_InspectForTests = function(_self: Types.ActorViewRuntime, _handle: number): Types.ActorViewDiagnostics?
-			return nil
+		_InspectForTests = function(_self: Types.ActorViewRuntime, handle: number): Types.ActorViewDiagnostics?
+			local state: State? = states[handle]
+			return if state ~= nil
+				then { revision = state.revision, status = state.status, bufferedCommitCount = 0 }
+				else nil
 		end,
-		Destroy = function(_self: Types.ActorViewRuntime): () end,
+		Destroy = function(_self: Types.ActorViewRuntime): ()
+			if destroyed then
+				return
+			end
+			destroyed = true
+			for _, state: State in table.clone(states) do
+				remove(state.actor)
+			end
+			table.clear(states)
+			table.clear(retired)
+		end,
 	}
 end
 

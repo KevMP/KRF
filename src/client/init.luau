@@ -155,7 +155,8 @@ function Client.Init(): (boolean, StartupFailure?)
 					message.manifest,
 					function(receiver: (any) -> ())
 						receiveActors = receiver
-					end
+					end,
+					transport.SendReliable
 				)
 				if coroutine.status(installer) ~= "dead" then
 					coroutine.close(installer)

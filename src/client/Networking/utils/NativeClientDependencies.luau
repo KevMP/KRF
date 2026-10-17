@@ -5,6 +5,7 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.
 local Transport = require(script.Parent.Parent.Parent.Parent.shared.Networking.Transport)
 local Types = require(script.Parent.Parent.types)
 local Stream = require(script.Parent.Parent.ActorStreamRuntime)
+local Views = require(script.Parent.Parent.ActorViewRuntime)
 local Discovery = require(script.Parent.ActorModelDiscovery)
 local Consumer = require(script.Parent.ActorStreamConsumer)
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.ActorStreamCodec)
@@ -60,7 +61,8 @@ local dependencies: ClientTypes.Dependencies = {
 	InstallConsumers = function(
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
-		installActorReceiver: (((any) -> ()) -> ())?
+		installActorReceiver: (((any) -> ()) -> ())?,
+		sendReliable: ((buffer) -> ())?
 	): (boolean, string?, (() -> ())?)
 		assert(manifest ~= nil and installActorReceiver ~= nil, "ActorInstallationMissing")
 		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
@@ -71,34 +73,54 @@ local dependencies: ClientTypes.Dependencies = {
 		end
 		local codec: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(protocol, schemas)
 		local discovery: Types.ActorModelDiscoveryAdapter = Discovery.new()
-		local success: boolean, result: any = pcall(Stream.new, codec, Consumer.Get(), discovery, {
-			maxBaselineBytes = Constants.MAX_BASELINE_BYTES,
-			maxPendingBaselines = Constants.MAX_PENDING_BASELINES,
-			ReportFault = function(reason: string)
-				warn("[Networking] Actor stream fault: " .. reason)
-			end,
-		})
-		if not success then
-			discovery.Destroy()
-			error(result, 0)
-		end
-		local runtime: Types.ActorStreamRuntime = result
+		local runtime: Types.ActorStreamRuntime? = nil
+		local views: Types.ActorViewRuntime? = nil
 		local active: boolean = true
-		installActorReceiver(function(payload: any)
-			if active then
-				runtime:Handle(payload)
+		local function cleanup(): ()
+			if not active then
+				return
 			end
-		end)
-		return true,
-			nil,
-			function()
-				if not active then
-					return
-				end
-				active = false
+			active = false
+			if runtime ~= nil then
 				runtime:Destroy()
-				discovery.Destroy()
 			end
+			if views ~= nil then
+				views:Destroy()
+			end
+			discovery.Destroy()
+		end
+		local success: boolean, reason: any = pcall(function()
+			local consumer: Types.ActorStreamConsumer? = Consumer.Get()
+			if consumer == nil then
+				assert(sendReliable ~= nil, "ActorReliableEndpointMissing")
+				local created: Types.ActorViewRuntime = Views.new(protocol, schemas, {
+					SendReliable = sendReliable,
+					ReportFault = function(fault: Types.ActorViewFault)
+						warn("[Networking] ActorView fault actorId=" .. fault.actorId .. " reason=" .. fault.reason)
+					end,
+				})
+				views = created
+				consumer = created.consumer
+			end
+			local created: Types.ActorStreamRuntime = Stream.new(codec, consumer, discovery, {
+				maxBaselineBytes = Constants.MAX_BASELINE_BYTES,
+				maxPendingBaselines = Constants.MAX_PENDING_BASELINES,
+				ReportFault = function(fault: string)
+					warn("[Networking] Actor stream fault: " .. fault)
+				end,
+			})
+			runtime = created
+			installActorReceiver(function(payload: any)
+				if active then
+					created:Handle(payload)
+				end
+			end)
+		end)
+		if not success then
+			cleanup()
+			error(reason, 0)
+		end
+		return true, nil, cleanup
 	end,
 }
 

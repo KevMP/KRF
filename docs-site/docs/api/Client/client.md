@@ -40,4 +40,5 @@ Unexpected startup errors use a reason beginning with `StartupInternalFailure:`;
 
 - [Initializing KRF](/initializing-krf)
 - [Networking startup](/Networking/startup)
+- [ActorViews](/Networking/actor-views)
 - [Server API](/api/Server/)

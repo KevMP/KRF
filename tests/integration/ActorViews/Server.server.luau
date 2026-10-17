@@ -8,6 +8,7 @@ local ActorTypes = require(KRF.server.Actor.types)
 local Types = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedTypes = require(KRF.shared.Networking.types)
+local SignalTypes = require(KRF.shared.Signal.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking: Types.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
@@ -23,6 +24,7 @@ local originalResync: typeof(Resync.new) = Resync.new
 local awareness: Types.ActorAwarenessRuntime? = nil
 local actor: ActorTypes.Actor? = nil
 local model: Model? = nil
+local models: { Model } = {}
 local owner: Player? = nil
 local ready: { [Player]: boolean } = {}
 local reports: { [Player]: boolean } = {}
@@ -33,6 +35,8 @@ local phase: string = "Ready"
 local finished: boolean = false
 local codec: SharedTypes.ActorStreamCodec? = nil
 local faultInjected: boolean = false
+local expectedRemoval: boolean = false
+local lifecycleConnection: SignalTypes.Connection? = nil
 
 -- Observe the production factories without replacing transports, Player identity,
 -- the native installers, runtime behavior, or the client-to-server request path.
@@ -79,12 +83,15 @@ local function finish(success: boolean, reason: string?): ()
 		if owner ~= nil then
 			owner.Character = nil
 		end
-		if model ~= nil then
-			model:Destroy()
+		for _, ownedModel: Model in models do
+			ownedModel:Destroy()
 		end
 	end)
 	Awareness.new = originalAwareness
 	Resync.new = originalResync
+	if lifecycleConnection ~= nil then
+		lifecycleConnection:Disconnect()
+	end
 	StudioTestService:EndTest({
 		success = success and cleaned,
 		reason = reason or (if cleaned then nil else tostring(cleanupReason)),
@@ -93,6 +100,12 @@ local function finish(success: boolean, reason: string?): ()
 		ownerRecoveryRequests = if owner ~= nil then recoveryRequests[owner] or 0 else 0,
 	})
 end
+
+lifecycleConnection = Actors.OnActorUnregistering:Connect(function(removing: ActorTypes.Actor, reason: string?)
+	if removing == actor and not finished and not expectedRemoval then
+		finish(false, "Native Actor removed before test teardown: " .. tostring(reason))
+	end
+end)
 
 local function sendPhase(nextPhase: string): ()
 	phase = nextPhase
@@ -108,13 +121,30 @@ local function sendPhase(nextPhase: string): ()
 	end
 end
 
+local function newCharacter(): Model
+	local created: Model = Instance.new("Model")
+	created.Name = "NativeActorViewSubject"
+	-- A stable minimal Character keeps engine avatar/physics cleanup separate
+	-- from the explicit Actor lifetime exercised by this fixture.
+	local rootPart: Part = Instance.new("Part")
+	rootPart.Name = "HumanoidRootPart"
+	rootPart.Anchored = true
+	rootPart.CFrame = CFrame.new(0, 20, 0)
+	rootPart.Parent = created
+	created.PrimaryPart = rootPart
+	local humanoid: Humanoid = Instance.new("Humanoid")
+	humanoid.RequiresNeck = false
+	humanoid.Parent = created
+	created.Parent = workspace
+	table.insert(models, created)
+	return created
+end
+
 local function begin(): ()
 	local connected: { Player } = Players:GetPlayers()
 	assert(#connected == 2, "Expected two real native clients")
 	owner = connected[1]
-	local created: Model = Instance.new("Model")
-	created.Name = "NativeActorViewSubject"
-	created.Parent = workspace
+	local created: Model = newCharacter()
 	model = created
 	owner.Character = created
 	local registered: ActorTypes.Actor?, reason: string? = Actors.RegisterActor(created)
@@ -154,16 +184,23 @@ local function advance(): ()
 				assert((recoveryRequests[player] or 0) == 0, "Other client unexpectedly recovered")
 			end
 		end
-		owner.Character = nil
-		sendPhase("OwnerLost")
-	elseif phase == "OwnerLost" then
-		owner.Character = model
-		sendPhase("OwnerRestored")
-	elseif phase == "OwnerRestored" then
+		expectedRemoval = true
 		local removed: boolean, reason: string? = Actors.UnregisterActor(actor)
 		assert(removed, reason)
 		sendPhase("Removed")
 	elseif phase == "Removed" then
+		-- Character reassignment removes the old engine Model. Exercise the
+		-- supported respawn lifetime, after authoritative retirement of its Actor.
+		local created: Model = newCharacter()
+		model = created
+		owner.Character = created
+		task.wait()
+		local registered: ActorTypes.Actor?, reason: string? = Actors.RegisterActor(created)
+		assert(registered ~= nil, reason)
+		actor = registered
+		expectedRemoval = false
+		sendPhase("Respawn")
+	elseif phase == "Respawn" then
 		sendPhase("Reset")
 	elseif phase == "Reset" then
 		finish(true, nil)

@@ -215,12 +215,14 @@ it("destroys removed DomainView subscriptions without reviving them when the dom
 	local replacement: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	replacement["Game.Stamina"] = nil
 	TestUtils.baseline(fixture, 1, nil, 50, replacement, 2)
-	expect(pcall(function()
+	local connectedEvent: boolean = pcall(function()
 		event:Connect(function(_payload: any) end)
-	end)).toBe(false)
-	expect(pcall(function()
+	end)
+	expect(connectedEvent).toBe(false)
+	local connectedChange: boolean = pcall(function()
 		domain.OnChanged:Connect(function(_change: PublicTypes.DomainChange) end)
-	end)).toBe(false)
+	end)
+	expect(connectedChange).toBe(false)
 	TestUtils.baseline(fixture, 1, nil, 60, TestUtils.truth(), 3)
 	TestUtils.commit(
 		fixture,

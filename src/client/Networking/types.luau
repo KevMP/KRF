@@ -5,6 +5,8 @@ local PublicTypes = require(script.Parent.Parent.Actor.types)
 local types = {}
 
 -- Actor stream and Model discovery
+-- N4 owns one stable identity record per awareness lifetime and updates its Model
+-- in place. Consumers must not manufacture or mutate these records.
 export type ActorStreamRecord = { read actorId: string, read handle: number, read model: Model? }
 export type ActorStreamConsumer = {
 	OnBaselineReady: (ActorStreamRecord, number, { [string]: SharedNetworkingTypes.ActorDomainTruth }) -> (),
