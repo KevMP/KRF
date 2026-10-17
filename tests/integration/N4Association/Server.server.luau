@@ -5,34 +5,32 @@ local StudioTestService = game:GetService("StudioTestService")
 local KRF = ReplicatedStorage.Packages.KRF
 
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local NetworkingTypes = require(KRF.server.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local Registry: ActorTypes.ActorRegistry = require(KRF.server.Actor.ActorRegistry)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
-local Publication: PublicationTypes.RuntimeModule = require(KRF.server.Networking.PublicationRuntime)
-local Awareness: Types.RuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
-local NativeAssociation: Types.AssociationModule = require(KRF.server.Networking.NativePlayerAssociation)
-local Handshake: NetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
-local Codec: WireTypes.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
-local ProtocolCodec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Publication: ServerNetworkingTypes.PublicationRuntimeModule = require(KRF.server.Networking.PublicationRuntime)
+local Awareness: ServerNetworkingTypes.ActorAwarenessRuntimeModule =
+	require(KRF.server.Networking.ActorAwarenessRuntime)
+local NativeAssociation: ServerNetworkingTypes.PlayerAssociationModule =
+	require(KRF.server.Networking.utils.NativePlayerAssociation)
+local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local ProtocolCodec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 
 Players.CharacterAutoLoads = false
 
 local finished: boolean = false
-local source: Types.AssociationSource? = nil
-local runtime: Types.Runtime? = nil
-local publication: PublicationTypes.Runtime? = nil
-local handshake: NetworkingTypes.ServerHandshake? = nil
+local source: ServerNetworkingTypes.PlayerAssociationSource? = nil
+local runtime: ServerNetworkingTypes.ActorAwarenessRuntime? = nil
+local publication: ServerNetworkingTypes.PublicationRuntime? = nil
+local handshake: ServerNetworkingTypes.ServerHandshake? = nil
 local actors: { ActorTypes.Actor } = {}
 local models: { Model } = {}
 local owner: Player? = nil
@@ -120,14 +118,14 @@ local function run(): ()
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog?, catalogReason: string? =
 		Domains.Prepare(definitions)
 	assert(catalog ~= nil, catalogReason)
-	local protocol: ProtocolTypes.PreparedProtocol?, protocolReason: string? = Networking.Prepare(catalog)
+	local protocol: SharedNetworkingTypes.PreparedProtocol?, protocolReason: string? = Networking.Prepare(catalog)
 	assert(protocol ~= nil, protocolReason)
-	local schemas: WireTypes.SchemaCatalog = {}
+	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
 	for _, definition: ReplicationTypes.LoadedReplicationDomainDefinition in catalog.orderedDefinitions do
 		schemas[definition.id] = definition.state
 	end
-	local codec: WireTypes.Codec = Codec.Compile(protocol.runtime, schemas)
-	local canonical: PublicationTypes.Runtime = Publication.new(catalog)
+	local codec: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(protocol.runtime, schemas)
+	local canonical: ServerNetworkingTypes.PublicationRuntime = Publication.new(catalog)
 	publication = canonical
 	local oldModel: Model = newModel()
 	local newCharacter: Model = newModel()
@@ -142,12 +140,12 @@ local function run(): ()
 	end
 	-- These are actual engine-created Players and the actual Character property, not a fake signal.
 	player.Character = oldModel
-	local native: Types.AssociationSource = NativeAssociation.new()
+	local native: ServerNetworkingTypes.PlayerAssociationSource = NativeAssociation.new()
 	source = native
 	assert(native.GetPlayerFromCharacter(oldModel) == player, "Native source must resolve current Character")
 	local deliveries: { [Player]: { buffer } } = { [player] = {}, [other] = {} }
 	local capturing: boolean = false
-	local connection: NetworkingTypes.ServerHandshake = Handshake.new(protocol, {
+	local connection: ServerNetworkingTypes.ServerHandshake = Handshake.new(protocol, {
 		SendReliable = function(recipient: Player, payload: buffer): ()
 			if capturing then
 				table.insert(deliveries[recipient], payload)
@@ -155,8 +153,8 @@ local function run(): ()
 		end,
 	})
 	handshake = connection
-	local faults: { Types.Fault } = {}
-	local awareness: Types.Runtime = Awareness.new(canonical, catalog, protocol.runtime, {
+	local faults: { ServerNetworkingTypes.ActorAwarenessFault } = {}
+	local awareness: ServerNetworkingTypes.ActorAwarenessRuntime = Awareness.new(canonical, catalog, protocol.runtime, {
 		IsClientReady = function(recipient: Player): boolean
 			return connection:IsClientReady(recipient)
 		end,
@@ -171,7 +169,7 @@ local function run(): ()
 		end,
 		GetPlayerFromCharacter = native.GetPlayerFromCharacter,
 		ObserveAssociationChanged = native.ObserveAssociationChanged,
-		ReportFault = function(fault: Types.Fault): ()
+		ReportFault = function(fault: ServerNetworkingTypes.ActorAwarenessFault): ()
 			table.insert(faults, fault)
 		end,
 	}, {
@@ -199,14 +197,14 @@ local function run(): ()
 			awareness:Step(256, 8)
 		end
 	end
-	local function baseline(recipient: Player, handle: number): { [string]: WireTypes.DomainTruth }
+	local function baseline(recipient: Player, handle: number): { [string]: SharedNetworkingTypes.ActorDomainTruth }
 		local assembly: buffer? = nil
 		local generation: number = 0
 		local complete: boolean = false
 		for _, payload: buffer in deliveries[recipient] do
-			local records: { WireTypes.Record }?, reason: string? = codec.Decode(payload)
+			local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 			assert(records ~= nil, reason)
-			for _, record: WireTypes.Record in records do
+			for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 				if record.handle ~= handle then
 					continue
 				end
@@ -223,7 +221,8 @@ local function run(): ()
 			end
 		end
 		assert(complete and assembly ~= nil, "Expected complete replacement baseline")
-		local domains: { [string]: WireTypes.DomainTruth }?, reason: string? = codec.DecodeBaseline(assembly)
+		local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, reason: string? =
+			codec.DecodeBaseline(assembly)
 		assert(domains ~= nil, reason)
 		return domains
 	end
@@ -244,7 +243,7 @@ local function run(): ()
 	assert(awareness:GetActorForPlayer(player) == actors[2], "Player association did not follow Character")
 	assert(awareness:GetPlayerForActor(actors[1]) == nil, "Previous Character retained its Player")
 	assert(baseline(player, oldHandle)["Game.Private"] == nil, "Previous Character retained Owner truth")
-	local privateTruth: WireTypes.DomainTruth? = baseline(player, newHandle)["Game.Private"]
+	local privateTruth: SharedNetworkingTypes.ActorDomainTruth? = baseline(player, newHandle)["Game.Private"]
 	assert(privateTruth ~= nil and privateTruth.value == 20, "New Character did not receive canonical Owner truth")
 	assert(#deliveries[other] == 0, "Character reassociation replaced an unrelated recipient")
 	deliveries = { [player] = {}, [other] = {} }

@@ -4,33 +4,30 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
 local PublicTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Networking.ActorViewTypes)
-local StreamTypes = require(KRF.client.Networking.ActorStreamTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local SignalTypes = require(KRF.shared.Signal.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
-local Runtime: Types.RuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
-local Stream: StreamTypes.RuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
-local Codec: WireTypes.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Runtime: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
+local Stream: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
 local Manifest = require(KRF.shared.Networking.ManifestCompiler)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local SchemaUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
 local StreamUtils = require(script.Parent.ActorStreamTestUtils)
 
 export type Fixture = {
-	runtime: Types.Runtime,
+	runtime: ClientNetworkingTypes.ActorViewRuntime,
 	stream: StreamUtils.Fixture,
-	manifest: ProtocolTypes.ProtocolManifest,
-	schemas: WireTypes.SchemaCatalog,
+	manifest: SharedNetworkingTypes.ProtocolManifest,
+	schemas: SharedNetworkingTypes.ActorSchemaCatalog,
 	requests: { buffer },
-	faults: { Types.Fault },
+	faults: { ClientNetworkingTypes.ActorViewFault },
 	connections: { SignalTypes.Connection },
 }
 local TestUtils = {}
 
-function TestUtils.manifest(): ProtocolTypes.ProtocolManifest
+function TestUtils.manifest(): SharedNetworkingTypes.ProtocolManifest
 	return {
 		version = Constants.PROTOCOL_VERSION,
 		domains = {
@@ -74,7 +71,7 @@ function TestUtils.manifest(): ProtocolTypes.ProtocolManifest
 	}
 end
 
-function TestUtils.truth(current: number?): { [string]: WireTypes.DomainTruth }
+function TestUtils.truth(current: number?): { [string]: SharedNetworkingTypes.ActorDomainTruth }
 	return {
 		["Game.Counter"] = { value = 7 },
 		["Game.Owner"] = { value = { secret = "owner-only" } },
@@ -92,23 +89,23 @@ end
 
 function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
 	local stream: StreamUtils.Fixture = StreamUtils.new()
-	local manifest: ProtocolTypes.ProtocolManifest = TestUtils.manifest()
-	local protocol: ProtocolTypes.ClientProtocol?, reason: string? = Manifest.Reconstruct(manifest)
+	local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
+	local protocol: SharedNetworkingTypes.ClientProtocol?, reason: string? = Manifest.Reconstruct(manifest)
 	assert(protocol ~= nil, reason)
-	local schemas: WireTypes.SchemaCatalog = {}
-	for _, domain: ProtocolTypes.ManifestDomain in manifest.domains do
+	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		schemas[domain.id] = SchemaUtils.compile(domain.state)
 	end
 	local requests: { buffer } = {}
-	local faults: { Types.Fault } = {}
-	local runtime: Types.Runtime = Runtime.new(protocol, schemas, {
+	local faults: { ClientNetworkingTypes.ActorViewFault } = {}
+	local runtime: ClientNetworkingTypes.ActorViewRuntime = Runtime.new(protocol, schemas, {
 		SendReliable = function(payload: buffer)
 			table.insert(requests, payload)
 			if onSend ~= nil then
 				onSend(payload)
 			end
 		end,
-		ReportFault = function(fault: Types.Fault)
+		ReportFault = function(fault: ClientNetworkingTypes.ActorViewFault)
 			table.insert(faults, fault)
 		end,
 	})
@@ -127,7 +124,7 @@ function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
 	}
 end
 
-function TestUtils.send(fixture: Fixture, records: { WireTypes.Record }): ()
+function TestUtils.send(fixture: Fixture, records: { SharedNetworkingTypes.ActorStreamRecord }): ()
 	local success: boolean, reason: string? = StreamUtils.send(fixture.stream, records)
 	expect(reason).toBeNil()
 	expect(success).toBe(true)
@@ -138,7 +135,7 @@ function TestUtils.baseline(
 	handle: number?,
 	actorId: string?,
 	revision: number?,
-	truth: { [string]: WireTypes.DomainTruth }?,
+	truth: { [string]: SharedNetworkingTypes.ActorDomainTruth }?,
 	generation: number?
 ): ()
 	local body: buffer?, reason: string? = fixture.stream.codec.EncodeBaseline(truth or TestUtils.truth())
@@ -171,14 +168,14 @@ function TestUtils.domain(fixture: Fixture, domainId: string?, actorId: string?)
 	return domain
 end
 
-function TestUtils.actor(fixture: Fixture, handle: number?): StreamTypes.ActorRecord
+function TestUtils.actor(fixture: Fixture, handle: number?): ClientNetworkingTypes.ActorStreamRecord
 	assert(fixture.stream.runtime ~= nil, "Expected N4 runtime")
-	local actor: StreamTypes.ActorRecord? = fixture.stream.runtime:GetByHandle(handle or 1)
+	local actor: ClientNetworkingTypes.ActorStreamRecord? = fixture.stream.runtime:GetByHandle(handle or 1)
 	assert(actor ~= nil, "Expected N4 identity")
 	return actor
 end
 
-function TestUtils.patch(current: number): WireTypes.DomainPatch
+function TestUtils.patch(current: number): SharedNetworkingTypes.ActorDomainPatch
 	return {
 		domainId = "Game.Stamina",
 		patch = { kind = "Struct", fields = { current = { kind = "Replace", value = current } } },
@@ -188,8 +185,8 @@ end
 function TestUtils.commit(
 	fixture: Fixture,
 	revision: number,
-	patches: { WireTypes.DomainPatch }?,
-	events: { WireTypes.Event }?,
+	patches: { SharedNetworkingTypes.ActorDomainPatch }?,
+	events: { SharedNetworkingTypes.ActorEvent }?,
 	handle: number?
 ): ()
 	TestUtils.send(fixture, {

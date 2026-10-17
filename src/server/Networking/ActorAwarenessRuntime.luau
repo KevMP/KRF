@@ -1,15 +1,13 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
-local PublicationTypes = require(script.Parent.PublicationTypes)
+local Types = require(script.Parent.types)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
-local ProtocolTypes = require(script.Parent.Parent.Parent.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
-local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
 local WireCodec = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamCodec)
-local Streams = require(script.Parent.ActorRecipientStream)
-local Projections = require(script.Parent.ActorRecipientProjection)
-local RecipientSelection = require(script.Parent.ActorRecipientSelection)
-local Constants = require(script.Parent.Parent.Parent.shared.Networking.ActorProtocolConstants)
+local Streams = require(script.Parent.utils.ActorRecipientStream)
+local Projections = require(script.Parent.utils.ActorRecipientProjection)
+local RecipientSelection = require(script.Parent.utils.ActorRecipientSelection)
+local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
 type Stream = Streams.Stream
 type Connection = {
@@ -23,15 +21,20 @@ type Connection = {
 	-- A reliably queued End/Halt/Remove precedes new Begins; connection close also releases capacity.
 	transfers: { [Stream]: "Reserved" | "Pending" },
 }
-type Delivery = { stream: Stream, record: WireTypes.Record }
-type Packet = { connection: Connection, bytes: number, records: { WireTypes.Record }, deliveries: { Delivery } }
+type Delivery = { stream: Stream, record: SharedNetworkingTypes.ActorStreamRecord }
+type Packet = {
+	connection: Connection,
+	bytes: number,
+	records: { SharedNetworkingTypes.ActorStreamRecord },
+	deliveries: { Delivery },
+}
 local ActorAwarenessRuntime = {}
 ActorAwarenessRuntime.__index = ActorAwarenessRuntime
 
 type RuntimeState = {
-	codec: WireTypes.Codec,
-	dependencies: Types.Dependencies,
-	options: Types.Options,
+	codec: SharedNetworkingTypes.ActorStreamCodec,
+	dependencies: Types.ActorAwarenessDependencies,
+	options: Types.ActorAwarenessOptions,
 	connections: { [Player]: Connection },
 	owners: { [ActorTypes.Actor]: Player },
 	players: { [Player]: ActorTypes.Actor },
@@ -223,7 +226,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 				count += 1
 			end
 			local canBegin: boolean = connection.transfers[stream] ~= nil or count < Constants.MAX_PENDING_BASELINES
-			local record: WireTypes.Record? = nil
+			local record: SharedNetworkingTypes.ActorStreamRecord? = nil
 			if not visited[stream] then
 				visited[stream] = true
 				record = stream:Prepare(maxBytes, canBegin, deliveryBudget)
@@ -273,7 +276,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		end
 		for _, delivery: Delivery in packet.deliveries do
 			if sent then
-				local record: WireTypes.Record = delivery.record
+				local record: SharedNetworkingTypes.ActorStreamRecord = delivery.record
 				if record.kind == "BaselineBegin" then
 					packet.connection.transfers[delivery.stream] = "Pending"
 				elseif record.kind == "BaselineEnd" or record.kind == "ActorRemove" or record.kind == "ActorHalt" then
@@ -344,17 +347,17 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 end
 
 function ActorAwarenessRuntime.new(
-	publication: PublicationTypes.Runtime,
+	publication: Types.PublicationRuntime,
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	protocol: ProtocolTypes.ClientProtocol,
-	dependencies: Types.Dependencies,
-	options: Types.Options
-): Types.Runtime
-	local schemas: WireTypes.SchemaCatalog = {}
+	protocol: SharedNetworkingTypes.ClientProtocol,
+	dependencies: Types.ActorAwarenessDependencies,
+	options: Types.ActorAwarenessOptions
+): Types.ActorAwarenessRuntime
+	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
 	for id: string, definition: ReplicationTypes.LoadedReplicationDomainDefinition in catalog.definitionsById do
 		schemas[id] = definition.state
 	end
-	local codec: WireTypes.Codec = WireCodec.Compile(protocol, schemas)
+	local codec: SharedNetworkingTypes.ActorStreamCodec = WireCodec.Compile(protocol, schemas)
 	local state: RuntimeState = {
 		codec = codec,
 		dependencies = dependencies,
@@ -411,19 +414,19 @@ function ActorAwarenessRuntime.new(
 	)
 	table.insert(
 		self.disconnects,
-		publication:ObserveCommits(function(commit: PublicationTypes.Commit)
+		publication:ObserveCommits(function(commit: Types.PublicationCommit)
 			if self.destroyed then
 				return
 			end
-			local public: PublicationTypes.FilteredCommit = self.projections:PublicCommit(commit)
-			local owner: PublicationTypes.FilteredCommit =
+			local public: Types.PublicationFilteredCommit = self.projections:PublicCommit(commit)
+			local owner: Types.PublicationFilteredCommit =
 				table.freeze({ sequence = commit.sequence, patches = commit.patches, events = commit.events })
 			for _, connection: Connection in self.connections do
 				local stream: Stream? = connection.actors[commit.actor]
 				if stream == nil then
 					continue
 				end
-				local projected: PublicationTypes.FilteredCommit = if self.owners[commit.actor]
+				local projected: Types.PublicationFilteredCommit = if self.owners[commit.actor]
 						== connection.player
 					then owner
 					else public
@@ -432,7 +435,7 @@ function ActorAwarenessRuntime.new(
 		end)
 	)
 	-- The public interface erases private state; Luau treats metatable method receivers invariantly.
-	return self :: Types.Runtime
+	return self :: Types.ActorAwarenessRuntime
 end
 
 return ActorAwarenessRuntime

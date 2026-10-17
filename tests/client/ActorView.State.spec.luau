@@ -8,7 +8,7 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
 local SignalTypes = require(KRF.shared.Signal.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -277,7 +277,7 @@ end)
 
 it("applies a mixed schema patch to the exact complete authoritative state", function()
 	TestUtils.baseline(fixture)
-	local patches: { WireTypes.DomainPatch } = {
+	local patches: { SharedNetworkingTypes.ActorDomainPatch } = {
 		{
 			domainId = "Game.Stamina",
 			patch = {

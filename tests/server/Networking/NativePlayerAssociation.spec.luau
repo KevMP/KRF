@@ -6,8 +6,9 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local Association: Types.AssociationModule = require(KRF.server.Networking.NativePlayerAssociation)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Association: ServerNetworkingTypes.PlayerAssociationModule =
+	require(KRF.server.Networking.utils.NativePlayerAssociation)
 local SignalTypes = require(KRF.shared.Signal.types)
 local SignalModule = require(KRF.shared.Signal.SignalModule)
 
@@ -17,7 +18,7 @@ local newCharacter: Model
 local added: SignalTypes.Signal<Player>
 local removed: SignalTypes.Signal<Player>
 local service: Players
-local source: Types.AssociationSource?
+local source: ServerNetworkingTypes.PlayerAssociationSource?
 local propertySignals: { BindableEvent } = {}
 
 local function injectedPlayer(): Player
@@ -74,7 +75,7 @@ end)
 
 it("observes the Character property and notifies both Models through old-to-new-to-nil transitions", function()
 	player.Character = oldCharacter
-	local native: Types.AssociationSource = Association.new(service)
+	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	expect(native.GetPlayerFromCharacter(oldCharacter)).toBe(player)
 	expect(native.GetPlayerFromCharacter(newCharacter)).toBeNil()
@@ -104,7 +105,7 @@ end)
 
 it("tracks a later Player and clears its Character association when that session leaves", function()
 	local later: Player = injectedPlayer()
-	local native: Types.AssociationSource = Association.new(service)
+	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	later.Character = newCharacter
 	local changed: { Model } = {}
@@ -127,7 +128,7 @@ end)
 
 it("releases native listeners and observers on repeated teardown", function()
 	player.Character = oldCharacter
-	local native: Types.AssociationSource = Association.new(service)
+	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	local calls: number = 0
 	local unsubscribe: () -> () = native.ObserveAssociationChanged(function(_model: Model)

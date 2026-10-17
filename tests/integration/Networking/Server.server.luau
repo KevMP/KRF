@@ -5,9 +5,9 @@ local KRF = ReplicatedStorage.Packages.KRF
 local Server = require(KRF.server)
 local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local SharedTypes = require(KRF.shared.Networking.types)
-local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
-local Compiler: SharedTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local Networking = require(KRF.server.Networking.ServerNetworking)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingTestControl") :: RemoteEvent
 
@@ -41,7 +41,9 @@ task.delay(30, function(): ()
 end)
 
 local originalCompile: typeof(Compiler.Compile) = Compiler.Compile
-Compiler.Compile = function(schema: SharedTypes.CompiledSchema): (SharedTypes.CompiledCodec?, string?)
+Compiler.Compile = function(
+	schema: SharedNetworkingTypes.CompiledSchema
+): (SharedNetworkingTypes.CompiledCodec?, string?)
 	compileCalls += 1
 	return originalCompile(schema)
 end

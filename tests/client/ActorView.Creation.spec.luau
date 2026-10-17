@@ -7,8 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local StreamTypes = require(KRF.client.Networking.ActorStreamTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
@@ -21,7 +21,7 @@ afterEach(function()
 end)
 
 it("publishes nothing until the complete initial baseline ends, then publishes every visible domain once", function()
-	local candidate: StreamTypes.Candidate = StreamUtils.candidate(fixture.stream, "ActorA")
+	local candidate: ClientNetworkingTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
 	StreamUtils.add(fixture.stream, candidate)
 	local added: { PublicTypes.ActorView } = {}
 	local observed: { any } = {}
@@ -37,7 +37,7 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 			})
 		end)
 	)
-	local truth: { [string]: WireTypes.DomainTruth } = TestUtils.truth()
+	local truth: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	local body: buffer?, reason: string? = fixture.stream.codec.EncodeBaseline(truth)
 	assert(body ~= nil, reason)
 	TestUtils.send(
@@ -61,7 +61,7 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 		},
 	})
 	expect(fixture.runtime.registry.GetActorViewByModel(candidate.model)).toBe(view)
-	for id: string, domain: WireTypes.DomainTruth in truth do
+	for id: string, domain: SharedNetworkingTypes.ActorDomainTruth in truth do
 		expect(TestUtils.domain(fixture, id):GetState()).toEqual(domain.value)
 	end
 end)
@@ -121,7 +121,7 @@ it("rejects a conflicting decoded identity even if a caller bypasses the N4 iden
 	expect(fixture.faults[1].actorId).toBe("ActorA")
 end)
 
-for _, invalid: { [string]: WireTypes.DomainTruth } in
+for _, invalid: { [string]: SharedNetworkingTypes.ActorDomainTruth } in
 	{
 		{ ["Game.Stamina"] = { value = { current = 100 } } },
 		{ ["Unknown"] = { value = 1 } },

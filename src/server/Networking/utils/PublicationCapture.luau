@@ -1,24 +1,24 @@
 --!strict
-local PublicationTypes = require(script.Parent.PublicationTypes)
-local SchemaTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
-local SchemaValidator = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaValidator)
-local SchemaCollectionUtils = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
-local CodecCompiler = require(script.Parent.Parent.Parent.shared.Networking.CodecCompiler)
+local Types = require(script.Parent.Parent.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local SchemaValidator = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.SchemaValidator)
+local SchemaCollectionUtils = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
+local CodecCompiler = require(script.Parent.Parent.Parent.Parent.shared.Networking.CodecCompiler)
 
 local PublicationCapture = {}
 local CapturePlan = {}
 CapturePlan.__index = CapturePlan
 
-type CaptureNode = (value: any, previous: any, hadPrevious: boolean) -> (any, PublicationTypes.Patch?, string?)
+type CaptureNode = (value: any, previous: any, hadPrevious: boolean) -> (any, Types.PublicationPatch?, string?)
 
-local function replacement(value: any): PublicationTypes.Patch
+local function replacement(value: any): Types.PublicationPatch
 	return table.freeze({ kind = "Replace", value = value }) :: any
 end
 
-local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
+local function compileNode(schema: SharedNetworkingTypes.CompiledSchema): CaptureNode
 	if schema.kind == "Optional" then
 		local inner = compileNode(schema.inner)
-		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, Types.PublicationPatch?, string?)
 			if value == nil then
 				return nil, if hadPrevious and previous ~= nil then replacement(nil) else nil, nil
 			end
@@ -33,7 +33,7 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 				optional = field.schema.kind == "Optional",
 			})
 		end
-		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, Types.PublicationPatch?, string?)
 			if type(value) ~= "table" then
 				return nil, nil, "SchemaValueTypeInvalid"
 			end
@@ -43,7 +43,7 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 				end
 			end
 			local canonical: { [string]: any } = {}
-			local changedFields: { [string]: PublicationTypes.Patch } = {}
+			local changedFields: { [string]: Types.PublicationPatch } = {}
 			local canDiffFields = hadPrevious and previous ~= nil
 			for _, field in fields do
 				local item = rawget(value, field.name)
@@ -72,7 +72,7 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 		end
 	elseif schema.kind == "Array" then
 		local element = compileNode(schema.element)
-		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, Types.PublicationPatch?, string?)
 			if type(value) ~= "table" then
 				return nil, nil, "SchemaValueTypeInvalid"
 			end
@@ -101,7 +101,7 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 		end
 	elseif schema.kind == "Map" then
 		local entry = compileNode(schema.value)
-		return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+		return function(value: any, previous: any, hadPrevious: boolean): (any, Types.PublicationPatch?, string?)
 			if type(value) ~= "table" then
 				return nil, nil, "SchemaValueTypeInvalid"
 			end
@@ -155,7 +155,7 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 			return canonical, nil, nil
 		end
 	end
-	return function(value: any, previous: any, hadPrevious: boolean): (any, PublicationTypes.Patch?, string?)
+	return function(value: any, previous: any, hadPrevious: boolean): (any, Types.PublicationPatch?, string?)
 		local valid, reason = SchemaValidator.Validate(schema, value)
 		if not valid then
 			return nil, nil, reason
@@ -170,8 +170,8 @@ local function compileNode(schema: SchemaTypes.CompiledSchema): CaptureNode
 	end
 end
 
-function PublicationCapture.Compile(schema: SchemaTypes.CompiledSchema): PublicationTypes.CapturePlan
-	local codec: SchemaTypes.CompiledCodec?, reason: string? = CodecCompiler.Compile(schema)
+function PublicationCapture.Compile(schema: SharedNetworkingTypes.CompiledSchema): Types.PublicationCapturePlan
+	local codec: SharedNetworkingTypes.CompiledCodec?, reason: string? = CodecCompiler.Compile(schema)
 	assert(codec ~= nil, reason or "CodecCompilationFailure")
 	return setmetatable({ capture = compileNode(schema), codec = codec }, CapturePlan) :: any
 end
@@ -179,8 +179,8 @@ end
 function CapturePlan.Capture(
 	self: any,
 	value: any,
-	previous: PublicationTypes.CaptureResult?
-): (PublicationTypes.CaptureResult?, string?)
+	previous: Types.PublicationCaptureResult?
+): (Types.PublicationCaptureResult?, string?)
 	local canonical, patch, reason =
 		self.capture(value, if previous ~= nil then previous.value else nil, previous ~= nil)
 	if reason ~= nil then

@@ -1,14 +1,14 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
-local Types = require(KRF.server.Networking.ResyncTypes)
-local Runtime: Types.RuntimeModule = require(KRF.server.Networking.ResyncRuntime)
-local Codec = require(KRF.shared.Networking.ResyncCodec)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Runtime: ServerNetworkingTypes.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
+local Codec = require(KRF.shared.Networking.utils.ResyncCodec)
 local ProtocolUtils = require(script.Parent.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
 export type Call = { player: Player, handle: number }
 export type Fixture = {
-	runtime: Types.Runtime,
+	runtime: ServerNetworkingTypes.ResyncRuntime,
 	now: number,
 	ready: { [Player]: boolean },
 	known: { [Player]: { [number]: boolean } },
@@ -16,13 +16,13 @@ export type Fixture = {
 	calls: { Call },
 	closed: { (Player) -> () },
 	players: { Player },
-	options: Types.Options,
+	options: ServerNetworkingTypes.ResyncOptions,
 }
 local TestUtils = {}
 
 function TestUtils.new(): Fixture
 	local fixture: Fixture = {
-		runtime = {} :: Types.Runtime,
+		runtime = {} :: ServerNetworkingTypes.ResyncRuntime,
 		now = 100,
 		ready = {},
 		known = {},

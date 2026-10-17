@@ -7,18 +7,18 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local NetworkingTypes = require(KRF.server.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Handshake: NetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 local ServerTestUtils = require(script.Parent.Parent.Utils.Networking.ServerProtocolTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
-local runtime: NetworkingTypes.ServerHandshake
-local protocol: ProtocolTypes.PreparedProtocol
+local runtime: ServerNetworkingTypes.ServerHandshake
+local protocol: SharedNetworkingTypes.PreparedProtocol
 local player: Player
 
 beforeEach(function()

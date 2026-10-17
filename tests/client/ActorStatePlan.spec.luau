@@ -4,13 +4,18 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local SchemaTypes = require(KRF.shared.Networking.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
-local StatePlan = require(KRF.client.Networking.ActorStatePlan)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local StatePlan = require(KRF.client.Networking.utils.ActorStatePlan)
 local SchemaUtils = require(script.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
 
-type Case = { name: string, schema: SchemaTypes.SchemaDefinition, previous: any, patch: WireTypes.Patch, expected: any }
+type Case = {
+	name: string,
+	schema: SharedNetworkingTypes.SchemaDefinition,
+	previous: any,
+	patch: SharedNetworkingTypes.ActorPatch,
+	expected: any,
+}
 local cases: { Case } = {
 	{
 		name = "signed scalar replacement",
@@ -151,7 +156,7 @@ for _, case: Case in cases do
 end
 
 it("owns recursively immutable snapshots without retaining mutable aliases", function()
-	local schema: SchemaTypes.SchemaDefinition =
+	local schema: SharedNetworkingTypes.SchemaDefinition =
 		Schema.Struct({ items = Schema.Array(Schema.Struct({ value = Schema.U8 }), 2) })
 	local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(schema))
 	local input: any = { items = { { value = 1 } } }
@@ -166,7 +171,7 @@ it("owns recursively immutable snapshots without retaining mutable aliases", fun
 end)
 
 it("copies only the changed Struct path and Map container while sharing untouched immutable values", function()
-	local schema: SchemaTypes.SchemaDefinition = Schema.Struct({
+	local schema: SharedNetworkingTypes.SchemaDefinition = Schema.Struct({
 		left = Schema.Struct({ count = Schema.U8 }),
 		right = Schema.Map(Schema.String(4), Schema.Struct({ count = Schema.U8 }), 2),
 	})
@@ -188,7 +193,7 @@ it("copies only the changed Struct path and Map container while sharing untouche
 	expect(snapshot.value.right.B.count).toBe(3)
 end)
 
-type InvalidCase = { name: string, schema: SchemaTypes.SchemaDefinition, previous: any, patch: any }
+type InvalidCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, previous: any, patch: any }
 local invalidCases: { InvalidCase } = {
 	{
 		name = "unknown Struct field",

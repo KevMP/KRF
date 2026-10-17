@@ -8,7 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -22,7 +22,7 @@ end)
 it("sends no Actor work to a connection that has not become Ready", function()
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.drain(fixture)
 	expect(runtime:IsAware(player, actor)).toBe(false)
 	expect(runtime:GetHandle(player, actor)).toBeNil()
@@ -30,7 +30,7 @@ it("sends no Actor work to a connection that has not become Ready", function()
 end)
 
 it("subscribes to private Ready and Closed lifecycle and releases both subscriptions on destroy", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	expect(#fixture.readyObservers).toBe(1)
 	expect(#fixture.closedObservers).toBe(1)
 	runtime:Destroy()
@@ -51,7 +51,7 @@ it("creates exactly one baseline for each existing N3 attached Actor", function(
 	local player: Player = TestUtils.player(fixture)
 	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	local second: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	expect(runtime:IsAware(player, first)).toBe(true)
@@ -68,7 +68,7 @@ it("creates exactly one baseline for each existing N3 attached Actor", function(
 end)
 
 it("creates awareness synchronously for an Actor registered after Ready", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -78,7 +78,7 @@ it("creates awareness synchronously for an Actor registered after Ready", functi
 end)
 
 it("deduplicates repeated Ready and registration notifications for the same stream", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
@@ -92,7 +92,7 @@ end)
 
 it("drops all streams on close without sending removal traffic or affecting another recipient", function()
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local departed: Player = TestUtils.player(fixture)
 	local remaining: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, departed)
@@ -131,7 +131,7 @@ it("touches only current Ready recipients when a new Actor registers after anoth
 		table.insert(checked, player)
 		return original(player)
 	end
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, departed)
 	TestUtils.ready(fixture, remaining)
 	TestUtils.close(fixture, departed)

@@ -4,21 +4,21 @@ local KRF = ReplicatedStorage.Packages.KRF
 
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Compiler: NetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local SchemaTestUtils = require(script.Parent.SchemaTestUtils)
 
 local CodecTestUtils = {}
 
-function CodecTestUtils.compile(definition: NetworkingTypes.SchemaDefinition): NetworkingTypes.CompiledCodec
-	local schema: NetworkingTypes.CompiledSchema = SchemaTestUtils.compile(definition)
-	local codec: NetworkingTypes.CompiledCodec?, reason: string? = Compiler.Compile(schema)
+function CodecTestUtils.compile(definition: SharedNetworkingTypes.SchemaDefinition): SharedNetworkingTypes.CompiledCodec
+	local schema: SharedNetworkingTypes.CompiledSchema = SchemaTestUtils.compile(definition)
+	local codec: SharedNetworkingTypes.CompiledCodec?, reason: string? = Compiler.Compile(schema)
 	expect(reason).toBeNil()
 	assert(codec ~= nil, "Expected compiled codec")
 	return codec
 end
 
-function CodecTestUtils.encode(codec: NetworkingTypes.CompiledCodec, value: any): buffer
+function CodecTestUtils.encode(codec: SharedNetworkingTypes.CompiledCodec, value: any): buffer
 	local size: number?, measureReason: string? = codec.Measure(value)
 	expect(measureReason).toBeNil()
 	assert(size ~= nil, "Expected exact measured size")
@@ -29,7 +29,7 @@ function CodecTestUtils.encode(codec: NetworkingTypes.CompiledCodec, value: any)
 	return destination
 end
 
-function CodecTestUtils.expectRoundTrip(codec: NetworkingTypes.CompiledCodec, value: any): ()
+function CodecTestUtils.expectRoundTrip(codec: SharedNetworkingTypes.CompiledCodec, value: any): ()
 	local destination: buffer = CodecTestUtils.encode(codec, value)
 	local decoded: any, offset: number?, reason: string? = codec.Read(destination, 0, buffer.len(destination))
 	expect(reason).toBeNil()
@@ -39,7 +39,7 @@ function CodecTestUtils.expectRoundTrip(codec: NetworkingTypes.CompiledCodec, va
 end
 
 function CodecTestUtils.expectReadFailure(
-	codec: NetworkingTypes.CompiledCodec,
+	codec: SharedNetworkingTypes.CompiledCodec,
 	source: buffer,
 	offset: number,
 	limit: number,
@@ -58,7 +58,11 @@ function CodecTestUtils.expectReadFailure(
 end
 
 -- Derive a collection prefix from the codec, avoiding a fixed private width.
-function CodecTestUtils.collectionPrefix(codec: NetworkingTypes.CompiledCodec, emptyValue: any, count: number): buffer
+function CodecTestUtils.collectionPrefix(
+	codec: SharedNetworkingTypes.CompiledCodec,
+	emptyValue: any,
+	count: number
+): buffer
 	local empty: buffer = CodecTestUtils.encode(codec, emptyValue)
 	local source: buffer = buffer.create(buffer.len(empty))
 	local remaining: number = count

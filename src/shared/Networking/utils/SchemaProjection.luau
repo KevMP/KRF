@@ -1,10 +1,10 @@
 --!strict
-local NetworkingTypes = require(script.Parent.Parent.types)
+local Types = require(script.Parent.Parent.types)
 
 local SchemaProjection = {}
 
-function SchemaProjection.Definition(schema: NetworkingTypes.CompiledSchema): NetworkingTypes.SchemaDefinition
-	local definition: NetworkingTypes.SchemaDefinition
+function SchemaProjection.Definition(schema: Types.CompiledSchema): Types.SchemaDefinition
+	local definition: Types.SchemaDefinition
 	if schema.kind == "String" then
 		definition = { kind = "String", maxBytes = schema.maxBytes }
 	elseif schema.kind == "Enum" then
@@ -22,8 +22,8 @@ function SchemaProjection.Definition(schema: NetworkingTypes.CompiledSchema): Ne
 			maxEntries = schema.maxEntries,
 		}
 	elseif schema.kind == "Struct" then
-		local fields: { [string]: NetworkingTypes.SchemaDefinition } = {}
-		for _, field: NetworkingTypes.CompiledField in schema.fields do
+		local fields: { [string]: Types.SchemaDefinition } = {}
+		for _, field: Types.CompiledField in schema.fields do
 			fields[field.name] = SchemaProjection.Definition(field.schema)
 		end
 		table.freeze(fields)

@@ -5,18 +5,17 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Codec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Codec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ProtocolTestUtils)
 
 local DOMAIN_ID: string = "Game.Hostile"
 -- Private bootstrap layout: opcode, version, count, id length/id, domain code.
 local SCHEMA_OFFSET: number = 1 + 2 + 4 + 4 + #DOMAIN_ID + 2
 
-local function message(definition: NetworkingTypes.SchemaDefinition): ProtocolTypes.Message
+local function message(definition: SharedNetworkingTypes.SchemaDefinition): SharedNetworkingTypes.ProtocolMessage
 	return {
 		kind = "Bootstrap",
 		manifest = {
@@ -27,7 +26,7 @@ local function message(definition: NetworkingTypes.SchemaDefinition): ProtocolTy
 end
 
 local function expectDecodeFailure(payload: buffer, expectedReason: string): ()
-	local decoded: ProtocolTypes.Message? = nil
+	local decoded: SharedNetworkingTypes.ProtocolMessage? = nil
 	local reason: string? = nil
 	local completed: boolean = pcall(function()
 		decoded, reason = Codec.Decode(payload)
@@ -57,7 +56,7 @@ it("rejects unsafe-integer schema bounds on encode and decode instead of roundin
 end)
 
 it("rejects oversized domain codes rather than narrowing them into valid identities", function()
-	local packet: ProtocolTypes.Message = message(Schema.U8)
+	local packet: SharedNetworkingTypes.ProtocolMessage = message(Schema.U8)
 	assert(packet.kind == "Bootstrap", "Expected Bootstrap")
 	local source: any = packet.manifest.domains[1]
 	source.code = 65536
@@ -67,7 +66,7 @@ it("rejects oversized domain codes rather than narrowing them into valid identit
 end)
 
 it("rejects excessive schema depth before encode or decode can exhaust the call stack", function()
-	local definition: NetworkingTypes.SchemaDefinition = Schema.U8
+	local definition: SharedNetworkingTypes.SchemaDefinition = Schema.U8
 	for _ = 1, 129 do
 		definition = { kind = "Optional", inner = definition }
 	end

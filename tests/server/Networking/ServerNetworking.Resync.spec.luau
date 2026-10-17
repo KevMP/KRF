@@ -8,23 +8,20 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local NetworkingTypes = require(KRF.server.Networking.types)
-local AwarenessTypes = require(KRF.server.Networking.AwarenessTypes)
-local ResyncTypes = require(KRF.server.Networking.ResyncTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
-local Transport: ProtocolTypes.Transport = require(KRF.shared.Networking.Transport)
-local Scheduling: AwarenessTypes.SchedulingModule = require(KRF.server.Networking.AwarenessScheduling)
-local Control: ResyncTypes.RuntimeModule = require(KRF.server.Networking.ResyncRuntime)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
+local Scheduling: ServerNetworkingTypes.AwarenessSchedulingModule =
+	require(KRF.server.Networking.utils.AwarenessScheduling)
+local Control: ServerNetworkingTypes.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Server = require(KRF.server)
-local Codec: WireTypes.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
 local Manifest = require(KRF.shared.Networking.ManifestCompiler)
-local ResyncCodec = require(KRF.shared.Networking.ResyncCodec)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local SchemaUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
 
@@ -41,7 +38,7 @@ local sent: { buffer }
 local controls: number
 local destroyed: number
 local handled: number
-local codec: WireTypes.Codec
+local codec: SharedNetworkingTypes.ActorStreamCodec
 
 beforeEach(function()
 	Server._ResetForTests()
@@ -56,7 +53,7 @@ beforeEach(function()
 	destroyed = 0
 	handled = 0
 	step = nil
-	Transport.Create = function(_parent: Instance): (ProtocolTypes.OwnedTransport?, string?)
+	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		return {
 			root = root,
 			unreliable = {} :: any,
@@ -78,13 +75,16 @@ beforeEach(function()
 			step = nil
 		end
 	end
-	Control.new = function(dependencies: ResyncTypes.Dependencies, options: ResyncTypes.Options): ResyncTypes.Runtime
+	Control.new = function(
+		dependencies: ServerNetworkingTypes.ResyncDependencies,
+		options: ServerNetworkingTypes.ResyncOptions
+	): ServerNetworkingTypes.ResyncRuntime
 		controls += 1
-		local runtime: ResyncTypes.Runtime = originalControl(dependencies, options)
+		local runtime: ServerNetworkingTypes.ResyncRuntime = originalControl(dependencies, options)
 		local handle: typeof(runtime.Handle) = runtime.Handle
 		local destroy: typeof(runtime.Destroy) = runtime.Destroy
 		runtime.Handle = function(
-			self: ResyncTypes.Runtime,
+			self: ServerNetworkingTypes.ResyncRuntime,
 			recipient: Player,
 			payload: any,
 			...: any
@@ -92,7 +92,7 @@ beforeEach(function()
 			handled += 1
 			return handle(self, recipient, payload, ...)
 		end
-		runtime.Destroy = function(self: ResyncTypes.Runtime)
+		runtime.Destroy = function(self: ServerNetworkingTypes.ResyncRuntime)
 			destroyed += 1
 			destroy(self)
 		end
@@ -113,11 +113,11 @@ beforeEach(function()
 	expect(failure).toBeNil()
 	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
 	assert(actor ~= nil, reason)
-	local manifest: ProtocolTypes.ProtocolManifest = {
+	local manifest: SharedNetworkingTypes.ProtocolManifest = {
 		version = Constants.PROTOCOL_VERSION,
 		domains = { { id = "Game.Recovery", code = 0, state = Schema.U8, events = {} } },
 	}
-	local protocol: ProtocolTypes.ClientProtocol?
+	local protocol: SharedNetworkingTypes.ClientProtocol?
 	protocol, reason = Manifest.Reconstruct(manifest)
 	assert(protocol ~= nil, reason)
 	codec = Codec.Compile(protocol, { ["Game.Recovery"] = SchemaUtils.compile(Schema.U8) })
@@ -152,9 +152,9 @@ local function ready(): number
 	end
 	local handle: number? = nil
 	for index: number = 3, #sent do
-		local records: { WireTypes.Record }?, reason: string? = codec.Decode(sent[index])
+		local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(sent[index])
 		assert(records ~= nil, reason)
-		for _, record: WireTypes.Record in records do
+		for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 			if record.kind == "BaselineBegin" then
 				handle = record.handle
 			end
@@ -185,9 +185,9 @@ it(
 		local began: number = 0
 		local ended: number = 0
 		for _, payload: buffer in sent do
-			local records: { WireTypes.Record }?, reason: string? = codec.Decode(payload)
+			local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 			assert(records ~= nil, reason)
-			for _, record: WireTypes.Record in records do
+			for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 				if record.kind == "BaselineBegin" then
 					began += 1
 					expect(record.actorId).toBeNil()

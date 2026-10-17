@@ -7,8 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Networking.ActorViewTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local GoodSignal: any = require(KRF.shared.Signal.GoodSignal)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
@@ -52,7 +52,7 @@ it(
 		expect(domain:GetState().current).toBe(20)
 		expect(changes[2].source).toBe("Commit")
 		expect(#fixture.requests).toBe(1)
-		local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+		local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 		assert(diagnostics ~= nil, "Expected installed replacement revision")
 		expect(diagnostics.revision).toBe(71)
 		expect(diagnostics.status).toBe("Live")
@@ -89,7 +89,7 @@ it("keeps the previous domain set and truth public until the replacement complet
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local owner: PublicTypes.DomainView = TestUtils.domain(fixture, "Game.Owner")
-	local replacement: { [string]: WireTypes.DomainTruth } = TestUtils.truth(30)
+	local replacement: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth(30)
 	replacement["Game.Owner"] = nil
 	local body: buffer?, reason: string? = fixture.stream.codec.EncodeBaseline(replacement)
 	assert(body ~= nil, reason)
@@ -119,7 +119,7 @@ it("reconciles Owner visibility loss atomically before any Baseline Fire and ret
 		table.insert(visibleAtFire, view:GetDomainIds())
 		originalFire(self, ...)
 	end
-	local replacement: { [string]: WireTypes.DomainTruth } = TestUtils.truth(30)
+	local replacement: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth(30)
 	replacement["Game.Owner"] = nil
 	TestUtils.baseline(fixture, 1, nil, 50, replacement, 2)
 	expect(view:GetDomain("Game.Owner")).toBeNil()
@@ -138,7 +138,7 @@ it("reconciles Owner visibility loss atomically before any Baseline Fire and ret
 end)
 
 it("adds a newly visible domain and every new value before notifying a retained domain", function()
-	local initial: { [string]: WireTypes.DomainTruth } = TestUtils.truth()
+	local initial: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	initial["Game.Owner"] = nil
 	TestUtils.baseline(fixture, nil, nil, nil, initial)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
@@ -185,14 +185,14 @@ it("rolls back values and visibility together when a decoded replacement contain
 		fires += 1
 		originalFire(self, ...)
 	end
-	local invalid: { [string]: WireTypes.DomainTruth } = TestUtils.truth(30)
+	local invalid: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth(30)
 	invalid["Game.Owner"] = nil
 	invalid["Game.Counter"] = { value = "invalid" }
 	fixture.runtime.consumer.OnBaselineReady(TestUtils.actor(fixture), 50, invalid)
 	expect(TestUtils.domain(fixture):GetState()).toBe(previous)
 	expect(view:GetDomain("Game.Owner")).toBe(owner)
 	expect(owner:GetState()).toEqual({ secret = "owner-only" })
-	local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+	local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 	assert(diagnostics ~= nil, "Expected preserved revision")
 	expect(diagnostics.revision).toBe(10)
 	expect(diagnostics.status).toBe("AwaitingBaseline")
@@ -212,7 +212,7 @@ it("destroys removed DomainView subscriptions without reviving them when the dom
 			calls += 1
 		end)
 	)
-	local replacement: { [string]: WireTypes.DomainTruth } = TestUtils.truth()
+	local replacement: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	replacement["Game.Stamina"] = nil
 	TestUtils.baseline(fixture, 1, nil, 50, replacement, 2)
 	expect(pcall(function()
@@ -242,7 +242,7 @@ it("keeps the last good truth and reports repeated invalid recovery data without
 	expect(TestUtils.domain(fixture):GetState()).toBe(previous)
 	expect(#fixture.requests).toBe(1)
 	expect(#fixture.faults > 0).toBe(true)
-	local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+	local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 	assert(diagnostics ~= nil, "Expected observable recovery state")
 	expect(diagnostics.status).never.toBe("Live")
 	expect(diagnostics.revision).toBe(10)

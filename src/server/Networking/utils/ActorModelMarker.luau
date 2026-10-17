@@ -1,10 +1,10 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
-local ActorTypes = require(script.Parent.Parent.Actor.types)
+local Types = require(script.Parent.Parent.types)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local CollectionService = game:GetService("CollectionService")
-local Identity = require(script.Parent.Parent.Parent.shared.Networking.ActorModelIdentity)
+local Identity = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorModelIdentity)
 
-local ActorModelMarker = {} :: Types.MarkerModule
+local ActorModelMarker = {} :: Types.ActorModelMarkerModule
 
 local owned: { [ActorTypes.Actor]: { marker: StringValue, connection: RBXScriptConnection } } = {}
 

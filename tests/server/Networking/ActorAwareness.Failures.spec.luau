@@ -6,9 +6,8 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ActorTypes = require(KRF.server.Actor.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -32,7 +31,7 @@ for _, withReason: boolean in { true, false } do
 				attempts += 1
 				return false, if withReason then "ForcedSendFailure" else nil
 			end
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 			TestUtils.ready(fixture, player)
 			local handle: number? = runtime:GetHandle(player, actor)
 			assert(handle ~= nil, "Expected stream handle")
@@ -60,7 +59,7 @@ for _, withReason: boolean in { true, false } do
 end
 
 it("reports a detached canonical Actor instead of inventing replacement truth", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local handle: number? = runtime:GetHandle(player, actor)
@@ -77,9 +76,9 @@ end)
 
 it("rejects invalid canonical truth before returning baseline bytes", function()
 	fixture.publication.CaptureBaseline = function(
-		_self: PublicationTypes.Runtime,
+		_self: ServerNetworkingTypes.PublicationRuntime,
 		_actor: ActorTypes.Actor
-	): PublicationTypes.Baseline?
+	): ServerNetworkingTypes.PublicationBaseline?
 		return { sequence = 0, domains = { ["Game.Public"] = { value = 256 } } }
 	end
 	TestUtils.start(fixture)
@@ -91,7 +90,7 @@ end)
 
 it("fails generation exhaustion without reusing an earlier completed generation", function()
 	fixture.options.maxGeneration = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local handle: number? = runtime:GetHandle(player, actor)
@@ -115,7 +114,7 @@ it("fails an exhausted baseline revision without publishing a completed baseline
 end)
 
 it("preserves unsent baseline and live work when the current byte budget cannot fit it", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(1, 1)
 	expect(fixture.deliveries).toEqual({})
@@ -134,7 +133,7 @@ it("preserves unsent baseline and live work when the current byte budget cannot 
 end)
 
 it("ignores non-Ready notifications, disabled Actors, unknown Models and retained callbacks after destroy", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	fixture.readyObservers[1](player)
 	expect(runtime:GetHandle(player, actor)).toBeNil()
 	actor.enabled = false

@@ -8,7 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -20,7 +20,7 @@ afterEach(function()
 end)
 
 it("allocates distinct positive integral handles and establishes actorId mapping in Begin", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -40,7 +40,7 @@ it("allocates distinct positive integral handles and establishes actorId mapping
 end)
 
 it("keeps another connection's handle mapping intact when a connection closes", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local firstPlayer: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, firstPlayer)
 	local retired: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -57,7 +57,7 @@ it("keeps another connection's handle mapping intact when a connection closes", 
 end)
 
 it("retires a removed handle and gives a respawn Actor a new identity and handle", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local first: ActorTypes.Actor = TestUtils.actor(fixture, player)
@@ -71,7 +71,7 @@ it("retires a removed handle and gives a respawn Actor a new identity and handle
 end)
 
 it("starts a fresh namespace for a new connection after close", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	TestUtils.ready(fixture, player)
@@ -91,7 +91,7 @@ end)
 
 for _, invalid: number in { 0, -1, 1.5, 4294967296 } do
 	it("rejects invalid replacement handle " .. tostring(invalid) .. " without creating work", function()
-		local runtime: Types.Runtime = TestUtils.start(fixture)
+		local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 		local player: Player = TestUtils.player(fixture)
 		TestUtils.ready(fixture, player)
 		local success: boolean, reason: string? = runtime:RequestReplacementBaseline(player, invalid, nil)
@@ -103,7 +103,7 @@ for _, invalid: number in { 0, -1, 1.5, 4294967296 } do
 end
 
 it("rejects replacement requests from a non-Ready connection and unknown Ready handle", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	local success: boolean, reason: string? = runtime:RequestReplacementBaseline(player, 1, nil)
 	expect(success).toBe(false)
@@ -116,7 +116,7 @@ end)
 
 it("reports handle exhaustion explicitly instead of wrapping into a retired handle", function()
 	fixture.options.maxHandle = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)

@@ -8,20 +8,20 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 local DomainTestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
-local Runtime: PublicationTypes.RuntimeModule = require(KRF.server.Networking.PublicationRuntime)
+local Runtime: ServerNetworkingTypes.PublicationRuntimeModule = require(KRF.server.Networking.PublicationRuntime)
 
 local actor: ActorTypes.Actor
 local domain: TestUtils.DomainFixture
-local runtime: PublicationTypes.Runtime
-local commits: { PublicationTypes.Commit } = {}
-local faults: { PublicationTypes.Fault } = {}
+local runtime: ServerNetworkingTypes.PublicationRuntime
+local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+local faults: { ServerNetworkingTypes.PublicationFault } = {}
 
 beforeEach(function()
 	actor = ActorEntity.new()
@@ -30,7 +30,7 @@ beforeEach(function()
 	commits = {}
 	faults = {}
 	runtime = TestUtils.createRuntime({ domain.definition }, {
-		ReportFault = function(fault: PublicationTypes.Fault): ()
+		ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
 			table.insert(faults, fault)
 		end,
 	})
@@ -41,7 +41,7 @@ afterEach(function()
 end)
 
 local function attach(): ()
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	local success: boolean, reason: string? = runtime:AttachActor(actor)
@@ -49,8 +49,8 @@ local function attach(): ()
 	expect(reason).toBeNil()
 end
 
-local function baseline(): PublicationTypes.Baseline
-	local captured: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+local function baseline(): ServerNetworkingTypes.PublicationBaseline
+	local captured: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
 	assert(captured ~= nil, "Expected attached Actor baseline")
 	return captured
 end
@@ -70,7 +70,7 @@ it("keeps a top-level Optional nil domain present in every baseline", function()
 	local attached: boolean, reason: string? = runtime:AttachActor(actor)
 	expect(attached).toBe(true)
 	expect(reason).toBeNil()
-	local initial: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+	local initial: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
 	assert(initial ~= nil, "Expected attached Actor baseline")
 	expect(initial).toEqual({ sequence = 0, domains = { ["Game.Optional"] = {} } })
 	expect(initial.domains["Game.Optional"]).never.toBeNil()
@@ -78,7 +78,7 @@ it("keeps a top-level Optional nil domain present in every baseline", function()
 	optional.callbacks[actor]()
 	optional.value = nil
 	optional.callbacks[actor]()
-	local current: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+	local current: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
 	expect(current).toEqual({ sequence = 2, domains = { ["Game.Optional"] = {} } })
 end)
 
@@ -136,7 +136,7 @@ end)
 
 it("retains stable baseline truth and its matching sequence while later source state changes", function()
 	attach()
-	local before: PublicationTypes.Baseline = baseline()
+	local before: ServerNetworkingTypes.PublicationBaseline = baseline()
 	domain.value.active = true
 	domain.callbacks[actor]()
 	expect(before).toEqual({ sequence = 0, domains = { ["Game.State"] = { value = { active = false } } } })
@@ -150,7 +150,7 @@ end)
 
 it("does not expose canonical tables as mutable baseline truth", function()
 	attach()
-	local exposed: PublicationTypes.Baseline = baseline()
+	local exposed: ServerNetworkingTypes.PublicationBaseline = baseline()
 	local _mutated: boolean = pcall(function(): ()
 		exposed.domains["Game.State"].value.active = true
 	end)
@@ -294,7 +294,7 @@ it("isolates a throwing snapshot from other Actors and domains", function()
 	end
 	runtime:Destroy()
 	runtime = TestUtils.createRuntime({ domain.definition, other.definition }, {
-		ReportFault = function(fault: PublicationTypes.Fault): ()
+		ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
 			table.insert(faults, fault)
 		end,
 	})

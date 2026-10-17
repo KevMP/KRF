@@ -10,11 +10,12 @@ local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local ServerTypes = require(KRF.server.types)
 local SignalTypes = require(KRF.shared.Signal.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local Server = require(KRF.server)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local ActorRegistry: ActorTypes.ActorRegistry = require(KRF.server.Actor.ActorRegistry)
-local Lifecycle: PublicationTypes.LifecycleModule = require(KRF.server.Networking.ActorPublicationLifecycle)
+local Lifecycle: ServerNetworkingTypes.PublicationLifecycleModule =
+	require(KRF.server.Networking.utils.ActorPublicationLifecycle)
 
 local originalAttach: typeof(Lifecycle.AttachActor) = Lifecycle.AttachActor
 local originalDetach: typeof(Lifecycle.DetachActor) = Lifecycle.DetachActor

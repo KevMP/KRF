@@ -1,26 +1,26 @@
 --!strict
-local ActorTypes = require(script.Parent.Parent.Actor.types)
-local PublicationTypes = require(script.Parent.PublicationTypes)
-local ReplicationTypes = require(script.Parent.Parent.Replication.types)
-local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
+local Types = require(script.Parent.Parent.types)
+local ReplicationTypes = require(script.Parent.Parent.Parent.Replication.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
 
-export type Projection = { domains: { [string]: WireTypes.DomainTruth }, body: buffer?, reason: string? }
+export type Projection = { domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }, body: buffer?, reason: string? }
 type BaselineCache = { sequence: number, public: Projection?, owner: Projection? }
 local ActorRecipientProjection = {}
 ActorRecipientProjection.__index = ActorRecipientProjection
 
 type State = {
-	publication: PublicationTypes.Runtime,
+	publication: Types.PublicationRuntime,
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	codec: WireTypes.Codec,
+	codec: SharedNetworkingTypes.ActorStreamCodec,
 	baselines: { [ActorTypes.Actor]: BaselineCache },
 }
 export type Runtime = typeof(setmetatable({} :: State, ActorRecipientProjection))
 
 function ActorRecipientProjection.new(
-	publication: PublicationTypes.Runtime,
+	publication: Types.PublicationRuntime,
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	codec: WireTypes.Codec
+	codec: SharedNetworkingTypes.ActorStreamCodec
 ): Runtime
 	local state: State = { publication = publication, catalog = catalog, codec = codec, baselines = {} }
 	return setmetatable(state, ActorRecipientProjection)
@@ -31,7 +31,7 @@ function ActorRecipientProjection.Capture(
 	actor: ActorTypes.Actor,
 	isOwner: boolean
 ): (number?, Projection?, string?)
-	local captured: PublicationTypes.Baseline? = self.publication:CaptureBaseline(actor)
+	local captured: Types.PublicationBaseline? = self.publication:CaptureBaseline(actor)
 	if captured == nil then
 		return nil, nil, "ActorBaselineMissing"
 	end
@@ -44,8 +44,8 @@ function ActorRecipientProjection.Capture(
 	assert(cache ~= nil, "Expected canonical baseline cache")
 	local projected: Projection? = if isOwner then cache.owner else cache.public
 	if projected == nil then
-		local domains: { [string]: WireTypes.DomainTruth } = {}
-		for id: string, truth: PublicationTypes.DomainTruth in captured.domains do
+		local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth } = {}
+		for id: string, truth: Types.PublicationDomainTruth in captured.domains do
 			local definition: ReplicationTypes.LoadedReplicationDomainDefinition? = self.catalog.definitionsById[id]
 			if definition ~= nil and (definition.audience == "All" or isOwner) then
 				domains[id] = truth
@@ -75,28 +75,28 @@ end
 
 function ActorRecipientProjection.PublicCommit(
 	self: Runtime,
-	commit: PublicationTypes.Commit
-): PublicationTypes.FilteredCommit
+	commit: Types.PublicationCommit
+): Types.PublicationFilteredCommit
 	local cached: BaselineCache? = self.baselines[commit.actor]
 	if cached ~= nil and cached.sequence < commit.sequence then
 		-- In-flight transfers keep their immutable body; only reusable projections expire.
 		self.baselines[commit.actor] = nil
 	end
-	local publicPatches: { PublicationTypes.DomainPatch } = {}
-	local publicEvents: { PublicationTypes.Event } = {}
-	for _, patch: PublicationTypes.DomainPatch in commit.patches do
+	local publicPatches: { Types.PublicationDomainPatch } = {}
+	local publicEvents: { Types.PublicationEvent } = {}
+	for _, patch: Types.PublicationDomainPatch in commit.patches do
 		if self.catalog.definitionsById[patch.domainId].audience == "All" then
 			table.insert(publicPatches, patch)
 		end
 	end
-	for _, event: PublicationTypes.Event in commit.events do
+	for _, event: Types.PublicationEvent in commit.events do
 		if self.catalog.definitionsById[event.domainId].audience == "All" then
 			table.insert(publicEvents, event)
 		end
 	end
 	table.freeze(publicPatches)
 	table.freeze(publicEvents)
-	local public: PublicationTypes.FilteredCommit =
+	local public: Types.PublicationFilteredCommit =
 		table.freeze({ sequence = commit.sequence, patches = publicPatches, events = publicEvents })
 	return public
 end

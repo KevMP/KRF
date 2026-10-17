@@ -5,13 +5,13 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Compiler: NetworkingTypes.SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Compiler: SharedNetworkingTypes.SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.SchemaTestUtils)
 
-type SchemaDefinition = NetworkingTypes.SchemaDefinition
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type SchemaDefinition = SharedNetworkingTypes.SchemaDefinition
+type CompiledSchema = SharedNetworkingTypes.CompiledSchema
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
 
@@ -215,7 +215,7 @@ it("owns compiled Enum and Struct metadata without freezing or retaining mutable
 	assert(compiled.kind == "Struct", "Expected compiled Struct metadata")
 	expect(table.isfrozen(compiled)).toBe(true)
 	expect(table.isfrozen(compiled.fields)).toBe(true)
-	for _, field: NetworkingTypes.CompiledField in compiled.fields do
+	for _, field: SharedNetworkingTypes.CompiledField in compiled.fields do
 		expect(table.isfrozen(field)).toBe(true)
 		expect(table.isfrozen(field.schema)).toBe(true)
 		if field.schema.kind == "Enum" then

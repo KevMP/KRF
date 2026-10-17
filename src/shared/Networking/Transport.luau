@@ -1,11 +1,11 @@
 --!strict
-local ProtocolTypes = require(script.Parent.ProtocolTypes)
+local Types = require(script.Parent.types)
 
 local Transport = {
 	ROOT_NAME = "_KRFNetworking",
 	RELIABLE_NAME = "Reliable",
 	UNRELIABLE_NAME = "Unreliable",
-} :: ProtocolTypes.Transport
+} :: Types.Transport
 
 local function named(parent: Instance, name: string): { Instance }
 	local children: { Instance } = {}
@@ -22,7 +22,7 @@ local function view(
 	reliable: RemoteEvent,
 	unreliable: UnreliableRemoteEvent,
 	owns: boolean
-): ProtocolTypes.OwnedTransport
+): Types.OwnedTransport
 	local destroyed: boolean = false
 	return {
 		root = root,
@@ -40,7 +40,7 @@ local function view(
 	}
 end
 
-function Transport.Create(parent: Instance): (ProtocolTypes.OwnedTransport?, string?)
+function Transport.Create(parent: Instance): (Types.OwnedTransport?, string?)
 	if #named(parent, Transport.ROOT_NAME) ~= 0 then
 		return nil, "TransportConflict"
 	end
@@ -62,7 +62,7 @@ function Transport.Create(parent: Instance): (ProtocolTypes.OwnedTransport?, str
 	return view(root, reliable, unreliable, true), nil
 end
 
-function Transport.Locate(parent: Instance): (ProtocolTypes.OwnedTransport?, string?)
+function Transport.Locate(parent: Instance): (Types.OwnedTransport?, string?)
 	local roots: { Instance } = named(parent, Transport.ROOT_NAME)
 	if #roots == 0 then
 		return nil, "TransportUnavailable"

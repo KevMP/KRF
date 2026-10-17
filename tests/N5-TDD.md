@@ -47,7 +47,7 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
   all-or-nothing validation can be tested independently of N4's wire validation.
   Existing `shared/Networking/ActorStreamCodec.Hardening.spec.luau` and N4 assembly
   tests retain responsibility for invalid numeric codes, framing and generations.
-- `ActorStatePlan` is a private compiled schema application seam. `Snapshot` and
+- `client/Networking/utils/ActorStatePlan` is a private compiled schema application seam. `Snapshot` and
   `Apply` return `{ value = ... }` on success so a successful Optional nil result
   cannot be confused with failure. Safe ownership transfer and copying are both
   allowed; mutable aliases into published truth are forbidden.
@@ -74,7 +74,7 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
   revision allocation, codec, assembly and replacement machinery. It drops one
   complete live commit deliberately, then observes recovery through N5's request.
   A separate integration exercises actual N4 Owner reassociation.
-- N4 `ActorHalt` is terminal, as required by `ActorStreamTypes.Consumer`: it
+- N4 `ActorHalt` is terminal, as required by `client/Networking/types.ActorStreamConsumer`: it
   invalidates queryable authoritative truth and stops resync while identity and
   Model lifecycle continue until authoritative removal. It is distinct from
   recoverable desync, which retains last good truth.
@@ -82,6 +82,10 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
 ## Private implementation choices established by the tests
 
 - Public module: `client/Actor/ActorViewRegistry`; types: `client/Actor/types`.
+- Internal Networking contracts are consolidated in one `types.luau` per side.
+  Primary runtimes remain at the system root; implementation collaborators,
+  platform adapters and lifecycle bridges live in lowercase `utils/`. Source
+  moves do not change the spec names in the contract map above.
 - The private runtime consumes the existing N4 `Consumer` callback shape.
 - Changed-domain Fire order is domain-id order; semantic Fire order remains the
   supplied authoritative order. No event-id sorting is permitted.

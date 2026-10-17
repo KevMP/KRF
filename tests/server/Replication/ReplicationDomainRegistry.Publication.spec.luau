@@ -9,9 +9,9 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Validator: NetworkingTypes.SchemaValidator = require(KRF.shared.Networking.utils.SchemaValidator)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Validator: SharedNetworkingTypes.SchemaValidator = require(KRF.shared.Networking.utils.SchemaValidator)
 local Registry: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 local TestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
@@ -158,8 +158,8 @@ it("published domain, event, and compiled schema metadata are recursively immuta
 	definition.events = { { id = "Changed", payload = Schema.Enum({ "Idle", "Blocking" }) } }
 	TestUtils.load({ definition })
 	local loaded: LoadedDomain = Registry.Get(definition.id) :: LoadedDomain
-	local stateSchema: NetworkingTypes.CompiledSchema = loaded.state
-	local eventSchema: NetworkingTypes.CompiledSchema = loaded.events[1].payload
+	local stateSchema: SharedNetworkingTypes.CompiledSchema = loaded.state
+	local eventSchema: SharedNetworkingTypes.CompiledSchema = loaded.events[1].payload
 	local domainMutable: boolean = pcall(function()
 		(loaded :: any).audience = "Owner"
 	end)

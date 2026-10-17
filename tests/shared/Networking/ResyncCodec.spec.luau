@@ -4,7 +4,7 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local Codec = require(KRF.shared.Networking.ResyncCodec)
+local Codec = require(KRF.shared.Networking.utils.ResyncCodec)
 local ProtocolUtils = require(script.Parent.Parent.Utils.Networking.ProtocolTestUtils)
 local ActorUtils = require(script.Parent.Parent.Utils.Networking.ActorStreamCodecTestUtils)
 

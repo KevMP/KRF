@@ -8,17 +8,18 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local NetworkingTypes = require(KRF.server.Networking.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local ServerTypes = require(KRF.server.types)
-local Awareness: Types.RuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
-local Scheduling: Types.SchedulingModule = require(KRF.server.Networking.AwarenessScheduling)
-local Association: Types.AssociationModule = require(KRF.server.Networking.NativePlayerAssociation)
-local Marker: Types.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Awareness: ServerNetworkingTypes.ActorAwarenessRuntimeModule =
+	require(KRF.server.Networking.ActorAwarenessRuntime)
+local Scheduling: ServerNetworkingTypes.AwarenessSchedulingModule =
+	require(KRF.server.Networking.utils.AwarenessScheduling)
+local Association: ServerNetworkingTypes.PlayerAssociationModule =
+	require(KRF.server.Networking.utils.NativePlayerAssociation)
+local Marker: ServerNetworkingTypes.ActorModelMarkerModule = require(KRF.server.Networking.utils.ActorModelMarker)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Server = require(KRF.server)
 
@@ -33,8 +34,8 @@ local created: number = 0
 local destroyed: number = 0
 local timeline: { string } = {}
 local models: { Model } = {}
-local publication: PublicationTypes.Runtime? = nil
-local steps: { Types.StepBudget } = {}
+local publication: ServerNetworkingTypes.PublicationRuntime? = nil
+local steps: { ServerNetworkingTypes.AwarenessStepBudget } = {}
 local stepCallback: (() -> ())? = nil
 local driverConnections: number = 0
 local driverDisconnections: number = 0
@@ -43,7 +44,7 @@ local associationCreated: number = 0
 local associationDestroyed: number = 0
 local associationObservers: { (Model) -> () } = {}
 local modelLookups: { Model } = {}
-local installedDependencies: Types.Dependencies? = nil
+local installedDependencies: ServerNetworkingTypes.ActorAwarenessDependencies? = nil
 
 beforeEach(function()
 	Server._ResetForTests()
@@ -61,7 +62,7 @@ beforeEach(function()
 	associationObservers = {}
 	modelLookups = {}
 	installedDependencies = nil
-	Association.new = function(_players: Players?): Types.AssociationSource
+	Association.new = function(_players: Players?): ServerNetworkingTypes.PlayerAssociationSource
 		associationCreated += 1
 		return {
 			GetPlayerFromCharacter = function(model: Model): Player?
@@ -82,7 +83,7 @@ beforeEach(function()
 			end,
 		}
 	end
-	Scheduling.GetBudget = function(): Types.StepBudget
+	Scheduling.GetBudget = function(): ServerNetworkingTypes.AwarenessStepBudget
 		return { maxBytes = 96, maxRecords = 2 }
 	end
 	Scheduling.ObserveStep = function(callback: () -> ()): () -> ()
@@ -97,52 +98,80 @@ beforeEach(function()
 		end
 	end
 	Awareness.new = function(
-		canonical: PublicationTypes.Runtime,
+		canonical: ServerNetworkingTypes.PublicationRuntime,
 		_catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-		_protocol: ProtocolTypes.ClientProtocol,
-		_dependencies: Types.Dependencies,
-		_options: Types.Options
-	): Types.Runtime
+		_protocol: SharedNetworkingTypes.ClientProtocol,
+		_dependencies: ServerNetworkingTypes.ActorAwarenessDependencies,
+		_options: ServerNetworkingTypes.ActorAwarenessOptions
+	): ServerNetworkingTypes.ActorAwarenessRuntime
 		created += 1
 		publication = canonical
 		installedDependencies = _dependencies
 		-- Record only framework lifecycle calls; all recipient behavior uses the real runtime specs.
 		return {
-			OnActorRegistered = function(_self: Types.Runtime, actor: ActorTypes.Actor): ()
+			OnActorRegistered = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				actor: ActorTypes.Actor
+			): ()
 				expect(actor.enabled).toBe(true)
 				expect(canonical:CaptureBaseline(actor)).never.toBeNil()
 				table.insert(timeline, "Aware:" .. actor:GetId())
 			end,
-			OnActorUnregistering = function(_self: Types.Runtime, actor: ActorTypes.Actor): ()
+			OnActorUnregistering = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				actor: ActorTypes.Actor
+			): ()
 				expect(actor.enabled).toBe(false)
 				expect(canonical:CaptureBaseline(actor)).never.toBeNil()
 				table.insert(timeline, "Retired:" .. actor:GetId())
 			end,
-			RefreshPlayerAssociation = function(_self: Types.Runtime, _actor: ActorTypes.Actor): () end,
-			GetActorForPlayer = function(_self: Types.Runtime, _player: Player): ActorTypes.Actor?
+			RefreshPlayerAssociation = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_actor: ActorTypes.Actor
+			): ()
+			end,
+			GetActorForPlayer = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_player: Player
+			): ActorTypes.Actor?
 				return nil
 			end,
-			GetPlayerForActor = function(_self: Types.Runtime, _actor: ActorTypes.Actor): Player?
+			GetPlayerForActor = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_actor: ActorTypes.Actor
+			): Player?
 				return nil
 			end,
-			IsAware = function(_self: Types.Runtime, _player: Player, _actor: ActorTypes.Actor): boolean
+			IsAware = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_player: Player,
+				_actor: ActorTypes.Actor
+			): boolean
 				return false
 			end,
-			GetHandle = function(_self: Types.Runtime, _player: Player, _actor: ActorTypes.Actor): number?
+			GetHandle = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_player: Player,
+				_actor: ActorTypes.Actor
+			): number?
 				return nil
 			end,
 			RequestReplacementBaseline = function(
-				_self: Types.Runtime,
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
 				_player: Player,
 				_handle: number,
 				_reason: string?
 			): (boolean, string?)
 				return false, "UnknownActorHandle"
 			end,
-			Step = function(_self: Types.Runtime, maxBytes: number, maxRecords: number): ()
+			Step = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				maxBytes: number,
+				maxRecords: number
+			): ()
 				table.insert(steps, { maxBytes = maxBytes, maxRecords = maxRecords })
 			end,
-			Destroy = function(_self: Types.Runtime): ()
+			Destroy = function(_self: ServerNetworkingTypes.ActorAwarenessRuntime): ()
 				destroyed += 1
 			end,
 		}
@@ -193,7 +222,7 @@ it("installs and owns the native Character association source used by the produc
 end)
 
 it("destroys the native association source when later startup activation rolls back", function()
-	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		local success: boolean, reason: string? = originalPublish(protocol)
 		if not success then
 			return false, reason
@@ -238,7 +267,7 @@ it("stops the production driver on teardown and ignores an already queued callba
 end)
 
 it("disconnects the driver when startup rolls back after Networking activation", function()
-	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		local success: boolean, reason: string? = originalPublish(protocol)
 		if not success then
 			return false, reason
@@ -285,7 +314,7 @@ it("calls private Actor awareness and retirement synchronously in binding lifecy
 end)
 
 it("destroys the installed awareness runtime when later Networking publication rolls back", function()
-	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		local success: boolean, reason: string? = originalPublish(protocol)
 		if not success then
 			return false, reason

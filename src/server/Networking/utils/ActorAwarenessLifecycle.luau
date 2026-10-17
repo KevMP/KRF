@@ -1,11 +1,11 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
-local ActorTypes = require(script.Parent.Parent.Actor.types)
+local Types = require(script.Parent.Parent.types)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
 local ActorAwarenessLifecycle = {}
-local installed: Types.Runtime? = nil
+local installed: Types.ActorAwarenessRuntime? = nil
 
-function ActorAwarenessLifecycle.Install(runtime: Types.Runtime?): ()
+function ActorAwarenessLifecycle.Install(runtime: Types.ActorAwarenessRuntime?): ()
 	installed = runtime
 end
 function ActorAwarenessLifecycle.Register(actor: ActorTypes.Actor): ()

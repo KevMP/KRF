@@ -7,9 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local StatePlan = require(KRF.client.Networking.ActorStatePlan)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local StatePlan = require(KRF.client.Networking.utils.ActorStatePlan)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
@@ -22,7 +21,7 @@ beforeEach(function()
 	compiled = 0
 	snapshots = 0
 	applications = 0
-	StatePlan.Compile = function(schema: SchemaTypes.CompiledSchema): StatePlan.Plan
+	StatePlan.Compile = function(schema: SharedNetworkingTypes.CompiledSchema): StatePlan.Plan
 		compiled += 1
 		local plan: StatePlan.Plan = originalCompile(schema)
 		return {
@@ -30,7 +29,7 @@ beforeEach(function()
 				snapshots += 1
 				return plan.Snapshot(value)
 			end,
-			Apply = function(previous: any, patch: WireTypes.Patch): (StatePlan.Result?, string?)
+			Apply = function(previous: any, patch: SharedNetworkingTypes.ActorPatch): (StatePlan.Result?, string?)
 				applications += 1
 				return plan.Apply(previous, patch)
 			end,

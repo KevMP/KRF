@@ -7,8 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Networking.ActorViewTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local GoodSignal: any = require(KRF.shared.Signal.GoodSignal)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
@@ -23,7 +23,7 @@ beforeEach(function()
 		local view: PublicTypes.ActorView? = fixture.runtime.registry.GetActorViewById("ActorA")
 		local stamina: PublicTypes.DomainView? = if view ~= nil then view:GetDomain("Game.Stamina") else nil
 		local counter: PublicTypes.DomainView? = if view ~= nil then view:GetDomain("Game.Counter") else nil
-		local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+		local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 		table.insert(fires, {
 			args = table.pack(...),
 			stamina = if stamina ~= nil then stamina:GetState() else nil,
@@ -73,7 +73,7 @@ it(
 		expect(fires[3].args[1]).toEqual({ previous = 100 })
 		expect(fires[4].args[1]).toBe(8)
 		expect(fires[5].args[1]).toEqual({ amount = 25, history = { 100, 75 } })
-		local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+		local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 		assert(diagnostics ~= nil, "Expected private revision diagnostics")
 		expect(diagnostics.revision).toBe(11)
 		-- Changed-domain dispatch uses deterministic domain-id order.
@@ -102,7 +102,11 @@ it("advances event-only and state-identical revisions without OnChanged and pres
 	expect(#fixture.requests).toBe(0)
 end)
 
-type BadCommit = { name: string, patches: { WireTypes.DomainPatch }, events: { WireTypes.Event } }
+type BadCommit = {
+	name: string,
+	patches: { SharedNetworkingTypes.ActorDomainPatch },
+	events: { SharedNetworkingTypes.ActorEvent },
+}
 local badCommits: { BadCommit } = {
 	{
 		name = "invalid second domain patch",
@@ -147,7 +151,7 @@ for _, case: BadCommit in badCommits do
 			expect(TestUtils.domain(fixture):GetState()).toBe(previous)
 			expect(TestUtils.domain(fixture, "Game.Counter"):GetState()).toBe(7)
 			expect(fires).toEqual({})
-			local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+			local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 			assert(diagnostics ~= nil, "Expected unchanged revision diagnostics")
 			expect(diagnostics.revision).toBe(10)
 			expect(diagnostics.status).toBe("AwaitingBaseline")
@@ -158,7 +162,7 @@ for _, case: BadCommit in badCommits do
 end
 
 it("rejects a bootstrap-known but currently invisible domain without making it visible", function()
-	local truth: { [string]: WireTypes.DomainTruth } = TestUtils.truth()
+	local truth: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	truth["Game.Owner"] = nil
 	TestUtils.baseline(fixture, nil, nil, nil, truth)
 	TestUtils.view(fixture)

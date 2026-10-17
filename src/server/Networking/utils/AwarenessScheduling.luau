@@ -1,11 +1,11 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
+local Types = require(script.Parent.Parent.types)
 local RunService = game:GetService("RunService")
-local Constants = require(script.Parent.Parent.Parent.shared.Networking.ActorProtocolConstants)
+local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
-local AwarenessScheduling = {} :: Types.SchedulingModule
+local AwarenessScheduling = {} :: Types.AwarenessSchedulingModule
 
-function AwarenessScheduling.GetBudget(): Types.StepBudget
+function AwarenessScheduling.GetBudget(): Types.AwarenessStepBudget
 	return { maxBytes = Constants.STEP_BYTES, maxRecords = Constants.STEP_RECORDS }
 end
 

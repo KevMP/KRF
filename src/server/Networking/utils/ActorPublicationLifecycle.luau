@@ -1,11 +1,11 @@
 --!strict
-local ActorTypes = require(script.Parent.Parent.Actor.types)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
-local PublicationTypes = require(script.Parent.PublicationTypes)
+local Types = require(script.Parent.Parent.types)
 local ActorPublicationLifecycle = {}
-local installed: PublicationTypes.Runtime? = nil
+local installed: Types.PublicationRuntime? = nil
 
-function ActorPublicationLifecycle.Install(runtime: PublicationTypes.Runtime?): ()
+function ActorPublicationLifecycle.Install(runtime: Types.PublicationRuntime?): ()
 	installed = runtime
 end
 

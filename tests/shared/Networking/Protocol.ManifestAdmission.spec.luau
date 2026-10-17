@@ -6,10 +6,9 @@ local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local afterEach: any = JestGlobals.afterEach
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Compiler: ProtocolTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
-local Codecs: NetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Compiler: SharedNetworkingTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
+local Codecs: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ProtocolTestUtils)
 
 local originalCompile: typeof(Codecs.Compile) = Codecs.Compile
@@ -19,7 +18,7 @@ end)
 
 for _, value: any in { false, "manifest", {}, { version = 1, domains = {}, [1] = true } } do
 	it("rejects malformed top-level manifest metadata without throwing", function()
-		local runtime: ProtocolTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(value)
+		local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(value)
 		expect(runtime).toBeNil()
 		expect(reason).toBe("MalformedBootstrap")
 	end)
@@ -80,9 +79,9 @@ local cases: { AdmissionCase } = {
 }
 for _, testCase: AdmissionCase in cases do
 	it("rejects " .. testCase.name .. " without publishing a partially compiled runtime", function()
-		local manifest: ProtocolTypes.ProtocolManifest = TestUtils.manifest()
+		local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
 		testCase.mutate(manifest)
-		local runtime: ProtocolTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
+		local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 		expect(runtime).toBeNil()
 		expect(reason).toBe("MalformedBootstrap")
 	end)
@@ -90,10 +89,13 @@ end
 
 for _, providedReason: boolean in { true, false } do
 	it("fails client reconstruction when runtime codec compilation rejects a valid semantic schema", function()
-		Codecs.Compile = function(_schema: NetworkingTypes.CompiledSchema): (NetworkingTypes.CompiledCodec?, string?)
+		Codecs.Compile = function(
+			_schema: SharedNetworkingTypes.CompiledSchema
+		): (SharedNetworkingTypes.CompiledCodec?, string?)
 			return nil, if providedReason then "UnsupportedSchema" else nil
 		end
-		local runtime: ProtocolTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(TestUtils.manifest())
+		local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? =
+			Compiler.Reconstruct(TestUtils.manifest())
 		expect(runtime).toBeNil()
 		expect(reason).toBe("UnsupportedSchema")
 	end)

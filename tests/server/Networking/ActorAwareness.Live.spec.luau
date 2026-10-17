@@ -8,8 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -168,7 +167,7 @@ it("never silently wraps a wire revision when its configured counter is exhauste
 		end
 	end
 	expect(#fixture.faults >= 2).toBe(true)
-	for _, fault: Types.Fault in fixture.faults do
+	for _, fault: ServerNetworkingTypes.ActorAwarenessFault in fixture.faults do
 		expect(fault.actorId).toBe(actor:GetId())
 		expect(fault.reason).toBe("ActorRevisionExhausted")
 	end
@@ -176,8 +175,8 @@ end)
 
 it("does not mutate immutable N3 source patches or events while projecting recipients", function()
 	start()
-	local source: PublicationTypes.Commit? = nil
-	fixture.publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local source: ServerNetworkingTypes.PublicationCommit? = nil
+	fixture.publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		source = commit
 	end)
 	fixture.publication:WithActorCommit(actor, function(): ()
@@ -187,8 +186,8 @@ it("does not mutate immutable N3 source patches or events while projecting recip
 		fixture.ownerDomain.callbacks[actor]({ { id = "Changed", payload = 21 } })
 	end)
 	assert(source ~= nil, "Expected immutable authoritative commit")
-	local patches: { PublicationTypes.DomainPatch } = source.patches
-	local events: { PublicationTypes.Event } = source.events
+	local patches: { ServerNetworkingTypes.PublicationDomainPatch } = source.patches
+	local events: { ServerNetworkingTypes.PublicationEvent } = source.events
 	TestUtils.drain(fixture)
 	expect(source.patches).toBe(patches)
 	expect(source.events).toBe(events)

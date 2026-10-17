@@ -7,7 +7,7 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -20,12 +20,12 @@ end)
 
 it("rejects a Begin beyond maxPendingBaselines and frees the slot after completion", function()
 	fixture.options.maxPendingBaselines = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 	})).toBe(true)
-	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 2, actorId = "ActorB", generation = 1, totalBytes = buffer.len(body) },
 	})
@@ -67,7 +67,7 @@ end)
 
 it("releases an incomplete assembly slot on ActorRemove while keeping its handle retired", function()
 	fixture.options.maxPendingBaselines = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
@@ -86,7 +86,7 @@ end)
 
 it("does not consume pending capacity for an oversized rejected Begin", function()
 	fixture.options.maxPendingBaselines = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -109,9 +109,9 @@ for _, generation: number in { 2, 3 } do
 			.. tostring(generation)
 			.. " after completed generation 3 and accepts a newer attempt",
 		function()
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 			TestUtils.establish(fixture, 1, "ActorA", 3, 7)
-			local original: Types.ActorRecord? = runtime:GetByHandle(1)
+			local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 			local body: buffer = TestUtils.body(fixture)
 			local success: boolean, reason: string? = TestUtils.send(fixture, {
 				{

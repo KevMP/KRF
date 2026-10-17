@@ -6,7 +6,7 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Codec = require(KRF.shared.Networking.ResyncCodec)
+local Codec = require(KRF.shared.Networking.utils.ResyncCodec)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ResyncTestUtils)
 
 local fixture: TestUtils.Fixture

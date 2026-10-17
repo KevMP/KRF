@@ -1,13 +1,13 @@
 --!strict
 local ReplicationTypes = require(script.Parent.types)
-local NetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local SchemaCompiler = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCompiler)
 local SchemaCollectionUtils = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
 
 type ReplicationDomainDefinition = ReplicationTypes.ReplicationDomainDefinition
 type LoadedReplicationDomainDefinition = ReplicationTypes.LoadedReplicationDomainDefinition
 type PreparedReplicationDomainCatalog = ReplicationTypes.PreparedReplicationDomainCatalog
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type CompiledSchema = SharedNetworkingTypes.CompiledSchema
 
 local ReplicationDomainRegistry = {} :: ReplicationTypes.InternalReplicationDomainRegistry
 local isLoaded: boolean = false

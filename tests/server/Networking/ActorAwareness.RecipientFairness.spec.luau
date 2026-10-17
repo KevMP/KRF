@@ -8,8 +8,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -29,7 +29,7 @@ for _, backlogKind: string in { "join", "replacement" } do
 			for _ = 1, 12 do
 				table.insert(actors, TestUtils.actor(fixture, nil))
 			end
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 			local backlogRecipient: Player = TestUtils.player(fixture)
 			local liveRecipient: Player = TestUtils.player(fixture)
 			-- Test both a late joiner and an earlier connection that restarts many baselines.
@@ -65,7 +65,8 @@ for _, backlogKind: string in { "join", "replacement" } do
 				for index: number = previousSends + 1, #fixture.deliveries do
 					local delivery: TestUtils.Delivery = fixture.deliveries[index]
 					expect(buffer.len(delivery.payload) <= 96).toBe(true)
-					local records: { WireTypes.Record }?, reason: string? = fixture.codec.Decode(delivery.payload)
+					local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? =
+						fixture.codec.Decode(delivery.payload)
 					expect(reason).toBeNil()
 					assert(records ~= nil, "Expected bounded Actor packet")
 					emittedRecords += #records

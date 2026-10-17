@@ -8,8 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 type CachedBaseline = { sequence: number, public: { body: buffer }?, owner: { body: buffer }? }
@@ -31,7 +30,7 @@ for _, ownerOnly: boolean in { false, true } do
 			local observer: Player = TestUtils.player(fixture)
 			local actor: ActorTypes.Actor = TestUtils.actor(fixture, owner)
 			local unaffected: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 			TestUtils.ready(fixture, owner)
 			TestUtils.ready(fixture, observer)
 			-- Inspect retention directly; garbage collection timing cannot prove cache eviction reliably.
@@ -80,7 +79,7 @@ end
 it("releases stale encoded bodies on a commit even when no Ready recipients remain", function()
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, player)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).projections.baselines
@@ -97,9 +96,9 @@ end)
 it("retains a current-sequence cache captured by an earlier committed observer", function()
 	local owner: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, owner)
-	local runtime: Types.Runtime? = nil
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime? = nil
 	local handle: number? = nil
-	fixture.publication:ObserveCommits(function(commit: PublicationTypes.Commit)
+	fixture.publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit)
 		if commit.actor ~= actor then
 			return
 		end

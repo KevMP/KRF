@@ -1,15 +1,15 @@
 --!strict
-local Types = require(script.Parent.ActorStreamTypes)
+local Types = require(script.Parent.Parent.types)
 local CollectionService = game:GetService("CollectionService")
-local Identity = require(script.Parent.Parent.Parent.shared.Networking.ActorModelIdentity)
+local Identity = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorModelIdentity)
 
-local ActorModelDiscovery = {} :: Types.DiscoveryModule
+local ActorModelDiscovery = {} :: Types.ActorModelDiscoveryModule
 
-function ActorModelDiscovery.new(root: Instance?): Types.DiscoveryAdapter
+function ActorModelDiscovery.new(root: Instance?): Types.ActorModelDiscoveryAdapter
 	local scope: Instance = root or workspace
-	local candidates: { [Instance]: Types.Candidate } = {}
+	local candidates: { [Instance]: Types.ActorModelCandidate } = {}
 	local watched: { [Instance]: { RBXScriptConnection } } = {}
-	local added: { (Types.Candidate) -> () } = {}
+	local added: { (Types.ActorModelCandidate) -> () } = {}
 	local removed: { (Instance) -> () } = {}
 	local connections: { RBXScriptConnection } = {}
 	local destroyed: boolean = false
@@ -29,12 +29,12 @@ function ActorModelDiscovery.new(root: Instance?): Types.DiscoveryAdapter
 			drop(marker)
 			return
 		end
-		local current: Types.Candidate? = candidates[marker]
+		local current: Types.ActorModelCandidate? = candidates[marker]
 		if current ~= nil and current.actorId == id and current.model == model then
 			return
 		end
 		drop(marker)
-		local candidate: Types.Candidate = { marker = marker, actorId = id, model = model }
+		local candidate: Types.ActorModelCandidate = { marker = marker, actorId = id, model = model }
 		candidates[marker] = candidate
 		for _, callback in table.clone(added) do
 			callback(candidate)
@@ -91,14 +91,14 @@ function ActorModelDiscovery.new(root: Instance?): Types.DiscoveryAdapter
 		end
 	end
 	return {
-		GetCandidates = function(): { Types.Candidate }
-			local result: { Types.Candidate } = {}
+		GetCandidates = function(): { Types.ActorModelCandidate }
+			local result: { Types.ActorModelCandidate } = {}
 			for _, candidate in candidates do
 				table.insert(result, candidate)
 			end
 			return result
 		end,
-		ObserveAdded = function(callback: (Types.Candidate) -> ()): () -> ()
+		ObserveAdded = function(callback: (Types.ActorModelCandidate) -> ()): () -> ()
 			return observe(added, callback)
 		end,
 		ObserveRemoved = function(callback: (Instance) -> ()): () -> ()

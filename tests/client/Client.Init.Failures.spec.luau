@@ -8,9 +8,9 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Compiler: ProtocolTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Compiler: SharedNetworkingTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
 local Client: ClientTypes.Client = require(KRF.client)
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -45,13 +45,16 @@ end
 
 it("fails exact protocol mismatch before reconstructing server schemas", function()
 	local reconstructCalls: number = 0
-	Compiler.Reconstruct = function(_manifest: ProtocolTypes.ProtocolManifest): (ProtocolTypes.ClientProtocol?, string?)
+	Compiler.Reconstruct = function(
+		_manifest: SharedNetworkingTypes.ProtocolManifest
+	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		reconstructCalls += 1
 		error("Mismatched manifests must not be interpreted")
 	end
 	TestUtils.start(fixture)
-	local compatible: ProtocolTypes.ProtocolManifest = ProtocolTestUtils.manifest()
-	local manifest: ProtocolTypes.ProtocolManifest = { version = compatible.version + 1, domains = compatible.domains }
+	local compatible: SharedNetworkingTypes.ProtocolManifest = ProtocolTestUtils.manifest()
+	local manifest: SharedNetworkingTypes.ProtocolManifest =
+		{ version = compatible.version + 1, domains = compatible.domains }
 	TestUtils.emit(fixture, ProtocolTestUtils.encode({ kind = "Bootstrap", manifest = manifest }))
 	TestUtils.expectFailure(fixture, "ProtocolMismatch")
 	expect(reconstructCalls).toBe(0)
@@ -71,7 +74,9 @@ it("fails a truncated bootstrap without publishing codecs or sending READY", fun
 end)
 
 it("distinguishes unsupported schema reconstruction from malformed bootstrap", function()
-	Compiler.Reconstruct = function(_manifest: ProtocolTypes.ProtocolManifest): (ProtocolTypes.ClientProtocol?, string?)
+	Compiler.Reconstruct = function(
+		_manifest: SharedNetworkingTypes.ProtocolManifest
+	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		return nil, "UnsupportedSchema"
 	end
 	TestUtils.start(fixture)
@@ -126,7 +131,7 @@ end)
 
 it("fails a private consumer installation failure before sending READY", function()
 	fixture.dependencies.InstallConsumers = function(
-		_protocol: ProtocolTypes.ClientProtocol
+		_protocol: SharedNetworkingTypes.ClientProtocol
 	): (boolean, string?, (() -> ())?)
 		return false, "InternalConsumerInitializationFailed", nil
 	end

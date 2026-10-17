@@ -1,7 +1,6 @@
 --!strict
-local NetworkingTypes = require(script.Parent.Parent.types)
-local ProtocolTypes = require(script.Parent.Parent.ProtocolTypes)
-local Constants = require(script.Parent.Parent.ProtocolConstants)
+local Types = require(script.Parent.Parent.types)
+local Constants = require(script.Parent.ProtocolConstants)
 local BufferUtils = require(script.Parent.CodecBufferUtils)
 
 type Writer = { destination: buffer?, offset: number }
@@ -56,7 +55,7 @@ local function writeString(writer: Writer, value: string): ()
 	end
 end
 
-local function writeSchema(writer: Writer, schema: NetworkingTypes.SchemaDefinition, depth: number): ()
+local function writeSchema(writer: Writer, schema: Types.SchemaDefinition, depth: number): ()
 	if depth > 128 then
 		error("InvalidProtocolManifest", 0)
 	end
@@ -95,15 +94,15 @@ local function writeSchema(writer: Writer, schema: NetworkingTypes.SchemaDefinit
 	end
 end
 
-local function writeManifest(writer: Writer, manifest: ProtocolTypes.ProtocolManifest): ()
+local function writeManifest(writer: Writer, manifest: Types.ProtocolManifest): ()
 	writeUnsigned(writer, manifest.version, 2)
 	writeUnsigned(writer, #manifest.domains, 4)
-	for _, domain: ProtocolTypes.ManifestDomain in manifest.domains do
+	for _, domain: Types.ManifestDomain in manifest.domains do
 		writeString(writer, domain.id)
 		writeUnsigned(writer, domain.code, 2)
 		writeSchema(writer, domain.state, 1)
 		writeUnsigned(writer, #domain.events, 4)
-		for _, event: ProtocolTypes.ManifestEvent in domain.events do
+		for _, event: Types.ManifestEvent in domain.events do
 			writeString(writer, event.id)
 			writeUnsigned(writer, event.code, 2)
 			writeSchema(writer, event.payload, 1)
@@ -141,7 +140,7 @@ local function readString(reader: Reader): string
 	return buffer.readstring(reader.source, take(reader, length), length)
 end
 
-local function readSchema(reader: Reader, depth: number): NetworkingTypes.SchemaDefinition
+local function readSchema(reader: Reader, depth: number): Types.SchemaDefinition
 	if depth > 128 then
 		error("MalformedPacket", 0)
 	end
@@ -162,7 +161,7 @@ local function readSchema(reader: Reader, depth: number): NetworkingTypes.Schema
 		return { kind = "Optional", inner = readSchema(reader, depth + 1) }
 	elseif kind == "Struct" then
 		local count: number = readCount(reader, 5)
-		local fields: { [string]: NetworkingTypes.SchemaDefinition } = {}
+		local fields: { [string]: Types.SchemaDefinition } = {}
 		for _ = 1, count do
 			local name: string = readString(reader)
 			if fields[name] ~= nil then
@@ -176,17 +175,17 @@ local function readSchema(reader: Reader, depth: number): NetworkingTypes.Schema
 		return { kind = "Array", maxLength = maximum, element = readSchema(reader, depth + 1) }
 	elseif kind == "Map" then
 		local maximum: number = readUnsigned(reader, 8)
-		local key: NetworkingTypes.SchemaDefinition = readSchema(reader, depth + 1)
+		local key: Types.SchemaDefinition = readSchema(reader, depth + 1)
 		return { kind = "Map", maxEntries = maximum, key = key, value = readSchema(reader, depth + 1) }
 	end
-	return { kind = kind :: NetworkingTypes.PrimitiveKind }
+	return { kind = kind :: Types.PrimitiveKind }
 end
 
 local BootstrapCodec = {}
 
 -- These private routines throw stable parse/budget reasons; ProtocolCodec owns
 -- the protected boundary. Account for the packet opcode during measurement.
-function BootstrapCodec.Encode(manifest: ProtocolTypes.ProtocolManifest, opcode: number): buffer
+function BootstrapCodec.Encode(manifest: Types.ProtocolManifest, opcode: number): buffer
 	local writer: Writer = { offset = 1 }
 	writeManifest(writer, manifest)
 	local destination: buffer = buffer.create(writer.offset)
@@ -196,20 +195,20 @@ function BootstrapCodec.Encode(manifest: ProtocolTypes.ProtocolManifest, opcode:
 	return destination
 end
 
-function BootstrapCodec.Decode(source: buffer): ProtocolTypes.ProtocolManifest
+function BootstrapCodec.Decode(source: buffer): Types.ProtocolManifest
 	local reader: Reader = { source = source, offset = 1, limit = buffer.len(source) }
 	local version: number = readUnsigned(reader, 2)
 	if version ~= Constants.PROTOCOL_VERSION then
 		error("ProtocolMismatch", 0)
 	end
 	local domainCount: number = readCount(reader, 11)
-	local domains: { ProtocolTypes.ManifestDomain } = {}
+	local domains: { Types.ManifestDomain } = {}
 	for _ = 1, domainCount do
 		local id: string = readString(reader)
 		local code: number = readUnsigned(reader, 2)
-		local state: NetworkingTypes.SchemaDefinition = readSchema(reader, 1)
+		local state: Types.SchemaDefinition = readSchema(reader, 1)
 		local eventCount: number = readCount(reader, 7)
-		local events: { ProtocolTypes.ManifestEvent } = {}
+		local events: { Types.ManifestEvent } = {}
 		for _ = 1, eventCount do
 			local eventId: string = readString(reader)
 			local eventCode: number = readUnsigned(reader, 2)

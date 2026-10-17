@@ -1,17 +1,17 @@
 --!strict
-local ProtocolTypes = require(script.Parent.ProtocolTypes)
-local Constants = require(script.Parent.ProtocolConstants)
+local Types = require(script.Parent.types)
+local Constants = require(script.Parent.utils.ProtocolConstants)
 local BootstrapCodec = require(script.Parent.utils.BootstrapCodec)
 local BufferUtils = require(script.Parent.utils.CodecBufferUtils)
 
-local ProtocolCodec = {} :: ProtocolTypes.ProtocolCodec
+local ProtocolCodec = {} :: Types.ProtocolCodec
 local codes: { [string]: number } = { Hello = 0, Bootstrap = 1, Ready = 2, ReadyAck = 3, Reject = 4 }
-local rejectionReasons: { [number]: ProtocolTypes.RejectionReason } = {}
-for reason: ProtocolTypes.RejectionReason, code: number in Constants.REJECTION_CODES do
+local rejectionReasons: { [number]: Types.ProtocolRejectionReason } = {}
+for reason: Types.ProtocolRejectionReason, code: number in Constants.REJECTION_CODES do
 	rejectionReasons[code] = reason
 end
 
-function ProtocolCodec.Encode(message: ProtocolTypes.Message): (buffer?, string?)
+function ProtocolCodec.Encode(message: Types.ProtocolMessage): (buffer?, string?)
 	local code: number? = codes[message.kind]
 	if code == nil then
 		return nil, "UnknownMessageKind"
@@ -53,7 +53,7 @@ function ProtocolCodec.Encode(message: ProtocolTypes.Message): (buffer?, string?
 	return destination, nil
 end
 
-function ProtocolCodec.Decode(payload: any): (ProtocolTypes.Message?, string?)
+function ProtocolCodec.Decode(payload: any): (Types.ProtocolMessage?, string?)
 	if typeof(payload) ~= "buffer" then
 		return nil, "ProtocolPayloadMustBeBuffer"
 	end
@@ -85,7 +85,7 @@ function ProtocolCodec.Decode(payload: any): (ProtocolTypes.Message?, string?)
 		if length ~= Constants.REJECT_PACKET_BYTES then
 			return nil, "MalformedPacket"
 		end
-		local reason: ProtocolTypes.RejectionReason? = rejectionReasons[buffer.readu8(payload, 1)]
+		local reason: Types.ProtocolRejectionReason? = rejectionReasons[buffer.readu8(payload, 1)]
 		if reason == nil then
 			return nil, "ProtocolRejectionReasonInvalid"
 		end

@@ -7,9 +7,9 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Networking.ActorViewTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local SignalTypes = require(KRF.shared.Signal.types)
-local ResyncCodec = require(KRF.shared.Networking.ResyncCodec)
+local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -43,7 +43,7 @@ for _, revision: number in { 9, 10, 12, 1000 } do
 			TestUtils.commit(fixture, revision, { TestUtils.patch(5) })
 			expect(TestUtils.view(fixture)).toBe(view)
 			expect(TestUtils.domain(fixture):GetState()).toBe(state)
-			local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+			local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 			assert(diagnostics ~= nil, "Expected private recovery diagnostics")
 			expect(diagnostics.revision).toBe(10)
 			expect(diagnostics.status).toBe("AwaitingBaseline")
@@ -88,7 +88,7 @@ it("drops all incremental work while awaiting baseline without a growing history
 	expect(TestUtils.domain(fixture):GetState()).toBe(state)
 	expect(changed).toBe(0)
 	expect(#fixture.requests).toBe(1)
-	local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+	local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 	assert(diagnostics ~= nil, "Expected recovery diagnostics")
 	expect(diagnostics.bufferedCommitCount).toBe(0)
 	expect(diagnostics.revision).toBe(10)
@@ -168,7 +168,7 @@ it("keeps a failed resync send observable and bounded without throwing out of th
 	expect(TestUtils.domain(fixture):GetState()).toBe(previous)
 	expect(#fixture.requests).toBe(1)
 	expect(#fixture.faults > 0).toBe(true)
-	local diagnostics: Types.Diagnostics? = fixture.runtime:_InspectForTests(1)
+	local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 	assert(diagnostics ~= nil, "Expected observable failed recovery")
 	expect(diagnostics.status).never.toBe("Live")
 end)

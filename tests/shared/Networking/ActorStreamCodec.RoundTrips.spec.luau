@@ -6,16 +6,16 @@ local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
-local Types = require(KRF.shared.Networking.ActorStreamTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ActorStreamCodecTestUtils)
 
-local codec: Types.Codec
+local codec: SharedNetworkingTypes.ActorStreamCodec
 beforeEach(function()
 	codec = TestUtils.codec()
 end)
 
 it("round-trips Begin, Chunk, End, live Commit, Halt and Remove records in one buffer", function()
-	local records: { Types.Record } = {
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{ kind = "BaselineBegin", handle = 17, actorId = "ActorA", generation = 3, totalBytes = 3 },
 		{ kind = "BaselineChunk", handle = 17, generation = 3, offset = 0, bytes = buffer.fromstring("abc") },
 		{ kind = "BaselineEnd", handle = 17, generation = 3, revision = 10 },
@@ -36,9 +36,9 @@ it("round-trips Begin, Chunk, End, live Commit, Halt and Remove records in one b
 	}
 	local payload: buffer = TestUtils.encode(codec, records)
 	expect(typeof(payload)).toBe("buffer")
-	local decoded: { Types.Record } = TestUtils.decode(codec, payload)
+	local decoded: { SharedNetworkingTypes.ActorStreamRecord } = TestUtils.decode(codec, payload)
 	expect(#decoded).toBe(#records)
-	for index: number, record: Types.Record in decoded do
+	for index: number, record: SharedNetworkingTypes.ActorStreamRecord in decoded do
 		if record.kind == "BaselineChunk" then
 			expect(record.handle).toBe(17)
 			expect(record.generation).toBe(3)
@@ -51,7 +51,7 @@ it("round-trips Begin, Chunk, End, live Commit, Halt and Remove records in one b
 end)
 
 it("preserves Struct field patches, Optional removals, Map entry replacement/removal and Array order", function()
-	local patch: Types.Patch = {
+	local patch: SharedNetworkingTypes.ActorPatch = {
 		kind = "Struct",
 		fields = {
 			current = { kind = "Replace", value = 0 },
@@ -60,7 +60,7 @@ it("preserves Struct field patches, Optional removals, Map entry replacement/rem
 			order = { kind = "Replace", value = { 3, 1, 2 } },
 		},
 	}
-	local records: { Types.Record } = {
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{
 			kind = "Commit",
 			handle = 1,
@@ -73,11 +73,12 @@ it("preserves Struct field patches, Optional removals, Map entry replacement/rem
 end)
 
 it("preserves a present domain whose top-level Optional truth is nil", function()
-	local domains: { [string]: Types.DomainTruth } = { ["Game.Optional"] = { value = nil } }
+	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth } = { ["Game.Optional"] = { value = nil } }
 	local payload: buffer?, reason: string? = codec.EncodeBaseline(domains)
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected Optional baseline")
-	local decoded: { [string]: Types.DomainTruth }?, decodeReason: string? = codec.DecodeBaseline(payload)
+	local decoded: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, decodeReason: string? =
+		codec.DecodeBaseline(payload)
 	expect(decodeReason).toBeNil()
 	expect(decoded).toEqual(domains)
 end)
@@ -86,13 +87,14 @@ it("preserves an empty visible domain set for an aware Actor", function()
 	local payload: buffer?, reason: string? = codec.EncodeBaseline({})
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected empty visible baseline")
-	local decoded: { [string]: Types.DomainTruth }?, decodeReason: string? = codec.DecodeBaseline(payload)
+	local decoded: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, decodeReason: string? =
+		codec.DecodeBaseline(payload)
 	expect(decodeReason).toBeNil()
 	expect(decoded).toEqual({})
 end)
 
 it("round-trips baseline truth without encoding friendly domain ids or Struct field names", function()
-	local domains: { [string]: Types.DomainTruth } = {
+	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth } = {
 		["Game.State"] = {
 			value = {
 				current = 80,
@@ -111,13 +113,14 @@ it("round-trips baseline truth without encoding friendly domain ids or Struct fi
 		local position: number? = string.find(bytes, name, 1, true)
 		expect(position).toBeNil()
 	end
-	local decoded: { [string]: Types.DomainTruth }?, decodeReason: string? = codec.DecodeBaseline(payload)
+	local decoded: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, decodeReason: string? =
+		codec.DecodeBaseline(payload)
 	expect(decodeReason).toBeNil()
 	expect(decoded).toEqual(domains)
 end)
 
 it("round-trips full state replacement separately from schema-aware partial patches", function()
-	local records: { Types.Record } = {
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{
 			kind = "Commit",
 			handle = 1,
@@ -143,7 +146,7 @@ it("round-trips full state replacement separately from schema-aware partial patc
 end)
 
 it("uses handles and codebooks without resending actorId, domain names, fields or event names in live bytes", function()
-	local records: { Types.Record } = {
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{
 			kind = "Commit",
 			handle = 1,
@@ -166,7 +169,7 @@ it("uses handles and codebooks without resending actorId, domain names, fields o
 end)
 
 it("preserves each Actor's logical record order when physical packets batch Actors", function()
-	local records: { Types.Record } = {
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{ kind = "Commit", handle = 1, revision = 2, patches = {}, events = {} },
 		{ kind = "Commit", handle = 2, revision = 7, patches = {}, events = {} },
 		{ kind = "Commit", handle = 1, revision = 3, patches = {}, events = {} },
@@ -176,10 +179,10 @@ it("preserves each Actor's logical record order when physical packets batch Acto
 end)
 
 it("encodes identity on initial Begin and omits it from a replacement Begin for the same handle", function()
-	local initial: { Types.Record } = {
+	local initial: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{ kind = "BaselineBegin", handle = 17, actorId = "IdentityOnlyInFirstBegin", generation = 1, totalBytes = 3 },
 	}
-	local replacement: { Types.Record } = {
+	local replacement: { SharedNetworkingTypes.ActorStreamRecord } = {
 		{ kind = "BaselineBegin", handle = 17, generation = 2, totalBytes = 3 },
 	}
 	local initialBytes: buffer = TestUtils.encode(codec, initial)

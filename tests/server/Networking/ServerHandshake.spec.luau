@@ -7,12 +7,11 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local NetworkingTypes = require(KRF.server.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Handshake: NetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
 local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
@@ -23,8 +22,8 @@ local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Netwo
 type SentMessage = { player: Player, payload: buffer }
 local players: { Player } = {}
 local sent: { SentMessage } = {}
-local runtime: NetworkingTypes.ServerHandshake? = nil
-local protocol: ProtocolTypes.PreparedProtocol
+local runtime: ServerNetworkingTypes.ServerHandshake? = nil
+local protocol: SharedNetworkingTypes.PreparedProtocol
 local originalCompile: typeof(Compiler.Compile) = Compiler.Compile
 
 beforeEach(function()
@@ -51,7 +50,7 @@ afterEach(function()
 	Domains._resetForTests()
 end)
 
-local function getRuntime(): NetworkingTypes.ServerHandshake
+local function getRuntime(): ServerNetworkingTypes.ServerHandshake
 	assert(runtime ~= nil, "Expected handshake runtime")
 	return runtime
 end
@@ -140,7 +139,7 @@ it("marks ready before sending READY_ACK and fires Ready observers exactly once 
 				table.insert(order, "Publication")
 				return
 			end
-			local message: ProtocolTypes.Message = ProtocolTestUtils.decode(payload)
+			local message: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(payload)
 			if message.kind == "ReadyAck" then
 				expect(getRuntime():IsClientReady(player)).toBe(true)
 			end
@@ -288,9 +287,9 @@ it("supports idempotent observer unsubscribe and runtime destruction", function(
 end)
 
 it("runs both valid handshake callbacks to completion without yielding", function()
-	local messages: { ProtocolTypes.Message } =
+	local messages: { SharedNetworkingTypes.ProtocolMessage } =
 		{ { kind = "Hello", version = Constants.PROTOCOL_VERSION }, { kind = "Ready" } }
-	for _, message: ProtocolTypes.Message in messages do
+	for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 		local thread: thread = coroutine.create(function()
 			getRuntime():Handle(players[1], ProtocolTestUtils.encode(message))
 		end)
@@ -319,12 +318,12 @@ it("does not accept READY when bootstrap transmission failed", function()
 end)
 
 it("rejects server-originated message kinds on the client-to-server lane", function()
-	local messages: { ProtocolTypes.Message } = {
+	local messages: { SharedNetworkingTypes.ProtocolMessage } = {
 		{ kind = "Bootstrap", manifest = protocol.manifest },
 		{ kind = "ReadyAck" },
 		{ kind = "Reject", reason = "ReadyRejected" },
 	}
-	for _, message: ProtocolTypes.Message in messages do
+	for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 		getRuntime():Handle(players[1], ProtocolTestUtils.encode(message))
 	end
 	ready(players[1])

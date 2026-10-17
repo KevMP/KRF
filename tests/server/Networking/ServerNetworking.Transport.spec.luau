@@ -8,16 +8,15 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local NetworkingTypes = require(KRF.server.Networking.types)
-local SharedTypes = require(KRF.shared.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
-local Handshake: NetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
-local Transport: ProtocolTypes.Transport = require(KRF.shared.Networking.Transport)
-local Codec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
-local Compiler: SharedTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
+local Codec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 local DomainTestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
@@ -33,7 +32,7 @@ local barrier: BindableEvent
 local root: Folder
 local sent: { buffer } = {}
 local player: Player
-local protocol: ProtocolTypes.PreparedProtocol
+local protocol: SharedNetworkingTypes.PreparedProtocol
 
 beforeEach(function()
 	Networking.Destroy()
@@ -47,7 +46,7 @@ beforeEach(function()
 	-- copied. Use a capability-safe Instance as the injected connected player.
 	player = ProtocolTestUtils.createPlayer()
 	player.Parent = Players
-	Transport.Create = function(parent: Instance): (ProtocolTypes.OwnedTransport?, string?)
+	Transport.Create = function(parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		root.Parent = parent
 		local reliable: any = {
 			OnServerEvent = inbound.Event,
@@ -81,7 +80,7 @@ afterEach(function()
 	player:Destroy()
 end)
 
-local function emit(message: ProtocolTypes.Message): ()
+local function emit(message: SharedNetworkingTypes.ProtocolMessage): ()
 	inbound:Fire(player, ProtocolTestUtils.encode(message))
 	task.defer(function(): ()
 		barrier:Fire()
@@ -148,7 +147,7 @@ it("rejects duplicate activation without replacing the live transports", functio
 end)
 
 it("returns transport creation failure without publishing a runtime", function()
-	Transport.Create = function(_parent: Instance): (ProtocolTypes.OwnedTransport?, string?)
+	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		return nil, "TransportConflict"
 	end
 	local success: boolean, failure: string? = Networking.Publish(protocol)
@@ -159,9 +158,9 @@ end)
 
 it("removes only owned transports when handshake construction unexpectedly fails", function()
 	Handshake.new = function(
-		_protocol: ProtocolTypes.PreparedProtocol,
-		_dependencies: NetworkingTypes.HandshakeDependencies
-	): NetworkingTypes.ServerHandshake
+		_protocol: SharedNetworkingTypes.PreparedProtocol,
+		_dependencies: ServerNetworkingTypes.HandshakeDependencies
+	): ServerNetworkingTypes.ServerHandshake
 		error("HandshakeConstructionFailed")
 	end
 	local completed: boolean, reason: any = pcall(Networking.Publish, protocol)
@@ -187,10 +186,10 @@ end)
 it("distinguishes a malformed encoded manifest from event codec compilation failure", function()
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog =
 		DomainTestUtils.prepare({ DomainTestUtils.createDomain("Game.Other") })
-	Codec.Encode = function(_message: ProtocolTypes.Message): (buffer?, string?)
+	Codec.Encode = function(_message: SharedNetworkingTypes.ProtocolMessage): (buffer?, string?)
 		return nil, "UnsupportedSchema"
 	end
-	local rejected: ProtocolTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
+	local rejected: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
 	expect(rejected).toBeNil()
 	expect(reason).toBe("InvalidProtocolManifest")
 	Codec.Encode = originalEncode
@@ -198,7 +197,9 @@ it("distinguishes a malformed encoded manifest from event codec compilation fail
 	domain.events = { { id = "Changed", payload = domain.state } }
 	catalog = DomainTestUtils.prepare({ domain })
 	local calls: number = 0
-	Compiler.Compile = function(schema: SharedTypes.CompiledSchema): (SharedTypes.CompiledCodec?, string?)
+	Compiler.Compile = function(
+		schema: SharedNetworkingTypes.CompiledSchema
+	): (SharedNetworkingTypes.CompiledCodec?, string?)
 		calls += 1
 		if calls == 2 then
 			return nil, "UnsupportedSchema"

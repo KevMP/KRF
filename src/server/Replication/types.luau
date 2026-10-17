@@ -1,6 +1,6 @@
 --!strict
 local ActorTypes = require(script.Parent.Parent.Actor.types)
-local NetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local TagTypes = require(script.Parent.Parent.Tags.types)
 local ResourceTypes = require(script.Parent.Parent.Resource.types)
 local ActionTypes = require(script.Parent.Parent.Action.types)
@@ -8,13 +8,13 @@ local ActionTypes = require(script.Parent.Parent.Action.types)
 local types = {}
 
 export type ReplicationAudience = "All" | "Owner"
-export type ReplicationEventDefinition = { id: string, payload: NetworkingTypes.SchemaDefinition }
+export type ReplicationEventDefinition = { id: string, payload: SharedNetworkingTypes.SchemaDefinition }
 export type ReplicationDomainEvent = { id: string, payload: any }
 export type ReplicationDomainOnCommitted = (events: { ReplicationDomainEvent }?) -> ()
 
 export type ReplicationDomainDefinition = {
 	id: string,
-	state: NetworkingTypes.SchemaDefinition,
+	state: SharedNetworkingTypes.SchemaDefinition,
 	events: { ReplicationEventDefinition }?,
 	audience: ReplicationAudience?,
 	-- Complete recoverable current truth. Actor-only, synchronous, and non-yielding.
@@ -25,10 +25,10 @@ export type ReplicationDomainDefinition = {
 	observe: ((actor: ActorTypes.Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
 }
 
-export type LoadedReplicationEventDefinition = { read id: string, read payload: NetworkingTypes.CompiledSchema }
+export type LoadedReplicationEventDefinition = { read id: string, read payload: SharedNetworkingTypes.CompiledSchema }
 export type LoadedReplicationDomainDefinition = {
 	read id: string,
-	read state: NetworkingTypes.CompiledSchema,
+	read state: SharedNetworkingTypes.CompiledSchema,
 	read events: { LoadedReplicationEventDefinition },
 	read audience: ReplicationAudience,
 	read snapshot: (actor: ActorTypes.Actor) -> any,

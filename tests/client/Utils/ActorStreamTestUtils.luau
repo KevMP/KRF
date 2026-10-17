@@ -4,43 +4,42 @@ local KRF = ReplicatedStorage.Packages.KRF
 
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
-local Types = require(KRF.client.Networking.ActorStreamTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Runtime: Types.RuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
-local Codec: WireTypes.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
-local Compiler: ProtocolTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Runtime: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local Compiler: SharedNetworkingTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local SchemaUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
 
 export type BaselineDelivery = {
-	actor: Types.ActorRecord,
+	actor: ClientNetworkingTypes.ActorStreamRecord,
 	revision: number,
-	domains: { [string]: WireTypes.DomainTruth },
+	domains: { [string]: SharedNetworkingTypes.ActorDomainTruth },
 }
 export type CommitDelivery = {
-	actor: Types.ActorRecord,
+	actor: ClientNetworkingTypes.ActorStreamRecord,
 	revision: number,
-	patches: { WireTypes.DomainPatch },
-	events: { WireTypes.Event },
+	patches: { SharedNetworkingTypes.ActorDomainPatch },
+	events: { SharedNetworkingTypes.ActorEvent },
 }
-export type Binding = { actor: Types.ActorRecord, model: Model }
+export type Binding = { actor: ClientNetworkingTypes.ActorStreamRecord, model: Model }
 export type Fixture = {
-	runtime: Types.Runtime?,
-	protocol: ProtocolTypes.ClientProtocol,
-	codec: WireTypes.Codec,
-	consumer: Types.Consumer,
-	discovery: Types.Discovery,
-	options: Types.Options,
+	runtime: ClientNetworkingTypes.ActorStreamRuntime?,
+	protocol: SharedNetworkingTypes.ClientProtocol,
+	codec: SharedNetworkingTypes.ActorStreamCodec,
+	consumer: ClientNetworkingTypes.ActorStreamConsumer,
+	discovery: ClientNetworkingTypes.ActorModelDiscovery,
+	options: ClientNetworkingTypes.ActorStreamOptions,
 	baselines: { BaselineDelivery },
 	commits: { CommitDelivery },
-	halted: { Types.ActorRecord },
-	removed: { Types.ActorRecord },
+	halted: { ClientNetworkingTypes.ActorStreamRecord },
+	removed: { ClientNetworkingTypes.ActorStreamRecord },
 	bound: { Binding },
 	unbound: { Binding },
 	faults: { string },
-	candidates: { Types.Candidate },
-	added: { (Types.Candidate) -> () },
+	candidates: { ClientNetworkingTypes.ActorModelCandidate },
+	added: { (ClientNetworkingTypes.ActorModelCandidate) -> () },
 	gone: { (Instance) -> () },
 	instances: { Instance },
 	scans: number,
@@ -49,21 +48,21 @@ export type Fixture = {
 local TestUtils = {}
 
 function TestUtils.new(): Fixture
-	local manifest: ProtocolTypes.ProtocolManifest = ProtocolUtils.manifest()
-	local protocol: ProtocolTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
+	local manifest: SharedNetworkingTypes.ProtocolManifest = ProtocolUtils.manifest()
+	local protocol: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 	expect(reason).toBeNil()
 	assert(protocol ~= nil, "Expected compiled N2 client protocol")
-	local schemas: WireTypes.SchemaCatalog = {}
-	for _, domain: ProtocolTypes.ManifestDomain in manifest.domains do
+	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		schemas[domain.id] = SchemaUtils.compile(domain.state)
 	end
 	local fixture: Fixture = {
 		runtime = nil,
 		protocol = protocol,
 		codec = Codec.Compile(protocol, schemas),
-		consumer = {} :: Types.Consumer,
-		discovery = {} :: Types.Discovery,
-		options = {} :: Types.Options,
+		consumer = {} :: ClientNetworkingTypes.ActorStreamConsumer,
+		discovery = {} :: ClientNetworkingTypes.ActorModelDiscovery,
+		options = {} :: ClientNetworkingTypes.ActorStreamOptions,
 		baselines = {},
 		commits = {},
 		halted = {},
@@ -86,39 +85,39 @@ function TestUtils.new(): Fixture
 	}
 	fixture.consumer = {
 		OnBaselineReady = function(
-			actor: Types.ActorRecord,
+			actor: ClientNetworkingTypes.ActorStreamRecord,
 			revision: number,
-			domains: { [string]: WireTypes.DomainTruth }
+			domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }
 		): ()
 			table.insert(fixture.baselines, { actor = actor, revision = revision, domains = domains })
 		end,
 		OnCommitReady = function(
-			actor: Types.ActorRecord,
+			actor: ClientNetworkingTypes.ActorStreamRecord,
 			revision: number,
-			patches: { WireTypes.DomainPatch },
-			events: { WireTypes.Event }
+			patches: { SharedNetworkingTypes.ActorDomainPatch },
+			events: { SharedNetworkingTypes.ActorEvent }
 		): ()
 			table.insert(fixture.commits, { actor = actor, revision = revision, patches = patches, events = events })
 		end,
-		OnActorHalted = function(actor: Types.ActorRecord): ()
+		OnActorHalted = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 			table.insert(fixture.halted, actor)
 		end,
-		OnActorRemoved = function(actor: Types.ActorRecord): ()
+		OnActorRemoved = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 			table.insert(fixture.removed, actor)
 		end,
-		OnModelBound = function(actor: Types.ActorRecord, model: Model): ()
+		OnModelBound = function(actor: ClientNetworkingTypes.ActorStreamRecord, model: Model): ()
 			table.insert(fixture.bound, { actor = actor, model = model })
 		end,
-		OnModelUnbound = function(actor: Types.ActorRecord, model: Model): ()
+		OnModelUnbound = function(actor: ClientNetworkingTypes.ActorStreamRecord, model: Model): ()
 			table.insert(fixture.unbound, { actor = actor, model = model })
 		end,
 	}
 	fixture.discovery = {
-		GetCandidates = function(): { Types.Candidate }
+		GetCandidates = function(): { ClientNetworkingTypes.ActorModelCandidate }
 			fixture.scans += 1
 			return table.clone(fixture.candidates)
 		end,
-		ObserveAdded = function(callback: (Types.Candidate) -> ()): () -> ()
+		ObserveAdded = function(callback: (ClientNetworkingTypes.ActorModelCandidate) -> ()): () -> ()
 			table.insert(fixture.added, callback)
 			return function(): ()
 				local index: number? = table.find(fixture.added, callback)
@@ -140,8 +139,8 @@ function TestUtils.new(): Fixture
 	return fixture
 end
 
-function TestUtils.start(fixture: Fixture, withoutConsumer: boolean?): Types.Runtime
-	local runtime: Types.Runtime = Runtime.new(
+function TestUtils.start(fixture: Fixture, withoutConsumer: boolean?): ClientNetworkingTypes.ActorStreamRuntime
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = Runtime.new(
 		fixture.codec,
 		if withoutConsumer then nil else fixture.consumer,
 		fixture.discovery,
@@ -151,7 +150,7 @@ function TestUtils.start(fixture: Fixture, withoutConsumer: boolean?): Types.Run
 	return runtime
 end
 
-function TestUtils.send(fixture: Fixture, records: { WireTypes.Record }): (boolean, string?)
+function TestUtils.send(fixture: Fixture, records: { SharedNetworkingTypes.ActorStreamRecord }): (boolean, string?)
 	assert(fixture.runtime ~= nil, "Expected client stream")
 	local payload: buffer?, reason: string? = fixture.codec.Encode(records)
 	expect(reason).toBeNil()
@@ -206,7 +205,11 @@ function TestUtils.replace(fixture: Fixture, handle: number, generation: number,
 	deliverBaseline(fixture, handle, nil, generation, revision)
 end
 
-function TestUtils.candidate(fixture: Fixture, actorId: string, existingModel: Model?): Types.Candidate
+function TestUtils.candidate(
+	fixture: Fixture,
+	actorId: string,
+	existingModel: Model?
+): ClientNetworkingTypes.ActorModelCandidate
 	local model: Model = existingModel or Instance.new("Model")
 	if existingModel == nil then
 		table.insert(fixture.instances, model)
@@ -218,14 +221,14 @@ function TestUtils.candidate(fixture: Fixture, actorId: string, existingModel: M
 	return { marker = marker, model = model, actorId = actorId }
 end
 
-function TestUtils.add(fixture: Fixture, candidate: Types.Candidate): ()
+function TestUtils.add(fixture: Fixture, candidate: ClientNetworkingTypes.ActorModelCandidate): ()
 	table.insert(fixture.candidates, candidate)
-	for _, callback: (Types.Candidate) -> () in table.clone(fixture.added) do
+	for _, callback: (ClientNetworkingTypes.ActorModelCandidate) -> () in table.clone(fixture.added) do
 		callback(candidate)
 	end
 end
 
-function TestUtils.remove(fixture: Fixture, candidate: Types.Candidate): ()
+function TestUtils.remove(fixture: Fixture, candidate: ClientNetworkingTypes.ActorModelCandidate): ()
 	local index: number? = table.find(fixture.candidates, candidate)
 	if index ~= nil then
 		table.remove(fixture.candidates, index)

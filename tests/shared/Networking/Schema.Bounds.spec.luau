@@ -5,13 +5,13 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Compiler: NetworkingTypes.SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Compiler: SharedNetworkingTypes.SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.SchemaTestUtils)
 
-type SchemaDefinition = NetworkingTypes.SchemaDefinition
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type SchemaDefinition = SharedNetworkingTypes.SchemaDefinition
+type CompiledSchema = SharedNetworkingTypes.CompiledSchema
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
 

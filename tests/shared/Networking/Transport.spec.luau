@@ -7,8 +7,8 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Transport: ProtocolTypes.Transport = require(KRF.shared.Networking.Transport)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
 
 local parent: Folder
 
@@ -20,7 +20,7 @@ afterEach(function()
 end)
 
 it("owns exactly one Reliable RemoteEvent and one reserved UnreliableRemoteEvent", function()
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
 	expect(reason).toBeNil()
 	assert(owned ~= nil, "Expected framework transport")
 	expect(owned.root.Parent).toBe(parent)
@@ -33,7 +33,7 @@ it("owns exactly one Reliable RemoteEvent and one reserved UnreliableRemoteEvent
 	for _, descendant: Instance in parent:GetDescendants() do
 		expect(descendant:IsA("RemoteFunction")).toBe(false)
 	end
-	local located: ProtocolTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
+	local located: SharedNetworkingTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
 	expect(locateReason).toBeNil()
 	assert(located ~= nil, "Expected located transport")
 	expect(located.reliable).toBe(owned.reliable)
@@ -41,10 +41,10 @@ it("owns exactly one Reliable RemoteEvent and one reserved UnreliableRemoteEvent
 end)
 
 it("rejects repeated creation without duplicating or replacing an owned transport", function()
-	local first: ProtocolTypes.OwnedTransport?, firstReason: string? = Transport.Create(parent)
+	local first: SharedNetworkingTypes.OwnedTransport?, firstReason: string? = Transport.Create(parent)
 	expect(firstReason).toBeNil()
 	assert(first ~= nil, "Expected first transport")
-	local second: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
+	local second: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
 	expect(second).toBeNil()
 	expect(reason).toBe("TransportConflict")
 	expect(#parent:GetChildren()).toBe(1)
@@ -57,7 +57,7 @@ it("detects a reserved root collision without deleting consumer-owned instances"
 	collision.Name = Transport.ROOT_NAME
 	collision.Value = "consumer-owned"
 	collision.Parent = parent
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
 	expect(owned).toBeNil()
 	expect(reason).toBe("TransportConflict")
 	expect(collision.Parent).toBe(parent)
@@ -66,7 +66,7 @@ it("detects a reserved root collision without deleting consumer-owned instances"
 end)
 
 it("reports unavailable transport immediately at the non-yielding discovery primitive", function()
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 	expect(owned).toBeNil()
 	expect(reason).toBe("TransportUnavailable")
 	expect(#parent:GetChildren()).toBe(0)
@@ -107,7 +107,7 @@ for _, testCase: HierarchyCase in hierarchyCases do
 			duplicate.Parent = root
 		end
 		local originalCount: number = #root:GetChildren()
-		local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
+		local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 		expect(owned).toBeNil()
 		expect(reason).toBe("InvalidTransport")
 		expect(#root:GetChildren()).toBe(originalCount)
@@ -120,7 +120,7 @@ it("rejects duplicate root names instead of choosing an ambiguous transport", fu
 		root.Name = Transport.ROOT_NAME
 		root.Parent = parent
 	end
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 	expect(owned).toBeNil()
 	expect(reason).toBe("InvalidTransport")
 end)
@@ -129,7 +129,7 @@ it("destroys only its owned hierarchy and treats repeated cleanup as a no-op", f
 	local unrelated: Folder = Instance.new("Folder")
 	unrelated.Name = "GameData"
 	unrelated.Parent = parent
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Create(parent)
 	expect(reason).toBeNil()
 	assert(owned ~= nil, "Expected owned transport")
 	owned.Destroy()
@@ -144,17 +144,17 @@ it("rejects a reserved root with the wrong class without modifying it", function
 	root.Name = Transport.ROOT_NAME
 	root.Value = "owned elsewhere"
 	root.Parent = parent
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 	expect(owned).toBeNil()
 	expect(reason).toBe("InvalidTransport")
 	expect(root.Value).toBe("owned elsewhere")
 end)
 
 it("client-side transport view cleanup cannot destroy the server-owned hierarchy", function()
-	local owner: ProtocolTypes.OwnedTransport?, createReason: string? = Transport.Create(parent)
+	local owner: SharedNetworkingTypes.OwnedTransport?, createReason: string? = Transport.Create(parent)
 	expect(createReason).toBeNil()
 	assert(owner ~= nil, "Expected owned transport")
-	local view: ProtocolTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
+	local view: SharedNetworkingTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
 	expect(locateReason).toBeNil()
 	assert(view ~= nil, "Expected a non-owning transport view")
 	view.Destroy()

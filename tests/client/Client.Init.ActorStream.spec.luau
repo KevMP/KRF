@@ -8,13 +8,13 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
-local Types = require(KRF.client.Networking.ActorStreamTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
-local Native: ClientTypes.Dependencies = require(KRF.client.Networking.NativeClientDependencies)
-local Stream: Types.RuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
-local Discovery: Types.DiscoveryModule = require(KRF.client.Networking.ActorModelDiscovery)
+local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
+local Stream: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
+local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
+	require(KRF.client.Networking.utils.ActorModelDiscovery)
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local StreamTestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -30,7 +30,7 @@ local created: number = 0
 local destroyed: number = 0
 local discoveryDestroyed: number = 0
 local deliveries: { buffer } = {}
-local discovery: Types.DiscoveryAdapter
+local discovery: ClientNetworkingTypes.ActorModelDiscoveryAdapter
 
 beforeEach(function()
 	Client._ResetForTests()
@@ -45,10 +45,10 @@ beforeEach(function()
 	Native.ScheduleTimeout = fixture.dependencies.ScheduleTimeout
 	Native.Resume = fixture.dependencies.Resume
 	discovery = {
-		GetCandidates = function(): { Types.Candidate }
+		GetCandidates = function(): { ClientNetworkingTypes.ActorModelCandidate }
 			return {}
 		end,
-		ObserveAdded = function(_callback: (Types.Candidate) -> ()): () -> ()
+		ObserveAdded = function(_callback: (ClientNetworkingTypes.ActorModelCandidate) -> ()): () -> ()
 			return function(): () end
 		end,
 		ObserveRemoved = function(_callback: (Instance) -> ()): () -> ()
@@ -58,34 +58,43 @@ beforeEach(function()
 			discoveryDestroyed += 1
 		end,
 	}
-	Discovery.new = function(_root: Instance?): Types.DiscoveryAdapter
+	Discovery.new = function(_root: Instance?): ClientNetworkingTypes.ActorModelDiscoveryAdapter
 		return discovery
 	end
 	Stream.new = function(
-		_codec: WireTypes.Codec,
-		_consumer: Types.Consumer?,
-		installedDiscovery: Types.Discovery,
-		_options: Types.Options
-	): Types.Runtime
+		_codec: SharedNetworkingTypes.ActorStreamCodec,
+		_consumer: ClientNetworkingTypes.ActorStreamConsumer?,
+		installedDiscovery: ClientNetworkingTypes.ActorModelDiscovery,
+		_options: ClientNetworkingTypes.ActorStreamOptions
+	): ClientNetworkingTypes.ActorStreamRuntime
 		created += 1
 		expect(installedDiscovery).toBe(discovery)
 		table.insert(fixture.order, "ActorConsumers")
 		return {
-			Handle = function(_self: Types.Runtime, payload: any): (boolean, string?)
+			Handle = function(_self: ClientNetworkingTypes.ActorStreamRuntime, payload: any): (boolean, string?)
 				expect(typeof(payload)).toBe("buffer")
 				table.insert(deliveries, payload)
 				return true, nil
 			end,
-			GetByHandle = function(_self: Types.Runtime, _handle: number): Types.ActorRecord?
+			GetByHandle = function(
+				_self: ClientNetworkingTypes.ActorStreamRuntime,
+				_handle: number
+			): ClientNetworkingTypes.ActorStreamRecord?
 				return nil
 			end,
-			GetByActorId = function(_self: Types.Runtime, _actorId: string): Types.ActorRecord?
+			GetByActorId = function(
+				_self: ClientNetworkingTypes.ActorStreamRuntime,
+				_actorId: string
+			): ClientNetworkingTypes.ActorStreamRecord?
 				return nil
 			end,
-			GetByModel = function(_self: Types.Runtime, _model: Model): Types.ActorRecord?
+			GetByModel = function(
+				_self: ClientNetworkingTypes.ActorStreamRuntime,
+				_model: Model
+			): ClientNetworkingTypes.ActorStreamRecord?
 				return nil
 			end,
-			Destroy = function(_self: Types.Runtime): ()
+			Destroy = function(_self: ClientNetworkingTypes.ActorStreamRuntime): ()
 				destroyed += 1
 			end,
 		}
@@ -206,7 +215,7 @@ end
 
 it("destroys the installed Actor runtime when READY transmission throws", function()
 	fixture.onSend = function(payload: buffer): ()
-		local message: ProtocolTypes.Message = ProtocolUtils.decode(payload)
+		local message: SharedNetworkingTypes.ProtocolMessage = ProtocolUtils.decode(payload)
 		if message.kind == "Ready" then
 			error("ForcedReadySendFailure", 0)
 		end
@@ -221,11 +230,11 @@ end)
 
 it("rolls back discovery and sends no READY when Actor runtime construction fails", function()
 	Stream.new = function(
-		_codec: WireTypes.Codec,
-		_consumer: Types.Consumer?,
-		_discovery: Types.Discovery,
-		_options: Types.Options
-	): Types.Runtime
+		_codec: SharedNetworkingTypes.ActorStreamCodec,
+		_consumer: ClientNetworkingTypes.ActorStreamConsumer?,
+		_discovery: ClientNetworkingTypes.ActorModelDiscovery,
+		_options: ClientNetworkingTypes.ActorStreamOptions
+	): ClientNetworkingTypes.ActorStreamRuntime
 		error("ForcedActorStreamConstructionFailure", 0)
 	end
 	start()

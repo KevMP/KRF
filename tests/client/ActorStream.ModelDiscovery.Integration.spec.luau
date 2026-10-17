@@ -8,18 +8,19 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local ServerTypes = require(KRF.server.Networking.AwarenessTypes)
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
-local Marker: ServerTypes.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
-local Discovery: Types.DiscoveryModule = require(KRF.client.Networking.ActorModelDiscovery)
+local Marker: ServerNetworkingTypes.ActorModelMarkerModule = require(KRF.server.Networking.utils.ActorModelMarker)
+local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
+	require(KRF.client.Networking.utils.ActorModelDiscovery)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
 local root: Folder
 local model: Model
 local actor: ActorTypes.Actor
-local discovery: Types.DiscoveryAdapter? = nil
+local discovery: ClientNetworkingTypes.ActorModelDiscoveryAdapter? = nil
 
 beforeEach(function()
 	fixture = TestUtils.new()
@@ -52,7 +53,7 @@ for _, markerFirst: boolean in { true, false } do
 			end
 			discovery = Discovery.new(root)
 			fixture.discovery = discovery
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 			TestUtils.establish(fixture, 1, actor:GetId())
 			if not markerFirst then
 				local installed: boolean, reason: string? = Marker.Install(actor)
@@ -63,12 +64,12 @@ for _, markerFirst: boolean in { true, false } do
 			task.wait()
 			local installedMarker: Instance? = Marker.GetMarker(model)
 			assert(installedMarker ~= nil, "Expected real server marker")
-			local candidates: { Types.Candidate } = discovery.GetCandidates()
+			local candidates: { ClientNetworkingTypes.ActorModelCandidate } = discovery.GetCandidates()
 			expect(#candidates).toBe(1)
 			expect(candidates[1].marker).toBe(installedMarker)
 			expect(candidates[1].actorId).toBe(actor:GetId())
 			expect(candidates[1].model).toBe(model)
-			local record: Types.ActorRecord? = runtime:GetByActorId(actor:GetId())
+			local record: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByActorId(actor:GetId())
 			assert(record ~= nil, "Expected complete client awareness")
 			expect(record.model).toBe(model)
 			expect(runtime:GetByModel(model)).toBe(record)
@@ -89,11 +90,11 @@ it("unbinds and rebinds a real marked Model when it leaves and re-enters the dis
 	expect(reason).toBeNil()
 	discovery = Discovery.new(root)
 	fixture.discovery = discovery
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture, 1, actor:GetId(), 1, 7)
 	task.wait()
 	local marker: Instance? = Marker.GetMarker(model)
-	local record: Types.ActorRecord? = runtime:GetByHandle(1)
+	local record: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	assert(record ~= nil and marker ~= nil, "Expected bound aware Model")
 	expect(runtime:GetByModel(model)).toBe(record)
 	model.Parent = nil

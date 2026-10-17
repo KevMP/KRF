@@ -7,13 +7,12 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local NetworkingTypes = require(KRF.shared.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local ManifestCompiler: ProtocolTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local ManifestCompiler: SharedNetworkingTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
 local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
@@ -24,7 +23,7 @@ local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Netwo
 local CodecTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.CodecTestUtils)
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
-type BoundsCase = { name: string, definition: NetworkingTypes.SchemaDefinition, value: any }
+type BoundsCase = { name: string, definition: SharedNetworkingTypes.SchemaDefinition, value: any }
 local cases: { BoundsCase } = {}
 -- N1 reserves up to eight bytes for collection prefixes. The near-limit cases
 -- leave that allowance intact, so these are compiled-legal descriptors.
@@ -68,35 +67,35 @@ end)
 
 for _, testCase: BoundsCase in cases do
 	it("preserves legal " .. testCase.name .. " exactly through server manifest and bootstrap serialization", function()
-		local originalSchema: NetworkingTypes.CompiledSchema = SchemaTestUtils.compile(testCase.definition)
+		local originalSchema: SharedNetworkingTypes.CompiledSchema = SchemaTestUtils.compile(testCase.definition)
 		local domain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.LargeBounds")
 		domain.state = testCase.definition
 		domain.events = { { id = "Changed", payload = testCase.definition } }
-		local protocol: ProtocolTypes.PreparedProtocol = ServerTestUtils.prepare({ domain })
-		local manifestDomain: ProtocolTypes.ManifestDomain = protocol.manifest.domains[1]
+		local protocol: SharedNetworkingTypes.PreparedProtocol = ServerTestUtils.prepare({ domain })
+		local manifestDomain: SharedNetworkingTypes.ManifestDomain = protocol.manifest.domains[1]
 		expect(manifestDomain.state).toEqual(testCase.definition)
 		expect(manifestDomain.events[1].payload).toEqual(testCase.definition)
 		-- A large potential gameplay value must not cause a giant metadata packet.
 		expect(buffer.len(protocol.bootstrapBuffer) <= Constants.MAX_BOOTSTRAP_BYTES).toBe(true)
-		local decoded: ProtocolTypes.Message = ProtocolTestUtils.decode(protocol.bootstrapBuffer)
+		local decoded: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(protocol.bootstrapBuffer)
 		assert(decoded.kind == "Bootstrap", "Expected Bootstrap")
-		local decodedDomain: ProtocolTypes.ManifestDomain = decoded.manifest.domains[1]
+		local decodedDomain: SharedNetworkingTypes.ManifestDomain = decoded.manifest.domains[1]
 		expect(decodedDomain.state).toEqual(testCase.definition)
 		expect(decodedDomain.events[1].payload).toEqual(testCase.definition)
 		expect(SchemaTestUtils.compile(decodedDomain.state)).toEqual(originalSchema)
 		expect(SchemaTestUtils.compile(decodedDomain.events[1].payload)).toEqual(originalSchema)
-		local clientProtocol: ProtocolTypes.ClientProtocol?, reason: string? =
+		local clientProtocol: SharedNetworkingTypes.ClientProtocol?, reason: string? =
 			ManifestCompiler.Reconstruct(decoded.manifest)
 		expect(reason).toBeNil()
 		assert(clientProtocol ~= nil, "Expected compatible client protocol for legal N1 bounds")
-		local clientDomain: ProtocolTypes.ClientDomain = clientProtocol.domainsById[domain.id]
-		local codecs: { NetworkingTypes.CompiledCodec } = {
+		local clientDomain: SharedNetworkingTypes.ClientDomain = clientProtocol.domainsById[domain.id]
+		local codecs: { SharedNetworkingTypes.CompiledCodec } = {
 			protocol.runtime.domainsById[domain.id].stateCodec,
 			protocol.runtime.domainsById[domain.id].eventsById.Changed.codec,
 			clientDomain.stateCodec,
 			clientDomain.eventsById.Changed.codec,
 		}
-		for _, codec: NetworkingTypes.CompiledCodec in codecs do
+		for _, codec: SharedNetworkingTypes.CompiledCodec in codecs do
 			expect(codec.maxSizeBytes <= originalSchema.maxEncodedBytes).toBe(true)
 			CodecTestUtils.expectRoundTrip(codec, testCase.value)
 		end

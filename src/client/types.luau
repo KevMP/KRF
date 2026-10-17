@@ -1,5 +1,5 @@
 --!strict
-local ProtocolTypes = require(script.Parent.Parent.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(script.Parent.Parent.shared.Networking.types)
 
 local types = {}
 
@@ -15,8 +15,8 @@ export type Dependencies = {
 	ScheduleTimeout: (seconds: number, callback: () -> ()) -> () -> (),
 	Resume: (thread) -> (),
 	InstallConsumers: (
-		protocol: ProtocolTypes.ClientProtocol,
-		manifest: ProtocolTypes.ProtocolManifest?,
+		protocol: SharedNetworkingTypes.ClientProtocol,
+		manifest: SharedNetworkingTypes.ProtocolManifest?,
 		installActorReceiver: (((any) -> ()) -> ())?
 	) -> (boolean, string?, (() -> ())?),
 }

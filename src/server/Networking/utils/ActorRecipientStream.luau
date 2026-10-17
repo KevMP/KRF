@@ -1,16 +1,15 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
-local ActorTypes = require(script.Parent.Parent.Actor.types)
-local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
-local PublicationTypes = require(script.Parent.PublicationTypes)
+local Types = require(script.Parent.Parent.types)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
 local Scheduler = require(script.Parent.PublicationScheduler)
-local Constants = require(script.Parent.Parent.Parent.shared.Networking.ActorProtocolConstants)
+local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local ProjectionTypes = require(script.Parent.ActorRecipientProjection)
 
 export type Dependencies = {
 	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
-	ReportFault: (Types.Fault) -> (),
+	ReportFault: (Types.ActorAwarenessFault) -> (),
 }
 type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks" }
 type StreamState = {
@@ -28,9 +27,9 @@ type StreamState = {
 	failed: boolean,
 	haltPending: boolean,
 	active: boolean,
-	scheduler: PublicationTypes.Scheduler,
-	key: PublicationTypes.StreamKey,
-	options: Types.Options,
+	scheduler: Types.PublicationScheduler,
+	key: Types.PublicationStreamKey,
+	options: Types.ActorAwarenessOptions,
 	dependencies: Dependencies,
 }
 local ActorRecipientStream = {}
@@ -88,15 +87,15 @@ function ActorRecipientStream.new(
 	actor: ActorTypes.Actor,
 	player: Player,
 	handle: number,
-	codec: WireTypes.Codec,
-	options: Types.Options,
+	codec: SharedNetworkingTypes.ActorStreamCodec,
+	options: Types.ActorAwarenessOptions,
 	dependencies: Dependencies
 ): Stream
-	local scheduler: PublicationTypes.Scheduler = Scheduler.new({
+	local scheduler: Types.PublicationScheduler = Scheduler.new({
 		maxBarriers = options.maxEvents,
 		maxEvents = options.maxEvents,
 		maxQueuedBytes = options.maxQueuedBytes,
-		MeasureRecord = function(commit: PublicationTypes.FilteredCommit): number
+		MeasureRecord = function(commit: Types.PublicationFilteredCommit): number
 			local size: number? = codec.Measure({
 				{ kind = "Commit", handle = 1, revision = 1, patches = commit.patches, events = commit.events },
 			})
@@ -131,7 +130,7 @@ function ActorRecipientStream.Prepare(
 	maxBytes: number,
 	canBegin: boolean,
 	deliveryBudget: number
-): WireTypes.Record?
+): SharedNetworkingTypes.ActorStreamRecord?
 	if self.removed then
 		return { kind = "ActorRemove", handle = self.handle }
 	end
@@ -207,8 +206,8 @@ function ActorRecipientStream.Prepare(
 		return self:Prepare(maxBytes, canBegin, deliveryBudget)
 	end
 	self.blockedBudget = nil
-	local drained: PublicationTypes.DrainResult = self.scheduler:DrainBudgeted(maxBytes, 1)
-	local record: PublicationTypes.Record? = drained.records[1]
+	local drained: Types.PublicationDrainResult = self.scheduler:DrainBudgeted(maxBytes, 1)
+	local record: Types.PublicationRecord? = drained.records[1]
 	if record == nil then
 		return nil
 	end
@@ -221,7 +220,7 @@ function ActorRecipientStream.Prepare(
 	}
 end
 
-function ActorRecipientStream.Sent(self: Stream, record: WireTypes.Record): ()
+function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.ActorStreamRecord): ()
 	local pending: Baseline? = self.baseline
 	if record.kind == "BaselineBegin" then
 		self.identitySent = true
@@ -252,7 +251,7 @@ function ActorRecipientStream.Sent(self: Stream, record: WireTypes.Record): ()
 	end
 end
 
-function ActorRecipientStream.Enqueue(self: Stream, commit: PublicationTypes.FilteredCommit): ()
+function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFilteredCommit): ()
 	if self.failed or self.recapture or commit.sequence <= self.fence then
 		return
 	end

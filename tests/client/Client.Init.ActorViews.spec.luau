@@ -7,19 +7,18 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
-local Types = require(KRF.client.Networking.ActorViewTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local PublicTypes = require(KRF.client.Actor.types)
-local StreamTypes = require(KRF.client.Networking.ActorStreamTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
-local Native: ClientTypes.Dependencies = require(KRF.client.Networking.NativeClientDependencies)
-local Runtime: Types.RuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
-local Discovery: StreamTypes.DiscoveryModule = require(KRF.client.Networking.ActorModelDiscovery)
+local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
+local Runtime: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
+local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
+	require(KRF.client.Networking.utils.ActorModelDiscovery)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
-local Consumer = require(KRF.client.Networking.ActorStreamConsumer)
+local Consumer = require(KRF.client.Networking.utils.ActorStreamConsumer)
 local ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
-local ResyncCodec = require(KRF.shared.Networking.ResyncCodec)
+local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -50,14 +49,14 @@ beforeEach(function()
 	Native.Resume = fixture.dependencies.Resume
 	local originalSend: (buffer) -> () = fixture.transport.SendReliable
 	fixture.transport.SendReliable = function(payload: buffer)
-		local message: ProtocolTypes.Message? = ProtocolCodec.Decode(payload)
+		local message: SharedNetworkingTypes.ProtocolMessage? = ProtocolCodec.Decode(payload)
 		if message ~= nil then
 			originalSend(payload)
 		else
 			table.insert(resync, payload)
 		end
 	end
-	Discovery.new = function(_root: Instance?): StreamTypes.DiscoveryAdapter
+	Discovery.new = function(_root: Instance?): ClientNetworkingTypes.ActorModelDiscoveryAdapter
 		return {
 			GetCandidates = stream.discovery.GetCandidates,
 			ObserveAdded = stream.discovery.ObserveAdded,
@@ -66,15 +65,15 @@ beforeEach(function()
 		}
 	end
 	Runtime.new = function(
-		protocol: ProtocolTypes.ClientProtocol,
-		schemas: WireTypes.SchemaCatalog,
-		options: Types.Options
-	): Types.Runtime
+		protocol: SharedNetworkingTypes.ClientProtocol,
+		schemas: SharedNetworkingTypes.ActorSchemaCatalog,
+		options: ClientNetworkingTypes.ActorViewOptions
+	): ClientNetworkingTypes.ActorViewRuntime
 		created += 1
 		table.insert(fixture.order, "ActorViews")
-		local runtime: Types.Runtime = originalNew(protocol, schemas, options)
+		local runtime: ClientNetworkingTypes.ActorViewRuntime = originalNew(protocol, schemas, options)
 		local destroy: typeof(runtime.Destroy) = runtime.Destroy
-		runtime.Destroy = function(self: Types.Runtime)
+		runtime.Destroy = function(self: ClientNetworkingTypes.ActorViewRuntime)
 			destroyed += 1
 			destroy(self)
 		end
@@ -198,10 +197,10 @@ end)
 
 it("sends no READY and releases N4 discovery if N5 construction fails", function()
 	Runtime.new = function(
-		_protocol: ProtocolTypes.ClientProtocol,
-		_schemas: WireTypes.SchemaCatalog,
-		_options: Types.Options
-	): Types.Runtime
+		_protocol: SharedNetworkingTypes.ClientProtocol,
+		_schemas: SharedNetworkingTypes.ActorSchemaCatalog,
+		_options: ClientNetworkingTypes.ActorViewOptions
+	): ClientNetworkingTypes.ActorViewRuntime
 		error("ForcedActorViewConstructionFailure", 0)
 	end
 	start()

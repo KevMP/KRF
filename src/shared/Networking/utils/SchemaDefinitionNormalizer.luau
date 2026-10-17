@@ -1,9 +1,9 @@
 --!strict
-local NetworkingTypes = require(script.Parent.Parent.types)
+local Types = require(script.Parent.Parent.types)
 local SchemaCollectionUtils = require(script.Parent.SchemaCollectionUtils)
 local SchemaPrimitives = require(script.Parent.SchemaPrimitives)
 
-type SchemaDefinition = NetworkingTypes.SchemaDefinition
+type SchemaDefinition = Types.SchemaDefinition
 type NormalizedNode = { definition: SchemaDefinition, height: number }
 type NormalizationContext = {
 	active: { [any]: boolean },
@@ -74,7 +74,7 @@ local function normalize(definition: any, depth: number, context: NormalizationC
 	local owned: SchemaDefinition
 	local height: number = 1
 	if type(kind) == "string" and SchemaPrimitives[kind] ~= nil then
-		owned = { kind = kind :: NetworkingTypes.PrimitiveKind }
+		owned = { kind = kind :: Types.PrimitiveKind }
 	elseif kind == "String" then
 		local maxBytes: any = rawget(definition, "maxBytes")
 		if not SchemaCollectionUtils.IsPositiveInteger(maxBytes) then

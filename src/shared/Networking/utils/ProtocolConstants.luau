@@ -1,11 +1,11 @@
 --!strict
-local ProtocolTypes = require(script.Parent.ProtocolTypes)
+local Types = require(script.Parent.Parent.types)
 
 -- Private defaults, independent of package semver. Tests use these bounds rather
 -- than promising their numeric values as consumer API.
 -- Reject is one message-kind byte followed by one closed reason-code byte.
 -- The symbolic reason remains available internally after decoding.
-local rejectionCodes: { [ProtocolTypes.RejectionReason]: number } = {
+local rejectionCodes: { [Types.ProtocolRejectionReason]: number } = {
 	ProtocolMismatch = 0,
 	MalformedPacket = 1,
 	UnsupportedSchema = 2,

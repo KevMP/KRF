@@ -1,12 +1,12 @@
 --!strict
-local NetworkingTypes = require(script.Parent.Parent.types)
+local Types = require(script.Parent.Parent.types)
 local SchemaDefinitionNormalizer = require(script.Parent.SchemaDefinitionNormalizer)
 local SchemaPrimitives = require(script.Parent.SchemaPrimitives)
 
-type SchemaDefinition = NetworkingTypes.SchemaDefinition
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type SchemaDefinition = Types.SchemaDefinition
+type CompiledSchema = Types.CompiledSchema
 
-local SchemaCompiler = {} :: NetworkingTypes.SchemaCompiler
+local SchemaCompiler = {} :: Types.SchemaCompiler
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
 -- Conservative allowance for a future length or enum ordinal representation.
@@ -38,7 +38,7 @@ local function compile(
 	local owned: CompiledSchema
 	local primitive: SchemaPrimitives.PrimitiveContract? = SchemaPrimitives[definition.kind]
 	if primitive ~= nil then
-		owned = { kind = definition.kind :: NetworkingTypes.PrimitiveKind, maxEncodedBytes = primitive.maxEncodedBytes }
+		owned = { kind = definition.kind :: Types.PrimitiveKind, maxEncodedBytes = primitive.maxEncodedBytes }
 	elseif definition.kind == "String" then
 		local maximum: number? = addBytes(COLLECTION_PREFIX_MAX_BYTES, definition.maxBytes)
 		if maximum == nil then
@@ -72,7 +72,7 @@ local function compile(
 			table.insert(names, name)
 		end
 		table.sort(names)
-		local fields: { NetworkingTypes.CompiledField } = {}
+		local fields: { Types.CompiledField } = {}
 		local fieldsByName: { [string]: CompiledSchema } = {}
 		local maximum: number = 0
 		for _, name: string in names do
@@ -85,7 +85,7 @@ local function compile(
 				return nil, "SchemaEncodedSizeInvalid"
 			end
 			maximum = total
-			local field: NetworkingTypes.CompiledField = { name = name, schema = child }
+			local field: Types.CompiledField = { name = name, schema = child }
 			table.freeze(field)
 			table.insert(fields, field)
 			fieldsByName[name] = child

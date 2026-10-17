@@ -6,10 +6,10 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local ClientTypes = require(KRF.client.types)
-local Consumer = require(KRF.client.Networking.ActorStreamConsumer)
-local Native: ClientTypes.Dependencies = require(KRF.client.Networking.NativeClientDependencies)
+local Consumer = require(KRF.client.Networking.utils.ActorStreamConsumer)
+local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
@@ -23,7 +23,7 @@ afterEach(function()
 end)
 
 it("retires removal received before initial identity without creating an N5 record", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	expect(TestUtils.send(fixture, { { kind = "ActorRemove", handle = 7 } })).toBe(true)
 	expect(runtime:GetByHandle(7)).toBeNil()
 	expect(fixture.removed).toEqual({})
@@ -55,13 +55,13 @@ end)
 
 it("idempotently halts an incomplete assembly and frees capacity without removing its identity or Model", function()
 	fixture.options.maxPendingBaselines = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
-	local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
+	local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, candidate)
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 4 },
 	})).toBe(true)
-	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	assert(original ~= nil, "Expected admitted Actor")
 	expect(TestUtils.send(fixture, {
 		{ kind = "ActorHalt", handle = 1 },
@@ -84,7 +84,7 @@ for _, completedBaseline: boolean in { false, true } do
 			local notifications: { string } = {}
 			local onHalted: typeof(fixture.consumer.OnActorHalted) = fixture.consumer.OnActorHalted
 			local onRemoved: typeof(fixture.consumer.OnActorRemoved) = fixture.consumer.OnActorRemoved
-			fixture.consumer.OnActorHalted = function(actor: Types.ActorRecord): ()
+			fixture.consumer.OnActorHalted = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 				table.insert(notifications, "Halted")
 				-- Terminal status must already hold when N5 receives the notification.
 				local accepted: boolean, reason: string? = TestUtils.send(fixture, {
@@ -94,12 +94,12 @@ for _, completedBaseline: boolean in { false, true } do
 				expect(reason).toBe("ActorStreamHalted")
 				onHalted(actor)
 			end
-			fixture.consumer.OnActorRemoved = function(actor: Types.ActorRecord): ()
+			fixture.consumer.OnActorRemoved = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 				table.insert(notifications, "Removed")
 				onRemoved(actor)
 			end
-			local runtime: Types.Runtime = TestUtils.start(fixture)
-			local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+			local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
+			local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 			TestUtils.add(fixture, candidate)
 			if completedBaseline then
 				TestUtils.establish(fixture)
@@ -108,7 +108,7 @@ for _, completedBaseline: boolean in { false, true } do
 					{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 4 },
 				})).toBe(true)
 			end
-			local original: Types.ActorRecord? = runtime:GetByHandle(1)
+			local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 			assert(original ~= nil, "Expected admitted Actor identity")
 			expect(TestUtils.send(fixture, {
 				{ kind = "ActorHalt", handle = 1 },
@@ -131,7 +131,7 @@ for _, completedBaseline: boolean in { false, true } do
 end
 
 it("rejects further data for a halted stream while still accepting its eventual removal", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 } })
 	expect(success).toBe(false)
 	expect(reason).toBe("UnknownActorHandle")
@@ -188,13 +188,13 @@ it("rejects zero-length chunks and corrupt completed bodies, then accepts a fres
 end)
 
 it("rejects malformed buffers and all traffic after teardown", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local success: boolean, reason: string? = runtime:Handle(buffer.create(0))
 	expect(success).toBe(false)
 	expect(reason).toBe("MalformedActorPacket")
-	local added: (Types.Candidate) -> () = fixture.added[1]
+	local added: (ClientNetworkingTypes.ActorModelCandidate) -> () = fixture.added[1]
 	local removed: (Instance) -> () = fixture.gone[1]
-	local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	runtime:Destroy()
 	added(candidate)
 	removed(candidate.marker)
@@ -205,7 +205,7 @@ it("rejects malformed buffers and all traffic after teardown", function()
 end)
 
 it("reports a missing N5 consumer once across repeated packets", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture, true)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture, true)
 	for _ = 1, 3 do
 		local success: boolean, reason: string? = runtime:Handle(buffer.create(0))
 		expect(success).toBe(false)

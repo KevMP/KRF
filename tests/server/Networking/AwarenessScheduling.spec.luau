@@ -7,8 +7,9 @@ local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local Scheduling: Types.SchedulingModule = require(KRF.server.Networking.AwarenessScheduling)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Scheduling: ServerNetworkingTypes.AwarenessSchedulingModule =
+	require(KRF.server.Networking.utils.AwarenessScheduling)
 
 local disconnect: (() -> ())? = nil
 afterEach(function()
@@ -39,7 +40,7 @@ it("emits scheduling events from native frames and stops them when disconnected"
 end)
 
 it("provides finite positive byte and record budgets for the production driver", function()
-	local budget: Types.StepBudget = Scheduling.GetBudget()
+	local budget: ServerNetworkingTypes.AwarenessStepBudget = Scheduling.GetBudget()
 	expect(budget.maxBytes > 0 and budget.maxBytes < math.huge and budget.maxBytes % 1 == 0).toBe(true)
 	expect(budget.maxRecords > 0 and budget.maxRecords < math.huge and budget.maxRecords % 1 == 0).toBe(true)
 end)

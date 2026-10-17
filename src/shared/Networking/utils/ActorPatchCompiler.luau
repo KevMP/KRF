@@ -1,23 +1,22 @@
 --!strict
-local SchemaTypes = require(script.Parent.Parent.types)
-local WireTypes = require(script.Parent.Parent.ActorStreamTypes)
+local Types = require(script.Parent.Parent.types)
 local Compiler = require(script.Parent.Parent.CodecCompiler)
 local CollectionUtils = require(script.Parent.SchemaCollectionUtils)
 local Bytes = require(script.Parent.ActorBuffer)
 
-export type Plan = { Write: (Bytes.Cursor, WireTypes.Patch) -> (), Read: (Bytes.Cursor) -> WireTypes.Patch }
+export type Plan = { Write: (Bytes.Cursor, Types.ActorPatch) -> (), Read: (Bytes.Cursor) -> Types.ActorPatch }
 local ActorPatchCompiler = {}
 
-function ActorPatchCompiler.Compile(schema: SchemaTypes.CompiledSchema): Plan
-	local compiled: SchemaTypes.CompiledCodec? = Compiler.Compile(schema)
+function ActorPatchCompiler.Compile(schema: Types.CompiledSchema): Plan
+	local compiled: Types.CompiledCodec? = Compiler.Compile(schema)
 	assert(compiled ~= nil, "InvalidActorSchema")
-	local codec: SchemaTypes.CompiledCodec = compiled
+	local codec: Types.CompiledCodec = compiled
 	local fields: { { name: string, plan: Plan } } = {}
 	local indices: { [string]: number } = {}
-	local keyCodec: SchemaTypes.CompiledCodec? = nil
-	local entryCodec: SchemaTypes.CompiledCodec? = nil
+	local keyCodec: Types.CompiledCodec? = nil
+	local entryCodec: Types.CompiledCodec? = nil
 	if schema.kind == "Struct" then
-		for index: number, field: SchemaTypes.CompiledField in schema.fields do
+		for index: number, field: Types.CompiledField in schema.fields do
 			fields[index] = { name = field.name, plan = ActorPatchCompiler.Compile(field.schema) }
 			indices[field.name] = index
 		end
@@ -26,7 +25,7 @@ function ActorPatchCompiler.Compile(schema: SchemaTypes.CompiledSchema): Plan
 		entryCodec = Compiler.Compile(schema.value)
 	end
 	return {
-		Write = function(cursor: Bytes.Cursor, patch: WireTypes.Patch): ()
+		Write = function(cursor: Bytes.Cursor, patch: Types.ActorPatch): ()
 			assert(type(patch) == "table", "InvalidActorPatch")
 			if patch.kind == "Replace" then
 				Bytes.Unsigned(cursor, 0, 1)
@@ -41,7 +40,7 @@ function ActorPatchCompiler.Compile(schema: SchemaTypes.CompiledSchema): Plan
 				Bytes.Unsigned(cursor, 1, 1)
 				Bytes.Unsigned(cursor, count, 4)
 				for index: number, field in fields do
-					local change: WireTypes.Patch? = rawget(patch.fields, field.name)
+					local change: Types.ActorPatch? = rawget(patch.fields, field.name)
 					if change ~= nil then
 						Bytes.Unsigned(cursor, index, 4)
 						field.plan.Write(cursor, change)
@@ -79,7 +78,7 @@ function ActorPatchCompiler.Compile(schema: SchemaTypes.CompiledSchema): Plan
 				error("InvalidActorPatch", 0)
 			end
 		end,
-		Read = function(cursor: Bytes.Cursor): WireTypes.Patch
+		Read = function(cursor: Bytes.Cursor): Types.ActorPatch
 			local kind: number = Bytes.ReadUnsigned(cursor, 1)
 			if kind == 0 then
 				return { kind = "Replace", value = Bytes.ReadValue(cursor, codec) }
@@ -88,7 +87,7 @@ function ActorPatchCompiler.Compile(schema: SchemaTypes.CompiledSchema): Plan
 				local count: number = Bytes.ReadUnsigned(cursor, 4)
 				assert(count <= #fields, "InvalidActorPatch")
 				Bytes.Charge(cursor, count)
-				local changes: { [string]: WireTypes.Patch } = {}
+				local changes: { [string]: Types.ActorPatch } = {}
 				for _ = 1, count do
 					local field = fields[Bytes.ReadUnsigned(cursor, 4)]
 					assert(field ~= nil and changes[field.name] == nil, "InvalidActorPatch")

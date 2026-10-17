@@ -22,7 +22,7 @@ local ResourceController = require(script.Resource.ResourceController)
 local ActionController = require(script.Action.ActionController)
 local ServerNetworking = require(script.Networking.ServerNetworking)
 local PublicationRuntime = require(script.Networking.PublicationRuntime)
-local ProtocolTypes = require(script.Parent.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(script.Parent.shared.Networking.types)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
 export type StartupFailure = ServerStartTypes.StartupFailure
@@ -174,7 +174,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		return false, { system = "Networking", reason = eventReason :: string }
 	end
 
-	local prepared: boolean, protocol: ProtocolTypes.PreparedProtocol?, networkingReason: string? =
+	local prepared: boolean, protocol: SharedNetworkingTypes.PreparedProtocol?, networkingReason: string? =
 		pcall(ServerNetworking.Prepare, preparedDomains)
 	if not prepared then
 		return false, { system = "Networking", reason = "StartupInternalFailure:" .. tostring(protocol) }
@@ -210,7 +210,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 			return false, failure
 		end
 		publicationSystem = "Networking"
-		return ServerNetworking.Publish(protocol :: ProtocolTypes.PreparedProtocol)
+		return ServerNetworking.Publish(protocol :: SharedNetworkingTypes.PreparedProtocol)
 	end)
 	if not published or not loaded then
 		rollbackStartup()

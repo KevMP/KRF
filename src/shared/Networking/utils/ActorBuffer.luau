@@ -1,6 +1,6 @@
 --!strict
-local SchemaTypes = require(script.Parent.Parent.types)
-local Constants = require(script.Parent.Parent.ActorProtocolConstants)
+local Types = require(script.Parent.Parent.types)
+local Constants = require(script.Parent.ActorProtocolConstants)
 
 export type Cursor = { data: buffer?, offset: number, limit: number, remaining: number, context: string }
 local ActorBuffer = {}
@@ -83,7 +83,7 @@ function ActorBuffer.ReadString(cursor: Cursor): string
 	return value
 end
 
-function ActorBuffer.Value(cursor: Cursor, codec: SchemaTypes.CompiledCodec, value: any): ()
+function ActorBuffer.Value(cursor: Cursor, codec: Types.CompiledCodec, value: any): ()
 	valueWork(cursor, value)
 	local size: number? = codec.Measure(value)
 	assert(size ~= nil and size <= cursor.limit - cursor.offset, cursor.context)
@@ -93,7 +93,7 @@ function ActorBuffer.Value(cursor: Cursor, codec: SchemaTypes.CompiledCodec, val
 	cursor.offset += size
 end
 
-function ActorBuffer.ReadValue(cursor: Cursor, codec: SchemaTypes.CompiledCodec): any
+function ActorBuffer.ReadValue(cursor: Cursor, codec: Types.CompiledCodec): any
 	assert(cursor.data ~= nil, "MalformedActorPacket")
 	local value: any, nextOffset: number?, reason: string? = codec.Read(cursor.data, cursor.offset, cursor.limit)
 	assert(nextOffset ~= nil, if reason == "CodecTruncated" then "MalformedActorPacket" else cursor.context)

@@ -1,18 +1,18 @@
 --!strict
 local ClientTypes = require(script.types)
-local ProtocolTypes = require(script.Parent.shared.Networking.ProtocolTypes)
-local Constants = require(script.Parent.shared.Networking.ProtocolConstants)
-local ActorConstants = require(script.Parent.shared.Networking.ActorProtocolConstants)
+local SharedNetworkingTypes = require(script.Parent.shared.Networking.types)
+local Constants = require(script.Parent.shared.Networking.utils.ProtocolConstants)
+local ActorConstants = require(script.Parent.shared.Networking.utils.ActorProtocolConstants)
 local ProtocolCodec = require(script.Parent.shared.Networking.ProtocolCodec)
 local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompiler)
-local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.NativeClientDependencies)
+local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
 local Client = {} :: ClientTypes.Client
 local attempted: boolean = false
 local initialized: boolean = false
-local readyProtocol: ProtocolTypes.ClientProtocol? = nil
+local readyProtocol: SharedNetworkingTypes.ClientProtocol? = nil
 local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
 
@@ -41,7 +41,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	local disconnect: (() -> ())? = nil
 	local cancelTimeout: (() -> ())? = nil
 	local cleanupConsumers: (() -> ())? = nil
-	local protocol: ProtocolTypes.ClientProtocol? = nil
+	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
 	local function cancelTimer(): ()
@@ -113,7 +113,7 @@ function Client.Init(): (boolean, StartupFailure?)
 				finish(false, if state == "AwaitAck" then "ReadyRejected" else "MalformedBootstrap")
 				return
 			end
-			local message: ProtocolTypes.Message?, reason: string? = ProtocolCodec.Decode(payload)
+			local message: SharedNetworkingTypes.ProtocolMessage?, reason: string? = ProtocolCodec.Decode(payload)
 			if message == nil then
 				if reason == "UnknownMessageKind" then
 					return
@@ -141,7 +141,7 @@ function Client.Init(): (boolean, StartupFailure?)
 					finish(false, "ProtocolMismatch")
 					return
 				end
-				local reconstructed: ProtocolTypes.ClientProtocol?, compileReason: string? =
+				local reconstructed: SharedNetworkingTypes.ClientProtocol?, compileReason: string? =
 					ManifestCompiler.Reconstruct(message.manifest)
 				if reconstructed == nil then
 					finish(false, compileReason or "UnsupportedSchema")

@@ -8,11 +8,11 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
-local runtime: Types.Runtime
+local runtime: ServerNetworkingTypes.ActorAwarenessRuntime
 local owner: Player
 local other: Player
 local actor: ActorTypes.Actor

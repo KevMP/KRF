@@ -1,10 +1,10 @@
 --!strict
-local Types = require(script.Parent.AwarenessTypes)
+local Types = require(script.Parent.Parent.types)
 local Players = game:GetService("Players")
 
-local NativePlayerAssociation = {} :: Types.AssociationModule
+local NativePlayerAssociation = {} :: Types.PlayerAssociationModule
 
-function NativePlayerAssociation.new(players: Players?): Types.AssociationSource
+function NativePlayerAssociation.new(players: Players?): Types.PlayerAssociationSource
 	local service: Players = players or Players
 	local characters: { [Player]: Model } = {}
 	local owners: { [Model]: Player } = {}

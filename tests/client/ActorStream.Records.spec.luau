@@ -7,7 +7,7 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -92,7 +92,7 @@ it("rejects an unknown handle without delivering records to the N5 consumer", fu
 end)
 
 it("removes incomplete assembly, retires the handle, and rejects delayed chunks and handle reuse", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
 	expect(TestUtils.send(fixture, {
 		{
@@ -121,10 +121,10 @@ it("removes incomplete assembly, retires the handle, and rejects delayed chunks 
 end)
 
 it("keeps the other Actor record intact when one Actor is removed", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
 	TestUtils.establish(fixture, 2, "ActorB")
-	local remaining: Types.ActorRecord? = runtime:GetByHandle(2)
+	local remaining: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(2)
 	expect(TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })).toBe(true)
 	expect(runtime:GetByHandle(1)).toBeNil()
 	expect(runtime:GetByHandle(2)).toBe(remaining)

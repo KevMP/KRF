@@ -7,7 +7,7 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -22,19 +22,19 @@ for _, beforeAwareness: boolean in { true, false } do
 	it(
 		"binds a Model whose marker arrives " .. (if beforeAwareness then "before awareness" else "after awareness"),
 		function()
-			local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+			local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 			if beforeAwareness then
 				TestUtils.add(fixture, candidate)
 			end
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 			TestUtils.establish(fixture)
 			if not beforeAwareness then
-				local unbound: Types.ActorRecord? = runtime:GetByHandle(1)
+				local unbound: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 				assert(unbound ~= nil, "Expected aware record")
 				expect(unbound.model).toBeNil()
 				TestUtils.add(fixture, candidate)
 			end
-			local record: Types.ActorRecord? = runtime:GetByHandle(1)
+			local record: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 			assert(record ~= nil, "Expected aware record")
 			expect(record.model).toBe(candidate.model)
 			expect(runtime:GetByModel(candidate.model)).toBe(record)
@@ -45,11 +45,11 @@ for _, beforeAwareness: boolean in { true, false } do
 end
 
 it("unbinds only the Model on stream-out and rebinds the same awareness record on stream-in", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture, 1, "ActorA", 1, 7)
-	local first: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local first: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, first)
-	local record: Types.ActorRecord? = runtime:GetByHandle(1)
+	local record: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	assert(record ~= nil, "Expected record")
 	TestUtils.remove(fixture, first)
 	expect(runtime:GetByHandle(1)).toBe(record)
@@ -58,7 +58,7 @@ it("unbinds only the Model on stream-out and rebinds the same awareness record o
 	expect(record.model).toBeNil()
 	expect(fixture.unbound).toEqual({ { actor = record, model = first.model } })
 	expect(fixture.removed).toEqual({})
-	local second: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local second: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, second)
 	expect(record.model).toBe(second.model)
 	expect(runtime:GetByModel(second.model)).toBe(record)
@@ -70,9 +70,9 @@ it("unbinds only the Model on stream-out and rebinds the same awareness record o
 end)
 
 it("deduplicates repeated discovery and unbind notifications", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, candidate)
 	TestUtils.add(fixture, candidate)
 	expect(#fixture.bound).toBe(1)
@@ -83,14 +83,14 @@ it("deduplicates repeated discovery and unbind notifications", function()
 end)
 
 it("reports conflicting Models without creating two reverse bindings or changing domain truth", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local first: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
-	local duplicate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local first: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
+	local duplicate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, first)
 	TestUtils.add(fixture, duplicate)
-	local firstRecord: Types.ActorRecord? = runtime:GetByModel(first.model)
-	local duplicateRecord: Types.ActorRecord? = runtime:GetByModel(duplicate.model)
+	local firstRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByModel(first.model)
+	local duplicateRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByModel(duplicate.model)
 	expect(firstRecord == nil or duplicateRecord == nil).toBe(true)
 	expect(#fixture.faults > 0).toBe(true)
 	expect(#fixture.baselines).toBe(1)
@@ -98,24 +98,24 @@ it("reports conflicting Models without creating two reverse bindings or changing
 end)
 
 it("does not bind one Model to two Actor ids when its markers conflict", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
 	TestUtils.establish(fixture, 2, "ActorB")
-	local first: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
-	local conflicting: Types.Candidate = TestUtils.candidate(fixture, "ActorB", first.model)
+	local first: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
+	local conflicting: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorB", first.model)
 	TestUtils.add(fixture, first)
 	TestUtils.add(fixture, conflicting)
-	local firstRecord: Types.ActorRecord? = runtime:GetByHandle(1)
-	local secondRecord: Types.ActorRecord? = runtime:GetByHandle(2)
+	local firstRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
+	local secondRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(2)
 	assert(firstRecord ~= nil and secondRecord ~= nil, "Expected aware records")
 	expect(firstRecord.model ~= first.model or secondRecord.model ~= first.model).toBe(true)
 	expect(#fixture.faults > 0).toBe(true)
 end)
 
 it("removes awareness and Model binding even when stale marker presence outlives ActorRemove", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, candidate)
 	expect(TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })).toBe(true)
 	TestUtils.add(fixture, candidate)
@@ -128,11 +128,11 @@ it("removes awareness and Model binding even when stale marker presence outlives
 end)
 
 it("discovers initial markers once and uses added/removed events for later binding", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	expect(fixture.scans).toBe(1)
 	TestUtils.establish(fixture)
 	for _ = 1, 20 do
-		local candidate: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+		local candidate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 		TestUtils.add(fixture, candidate)
 		TestUtils.remove(fixture, candidate)
 	end
@@ -149,16 +149,16 @@ it("rebinds duplicate candidates within one Actor identity among unrelated strea
 	for index: number = 1, 100 do
 		TestUtils.add(fixture, TestUtils.candidate(fixture, "Unrelated" .. tostring(index)))
 	end
-	local first: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
-	local second: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local first: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
+	local second: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, first)
 	TestUtils.add(fixture, second)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local record: Types.ActorRecord? = runtime:GetByActorId("ActorA")
+	local record: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByActorId("ActorA")
 	assert(record ~= nil, "Expected aware Actor")
-	local bound: Types.Candidate = if record.model == first.model then first else second
-	local remaining: Types.Candidate = if bound == first then second else first
+	local bound: ClientNetworkingTypes.ActorModelCandidate = if record.model == first.model then first else second
+	local remaining: ClientNetworkingTypes.ActorModelCandidate = if bound == first then second else first
 	expect(record.model).toBe(bound.model)
 	TestUtils.remove(fixture, bound)
 	expect(record.model).toBe(remaining.model)
@@ -178,17 +178,17 @@ it("rebinds duplicate candidates within one Actor identity among unrelated strea
 end)
 
 it("moves a reused marker between Actor identities and preserves duplicate markers on the same Model", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
 	TestUtils.establish(fixture, 2, "ActorB")
-	local first: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
-	local duplicate: Types.Candidate = TestUtils.candidate(fixture, "ActorA", first.model)
-	local alternative: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local first: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
+	local duplicate: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA", first.model)
+	local alternative: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, first)
 	TestUtils.add(fixture, duplicate)
 	TestUtils.add(fixture, alternative)
-	local firstRecord: Types.ActorRecord? = runtime:GetByActorId("ActorA")
-	local secondRecord: Types.ActorRecord? = runtime:GetByActorId("ActorB")
+	local firstRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByActorId("ActorA")
+	local secondRecord: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByActorId("ActorB")
 	assert(firstRecord ~= nil and secondRecord ~= nil, "Expected aware Actors")
 	TestUtils.remove(fixture, first)
 	expect(firstRecord.model).toBe(first.model)
@@ -205,7 +205,8 @@ it("moves a reused marker between Actor identities and preserves duplicate marke
 	TestUtils.remove(fixture, duplicate)
 	expect(firstRecord.model).toBeNil()
 	expect(#fixture.unbound).toBe(1)
-	local reassigned: Types.Candidate = { marker = first.marker, model = first.model, actorId = "ActorB" }
+	local reassigned: ClientNetworkingTypes.ActorModelCandidate =
+		{ marker = first.marker, model = first.model, actorId = "ActorB" }
 	TestUtils.add(fixture, reassigned)
 	expect(firstRecord.model).toBeNil()
 	expect(secondRecord.model).toBe(first.model)
@@ -214,7 +215,7 @@ it("moves a reused marker between Actor identities and preserves duplicate marke
 	TestUtils.remove(fixture, reassigned)
 	expect(secondRecord.model).toBeNil()
 	expect(#fixture.unbound).toBe(2)
-	local fresh: Types.Candidate = TestUtils.candidate(fixture, "ActorA")
+	local fresh: ClientNetworkingTypes.ActorModelCandidate = TestUtils.candidate(fixture, "ActorA")
 	TestUtils.add(fixture, fresh)
 	expect(firstRecord.model).toBe(fresh.model)
 	expect(#fixture.bound).toBe(3)

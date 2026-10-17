@@ -8,8 +8,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local Marker: Types.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Marker: ServerNetworkingTypes.ActorModelMarkerModule = require(KRF.server.Networking.utils.ActorModelMarker)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 
 local model: Model

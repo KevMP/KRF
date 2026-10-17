@@ -6,27 +6,26 @@ local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
-local Types = require(KRF.shared.Networking.ActorStreamTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
-local Codec: Types.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ActorStreamCodecTestUtils)
 
-local codec: Types.Codec
+local codec: SharedNetworkingTypes.ActorStreamCodec
 beforeEach(function()
 	codec = TestUtils.codec()
 end)
 
 for _, input: any in { false, 123, "packet", {} } do
 	it("rejects non-buffer protocol input of type " .. typeof(input), function()
-		local records: { Types.Record }?, reason: string? = codec.Decode(input)
+		local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(input)
 		expect(records).toBeNil()
 		expect(reason).toBe("MalformedActorPacket")
 	end)
 end
 
 it("rejects nil and all single-byte packets without throwing or exposing partial records", function()
-	local records: { Types.Record }?, reason: string? = codec.Decode(nil)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(nil)
 	expect(records).toBeNil()
 	expect(reason).toBe("MalformedActorPacket")
 	for byte: number = 0, 255 do
@@ -54,7 +53,7 @@ it("rejects every truncated prefix of a mixed Actor packet without returning a v
 	for length: number = 0, buffer.len(payload) - 1 do
 		local prefix: buffer = buffer.create(length)
 		buffer.copy(prefix, 0, payload, 0, length)
-		local records: { Types.Record }?, reason: string? = codec.Decode(prefix)
+		local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(prefix)
 		expect(records).toBeNil()
 		expect(reason).toBe("MalformedActorPacket")
 	end
@@ -65,13 +64,13 @@ it("rejects unexplained trailing bytes after a complete physical packet", functi
 	local padded: buffer = buffer.create(buffer.len(payload) + 1)
 	buffer.copy(padded, 0, payload)
 	buffer.writeu8(padded, buffer.len(payload), 255)
-	local records: { Types.Record }?, reason: string? = codec.Decode(padded)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(padded)
 	expect(records).toBeNil()
 	expect(reason).toBe("MalformedActorPacket")
 end)
 
 it("rejects a domain code absent from the receiving compiled catalog", function()
-	local foreign: Types.Codec = Codec.Compile(TestUtils.protocol(7, nil))
+	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(7, nil))
 	local payload: buffer = TestUtils.encode(foreign, {
 		{
 			kind = "Commit",
@@ -86,13 +85,13 @@ it("rejects a domain code absent from the receiving compiled catalog", function(
 			events = {},
 		},
 	})
-	local records: { Types.Record }?, reason: string? = codec.Decode(payload)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("UnknownDomainCode")
 end)
 
 it("rejects an event code absent from the receiving domain without dispatching game code", function()
-	local foreign: Types.Codec = Codec.Compile(TestUtils.protocol(nil, 7))
+	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(nil, 7))
 	local payload: buffer = TestUtils.encode(foreign, {
 		{
 			kind = "Commit",
@@ -102,12 +101,12 @@ it("rejects an event code absent from the receiving domain without dispatching g
 			events = { { domainId = "Game.State", eventId = "Changed", payload = { count = 1 } } },
 		},
 	})
-	local records: { Types.Record }?, reason: string? = codec.Decode(payload)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("UnknownEventCode")
 end)
 
-local invalidPatches: { { name: string, patch: Types.Patch } } = {
+local invalidPatches: { { name: string, patch: SharedNetworkingTypes.ActorPatch } } = {
 	{
 		name = "a numeric overflow",
 		patch = { kind = "Struct", fields = { current = { kind = "Replace", value = 256 } } },
@@ -132,7 +131,7 @@ local invalidPatches: { { name: string, patch: Types.Patch } } = {
 		patch = { kind = "Struct", fields = { target = { kind = "Replace", value = "TooLongTarget" } } },
 	},
 }
-for _, case: { name: string, patch: Types.Patch } in invalidPatches do
+for _, case: { name: string, patch: SharedNetworkingTypes.ActorPatch } in invalidPatches do
 	it("rejects " .. case.name .. " before returning packet bytes", function()
 		local payload: buffer?, reason: string? = codec.Encode({
 			{
@@ -149,7 +148,7 @@ for _, case: { name: string, patch: Types.Patch } in invalidPatches do
 end
 
 it("enforces receiving Array bounds during patch decode even when a foreign sender permits more entries", function()
-	local foreign: Types.Codec = Codec.Compile(TestUtils.protocol(
+	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(
 		nil,
 		nil,
 		Schema.Struct({
@@ -178,13 +177,13 @@ it("enforces receiving Array bounds during patch decode even when a foreign send
 			events = {},
 		},
 	})
-	local records: { Types.Record }?, reason: string? = codec.Decode(payload)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("InvalidActorPatch")
 end)
 
 it("enforces receiving baseline bounds before handing current truth to the client", function()
-	local foreign: Types.Codec = Codec.Compile(TestUtils.protocol(
+	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(
 		nil,
 		nil,
 		Schema.Struct({
@@ -204,7 +203,8 @@ it("enforces receiving baseline bounds before handing current truth to the clien
 	})
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected foreign baseline bytes")
-	local domains: { [string]: Types.DomainTruth }?, decodeReason: string? = codec.DecodeBaseline(payload)
+	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, decodeReason: string? =
+		codec.DecodeBaseline(payload)
 	expect(domains).toBeNil()
 	expect(decodeReason).toBe("InvalidActorBaseline")
 end)

@@ -8,22 +8,20 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local NetworkingTypes = require(KRF.server.Networking.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ServerTypes = require(KRF.server.types)
-local Marker: Types.MarkerModule = require(KRF.server.Networking.ActorModelMarker)
+local Marker: ServerNetworkingTypes.ActorModelMarkerModule = require(KRF.server.Networking.utils.ActorModelMarker)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Registry: ActorTypes.ActorRegistry = require(KRF.server.Actor.ActorRegistry)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
-local Handshake: NetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
 local Server = require(KRF.server)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
 local fixture: TestUtils.Fixture
-local handshake: NetworkingTypes.ServerHandshake? = nil
+local handshake: ServerNetworkingTypes.ServerHandshake? = nil
 local models: { Model } = {}
 local originalInstall: typeof(Marker.Install) = Marker.Install
 beforeEach(function()
@@ -53,7 +51,7 @@ it("orders real N2 READY_ACK before baseline work initiated by the private Ready
 			table.insert(order, ProtocolUtils.decode(payload).kind)
 		end,
 	})
-	local installed: NetworkingTypes.ServerHandshake = handshake
+	local installed: ServerNetworkingTypes.ServerHandshake = handshake
 	fixture.dependencies.IsClientReady = function(recipient: Player): boolean
 		return installed:IsClientReady(recipient)
 	end
@@ -103,7 +101,7 @@ end)
 
 it("rolls back N3, controllers and Model binding when marker installation fails before live registration", function()
 	expect(Server.Init({})).toBe(true)
-	local publication: PublicationTypes.Runtime? = Networking._GetPublicationRuntimeForTests()
+	local publication: ServerNetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Expected startup-owned N3")
 	local attempted: ActorTypes.Actor? = nil
 	Marker.Install = function(actor: ActorTypes.Actor): (boolean, string?)

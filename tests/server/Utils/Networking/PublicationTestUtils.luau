@@ -4,9 +4,9 @@ local KRF = ReplicatedStorage.Packages.KRF
 
 local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Runtime: PublicationTypes.RuntimeModule = require(KRF.server.Networking.PublicationRuntime)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Runtime: ServerNetworkingTypes.PublicationRuntimeModule = require(KRF.server.Networking.PublicationRuntime)
 local DomainTestUtils = require(script.Parent.Parent.Replication.ReplicationDomainTestUtils)
 
 export type DomainFixture = {
@@ -19,7 +19,11 @@ export type DomainFixture = {
 
 local PublicationTestUtils = {}
 
-function PublicationTestUtils.createDomain(id: string, schema: SchemaTypes.SchemaDefinition, value: any): DomainFixture
+function PublicationTestUtils.createDomain(
+	id: string,
+	schema: SharedNetworkingTypes.SchemaDefinition,
+	value: any
+): DomainFixture
 	local fixture: DomainFixture = {
 		definition = {
 			id = id,
@@ -52,8 +56,8 @@ end
 
 function PublicationTestUtils.createRuntime(
 	definitions: { ReplicationTypes.ReplicationDomainDefinition },
-	options: PublicationTypes.RuntimeOptions?
-): PublicationTypes.Runtime
+	options: ServerNetworkingTypes.PublicationRuntimeOptions?
+): ServerNetworkingTypes.PublicationRuntime
 	return Runtime.new(DomainTestUtils.prepare(definitions), options)
 end
 

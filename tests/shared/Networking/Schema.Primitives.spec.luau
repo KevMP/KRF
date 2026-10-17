@@ -4,12 +4,12 @@ local KRF = ReplicatedStorage.Packages.KRF
 
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.SchemaTestUtils)
 
-type SchemaDefinition = NetworkingTypes.SchemaDefinition
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type SchemaDefinition = SharedNetworkingTypes.SchemaDefinition
+type CompiledSchema = SharedNetworkingTypes.CompiledSchema
 type IntegerCase = { name: string, definition: SchemaDefinition, minimum: number, maximum: number }
 
 local integers: { IntegerCase } = {

@@ -7,26 +7,25 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local AwarenessTypes = require(KRF.server.Networking.AwarenessTypes)
-local ResyncTypes = require(KRF.server.Networking.ResyncTypes)
-local ViewTypes = require(KRF.client.Networking.ActorViewTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local PublicTypes = require(KRF.client.Actor.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local Views: ViewTypes.RuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
-local Resync: ResyncTypes.RuntimeModule = require(KRF.server.Networking.ResyncRuntime)
-local ResyncCodec = require(KRF.shared.Networking.ResyncCodec)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Views: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
+local Resync: ServerNetworkingTypes.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
+local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 local StreamUtils = require(script.Parent.Parent.Parent.client.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
-local awareness: AwarenessTypes.Runtime
+local awareness: ServerNetworkingTypes.ActorAwarenessRuntime
 local stream: StreamUtils.Fixture
-local views: ViewTypes.Runtime
-local control: ResyncTypes.Runtime
+local views: ClientNetworkingTypes.ActorViewRuntime
+local control: ServerNetworkingTypes.ResyncRuntime
 local player: Player
 local actor: ActorTypes.Actor
 local requests: { buffer }
-local faults: { ViewTypes.Fault }
+local faults: { ClientNetworkingTypes.ActorViewFault }
 local replacementCalls: number
 
 beforeEach(function()
@@ -37,7 +36,7 @@ beforeEach(function()
 	requests = {}
 	faults = {}
 	replacementCalls = 0
-	local schemas: WireTypes.SchemaCatalog = {}
+	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
 	for _, definition in fixture.catalog.orderedDefinitions do
 		schemas[definition.id] = definition.state
 	end
@@ -45,7 +44,7 @@ beforeEach(function()
 		SendReliable = function(payload: buffer)
 			table.insert(requests, payload)
 		end,
-		ReportFault = function(fault: ViewTypes.Fault)
+		ReportFault = function(fault: ClientNetworkingTypes.ActorViewFault)
 			table.insert(faults, fault)
 		end,
 	})

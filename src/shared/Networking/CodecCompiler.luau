@@ -1,10 +1,10 @@
 --!strict
-local NetworkingTypes = require(script.Parent.types)
+local Types = require(script.Parent.types)
 local BufferUtils = require(script.Parent.utils.CodecBufferUtils)
 local CollectionUtils = require(script.Parent.utils.SchemaCollectionUtils)
 local Primitives = require(script.Parent.utils.SchemaPrimitives)
 
-local CodecCompiler = {} :: NetworkingTypes.CodecCompiler
+local CodecCompiler = {} :: Types.CodecCompiler
 
 type EntryBudget = { remaining: number }
 type Plan = {
@@ -19,10 +19,10 @@ type FieldPlan = { name: string, optional: boolean, plan: Plan }
 type NumberIO = { read: (buffer, number) -> number, write: (buffer, number, number) -> () }
 type EnumSchema = { read values: { string }, read ordinalsByValue: { [string]: number } }
 type StringSchema = { read maxBytes: number }
-type OptionalSchema = { read inner: NetworkingTypes.CompiledSchema }
+type OptionalSchema = { read inner: Types.CompiledSchema }
 type StructSchema = {
-	read fields: { NetworkingTypes.CompiledField },
-	read fieldsByName: { [string]: NetworkingTypes.CompiledSchema },
+	read fields: { Types.CompiledField },
+	read fieldsByName: { [string]: Types.CompiledSchema },
 }
 
 local numberIO: { [string]: NumberIO } = {
@@ -39,9 +39,9 @@ local numberIO: { [string]: NumberIO } = {
 -- Encoding applies the same admission limit so every emitted value can decode.
 local COLLECTION_ENTRY_BUDGET: number = 100000
 
-local compile: (NetworkingTypes.CompiledSchema) -> Plan
+local compile: (Types.CompiledSchema) -> Plan
 
-local function compilePrimitive(schema: NetworkingTypes.CompiledSchema, primitive: Primitives.PrimitiveContract): Plan
+local function compilePrimitive(schema: Types.CompiledSchema, primitive: Primitives.PrimitiveContract): Plan
 	local width: number = primitive.maxEncodedBytes
 	local io: NumberIO? = numberIO[schema.kind]
 	local function validate(value: any): string?
@@ -204,7 +204,7 @@ local function compileStruct(schema: StructSchema): Plan
 	local maximum: number = 0
 	local minimum: number = 0
 	local fixed: boolean = true
-	for _, field: NetworkingTypes.CompiledField in schema.fields do
+	for _, field: Types.CompiledField in schema.fields do
 		local child: Plan = compile(field.schema)
 		table.insert(fields, { name = field.name, optional = field.schema.kind == "Optional", plan = child })
 		maximum += child.maximum
@@ -259,7 +259,7 @@ local function compileStruct(schema: StructSchema): Plan
 	}
 end
 
-local function compileCollection(schema: NetworkingTypes.CompiledSchema): Plan
+local function compileCollection(schema: Types.CompiledSchema): Plan
 	assert(schema.kind == "Array" or schema.kind == "Map", "Unsupported compiled schema")
 	local isArray: boolean = schema.kind == "Array"
 	local valuePlan: Plan = compile(if schema.kind == "Array" then schema.element else schema.value)
@@ -382,7 +382,7 @@ local function compileCollection(schema: NetworkingTypes.CompiledSchema): Plan
 	}
 end
 
-compile = function(schema: NetworkingTypes.CompiledSchema): Plan
+compile = function(schema: Types.CompiledSchema): Plan
 	local primitive: Primitives.PrimitiveContract? = Primitives[schema.kind]
 	if primitive ~= nil then
 		return compilePrimitive(schema, primitive)
@@ -398,9 +398,9 @@ compile = function(schema: NetworkingTypes.CompiledSchema): Plan
 	return compileCollection(schema)
 end
 
-function CodecCompiler.Compile(schema: NetworkingTypes.CompiledSchema): (NetworkingTypes.CompiledCodec?, string?)
+function CodecCompiler.Compile(schema: Types.CompiledSchema): (Types.CompiledCodec?, string?)
 	local plan: Plan = compile(schema)
-	local codec: NetworkingTypes.CompiledCodec = {
+	local codec: Types.CompiledCodec = {
 		fixedSizeBytes = plan.fixed,
 		maxSizeBytes = plan.maximum,
 		Measure = function(value: any): (number?, string?)
@@ -427,7 +427,7 @@ function CodecCompiler.Compile(schema: NetworkingTypes.CompiledSchema): (Network
 		end,
 	}
 	table.freeze(codec)
-	return codec :: NetworkingTypes.CompiledCodec?, nil
+	return codec :: Types.CompiledCodec?, nil
 end
 
 return CodecCompiler

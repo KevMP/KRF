@@ -8,7 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -22,7 +22,7 @@ end)
 it("establishes identity once and delivers subsequent replacement work by handle only", function()
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local initial: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
@@ -48,7 +48,7 @@ it("omits identity when recapturing after an initial Begin was already sent", fu
 	fixture.options.maxEvents = 1
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(256, 1)
 	local initial: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
@@ -72,7 +72,7 @@ it("retains identity when recapture replaces work before any initial Begin was s
 	fixture.options.maxEvents = 1
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	for value: number = 11, 14 do
 		fixture.publicDomain.value = value

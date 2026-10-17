@@ -8,9 +8,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -29,7 +28,7 @@ it("uses canonical N3 truth without calling snapshots again for Ready or replace
 	fixture.publicDomain.value = 11
 	fixture.publicDomain.callbacks[actor]()
 	local calls: number = fixture.publicDomain.snapshotCalls
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local handle: number? = runtime:GetHandle(player, actor)
@@ -41,7 +40,7 @@ it("uses canonical N3 truth without calling snapshots again for Ready or replace
 end)
 
 it("captures synchronously with a matching fence and queues an immediate later commit after End", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	fixture.publicDomain.value = 12
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 12 } })
@@ -50,7 +49,7 @@ it("captures synchronously with a matching fence and queues an immediate later c
 	assert(handle ~= nil, "Expected handle")
 	expect(TestUtils.baseline(fixture, player, handle)).toEqual({ ["Game.Public"] = { value = 10 } })
 	local ended: boolean = false
-	for _, record: WireTypes.Record in TestUtils.records(fixture, player) do
+	for _, record: SharedNetworkingTypes.ActorStreamRecord in TestUtils.records(fixture, player) do
 		if record.kind == "BaselineEnd" then
 			ended = true
 		end
@@ -67,7 +66,7 @@ end)
 it("absorbs pre-awareness state into baseline without replaying pre-awareness events", function()
 	fixture.publicDomain.value = 12
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 12 } })
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local handle: number? = runtime:GetHandle(player, actor)
@@ -80,8 +79,11 @@ it("does not leave a yield gap between stream creation and fence installation", 
 	TestUtils.start(fixture)
 	local original: typeof(fixture.publication.CaptureBaseline) = fixture.publication.CaptureBaseline
 	local capturedSequence: number? = nil
-	fixture.publication.CaptureBaseline = function(self, current: ActorTypes.Actor): PublicationTypes.Baseline?
-		local baseline: PublicationTypes.Baseline? = original(self, current)
+	fixture.publication.CaptureBaseline = function(
+		self,
+		current: ActorTypes.Actor
+	): ServerNetworkingTypes.PublicationBaseline?
+		local baseline: ServerNetworkingTypes.PublicationBaseline? = original(self, current)
 		assert(baseline ~= nil, "Expected canonical capture")
 		capturedSequence = baseline.sequence
 		return baseline
@@ -102,7 +104,7 @@ end)
 
 it("reconstructs the exact bounded baseline across chunks with one matching generation", function()
 	fixture.options.maxChunkBytes = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local begins: { any } = TestUtils.kind(fixture, player, "BaselineBegin")
@@ -135,7 +137,7 @@ it("rejects a recipient baseline above the actual encoded limit with Actor and r
 end)
 
 it("deduplicates replacement requests and captures current truth in a newer generation", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
 	local first: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
@@ -162,7 +164,7 @@ end)
 it("marks an excessive event backlog discontinuous and recaptures without replaying old history", function()
 	fixture.options.maxEvents = 2
 	fixture.options.maxChunkBytes = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(256, 1)
 	local firstGeneration: number = TestUtils.kind(fixture, player, "BaselineBegin")[1].generation
@@ -185,7 +187,7 @@ it("marks an excessive event backlog discontinuous and recaptures without replay
 end)
 
 it("keeps every physical send within its byte budget and respects zero work budgets", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(0, 8)
 	runtime:Step(256, 0)
@@ -202,7 +204,7 @@ end)
 it("recaptures after byte pressure without retaining an unbounded state backlog", function()
 	fixture.options.maxQueuedBytes = 1
 	fixture.options.maxChunkBytes = 1
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(256, 1)
 	local original: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
@@ -218,7 +220,7 @@ it("recaptures after byte pressure without retaining an unbounded state backlog"
 end)
 
 it("does not starve another live Actor while this Actor's replacement is pending", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	local other: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	TestUtils.drain(fixture)

@@ -1,9 +1,9 @@
 --!strict
-local NetworkingTypes = require(script.Parent.types)
+local Types = require(script.Parent.types)
 local SchemaDefinitionNormalizer = require(script.Parent.utils.SchemaDefinitionNormalizer)
 
-export type SchemaDefinition = NetworkingTypes.SchemaDefinition
-type Schema = NetworkingTypes.Schema
+export type SchemaDefinition = Types.SchemaDefinition
+type Schema = Types.Schema
 
 local function construct(definition: SchemaDefinition): SchemaDefinition
 	local owned: SchemaDefinition?, reason: string? = SchemaDefinitionNormalizer.Normalize(definition)
