@@ -235,6 +235,17 @@ function ServerNetworking.SendReliable(player: Player, payload: buffer): (boolea
 	return (runtime :: NetworkingTypes.ServerHandshake):Send(player, payload)
 end
 
+function ServerNetworking.RequestReplacementBaseline(
+	player: Player,
+	handle: number,
+	reason: string?
+): (boolean, string?)
+	if not initialized or awareness == nil then
+		return false, "ClientNotReady"
+	end
+	return (awareness :: AwarenessTypes.Runtime):RequestReplacementBaseline(player, handle, reason)
+end
+
 function ServerNetworking.Destroy(): ()
 	initialized = false
 	AwarenessLifecycle.Install(nil)

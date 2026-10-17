@@ -48,6 +48,9 @@ export type RuntimeModule = {
 		options: Options
 	) -> Runtime,
 }
+export type RecipientSelectionModule = {
+	ShouldBeAware: (player: Player, actor: ActorTypes.Actor) -> boolean,
+}
 export type MarkerModule = {
 	Install: (actor: ActorTypes.Actor) -> (boolean, string?),
 	Remove: (actor: ActorTypes.Actor) -> (),

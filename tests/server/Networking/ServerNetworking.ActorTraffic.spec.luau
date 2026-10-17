@@ -86,6 +86,116 @@ afterEach(function()
 	instances = {}
 end)
 
+it("recovers through the production-private replacement seam without replacing N4's runtime", function()
+	local player: Player = ProtocolUtils.createPlayer()
+	table.insert(instances, player)
+	local accepted: boolean, failure: string? = Networking.RequestReplacementBaseline(player, 1, "BeforeStartup")
+	expect(accepted).toBe(false)
+	expect(failure).toBe("ClientNotReady")
+	local current: number = 10
+	local snapshots: number = 0
+	local committed: ReplicationTypes.ReplicationDomainOnCommitted? = nil
+	expect(Server.Init({
+		replicationDomains = {
+			{
+				id = "Game.Recovery",
+				state = Schema.U8,
+				snapshot = function(_actor: ActorTypes.Actor): any
+					snapshots += 1
+					return current
+				end,
+				observe = function(
+					_actor: ActorTypes.Actor,
+					callback: ReplicationTypes.ReplicationDomainOnCommitted
+				): (() -> ())?
+					committed = callback
+					return nil
+				end,
+			},
+		},
+	})).toBe(true)
+	local model: Model = Instance.new("Model")
+	model.Parent = workspace
+	table.insert(instances, model)
+	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
+	assert(actor ~= nil, reason)
+	assert(connection ~= nil and protocol ~= nil and step ~= nil, "Expected production lifecycle")
+	local installed: NetworkingTypes.ServerHandshake = connection
+	accepted, failure = Networking.RequestReplacementBaseline(player, 1, "BeforeReady")
+	expect(accepted).toBe(false)
+	expect(failure).toBe("ClientNotReady")
+	installed:Handle(player, ProtocolUtils.encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION }))
+	installed:Handle(player, ProtocolUtils.encode({ kind = "Ready" }))
+	for _ = 1, 8 do
+		step()
+	end
+	local codec: WireTypes.Codec =
+		Codec.Compile(protocol.runtime, { ["Game.Recovery"] = SchemaUtils.compile(Schema.U8) })
+	local initial: { WireTypes.Record }?, initialReason: string? = codec.Decode(sent[3])
+	assert(initial ~= nil, initialReason)
+	local begin: WireTypes.Record = initial[1]
+	assert(begin.kind == "BaselineBegin", "Expected initial production mapping")
+	local ended: { WireTypes.Record }?, endReason: string? = codec.Decode(sent[#sent])
+	assert(ended ~= nil, endReason)
+	local initialEnd: WireTypes.Record = ended[1]
+	assert(initialEnd.kind == "BaselineEnd", "Expected completed initial production baseline")
+	local revision: number = initialEnd.revision
+	accepted, failure = Networking.RequestReplacementBaseline(player, begin.handle + 1, "UnknownActor")
+	expect(accepted).toBe(false)
+	expect(failure).toBe("UnknownActorHandle")
+	current = 12
+	assert(committed ~= nil, "Expected committed observer")
+	committed()
+	sent = {}
+	accepted, failure = Networking.RequestReplacementBaseline(player, begin.handle, "N5Recovery")
+	expect(accepted).toBe(true)
+	expect(failure).toBeNil()
+	accepted, failure = Networking.RequestReplacementBaseline(player, begin.handle, "DuplicateRecovery")
+	expect(accepted).toBe(false)
+	expect(failure).toBe("BaselineAlreadyPending")
+	for _ = 1, 8 do
+		step()
+	end
+	local body: buffer? = nil
+	local generation: number = 0
+	local completed: boolean = false
+	for _, payload: buffer in sent do
+		local records: { WireTypes.Record }?, decodeReason: string? = codec.Decode(payload)
+		assert(records ~= nil, decodeReason)
+		for _, record: WireTypes.Record in records do
+			expect(record.handle).toBe(begin.handle)
+			if record.kind == "BaselineBegin" then
+				expect(record.actorId).toBeNil()
+				expect(record.generation > begin.generation).toBe(true)
+				generation = record.generation
+				body = buffer.create(record.totalBytes)
+			elseif record.kind == "BaselineChunk" then
+				assert(body ~= nil, "Expected replacement Begin before Chunk")
+				expect(record.generation).toBe(generation)
+				buffer.copy(body, record.offset, record.bytes)
+			else
+				expect(record.kind).toBe("BaselineEnd")
+				assert(record.kind == "BaselineEnd", "Expected no obsolete live work during recovery")
+				expect(record.generation).toBe(generation)
+				expect(record.revision).toBe(revision + 1)
+				completed = true
+			end
+		end
+	end
+	expect(completed).toBe(true)
+	assert(body ~= nil, "Expected complete replacement body")
+	local domains: { [string]: WireTypes.DomainTruth }?, baselineReason: string? = codec.DecodeBaseline(body)
+	expect(baselineReason).toBeNil()
+	expect(domains).toEqual({ ["Game.Recovery"] = { value = 12 } })
+	expect(snapshots).toBe(2)
+	expect(connection).toBe(installed)
+	Networking.Destroy()
+	accepted, failure = Networking.RequestReplacementBaseline(player, begin.handle, "AfterTeardown")
+	expect(accepted).toBe(false)
+	expect(failure).toBe("ClientNotReady")
+	expect(ActorRuntime.UnregisterActor(actor)).toBe(true)
+end)
+
 for _, oversized: boolean in { false, true } do
 	it("runs production handshake, awareness and Reliable delivery with oversized=" .. tostring(oversized), function()
 		local current: string = if oversized then string.rep("x", 300000) else "first"

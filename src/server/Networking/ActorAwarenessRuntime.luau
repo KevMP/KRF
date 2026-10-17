@@ -7,6 +7,7 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
 local WireCodec = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamCodec)
 local Scheduler = require(script.Parent.PublicationScheduler)
+local RecipientSelection = require(script.Parent.ActorRecipientSelection)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.ActorProtocolConstants)
 
 type Baseline = { body: buffer, offset: number, phase: number }
@@ -130,6 +131,12 @@ function ActorAwarenessRuntime._aware(self: any, connection: Connection, actor: 
 	if connection.actors[actor] ~= nil or not actor.enabled then
 		return
 	end
+	if not self.dependencies.IsClientReady(connection.player) then
+		return
+	end
+	if not RecipientSelection.ShouldBeAware(connection.player, actor) then
+		return
+	end
 	if connection.nextHandle > self.options.maxHandle then
 		self.dependencies.ReportFault({
 			player = connection.player,
@@ -180,9 +187,7 @@ function ActorAwarenessRuntime.OnActorRegistered(self: any, actor: ActorTypes.Ac
 	end
 	self:RefreshPlayerAssociation(actor)
 	for _, connection: Connection in self.connections do
-		if self.dependencies.IsClientReady(connection.player) then
-			self:_aware(connection, actor)
-		end
+		self:_aware(connection, actor)
 	end
 end
 
@@ -553,6 +558,11 @@ function ActorAwarenessRuntime.new(
 		publication:ObserveCommits(function(commit: PublicationTypes.Commit)
 			if self.destroyed then
 				return
+			end
+			local cached: BaselineCache? = self.baselines[commit.actor]
+			if cached ~= nil and cached.sequence < commit.sequence then
+				-- Pending transfers retain their own immutable body; only reusable projections expire.
+				self.baselines[commit.actor] = nil
 			end
 			local publicPatches: { PublicationTypes.DomainPatch } = {}
 			local publicEvents: { PublicationTypes.Event } = {}

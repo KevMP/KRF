@@ -12,6 +12,8 @@ revision expectations and client resync requests.
 | Contract | Specs |
 | --- | --- |
 | Ready/Closed subscription, event-driven awareness, deduplication | `server/Networking/ActorAwareness.Readiness.spec.luau` |
+| Shared private recipient-selection policy for Ready and registration admission | `server/Networking/ActorAwareness.Selection.spec.luau` |
+| Public/Owner cache expiry, in-flight transfer isolation and current-sequence capture | `server/Networking/ActorAwareness.Cache.spec.luau` |
 | Direct Player identity, All/Owner visibility and reassociation | `server/Networking/ActorAwareness.Ownership.spec.luau` |
 | Handle allocation, retirement, connection isolation, replacement admission | `server/Networking/ActorAwareness.Handles.spec.luau` |
 | Canonical capture, sequence fence, chunking, replacement, pressure and fairness | `server/Networking/ActorAwareness.Baselines.spec.luau` |
@@ -35,7 +37,7 @@ revision expectations and client resync requests.
 | Native Character-source observation, session removal and cleanup | `server/Networking/NativePlayerAssociation.spec.luau` |
 | Halted sends, failed captures, counter exhaustion and insufficient budgets | `server/Networking/ActorAwareness.Failures.spec.luau` |
 | Uninstalled private lifecycle hooks | `server/Networking/ActorAwarenessLifecycle.spec.luau` |
-| Real production handshake, baseline/live traffic and oversized truth | `server/Networking/ServerNetworking.ActorTraffic.spec.luau` |
+| Real production handshake, baseline/live traffic, oversized truth and private recovery entrypoint | `server/Networking/ServerNetworking.ActorTraffic.spec.luau` |
 | Physical batching, 1,200-Actor packet splitting and reentrant delivery | `server/Networking/ActorAwareness.Packets.spec.luau` |
 | Early removal, corrupt assembly and native N5 consumer installation | `client/ActorStream.Failures.spec.luau` |
 | Invalid native markers, identity mutations and observer cleanup | `client/ActorModelDiscovery.Validation.spec.luau` |
@@ -104,8 +106,10 @@ All paths in the table are relative to `tests/`.
 ## Ticket tensions and implementation decisions
 
 - N4 excludes client resync request handling but requires a private server
-  `RequestReplacementBaseline` seam. These specs cover admission/deduplication of
-  that seam, leaving N5 control messages and revision-gap recovery out of scope.
+  `RequestReplacementBaseline` seam. `ServerNetworking.RequestReplacementBaseline`
+  delegates to the startup-owned awareness runtime; N5 does not acquire or replace
+  that runtime. Production integration covers recovery, deduplication and teardown
+  admission. N5 control messages and revision-gap recovery remain out of scope.
 - The ticket calls baseline generations connection-local while describing a
   monotonically increasing attempt per recipient/Actor. Specs require generation
   isolation and increasing generations on replacement of the same stream. They
@@ -130,7 +134,7 @@ report, but the failing unit command prevented the coverage threshold stage from
 running.
 
 Implementation validation: `npm test` passes lint with zero warnings,
-typechecking and all 1,569 tests across 123 suites, including the original 1,385
+typechecking and all 1,578 tests across 125 suites, including the original 1,385
 tests. Per-file coverage gates remain at 90% and pass. The docs-site
 production build succeeds. The internal protocol compatibility version was bumped
 for the Actor wire contract.
@@ -138,7 +142,10 @@ for the Actor wire contract.
 These unit specs do not prove real StreamingEnabled behavior across server/client
 DataModels or CPU/allocation performance. Production lifecycle integration is
 covered independently from runtime units. Canonical sequence caches reuse public
-and Owner baseline bodies; immutable commit projections are built once per
+and Owner baseline bodies. A newer N3 commit immediately expires an Actor's
+reusable projections; already pending transfers retain their original bodies.
+Both awareness admission paths consult one private policy, whose production
+default selects every Ready recipient. Immutable commit projections are built once per
 visibility class. Packet measurement allocates no output buffer.
 
 Consumer documentation is in the Networking Actor replication guide. No public

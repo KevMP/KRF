@@ -90,6 +90,31 @@ it("preserves an empty visible domain set for an aware Actor", function()
 	expect(decoded).toEqual({})
 end)
 
+it("round-trips baseline truth without encoding friendly domain ids or Struct field names", function()
+	local domains: { [string]: Types.DomainTruth } = {
+		["Game.State"] = {
+			value = {
+				current = 80,
+				target = "Enemy",
+				items = { Potion = 2 },
+				order = { 2, 1 },
+			},
+		},
+		["Game.Optional"] = { value = 7 },
+	}
+	local payload: buffer?, reason: string? = codec.EncodeBaseline(domains)
+	expect(reason).toBeNil()
+	assert(payload ~= nil, "Expected encoded baseline truth")
+	local bytes: string = buffer.tostring(payload)
+	for _, name: string in { "Game.State", "Game.Optional", "current", "target", "items", "order" } do
+		local position: number? = string.find(bytes, name, 1, true)
+		expect(position).toBeNil()
+	end
+	local decoded: { [string]: Types.DomainTruth }?, decodeReason: string? = codec.DecodeBaseline(payload)
+	expect(decodeReason).toBeNil()
+	expect(decoded).toEqual(domains)
+end)
+
 it("round-trips full state replacement separately from schema-aware partial patches", function()
 	local records: { Types.Record } = {
 		{
