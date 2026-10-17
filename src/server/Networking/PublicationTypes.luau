@@ -1,22 +1,20 @@
 --!strict
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
+local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
 local SchemaTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 
 local types = {}
 
 -- Framework-private publication contracts. N4 owns recipient filtering and wire records.
-export type Patch =
-	{ read kind: "Replace", read value: any }
-	| { read kind: "Struct", read fields: { [string]: Patch } }
-	| { read kind: "Map", read entries: { [any]: any }, read removed: { any } }
+export type Patch = WireTypes.Patch
 export type CaptureResult = { read value: any, read patch: Patch?, read encodedSizeBytes: number }
 export type CapturePlan = {
 	Capture: (self: CapturePlan, value: any, previous: CaptureResult?) -> (CaptureResult?, string?),
 }
 export type CaptureModule = { Compile: (schema: SchemaTypes.CompiledSchema) -> CapturePlan }
-export type DomainPatch = { read domainId: string, read patch: Patch }
-export type Event = { read domainId: string, read eventId: string, read payload: any }
+export type DomainPatch = WireTypes.DomainPatch
+export type Event = WireTypes.Event
 export type Commit = {
 	read actor: ActorTypes.Actor,
 	read sequence: number,
@@ -24,7 +22,7 @@ export type Commit = {
 	read events: { Event },
 }
 -- The wrapper preserves a present domain whose Optional state is nil.
-export type DomainTruth = { read value: any }
+export type DomainTruth = WireTypes.DomainTruth
 export type Baseline = { read sequence: number, read domains: { [string]: DomainTruth } }
 export type Fault = { read actorId: string, read domainId: string, read reason: string }
 export type RuntimeOptions = { ReportFault: ((fault: Fault) -> ())? }
@@ -79,6 +77,7 @@ export type Scheduler = {
 	ResetAfterBaseline: (self: Scheduler, stream: StreamKey, domains: { [string]: DomainTruth }) -> (),
 	RemoveStream: (self: Scheduler, stream: StreamKey) -> (),
 	GetStreamStatus: (self: Scheduler, stream: StreamKey) -> StreamStatus,
+	GetNextRecordBytes: (self: Scheduler, stream: StreamKey) -> number?,
 	DrainBudgeted: (self: Scheduler, maxBytes: number, maxRecords: number) -> DrainResult,
 	Destroy: (self: Scheduler) -> (),
 }

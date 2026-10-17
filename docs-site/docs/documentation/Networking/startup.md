@@ -23,7 +23,7 @@ Follow the server Script and client LocalScript patterns in [Initializing KRF](.
 
 1. `Server.Init(config)` validates the domain catalog and event size bounds, compiles state and event codecs, and installs an immutable global protocol catalog and server publication runtime before returning success. It does not yield.
 2. `Client.Init()` waits for the framework transport within a bounded deadline. It installs its receive listener before requesting bootstrap data.
-3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs once and finishes framework consumer setup before declaring readiness.
+3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs and installs its Actor packet receiver before declaring readiness.
 4. The server marks the client ready and sends its acknowledgement before notifying framework readiness observers. `Client.Init()` returns success only after receiving that acknowledgement.
 
 Repeated bootstrap requests while the server is waiting for readiness do not resend the catalog or restart setup. Duplicate readiness messages do not repeat the acknowledgement or readiness notification. Removing a player clears that connection's readiness.
@@ -38,7 +38,9 @@ The bootstrap carries domain and event identities, protocol codes, and semantic 
 
 `audience = "Owner"` describes eligibility for Actor data; it does not hide a domain's identity or schema from other clients. Treat protocol metadata as shared. Live state remains in server controllers.
 
-Successful initialization establishes protocol readiness and installs server publication. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers. The current client runtime does not receive Actor snapshots or events, construct client Actor views, or provide a gameplay command API. Declaring a domain therefore does not make its state visible on a client.
+Successful initialization establishes protocol readiness and installs server Actor publication and recipient streams. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers.
+
+Default client startup installs no Actor-data consumer. It rejects Actor packets before decoding or assembly and warns once with `ActorStreamConsumerMissing`, even after `Client.Init()` succeeds. Public Actor views, client state accessors, and a gameplay command API are unavailable. See [Actor replication](./actor-replication) for server delivery and recovery behavior.
 
 ## Handle startup failures
 

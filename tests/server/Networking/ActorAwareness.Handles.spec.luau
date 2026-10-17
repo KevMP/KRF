@@ -1,0 +1,128 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+
+local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
+local it: any = JestGlobals.it
+local expect: any = JestGlobals.expect
+local beforeEach: any = JestGlobals.beforeEach
+local afterEach: any = JestGlobals.afterEach
+local ActorTypes = require(KRF.server.Actor.types)
+local Types = require(KRF.server.Networking.AwarenessTypes)
+local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
+
+local fixture: TestUtils.Fixture
+beforeEach(function()
+	fixture = TestUtils.new()
+end)
+afterEach(function()
+	TestUtils.destroy(fixture)
+end)
+
+it("allocates distinct positive integral handles and establishes actorId mapping in Begin", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local player: Player = TestUtils.player(fixture)
+	TestUtils.ready(fixture, player)
+	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	local second: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	local firstHandle: number? = runtime:GetHandle(player, first)
+	local secondHandle: number? = runtime:GetHandle(player, second)
+	assert(firstHandle ~= nil and secondHandle ~= nil, "Expected handles")
+	expect(firstHandle > 0 and firstHandle % 1 == 0).toBe(true)
+	expect(secondHandle > 0 and secondHandle % 1 == 0).toBe(true)
+	expect(firstHandle).never.toBe(secondHandle)
+	TestUtils.drain(fixture)
+	local mapping: { [number]: string } = {}
+	for _, record: any in TestUtils.kind(fixture, player, "BaselineBegin") do
+		mapping[record.handle] = record.actorId
+	end
+	expect(mapping).toEqual({ [firstHandle] = first:GetId(), [secondHandle] = second:GetId() })
+end)
+
+it("keeps another connection's handle mapping intact when a connection closes", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local firstPlayer: Player = TestUtils.player(fixture)
+	TestUtils.ready(fixture, firstPlayer)
+	local retired: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	runtime:OnActorUnregistering(retired)
+	fixture.publication:DetachActor(retired)
+	local current: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	local laterPlayer: Player = TestUtils.player(fixture)
+	TestUtils.ready(fixture, laterPlayer)
+	local laterHandle: number? = runtime:GetHandle(laterPlayer, current)
+	assert(laterHandle ~= nil, "Expected connection-local mapping")
+	TestUtils.close(fixture, firstPlayer)
+	expect(runtime:GetHandle(firstPlayer, current)).toBeNil()
+	expect(runtime:GetHandle(laterPlayer, current)).toBe(laterHandle)
+end)
+
+it("retires a removed handle and gives a respawn Actor a new identity and handle", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local player: Player = TestUtils.player(fixture)
+	TestUtils.ready(fixture, player)
+	local first: ActorTypes.Actor = TestUtils.actor(fixture, player)
+	local retiredHandle: number? = runtime:GetHandle(player, first)
+	runtime:OnActorUnregistering(first)
+	fixture.publication:DetachActor(first)
+	local respawn: ActorTypes.Actor = TestUtils.actor(fixture, player)
+	expect(respawn:GetId()).never.toBe(first:GetId())
+	expect(runtime:GetHandle(player, respawn)).never.toBe(retiredHandle)
+	expect(runtime:GetHandle(player, first)).toBeNil()
+end)
+
+it("starts a fresh namespace for a new connection after close", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local player: Player = TestUtils.player(fixture)
+	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	TestUtils.ready(fixture, player)
+	local original: number? = runtime:GetHandle(player, actor)
+	assert(original ~= nil, "Expected first connection handle")
+	TestUtils.close(fixture, player)
+	expect(runtime:GetHandle(player, actor)).toBeNil()
+	TestUtils.ready(fixture, player)
+	expect(runtime:IsAware(player, actor)).toBe(true)
+	local fresh: number? = runtime:GetHandle(player, actor)
+	assert(fresh ~= nil, "Expected fresh connection handle")
+	-- A reconnect permits numeric reuse; it does not require a particular allocator seed.
+	expect(fresh > 0).toBe(true)
+	TestUtils.drain(fixture)
+	expect(#TestUtils.kind(fixture, player, "BaselineBegin")).toBe(1)
+end)
+
+for _, invalid: number in { 0, -1, 1.5, 4294967296 } do
+	it("rejects invalid replacement handle " .. tostring(invalid) .. " without creating work", function()
+		local runtime: Types.Runtime = TestUtils.start(fixture)
+		local player: Player = TestUtils.player(fixture)
+		TestUtils.ready(fixture, player)
+		local success: boolean, reason: string? = runtime:RequestReplacementBaseline(player, invalid, nil)
+		expect(success).toBe(false)
+		expect(reason).toBe("InvalidActorHandle")
+		TestUtils.drain(fixture)
+		expect(fixture.deliveries).toEqual({})
+	end)
+end
+
+it("rejects replacement requests from a non-Ready connection and unknown Ready handle", function()
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local player: Player = TestUtils.player(fixture)
+	local success: boolean, reason: string? = runtime:RequestReplacementBaseline(player, 1, nil)
+	expect(success).toBe(false)
+	expect(reason).toBe("ClientNotReady")
+	TestUtils.ready(fixture, player)
+	success, reason = runtime:RequestReplacementBaseline(player, 1, nil)
+	expect(success).toBe(false)
+	expect(reason).toBe("UnknownActorHandle")
+end)
+
+it("reports handle exhaustion explicitly instead of wrapping into a retired handle", function()
+	fixture.options.maxHandle = 1
+	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local player: Player = TestUtils.player(fixture)
+	TestUtils.ready(fixture, player)
+	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	runtime:OnActorUnregistering(first)
+	fixture.publication:DetachActor(first)
+	local second: ActorTypes.Actor = TestUtils.actor(fixture, nil)
+	expect(runtime:GetHandle(player, second)).toBeNil()
+	expect(fixture.faults).toEqual({ { player = player, actorId = second:GetId(), reason = "ActorHandleExhausted" } })
+end)

@@ -14,6 +14,12 @@ local SchemaProjection = require(script.Parent.Parent.Parent.shared.Networking.u
 local Handshake = require(script.Parent.ServerHandshake)
 local PublicationRuntime = require(script.Parent.PublicationRuntime)
 local PublicationLifecycle = require(script.Parent.ActorPublicationLifecycle)
+local AwarenessTypes = require(script.Parent.AwarenessTypes)
+local Awareness = require(script.Parent.ActorAwarenessRuntime)
+local AwarenessLifecycle = require(script.Parent.ActorAwarenessLifecycle)
+local Scheduling = require(script.Parent.AwarenessScheduling)
+local NativeAssociation = require(script.Parent.NativePlayerAssociation)
+local ActorConstants = require(script.Parent.Parent.Parent.shared.Networking.ActorProtocolConstants)
 
 local ServerNetworking = {} :: NetworkingTypes.ServerNetworking
 local initialized: boolean = false
@@ -22,6 +28,9 @@ local runtime: NetworkingTypes.ServerHandshake? = nil
 local publication: PublicationTypes.Runtime? = nil
 local preparedCatalog: ReplicationTypes.PreparedReplicationDomainCatalog? = nil
 local listeners: { RBXScriptConnection } = {}
+local awareness: AwarenessTypes.Runtime? = nil
+local association: AwarenessTypes.AssociationSource? = nil
+local stopDriver: (() -> ())? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog
@@ -144,6 +153,43 @@ function ServerNetworking.Publish(protocol: ProtocolTypes.PreparedProtocol): (bo
 			end,
 		})
 		runtime = handshake
+		if publication ~= nil and preparedCatalog ~= nil then
+			local source: AwarenessTypes.AssociationSource = NativeAssociation.new()
+			association = source
+			local created: AwarenessTypes.Runtime = Awareness.new(publication, preparedCatalog, protocol.runtime, {
+				IsClientReady = ServerNetworking.IsClientReady,
+				ObserveClientReady = ServerNetworking.ObserveClientReady,
+				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
+				SendReliable = ServerNetworking.SendReliable,
+				GetPlayerFromCharacter = source.GetPlayerFromCharacter,
+				ObserveAssociationChanged = source.ObserveAssociationChanged,
+				ReportFault = function(fault: AwarenessTypes.Fault)
+					warn(
+						"[Networking] Actor stream halted actorId="
+							.. fault.actorId
+							.. " recipient="
+							.. tostring(fault.player)
+							.. " reason="
+							.. fault.reason
+					)
+				end,
+			}, {
+				maxBaselineBytes = ActorConstants.MAX_BASELINE_BYTES,
+				maxChunkBytes = ActorConstants.CHUNK_BYTES,
+				maxQueuedBytes = ActorConstants.MAX_QUEUED_BYTES,
+				maxEvents = ActorConstants.MAX_EVENTS,
+				maxHandle = ActorConstants.MAX_COUNTER,
+				maxRevision = ActorConstants.MAX_COUNTER,
+			})
+			awareness = created
+			AwarenessLifecycle.Install(created)
+			local budget: AwarenessTypes.StepBudget = Scheduling.GetBudget()
+			stopDriver = Scheduling.ObserveStep(function()
+				if initialized and awareness == created then
+					created:Step(budget.maxBytes, budget.maxRecords)
+				end
+			end)
+		end
 		table.insert(
 			listeners,
 			transports.reliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
@@ -189,8 +235,32 @@ function ServerNetworking.SendReliable(player: Player, payload: buffer): (boolea
 	return (runtime :: NetworkingTypes.ServerHandshake):Send(player, payload)
 end
 
+function ServerNetworking.RequestReplacementBaseline(
+	player: Player,
+	handle: number,
+	reason: string?
+): (boolean, string?)
+	if not initialized or awareness == nil then
+		return false, "ClientNotReady"
+	end
+	return (awareness :: AwarenessTypes.Runtime):RequestReplacementBaseline(player, handle, reason)
+end
+
 function ServerNetworking.Destroy(): ()
 	initialized = false
+	AwarenessLifecycle.Install(nil)
+	if stopDriver ~= nil then
+		stopDriver()
+		stopDriver = nil
+	end
+	if awareness ~= nil then
+		awareness:Destroy()
+		awareness = nil
+	end
+	if association ~= nil then
+		association.Destroy()
+		association = nil
+	end
 	PublicationLifecycle.Install(nil)
 	if publication ~= nil then
 		publication:Destroy()

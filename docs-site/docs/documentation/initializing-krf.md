@@ -84,7 +84,7 @@ end
 -- Continue your game's client startup here.
 ```
 
-A successful return means the client has installed the server's protocol catalog and received its readiness acknowledgement. It does not create client Actor views or start Actor state replication. See [Networking startup](./Networking/startup) for ownership, ordering, and failure handling.
+A successful return means the client has installed the server's protocol catalog and received its readiness acknowledgement. It does not create client Actor views or make replicated Actor state available to gameplay code. See [Networking startup](./Networking/startup) for ownership, ordering, and failure handling.
 
 `Client.Init` accepts one attempt per client lifetime, including a failed attempt. Discovery and the handshake share a bounded deadline; handle a failure at your startup boundary rather than retrying initialization in a loop.
 
