@@ -28,6 +28,8 @@ export type ServerNetworking = {
 	ObserveClientReady: (callback: (Player) -> ()) -> () -> (),
 	ObserveClientClosed: (callback: (Player) -> ()) -> () -> (),
 	SendReliable: (player: Player, payload: buffer) -> (boolean, string?),
+	-- Framework-private recovery entrypoint; N4 retains ownership of the installed runtime.
+	RequestReplacementBaseline: (player: Player, handle: number, reason: string?) -> (boolean, string?),
 	Destroy: () -> (),
 	_IsInitialized: () -> boolean,
 	_ResetForTests: () -> (),

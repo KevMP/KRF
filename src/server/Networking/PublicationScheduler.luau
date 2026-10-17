@@ -313,6 +313,12 @@ function PublicationScheduler.GetStreamStatus(self: any, key: PublicationTypes.S
 	}
 end
 
+function PublicationScheduler.GetNextRecordBytes(self: any, key: PublicationTypes.StreamKey): number?
+	local stream: Stream? = find(self, key, false)
+	local pending: Pending? = if stream ~= nil then stream.records[1] else nil
+	return if pending ~= nil then pending.bytes else nil
+end
+
 function PublicationScheduler.DrainBudgeted(
 	self: any,
 	maxBytes: number,

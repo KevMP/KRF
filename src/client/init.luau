@@ -2,6 +2,7 @@
 local ClientTypes = require(script.types)
 local ProtocolTypes = require(script.Parent.shared.Networking.ProtocolTypes)
 local Constants = require(script.Parent.shared.Networking.ProtocolConstants)
+local ActorConstants = require(script.Parent.shared.Networking.ActorProtocolConstants)
 local ProtocolCodec = require(script.Parent.shared.Networking.ProtocolCodec)
 local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompiler)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.NativeClientDependencies)
@@ -41,6 +42,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	local cancelTimeout: (() -> ())? = nil
 	local cleanupConsumers: (() -> ())? = nil
 	local protocol: ProtocolTypes.ClientProtocol? = nil
+	local receiveActors: ((any) -> ())? = nil
 
 	local function cancelTimer(): ()
 		local cancel: (() -> ())? = cancelTimeout
@@ -49,6 +51,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	end
 
 	local function cleanup(): ()
+		receiveActors = nil
 		cancelTimer()
 		local listener: (() -> ())? = disconnect
 		disconnect = nil
@@ -94,6 +97,16 @@ function Client.Init(): (boolean, StartupFailure?)
 		local transport: ClientTypes.ClientTransport = endpoint
 		local function receive(payload: any, ...: any): ()
 			if finished then
+				if
+					success
+					and receiveActors ~= nil
+					and select("#", ...) == 0
+					and typeof(payload) == "buffer"
+					and buffer.len(payload) > 0
+					and buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND
+				then
+					receiveActors(payload)
+				end
 				return
 			end
 			if select("#", ...) ~= 0 then
@@ -136,8 +149,14 @@ function Client.Init(): (boolean, StartupFailure?)
 				end
 				protocol = reconstructed
 				local installer: thread = coroutine.create(dependencies.InstallConsumers)
-				local completed: boolean, installed: any, installReason: string?, consumerCleanup: (() -> ())? =
-					coroutine.resume(installer, reconstructed)
+				local completed: boolean, installed: any, installReason: string?, consumerCleanup: (() -> ())? = coroutine.resume(
+					installer,
+					reconstructed,
+					message.manifest,
+					function(receiver: (any) -> ())
+						receiveActors = receiver
+					end
+				)
 				if coroutine.status(installer) ~= "dead" then
 					coroutine.close(installer)
 					completed = false
