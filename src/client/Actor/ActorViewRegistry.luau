@@ -1,22 +1,16 @@
 --!strict
 local Types = require(script.Parent.types)
 local Signal = require(script.Parent.Parent.Parent.shared.Signal.SignalModule)
+local Owner: Types.ActorViewRegistryOwner = require(script.Parent.utils.ActorViewRegistryState)
 
--- N5 TDD scaffold: event surfaces are loadable; publication/indexing is not implemented.
-local added: Signal.Signal<Types.ActorView> = Signal.new()
-local removing: Signal.Signal<Types.ActorView> = Signal.new()
+-- The immutable public facade delegates to a separate framework-private owner.
+-- Freezing this API does not freeze its future indexes or installation lifecycle.
 local registry: Types.ActorViewRegistry = {
-	GetActorViewById = function(_actorId: string): Types.ActorView?
-		return nil
-	end,
-	GetActorViewByModel = function(_model: Model): Types.ActorView?
-		return nil
-	end,
-	GetAllActorViews = function(): { Types.ActorView }
-		return {}
-	end,
-	OnActorViewAdded = Signal.wrapEvent(added),
-	OnActorViewRemoving = Signal.wrapEvent(removing),
+	GetActorViewById = Owner.GetActorViewById,
+	GetActorViewByModel = Owner.GetActorViewByModel,
+	GetAllActorViews = Owner.GetAllActorViews,
+	OnActorViewAdded = Signal.wrapEvent(Owner.Added),
+	OnActorViewRemoving = Signal.wrapEvent(Owner.Removing),
 }
 
-return registry
+return table.freeze(registry)

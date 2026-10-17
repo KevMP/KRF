@@ -41,6 +41,21 @@ Organize source by execution side and system: `src/<side>/<System>/`.
   implementations. Avoid self-requires and circular type dependencies.
 - Require each type module once per file. Reuse that namespace instead of
   importing the same module repeatedly under aliases for individual concerns.
+- Give implemented runtime receivers genuine internal state types. Do not use
+  `self: any` or cast constructors to `any` to bypass checking private fields.
+  Schema-erased payloads and opaque identity keys may retain their contract types.
+
+## Public views and private ownership
+
+- Freeze public lookup facades and mark their methods `read` in public types.
+  Keep installation, mutation, indexes and writable Signals in framework-private
+  owners. A public Event must not expose its owning Signal.
+- Establish ActorView and DomainView ownership before implementing Networking
+  coordination. ActorView owns identity, Model and visible domains; DomainView
+  owns immutable state, change/semantic events and teardown. Networking owns
+  revision validation, recovery and atomic publication across those owners.
+- Separate state installation from notification. All affected state and indexes
+  must be installed before the runtime fires any public notification.
 
 ## Structural refactors
 
@@ -66,6 +81,10 @@ Organize source by execution side and system: `src/<side>/<System>/`.
 - For an intentionally red TDD branch, compare with its recorded baseline.
   Preserve expected missing-behavior failures and all previously passing tests;
   module-loading, require-path, syntax, type and fixture failures are regressions.
+- Native networking contracts need real server/client coverage alongside injected
+  unit integration tests. Exercise normal startup and consumer installation,
+  actual transports, privacy and teardown; never replace the consumer installer
+  in the fixture intended to prove that installation works.
 - Build systems to production quality. Milestone scope is not permission for
   shortcuts, temporary architecture or deferred cleanup.
 - Preserve unrelated user changes. Commit only work belonging to the request.

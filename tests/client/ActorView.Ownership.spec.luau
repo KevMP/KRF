@@ -1,0 +1,102 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
+local it: any = JestGlobals.it
+local expect: any = JestGlobals.expect
+local afterEach: any = JestGlobals.afterEach
+local Types = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+local Domains: Types.DomainViewModule = require(KRF.client.Actor.DomainView)
+local Actors: Types.ActorViewModule = require(KRF.client.Actor.ActorView)
+local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
+local RegistryOwner: Types.ActorViewRegistryOwner = require(KRF.client.Actor.utils.ActorViewRegistryState)
+
+local cleanups: { () -> () } = {}
+afterEach(function()
+	RegistryOwner.Reset()
+	for _, cleanup: () -> () in cleanups do
+		cleanup()
+	end
+	cleanups = {}
+end)
+
+it("separates DomainView state installation from change and semantic notification", function()
+	local previous: any = table.freeze({ current = 100 })
+	local owner: Types.DomainViewOwner?, reason: string? = Domains.new("Game.Stamina", previous, { "Changed" })
+	expect(reason).toBeNil()
+	assert(owner ~= nil, "Expected private DomainView owner")
+	table.insert(cleanups, function()
+		owner:Destroy()
+	end)
+	local changes: { Types.DomainChange } = {}
+	local events: { number } = {}
+	owner.view.OnChanged:Connect(function(change: Types.DomainChange)
+		table.insert(changes, change)
+	end)
+	local event: SignalTypes.Event<any>? = owner.view:GetEvent("Changed")
+	assert(event ~= nil, "Expected declared event")
+	event:Connect(function(payload: number)
+		table.insert(events, payload)
+	end)
+	local current: any = table.freeze({ current = 75 })
+	owner:InstallState(current)
+	expect(owner.view:GetState()).toBe(current)
+	expect(changes).toEqual({})
+	expect(events).toEqual({})
+	local change: Types.DomainChange = { previous = previous, current = current, source = "Commit" }
+	owner:NotifyChanged(table.freeze(change))
+	owner:FireEvent("Changed", 25)
+	expect(changes).toEqual({ { previous = previous, current = current, source = "Commit" } })
+	expect(events).toEqual({ 25 })
+end)
+
+it("separates ActorView Model installation from its public Model notification", function()
+	local owner: Types.ActorViewOwner?, reason: string? = Actors.new("ActorA", nil, {})
+	expect(reason).toBeNil()
+	assert(owner ~= nil, "Expected private ActorView owner")
+	table.insert(cleanups, function()
+		owner:Destroy()
+	end)
+	local model: Model = Instance.new("Model")
+	table.insert(cleanups, function()
+		model:Destroy()
+	end)
+	local changes: { any } = {}
+	owner.view.OnModelChanged:Connect(function(previous: Model?, current: Model?)
+		table.insert(changes, { previous = previous, current = current })
+	end)
+	owner:InstallModel(model)
+	expect(owner.view:GetId()).toBe("ActorA")
+	expect(owner.view:GetModel()).toBe(model)
+	expect(changes).toEqual({})
+	owner:NotifyModelChanged(nil, model)
+	expect(changes).toEqual({ { current = model } })
+end)
+
+it("publishes through the private registry owner while keeping the same immutable public facade", function()
+	local owner: Types.ActorViewOwner?, reason: string? = Actors.new("ActorA", nil, {})
+	expect(reason).toBeNil()
+	assert(owner ~= nil, "Expected privately owned ActorView")
+	table.insert(cleanups, function()
+		owner:Destroy()
+	end)
+	local added: { Types.ActorView } = {}
+	local connection: SignalTypes.Connection = Registry.OnActorViewAdded:Connect(function(view: Types.ActorView)
+		table.insert(added, view)
+	end)
+	table.insert(cleanups, function()
+		connection:Disconnect()
+	end)
+	local installed: boolean
+	installed, reason = RegistryOwner.Install(owner.view)
+	expect(installed).toBe(true)
+	expect(reason).toBeNil()
+	expect(Registry.GetActorViewById("ActorA")).toBe(owner.view)
+	expect(added).toEqual({})
+	RegistryOwner.Added:Fire(owner.view)
+	expect(added).toEqual({ owner.view })
+	expect(table.isfrozen(Registry)).toBe(true)
+	RegistryOwner.Remove(owner.view)
+	expect(Registry.GetActorViewById("ActorA")).toBeNil()
+end)

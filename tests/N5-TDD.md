@@ -13,6 +13,7 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
 | Ticket contract | Specifications |
 | --- | --- |
 | Public ActorView/DomainView/registry shape; no wire or future typed API (§1–6, 23) | `client/ActorView.Creation.spec.luau`, `client/ActorView.State.spec.luau` |
+| Immutable public registry surface; private state owners and staged installation/notification | `client/ActorViewRegistry.Immutability.spec.luau`, `client/ActorView.Ownership.spec.luau` |
 | Complete initial publication; no partial view or synthetic domain history; identity uniqueness (§11–13) | `client/ActorView.Creation.spec.luau`, `client/ActorView.Commits.spec.luau` |
 | Read-only recursive Struct/Map/Array snapshots; retained snapshots; immutable change records and event payloads (§7–10) | `client/ActorView.State.spec.luau`, `client/ActorStatePlan.spec.luau` |
 | Schema-aware scalar/Struct/Map/Optional/Array application; unchanged paths; copy-on-write (§9, 43, 48) | `client/ActorStatePlan.spec.luau`, `client/ActorView.State.spec.luau` |
@@ -32,6 +33,7 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
 | Unknown/invisible domain, undeclared event, invalid patch/event and initial baseline faults (§42–44) | `client/ActorView.Creation.spec.luau`, `client/ActorView.Commits.spec.luau` |
 | Event-driven idle behavior; forty-eight Actors; touched-domain application; shared subtrees and lookup correctness (§46–48) | `client/ActorView.Work.spec.luau`, `client/ActorView.State.spec.luau`, `client/ActorStatePlan.spec.luau` |
 | N3 → N4 → N5 discontinuity → real server admission → N4 replacement → same N5 view | `server/Networking/Resync.ActorViews.Integration.spec.luau` |
+| Native two-client readiness, automatic creation, live state/events, real resync, Owner privacy and teardown | `integration/ActorViews/Server.server.luau`, `integration/ActorViews/Client.client.luau` |
 
 ## Fixtures and boundaries
 
@@ -82,6 +84,16 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
 ## Private implementation choices established by the tests
 
 - Public module: `client/Actor/ActorViewRegistry`; types: `client/Actor/types`.
+- The frozen registry delegates lookup to `client/Actor/utils/ActorViewRegistryState`.
+  Only that private owner exposes installation, removal and writable lifecycle
+  Signals. Public lookup methods are `read` and public events remain wrapped.
+- `client/Actor/ActorView` owns identity, Model, visible DomainViews and Actor-level
+  events. `client/Actor/DomainView` owns immutable state, change/semantic events
+  and teardown. Their typed constructors remain `N5NotImplemented` scaffolds.
+  Private owners separate installation from notification so Networking can stage
+  all state and indexes before firing events. `ActorViewRuntime` owns N4 callbacks,
+  revision validation, recovery coordination and atomic publication;
+  `ActorStatePlan` owns schema-aware immutable snapshot/patch operations.
 - Internal Networking contracts are consolidated in one `types.luau` per side.
   Primary runtimes remain at the system root; implementation collaborators,
   platform adapters and lifecycle bridges live in lowercase `utils/`. Source
@@ -105,7 +117,27 @@ Use the repository commands from its root:
 ```powershell
 npm run test:unit
 npm test
+npm run test:integration:n5
 ```
+
+The native command builds `n5-actor-view-test.project.json` and uses Studio's
+documented `RunScript` CLI task to execute the Edit-DataModel launcher
+`scripts/run-n5-actor-view-tests.luau`. The launcher calls
+`StudioTestService:ExecuteMultiplayerTestAsync(2, ...)`. Studio must be installed;
+no MCP server or temporary local plugin is required. To select a Studio executable,
+invoke `scripts/test-n5-native.ps1 -StudioPath <absolute-path>` directly.
+Each invocation retains its place and logs under ignored `build/n5-native/<run-id>`.
+Exit 0 requires a real success result, exit 1 is a reported contract failure, and
+exit 2 indicates no verified result (for example, a launcher timeout).
+
+Both clients call normal `Client.Init` with production consumer installation.
+The server observes real factories and injects one discontinuous, valid Commit
+through the framework Reliable transport; it never simulates a recovery request
+or replacement callback. Recovery must use the real client-to-server buffer path
+and server admission, retain view identity, restore current truth and avoid event
+replay. Both clients verify Owner visibility across loss/gain, stale private view
+invalidation, authoritative removal and repeated client reset. The orchestration
+RemoteEvent carries only test phases/reports, never Actor state delivery.
 
 On the pulled main baseline, `npm run test:unit` passed **126 suites / 1,597
 tests**, including the existing coverage checks. The N5 contract suite must remain
@@ -122,6 +154,20 @@ with zero errors or warnings and passed Luau type checking. Jest reported
 non-publication guard already passes; the remaining 163 fail on unimplemented
 N5 behavior. No new tests are skipped. The full command exits nonzero as expected;
 the chained coverage threshold step therefore does not run on the red suite.
+
+Audit follow-up validation on 2026-10-17 adds 11 passing registry immutability
+regressions and three red private ownership contracts. The suite now reports
+**127 passing suites / 15 failing suites; 1,609 passing tests / 166 failing tests,
+1,775 total**. Formatting/lint and Luau type checking pass. All original passing
+tests remain green. The N3 PublicationRuntime and PublicationScheduler now use
+real typed internal state and receivers without changing their behavior.
+
+The native two-client command was also executed on installed Studio. Both clients
+reached readiness; the run failed in `Initial` with
+`Complete native baseline did not automatically create an ActorView`, as expected
+before N5 implementation. Later live/recovery/privacy/teardown phases are present
+but remain unexecuted behind that first missing behavior; they must pass on the
+implementation branch before N5 can be considered complete.
 
 The work tests count real schema-plan calls, verify reuse of unchanged snapshots
 and subtrees, exercise forty-eight Actors and assert no idle/recovery state work.

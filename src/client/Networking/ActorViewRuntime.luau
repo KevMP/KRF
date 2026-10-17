@@ -7,6 +7,9 @@ local ActorViewRuntime = {}
 
 -- Deliberately inert N5 skeleton. N4 can deliver every callback without a missing
 -- member/require failure. Tests assert the publication and recovery still missing.
+-- Owns N4 callbacks, revision/recovery bookkeeping and staged atomic publication.
+-- Individual view state/signals belong to ActorView/DomainView private owners;
+-- indexed publication belongs to Actor.utils.ActorViewRegistryState.
 function ActorViewRuntime.new(
 	_protocol: SharedNetworkingTypes.ClientProtocol,
 	_schemas: SharedNetworkingTypes.ActorSchemaCatalog,
