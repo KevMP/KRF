@@ -66,7 +66,7 @@ The example assumes `GameCombatController` is a controller module beside your st
 
 ## Client initialization
 
-Call `Client.Init()` from a LocalScript, such as your startup script in `StarterPlayerScripts`. It may yield while the framework transport replicates and the client completes protocol setup.
+Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
 
 ```lua title="Startup.client.luau"
 --!strict

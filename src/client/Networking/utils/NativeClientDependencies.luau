@@ -12,7 +12,8 @@ local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.Actor
 local SchemaCompiler = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.SchemaCompiler)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
-local dependencies: ClientTypes.Dependencies = {
+local dependencies: ClientTypes.Dependencies
+dependencies = {
 	Now = os.clock,
 	Resume = function(waitingThread: thread): ()
 		task.defer(waitingThread)
@@ -94,6 +95,8 @@ local dependencies: ClientTypes.Dependencies = {
 			if consumer == nil then
 				assert(sendReliable ~= nil, "ActorReliableEndpointMissing")
 				local created: Types.ActorViewRuntime = Views.new(protocol, schemas, {
+					Now = dependencies.Now,
+					ScheduleTimeout = dependencies.ScheduleTimeout,
 					SendReliable = sendReliable,
 					ReportFault = function(fault: Types.ActorViewFault)
 						warn("[Networking] ActorView fault actorId=" .. fault.actorId .. " reason=" .. fault.reason)

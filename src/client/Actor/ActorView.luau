@@ -18,8 +18,11 @@ function ActorView.new(
 	local currentDomains: { [string]: Types.DomainViewOwner } = table.clone(domains)
 	local domainIds: { string } = {}
 	local destroyed: boolean = false
+	local available: boolean = true
 	local changed: SignalTypes.Signal<Model?, Model?> = Signal.new()
-	local owned: SignalTypes.OwnedSignals = OwnedSignals.new({ changed })
+	local domainsChanged: SignalTypes.Signal<Types.DomainMembershipChange> = Signal.new()
+	local unavailable: SignalTypes.Signal<> = Signal.new()
+	local owned: SignalTypes.OwnedSignals = OwnedSignals.new({ changed, domainsChanged, unavailable })
 	local function updateDomainIds(): ()
 		domainIds = {}
 		for id: string in currentDomains do
@@ -43,7 +46,12 @@ function ActorView.new(
 		GetDomainIds = function(_self: Types.ActorView): { string }
 			return domainIds
 		end,
+		IsAvailable = function(_self: Types.ActorView): boolean
+			return available
+		end,
 		OnModelChanged = Signal.wrapEvent(changed),
+		OnDomainsChanged = Signal.wrapEvent(domainsChanged),
+		OnUnavailable = Signal.wrapEvent(unavailable),
 	})
 	return {
 		view = view,
@@ -51,10 +59,34 @@ function ActorView.new(
 			assert(not destroyed, "ActorViewDestroyed")
 			currentModel = nextModel
 		end,
-		InstallDomains = function(_self: Types.ActorViewOwner, nextDomains: { [string]: Types.DomainViewOwner }): ()
+		InstallDomains = function(
+			_self: Types.ActorViewOwner,
+			nextDomains: { [string]: Types.DomainViewOwner }
+		): Types.DomainMembershipChange?
 			assert(not destroyed, "ActorViewDestroyed")
+			local added: { string } = {}
+			local removed: { string } = {}
+			for id: string in nextDomains do
+				if currentDomains[id] == nil then
+					table.insert(added, id)
+				end
+			end
+			for id: string in currentDomains do
+				if nextDomains[id] == nil then
+					table.insert(removed, id)
+				end
+			end
 			currentDomains = table.clone(nextDomains)
 			updateDomainIds()
+			if #added == 0 and #removed == 0 then
+				return nil
+			end
+			table.sort(added)
+			table.sort(removed)
+			return table.freeze({ added = table.freeze(added), removed = table.freeze(removed) })
+		end,
+		InstallUnavailable = function(_self: Types.ActorViewOwner): ()
+			available = false
 		end,
 		NotifyModelChanged = function(_self: Types.ActorViewOwner, previous: Model?, nextModel: Model?): ()
 			if not destroyed then
@@ -63,11 +95,26 @@ function ActorView.new(
 				end)
 			end
 		end,
+		NotifyDomainsChanged = function(_self: Types.ActorViewOwner, change: Types.DomainMembershipChange): ()
+			if not destroyed then
+				owned:WithDeferredDestroy(function()
+					domainsChanged:Fire(change)
+				end)
+			end
+		end,
+		NotifyUnavailable = function(_self: Types.ActorViewOwner): ()
+			if not destroyed then
+				owned:WithDeferredDestroy(function()
+					unavailable:Fire()
+				end)
+			end
+		end,
 		Destroy = function(_self: Types.ActorViewOwner): ()
 			if destroyed then
 				return
 			end
 			destroyed = true
+			available = false
 			currentModel = nil
 			for _, domain: Types.DomainViewOwner in currentDomains do
 				domain:Destroy()

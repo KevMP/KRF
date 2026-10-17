@@ -66,6 +66,13 @@ it("retires Actor-owned domains during a Model callback and ignores later Model 
 		model:Destroy()
 	end)
 	local changes: number = 0
+	local lifecycleNotifications: number = 0
+	owner.view.OnDomainsChanged:Connect(function(_change: Types.DomainMembershipChange)
+		lifecycleNotifications += 1
+	end)
+	owner.view.OnUnavailable:Connect(function()
+		lifecycleNotifications += 1
+	end)
 	owner.view.OnModelChanged:Connect(function(_previous: Model?, _current: Model?)
 		changes += 1
 		owner:Destroy()
@@ -73,8 +80,15 @@ it("retires Actor-owned domains during a Model callback and ignores later Model 
 	owner:InstallModel(model)
 	owner:NotifyModelChanged(nil, model)
 	owner:NotifyModelChanged(model, nil)
+	local membership: Types.DomainMembershipChange = { added = {}, removed = { "Game.Counter" } }
+	table.freeze(membership.added)
+	table.freeze(membership.removed)
+	owner:NotifyDomainsChanged(table.freeze(membership))
+	owner:NotifyUnavailable()
 	owner:Destroy()
 	expect(changes).toBe(1)
+	expect(lifecycleNotifications).toBe(0)
+	expect(owner.view:IsAvailable()).toBe(false)
 	expect(owner.view:GetModel()).toBeNil()
 	expect(owner.view:GetDomainIds()).toEqual({})
 	expect(owner.view:GetDomain("Game.Counter")).toBeNil()

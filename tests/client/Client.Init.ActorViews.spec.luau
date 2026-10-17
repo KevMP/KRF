@@ -13,6 +13,7 @@ local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
 local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
 local Runtime: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
+local Stream: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
 local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
 	require(KRF.client.Networking.utils.ActorModelDiscovery)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
@@ -24,6 +25,7 @@ local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
 local originalNew: typeof(Runtime.new) = Runtime.new
+local originalStream: typeof(Stream.new) = Stream.new
 local originalDiscovery: typeof(Discovery.new) = Discovery.new
 local originalNow: typeof(Native.Now) = Native.Now
 local originalDiscover: typeof(Native.DiscoverTransport) = Native.DiscoverTransport
@@ -87,6 +89,7 @@ afterEach(function()
 		coroutine.close(fixture.initThread)
 	end
 	Runtime.new = originalNew
+	Stream.new = originalStream
 	Discovery.new = originalDiscovery
 	Native.Now = originalNow
 	Native.DiscoverTransport = originalDiscover
@@ -209,4 +212,34 @@ it("sends no READY and releases N4 discovery if N5 construction fails", function
 	expect(fixture.order).toEqual({ "Listen", "Hello" })
 	expect(#stream.added).toBe(0)
 	expect(#stream.gone).toBe(0)
+end)
+
+it("reports malformed Actor framing once through the native reporter and continues valid production traffic", function()
+	local faults: { string } = {}
+	Stream.new = function(
+		codec: SharedNetworkingTypes.ActorStreamCodec,
+		consumer: ClientNetworkingTypes.ActorStreamConsumer?,
+		discovery: ClientNetworkingTypes.ActorModelDiscovery,
+		options: ClientNetworkingTypes.ActorStreamOptions
+	): ClientNetworkingTypes.ActorStreamRuntime
+		local report: (string) -> () = options.ReportFault
+		options.ReportFault = function(reason: string)
+			table.insert(faults, reason)
+			report(reason)
+		end
+		return originalStream(codec, consumer, discovery, options)
+	end
+	start()
+	TestUtils.bootstrap(fixture)
+	TestUtils.acknowledge(fixture)
+	local malformed: buffer = buffer.create(1)
+	buffer.writeu8(malformed, 0, 64)
+	TestUtils.emit(fixture, malformed)
+	expect(faults).toEqual({ "MalformedActorPacket" })
+	expect(Registry.GetAllActorViews()).toEqual({})
+	TestUtils.emit(fixture, baseline())
+	local view: PublicTypes.ActorView? = Registry.GetActorViewById("ActorA")
+	assert(view ~= nil, "Framing rejection must not disable unrelated future traffic")
+	expect(view:IsAvailable()).toBe(true)
+	expect(faults).toEqual({ "MalformedActorPacket" })
 end)

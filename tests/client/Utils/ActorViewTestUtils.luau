@@ -16,7 +16,10 @@ local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local SchemaUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
 local StreamUtils = require(script.Parent.ActorStreamTestUtils)
 
+export type Timer = { due: number, callback: () -> (), cancelled: boolean, fired: boolean }
+export type Clock = { now: number, timers: { Timer } }
 export type Fixture = {
+	clock: Clock,
 	runtime: ClientNetworkingTypes.ActorViewRuntime,
 	stream: StreamUtils.Fixture,
 	manifest: SharedNetworkingTypes.ProtocolManifest,
@@ -98,7 +101,18 @@ function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
 	end
 	local requests: { buffer } = {}
 	local faults: { ClientNetworkingTypes.ActorViewFault } = {}
+	local clock: Clock = { now = 0, timers = {} }
 	local runtime: ClientNetworkingTypes.ActorViewRuntime = Runtime.new(protocol, schemas, {
+		Now = function(): number
+			return clock.now
+		end,
+		ScheduleTimeout = function(seconds: number, callback: () -> ()): () -> ()
+			local timer: Timer = { due = clock.now + seconds, callback = callback, cancelled = false, fired = false }
+			table.insert(clock.timers, timer)
+			return function()
+				timer.cancelled = true
+			end
+		end,
 		SendReliable = function(payload: buffer)
 			table.insert(requests, payload)
 			if onSend ~= nil then
@@ -114,6 +128,7 @@ function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
 	stream.consumer = runtime.consumer
 	stream.runtime = Stream.new(stream.codec, runtime.consumer, stream.discovery, stream.options)
 	return {
+		clock = clock,
 		runtime = runtime,
 		stream = stream,
 		manifest = manifest,
@@ -122,6 +137,27 @@ function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
 		faults = faults,
 		connections = {},
 	}
+end
+
+function TestUtils.advance(fixture: Fixture, seconds: number): ()
+	local target: number = fixture.clock.now + seconds
+	while true do
+		local nextTimer: Timer? = nil
+		for _, timer: Timer in fixture.clock.timers do
+			if not timer.cancelled and not timer.fired and timer.due <= target then
+				if nextTimer == nil or timer.due < nextTimer.due then
+					nextTimer = timer
+				end
+			end
+		end
+		if nextTimer == nil then
+			break
+		end
+		fixture.clock.now = nextTimer.due
+		nextTimer.fired = true
+		nextTimer.callback()
+	end
+	fixture.clock.now = target
 end
 
 function TestUtils.send(fixture: Fixture, records: { SharedNetworkingTypes.ActorStreamRecord }): ()

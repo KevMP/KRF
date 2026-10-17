@@ -28,6 +28,8 @@ Oversized baselines, exhausted stream counters, and failed reliable sends halt t
 
 Terminal cleanup is sent reliably and retried before pending transfer capacity is reused, so halted Actors do not indefinitely block unrelated transfers. Cleanup preserves Actor awareness and any existing Model binding.
 
+On the client, terminal halt retires domain truth and makes the ActorView unavailable while keeping its registered identity and Model lifecycle. Recoverable revision or application faults retain the last valid truth during bounded replacement attempts; exhaustion also makes only that client ActorView unavailable. See [ActorViews recovery](./actor-views#initial-state-and-recovery) for observation and failure guarantees.
+
 ## All and Owner audiences
 
 | Audience | Eligible recipient |
@@ -37,7 +39,7 @@ Terminal cleanup is sent reliably and retried before pending transfer capacity i
 
 Owner filtering uses direct Player and Actor objects. Numeric user ids do not establish ownership, and a later session with the same user id inherits no association. NPCs and Actors without a current Player association have no Owner recipient.
 
-A Character change reconciles both affected Actor streams. The previous Character's replacement baseline excludes Owner domains; the new registered Character's baseline includes their current truth. Unregistered Character Models create no Actor association. Other recipients keep their existing streams.
+A Character association change reconciles affected streams that remain registered. The previous Actor's replacement excludes Owner domains; the new registered Character's baseline includes their current truth. If Roblox removes the old Character Model, Actor Runtime retires that Actor instead. Unregistered Character Models create no Actor association. Other recipients keep their existing streams.
 
 Audience filters values and occurrences, not protocol metadata: every client still receives the same schema catalog.
 

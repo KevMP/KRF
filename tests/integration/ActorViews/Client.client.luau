@@ -19,6 +19,7 @@ local originalModel: Model? = nil
 local changes: { Types.DomainChange } = {}
 local semantic: { number } = {}
 local removed: number = 0
+local terminal: { string } = {}
 local failed: boolean = false
 local connections: { SignalTypes.Connection } = {}
 
@@ -27,7 +28,7 @@ local function report(phase: string, failure: string?): ()
 end
 
 local function waitFor(predicate: () -> boolean, reason: string): ()
-	local deadline: number = os.clock() + 8
+	local deadline: number = os.clock() + 22
 	while not predicate() do
 		assert(os.clock() < deadline, reason)
 		task.wait(0.02)
@@ -69,6 +70,28 @@ local function runPhase(message: any): ()
 		)
 		checkVisibility(owned)
 		private = view:GetDomain("Game.NativeOwner")
+		table.insert(
+			connections,
+			view.OnDomainsChanged:Connect(function(change: Types.DomainMembershipChange)
+				assert(
+					view ~= nil and not view:IsAvailable(),
+					"Native membership did not reflect terminal invalidation"
+				)
+				assert(#view:GetDomainIds() == 0 and domain ~= nil and domain:GetState() == nil, "Halt was not atomic")
+				assert(table.isfrozen(change) and table.isfrozen(change.removed), "Mutable native membership payload")
+				if private ~= nil then
+					assert(private:GetState() == nil, "Halt retained private Owner truth")
+				end
+				table.insert(terminal, "Domains")
+			end)
+		)
+		table.insert(
+			connections,
+			view.OnUnavailable:Connect(function()
+				assert(view ~= nil and not view:IsAvailable(), "Native terminal event preceded invalidation")
+				table.insert(terminal, "Unavailable")
+			end)
+		)
 		table.insert(
 			connections,
 			domain.OnChanged:Connect(function(change: Types.DomainChange)
@@ -117,6 +140,17 @@ local function runPhase(message: any): ()
 		assert(Registry.GetActorViewById(actorId) == view, "Resync replaced ActorView identity")
 		assert((view :: Types.ActorView):GetDomain("Game.NativeState") == domain, "Resync replaced retained DomainView")
 		assert(#semantic == 1, "Replacement replayed semantic history")
+		assert((view :: Types.ActorView):IsAvailable(), "Recoverable desync terminally invalidated the view")
+		checkVisibility(owned)
+	elseif phase == "Halt" then
+		assert(view ~= nil, "Expected retained ActorView")
+		waitFor(function(): boolean
+			return not (view :: Types.ActorView):IsAvailable() and #terminal == 2
+		end, "Real server halt did not publish terminal invalidation")
+		assert(terminal[1] == "Domains" and terminal[2] == "Unavailable", "Native terminal event order differs")
+		assert(Registry.GetActorViewById(actorId) == view, "Terminal halt removed Actor identity")
+		assert(view:GetModel() == originalModel, "Terminal halt changed Model binding")
+		assert(removed == 0, "Terminal halt synthesized Actor removal")
 	elseif phase == "Removed" then
 		waitFor(function(): boolean
 			return Registry.GetActorViewById(actorId) == nil and removed == 1
@@ -140,7 +174,7 @@ local function runPhase(message: any): ()
 		view = Registry.GetActorViewById(actorId)
 		assert(view ~= nil and view ~= previous, "Respawn reused a retired ActorView")
 		domain = view:GetDomain("Game.NativeState")
-		assert(domain ~= nil and domain:GetState().current == 30, "Respawn baseline truth differs")
+		assert(domain ~= nil and domain:GetState().current == 70, "Respawn baseline truth differs")
 		checkVisibility(owned)
 		if owned then
 			assert(view:GetDomain("Game.NativeOwner") ~= private, "Respawn revived a retired private DomainView")

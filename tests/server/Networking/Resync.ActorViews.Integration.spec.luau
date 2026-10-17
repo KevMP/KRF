@@ -10,6 +10,7 @@ local ActorTypes = require(KRF.server.Actor.types)
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local PublicTypes = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Views: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
 local Resync: ServerNetworkingTypes.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
@@ -41,6 +42,15 @@ beforeEach(function()
 		schemas[definition.id] = definition.state
 	end
 	views = Views.new(fixture.protocol.runtime, schemas, {
+		Now = os.clock,
+		ScheduleTimeout = function(seconds: number, callback: () -> ()): () -> ()
+			local timer: thread = task.delay(seconds, callback)
+			return function()
+				if coroutine.status(timer) ~= "dead" then
+					task.cancel(timer)
+				end
+			end
+		end,
 		SendReliable = function(payload: buffer)
 			table.insert(requests, payload)
 		end,
@@ -144,11 +154,21 @@ it("reflects actual N4 Owner reassociation by retiring and recreating only the p
 	local private: PublicTypes.DomainView? = original:GetDomain("Game.Private")
 	assert(private ~= nil, "Owner must receive private state")
 	local public: PublicTypes.DomainView? = original:GetDomain("Game.Public")
+	local membership: { PublicTypes.DomainMembershipChange } = {}
+	local privateAtFire: { any } = {}
+	local connection: SignalTypes.Connection = original.OnDomainsChanged:Connect(
+		function(change: PublicTypes.DomainMembershipChange)
+			table.insert(membership, change)
+			table.insert(privateAtFire, { retired = private:GetState(), current = original:GetDomain("Game.Private") })
+		end
+	)
 	TestUtils.associate(fixture, actor, nil)
 	deliver()
 	expect(view()).toBe(original)
 	expect(original:GetDomain("Game.Public")).toBe(public)
 	expect(original:GetDomain("Game.Private")).toBeNil()
+	expect(membership).toEqual({ { added = {}, removed = { "Game.Private" } } })
+	expect(privateAtFire).toEqual({ {} })
 	local readable: boolean, state: any = pcall(function(): any
 		return private:GetState()
 	end)
@@ -161,7 +181,10 @@ it("reflects actual N4 Owner reassociation by retiring and recreating only the p
 	assert(restored ~= nil, "Owner visibility gain must restore private state")
 	expect(restored).never.toBe(private)
 	expect(restored:GetState()).toBe(20)
+	expect(membership[2]).toEqual({ added = { "Game.Private" }, removed = {} })
+	expect(privateAtFire[2]).toEqual({ current = restored })
 	expect(requests).toEqual({})
+	connection:Disconnect()
 end)
 
 it("deduplicates a real pending replacement and rejects a removing Actor without another snapshot capture", function()

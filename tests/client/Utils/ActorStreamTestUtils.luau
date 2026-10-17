@@ -24,6 +24,7 @@ export type CommitDelivery = {
 	events: { SharedNetworkingTypes.ActorEvent },
 }
 export type Binding = { actor: ClientNetworkingTypes.ActorStreamRecord, model: Model }
+export type ActorFault = { actor: ClientNetworkingTypes.ActorStreamRecord, reason: string }
 export type Fixture = {
 	runtime: ClientNetworkingTypes.ActorStreamRuntime?,
 	protocol: SharedNetworkingTypes.ClientProtocol,
@@ -38,6 +39,7 @@ export type Fixture = {
 	bound: { Binding },
 	unbound: { Binding },
 	faults: { string },
+	actorFaults: { ActorFault },
 	candidates: { ClientNetworkingTypes.ActorModelCandidate },
 	added: { (ClientNetworkingTypes.ActorModelCandidate) -> () },
 	gone: { (Instance) -> () },
@@ -70,6 +72,7 @@ function TestUtils.new(): Fixture
 		bound = {},
 		unbound = {},
 		faults = {},
+		actorFaults = {},
 		candidates = {},
 		added = {},
 		gone = {},
@@ -101,6 +104,9 @@ function TestUtils.new(): Fixture
 		end,
 		OnActorHalted = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 			table.insert(fixture.halted, actor)
+		end,
+		OnActorFault = function(actor: ClientNetworkingTypes.ActorStreamRecord, fault: string): ()
+			table.insert(fixture.actorFaults, { actor = actor, reason = fault })
 		end,
 		OnActorRemoved = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 			table.insert(fixture.removed, actor)

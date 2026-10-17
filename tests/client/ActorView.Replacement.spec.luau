@@ -115,8 +115,14 @@ it("reconciles Owner visibility loss atomically before any Baseline Fire and ret
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local owner: PublicTypes.DomainView = TestUtils.domain(fixture, "Game.Owner")
 	local visibleAtFire: { { string } } = {}
+	local visibleAtMembershipFire: { { string } } = {}
 	GoodSignal.Fire = function(self: any, ...: any)
-		table.insert(visibleAtFire, view:GetDomainIds())
+		local payload: any = ...
+		if payload.source == "Baseline" then
+			table.insert(visibleAtFire, view:GetDomainIds())
+		else
+			table.insert(visibleAtMembershipFire, view:GetDomainIds())
+		end
 		originalFire(self, ...)
 	end
 	local replacement: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth(30)
@@ -125,6 +131,7 @@ it("reconciles Owner visibility loss atomically before any Baseline Fire and ret
 	expect(view:GetDomain("Game.Owner")).toBeNil()
 	expect(view:GetDomainIds()).toEqual({ "Game.Counter", "Game.Stamina" })
 	expect(visibleAtFire).toEqual({ { "Game.Counter", "Game.Stamina" } })
+	expect(visibleAtMembershipFire).toEqual({ { "Game.Counter", "Game.Stamina" } })
 	local readable: boolean, state: any = pcall(function(): any
 		return owner:GetState()
 	end)

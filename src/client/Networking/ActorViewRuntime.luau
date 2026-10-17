@@ -6,7 +6,7 @@ local PublicTypes = require(script.Parent.Parent.Actor.types)
 local Actors = require(script.Parent.Parent.Actor.ActorView)
 local RegistryOwner = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local Publication = require(script.Parent.utils.ActorViewPublication)
-local Resync = require(script.Parent.Parent.Parent.shared.Networking.utils.ResyncCodec)
+local Recovery = require(script.Parent.utils.ActorViewRecovery)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
 local ActorViewRuntime = {}
@@ -18,7 +18,7 @@ type State = {
 	domains: { [string]: PublicTypes.DomainViewOwner },
 	revision: number?,
 	status: "Live" | "AwaitingBaseline" | "Halted",
-	requested: boolean,
+	recovery: Recovery.Recovery,
 }
 
 local function validRevision(revision: number): boolean
@@ -36,8 +36,30 @@ function ActorViewRuntime.new(
 	-- retained private callbacks without duplicating its lifetime-growing handle set.
 	local retired: { [Types.ActorStreamRecord]: boolean } = setmetatable({}, { __mode = "k" })
 	local destroyed: boolean = false
+	local admit: () -> boolean = Recovery.Admission(options.Now)
 	local function report(actor: Types.ActorStreamRecord, reason: string): ()
 		pcall(options.ReportFault, { actorId = actor.actorId, reason = reason })
+	end
+	local function halt(state: State, reason: string): ()
+		if state.status == "Halted" then
+			return
+		end
+		state.status = "Halted"
+		state.recovery.Cancel()
+		for _, domain: PublicTypes.DomainViewOwner in state.domains do
+			domain:Destroy()
+		end
+		state.domains = {}
+		local owner: PublicTypes.ActorViewOwner? = state.owner
+		if owner ~= nil then
+			local membership: PublicTypes.DomainMembershipChange? = owner:InstallDomains({})
+			owner:InstallUnavailable()
+			if membership ~= nil then
+				owner:NotifyDomainsChanged(membership)
+			end
+			owner:NotifyUnavailable()
+		end
+		report(state.actor, reason)
 	end
 	local function stateFor(actor: Types.ActorStreamRecord): State?
 		if destroyed or retired[actor] then
@@ -51,6 +73,14 @@ function ActorViewRuntime.new(
 			end
 			return state
 		end
+		local recovery: Recovery.Recovery = Recovery.new(options, actor, admit, function(reason: string)
+			report(actor, reason)
+		end, function(reason: string)
+			local current: State? = states[actor.handle]
+			if current ~= nil then
+				halt(current, reason)
+			end
+		end)
 		local created: State = {
 			actor = actor,
 			model = actor.model,
@@ -58,7 +88,7 @@ function ActorViewRuntime.new(
 			domains = {},
 			revision = nil,
 			status = "AwaitingBaseline",
-			requested = false,
+			recovery = recovery,
 		}
 		states[actor.handle] = created
 		return created
@@ -66,21 +96,7 @@ function ActorViewRuntime.new(
 	local function recover(state: State, reason: string): ()
 		state.status = "AwaitingBaseline"
 		report(state.actor, reason)
-		if state.requested then
-			return
-		end
-		-- Install recovery bookkeeping before sending: an adapter may deliver the
-		-- replacement synchronously, and a failed send must not allow a retry storm.
-		state.requested = true
-		local payload: buffer?, encodeReason: string? = Resync.Encode(state.actor.handle)
-		if payload == nil then
-			report(state.actor, encodeReason or "InvalidActorHandle")
-			return
-		end
-		local sent: boolean, sendReason: any = pcall(options.SendReliable, payload)
-		if not sent then
-			report(state.actor, "ResyncSendFailed:" .. tostring(sendReason))
-		end
+		state.recovery.Start()
 	end
 	local function remove(actor: Types.ActorStreamRecord): ()
 		if retired[actor] then
@@ -92,6 +108,7 @@ function ActorViewRuntime.new(
 			return
 		end
 		states[actor.handle] = nil
+		state.recovery.Cancel()
 		local owner: PublicTypes.ActorViewOwner? = state.owner
 		if owner ~= nil then
 			RegistryOwner.Removing:Fire(owner.view)
@@ -160,15 +177,14 @@ function ActorViewRuntime.new(
 					installed, reason = RegistryOwner.Install(owner.view)
 					if not installed then
 						owner:Destroy()
-						state.status = "Halted"
-						report(actor, reason or "ActorIdConflict")
+						halt(state, reason or "ActorIdConflict")
 						return
 					end
 					state.owner = owner
 					state.domains = stage.domains
 					state.revision = revision
 					state.status = "Live"
-					state.requested = false
+					state.recovery.Cancel()
 					RegistryOwner.Added:Fire(owner.view)
 					return
 				end
@@ -176,15 +192,18 @@ function ActorViewRuntime.new(
 				for _, changed: Publication.Change in stage.changes do
 					changed.owner:InstallState(changed.change.current)
 				end
-				owner:InstallDomains(stage.domains)
+				local membership: PublicTypes.DomainMembershipChange? = owner:InstallDomains(stage.domains)
 				state.domains = stage.domains
 				state.revision = revision
 				state.status = "Live"
-				state.requested = false
+				state.recovery.Cancel()
 				for id: string, domain: PublicTypes.DomainViewOwner in previous do
 					if stage.domains[id] == nil then
 						domain:Destroy()
 					end
+				end
+				if membership ~= nil then
+					owner:NotifyDomainsChanged(membership)
 				end
 				notify(stage)
 			end,
@@ -218,20 +237,18 @@ function ActorViewRuntime.new(
 				state.revision = revision
 				notify(stage)
 			end,
+			OnActorFault = function(actor: Types.ActorStreamRecord, reason: string): ()
+				local state: State? = stateFor(actor)
+				if state ~= nil and state.status ~= "Halted" then
+					recover(state, reason)
+				end
+			end,
 			OnActorHalted = function(actor: Types.ActorStreamRecord): ()
 				local state: State? = stateFor(actor)
 				if state == nil or state.status == "Halted" then
 					return
 				end
-				state.status = "Halted"
-				for _, domain: PublicTypes.DomainViewOwner in state.domains do
-					domain:Destroy()
-				end
-				state.domains = {}
-				if state.owner ~= nil then
-					state.owner:InstallDomains({})
-				end
-				report(actor, "ActorStreamHalted")
+				halt(state, "ActorStreamHalted")
 			end,
 			OnActorRemoved = function(actor: Types.ActorStreamRecord): ()
 				if not destroyed then

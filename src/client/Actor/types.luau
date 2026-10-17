@@ -5,6 +5,7 @@ local types = {}
 
 export type DomainChangeSource = "Commit" | "Baseline"
 export type DomainChange = { read previous: any, read current: any, read source: DomainChangeSource }
+export type DomainMembershipChange = { read added: { string }, read removed: { string } }
 export type DomainView = {
 	read GetId: (self: any) -> string,
 	read GetState: (self: any) -> any,
@@ -16,7 +17,10 @@ export type ActorView = {
 	read GetModel: (self: any) -> Model?,
 	read GetDomain: (self: any, domainId: string) -> DomainView?,
 	read GetDomainIds: (self: any) -> { string },
+	read IsAvailable: (self: any) -> boolean,
 	read OnModelChanged: SignalTypes.Event<Model?, Model?>,
+	read OnDomainsChanged: SignalTypes.Event<DomainMembershipChange>,
+	read OnUnavailable: SignalTypes.Event<>,
 }
 export type ActorViewRegistry = {
 	read GetActorViewById: (actorId: string) -> ActorView?,
@@ -42,8 +46,11 @@ export type DomainViewModule = {
 export type ActorViewOwner = {
 	read view: ActorView,
 	InstallModel: (self: ActorViewOwner, model: Model?) -> (),
-	InstallDomains: (self: ActorViewOwner, domains: { [string]: DomainViewOwner }) -> (),
+	InstallDomains: (self: ActorViewOwner, domains: { [string]: DomainViewOwner }) -> DomainMembershipChange?,
+	InstallUnavailable: (self: ActorViewOwner) -> (),
 	NotifyModelChanged: (self: ActorViewOwner, previous: Model?, current: Model?) -> (),
+	NotifyDomainsChanged: (self: ActorViewOwner, change: DomainMembershipChange) -> (),
+	NotifyUnavailable: (self: ActorViewOwner) -> (),
 	Destroy: (self: ActorViewOwner) -> (),
 }
 export type ActorViewModule = {

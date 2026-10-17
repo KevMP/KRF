@@ -181,13 +181,15 @@ function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes
 	if pending.received ~= buffer.len(pending.bytes) then
 		return "BaselineIncomplete"
 	end
+	-- This assembly is complete. Release it before either consumer callback so
+	-- recovery may deliver a fresh generation synchronously within the same limit.
+	state.pending = nil
+	self.pendingCount -= 1
 	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, reason: string? =
 		self.codec.DecodeBaseline(pending.bytes)
 	if domains == nil then
 		return reason
 	end
-	state.pending = nil
-	self.pendingCount -= 1
 	consumer.OnBaselineReady(state.record, record.revision, domains)
 	return nil
 end
@@ -205,16 +207,22 @@ function ActorStreamRuntime.Handle(self: Runtime, payload: any): (boolean, strin
 	end
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = self.codec.Decode(payload)
 	if records == nil then
+		self.options.ReportFault(reason or "MalformedActorPacket")
 		return false, reason
 	end
+	local firstFailure: string? = nil
 	for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 		local failure: string? = self:_record(record)
 		if failure ~= nil then
 			self.options.ReportFault(failure)
-			return false, failure
+			firstFailure = firstFailure or failure
+			local state: State? = self.handles[record.handle]
+			if state ~= nil and not state.halted then
+				self.consumer.OnActorFault(state.record, failure)
+			end
 		end
 	end
-	return true, nil
+	return firstFailure == nil, firstFailure
 end
 
 function ActorStreamRuntime.GetByHandle(self: Runtime, handle: number): Types.ActorStreamRecord?

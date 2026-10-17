@@ -16,6 +16,7 @@ local Awareness: Types.ActorAwarenessRuntimeModule = require(KRF.server.Networki
 local Resync: Types.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Codec: SharedTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("ActorViewTestControl") :: RemoteEvent
 
 Players.CharacterAutoLoads = false
@@ -29,6 +30,8 @@ local owner: Player? = nil
 local ready: { [Player]: boolean } = {}
 local reports: { [Player]: boolean } = {}
 local recoveryRequests: { [Player]: number } = {}
+local rejectedRecovery: number = 0
+local resyncControl: Types.ResyncRuntime? = nil
 local current: number = 10
 local committed: ReplicationTypes.ReplicationDomainOnCommitted? = nil
 local phase: string = "Ready"
@@ -47,8 +50,10 @@ Awareness.new = function(
 	dependencies: Types.ActorAwarenessDependencies,
 	options: Types.ActorAwarenessOptions
 ): Types.ActorAwarenessRuntime
+	local bounded: Types.ActorAwarenessOptions = table.clone(options)
+	bounded.maxRevision = 5
 	local created: Types.ActorAwarenessRuntime =
-		originalAwareness(publication, catalog, protocol, dependencies, options)
+		originalAwareness(publication, catalog, protocol, dependencies, bounded)
 	awareness = created
 	local schemas: SharedTypes.ActorSchemaCatalog = {}
 	for _, definition in catalog.orderedDefinitions do
@@ -58,12 +63,17 @@ Awareness.new = function(
 	return created
 end
 Resync.new = function(dependencies: Types.ResyncDependencies, options: Types.ResyncOptions): Types.ResyncRuntime
-	local created: Types.ResyncRuntime = originalResync(dependencies, options)
+	local bounded: Types.ResyncOptions = table.clone(options)
+	bounded.maxRequestsPerClient = 1
+	local created: Types.ResyncRuntime = originalResync(dependencies, bounded)
+	resyncControl = created
 	local handle: typeof(created.Handle) = created.Handle
 	created.Handle = function(self: Types.ResyncRuntime, player: Player, payload: any, ...: any): (boolean, string?)
 		local accepted: boolean, reason: string? = handle(self, player, payload, ...)
 		if accepted then
 			recoveryRequests[player] = (recoveryRequests[player] or 0) + 1
+		elseif reason == "ResyncRateLimited" then
+			rejectedRecovery += 1
 		end
 		return accepted, reason
 	end
@@ -98,6 +108,7 @@ local function finish(success: boolean, reason: string?): ()
 		phase = phase,
 		faultInjected = faultInjected,
 		ownerRecoveryRequests = if owner ~= nil then recoveryRequests[owner] or 0 else 0,
+		rejectedRecovery = rejectedRecovery,
 	})
 end
 
@@ -161,9 +172,18 @@ local function advance(): ()
 		committed({ { id = "Changed", payload = 20 } })
 		sendPhase("Live")
 	elseif phase == "Live" then
-		assert(awareness ~= nil and codec ~= nil and committed ~= nil, "Expected real server pipeline")
+		assert(
+			awareness ~= nil and codec ~= nil and committed ~= nil and resyncControl ~= nil,
+			"Expected real server pipeline"
+		)
 		local handle: number? = awareness:GetHandle(owner, actor)
 		assert(handle ~= nil, "Expected native recipient handle")
+		-- Spend this test connection's deliberately narrow admission window on an
+		-- unknown handle. Real client requests must be rejected until it resets.
+		local precharge: buffer?, prechargeReason: string? = ResyncCodec.Encode(4294967295)
+		assert(precharge ~= nil, prechargeReason)
+		local admitted: boolean, admissionReason: string? = resyncControl:Handle(owner, precharge)
+		assert(not admitted and admissionReason == "UnknownActorHandle", "Expected admission precharge")
 		-- Inject a structurally valid, deliberately discontinuous revision through
 		-- the actual framework Reliable transport. No receiver or request is mocked.
 		-- Seal current truth first; replacement must recover it without replaying history.
@@ -179,11 +199,21 @@ local function advance(): ()
 		sendPhase("Recovery")
 	elseif phase == "Recovery" then
 		assert(recoveryRequests[owner] == 1, "Expected exactly one real owner resync round trip")
+		assert(rejectedRecovery >= 1, "Native recovery did not exercise real rate-limit rejection")
 		for player: Player in ready do
 			if player ~= owner then
 				assert((recoveryRequests[player] or 0) == 0, "Other client unexpectedly recovered")
 			end
 		end
+		assert(committed ~= nil, "Expected committed observer")
+		-- Force genuine server counter exhaustion under a narrow fixture limit.
+		-- Semantic boundaries prevent coalescing these four revisions into one.
+		for value: number = 40, 70, 10 do
+			current = value
+			committed({ { id = "Changed", payload = value } })
+		end
+		sendPhase("Halt")
+	elseif phase == "Halt" then
 		expectedRemoval = true
 		local removed: boolean, reason: string? = Actors.UnregisterActor(actor)
 		assert(removed, reason)

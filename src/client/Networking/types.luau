@@ -20,6 +20,9 @@ export type ActorStreamConsumer = {
 	-- N5 must invalidate authoritative state, mark the view unavailable and stop resync
 	-- for this handle. Identity and Model lifecycle continue until OnActorRemoved.
 	OnActorHalted: (ActorStreamRecord) -> (),
+	-- A decoded record is attributable to this Actor but cannot be consumed.
+	-- Valid assembly is preserved; a completed invalid body is released first.
+	OnActorFault: (ActorStreamRecord, string) -> (),
 	OnActorRemoved: (ActorStreamRecord) -> (),
 	OnModelBound: (ActorStreamRecord, Model) -> (),
 	OnModelUnbound: (ActorStreamRecord, Model) -> (),
@@ -51,7 +54,12 @@ export type ActorStreamRuntimeModule = {
 
 -- ActorView application and recovery
 export type ActorViewFault = { actorId: string, reason: string }
-export type ActorViewOptions = { SendReliable: (buffer) -> (), ReportFault: (ActorViewFault) -> () }
+export type ActorViewOptions = {
+	Now: () -> number,
+	ScheduleTimeout: (number, () -> ()) -> () -> (),
+	SendReliable: (buffer) -> (),
+	ReportFault: (ActorViewFault) -> (),
+}
 -- Private diagnostics, never reachable through ActorView or its public registry.
 export type ActorViewDiagnostics = {
 	revision: number?,

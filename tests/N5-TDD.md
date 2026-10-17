@@ -4,7 +4,7 @@ Source: [issue #75](https://github.com/KevMP/KRF/issues/75), grounded in the KRF
 charter and the implemented N1–N4 schema, bootstrap, publication and Actor-stream
 contracts. The suite began as a **red phase** with typed placeholders. The current
 branch implements immutable views, atomic revision application, automatic startup
-installation and bounded server recovery. Historical red results remain below
+installation and bounded client/server recovery. Historical red results remain below
 to distinguish the original missing behavior from implementation regressions.
 
 ## Contract map
@@ -21,7 +21,10 @@ All paths below are relative to `tests/`. The section numbers refer to issue #75
 | Atomic multi-domain commit; state and revision installed before Fire; rollback; deterministic notifications; event-only revisions (§14–17) | `client/ActorView.Commits.spec.luau` |
 | Authoritative semantic Fire order within/across commits; yielding and throwing consumers (§18–19, 45) | `client/ActorView.Commits.spec.luau`, `client/ActorView.Scheduling.spec.luau` |
 | Exact-next revision; duplicate/stale/gap rejection; invalid/counter boundary handling (§20–23) | `client/ActorView.Recovery.spec.luau` |
-| One request per recovery episode; last good truth; no incremental replay/backlog; isolated Actors; bounded send failures (§24, 26–28, 44) | `client/ActorView.Recovery.spec.luau`, `client/ActorView.Work.spec.luau` |
+| Immediate recovery request; last good truth; no incremental replay/backlog; isolated Actors (§24, 26–28, 44) | `client/ActorView.Recovery.spec.luau`, `client/ActorView.Work.spec.luau` |
+| Approved bounded retries, elapsed deadline, per-client/per-Actor admission, send failure, cancellation and stale timer fencing | `client/ActorView.RecoveryLiveness.spec.luau` |
+| Observable immutable membership, availability, terminal invalidation, ordering and teardown | `client/ActorView.Availability.spec.luau`, `client/ActorView.OwnedLifecycle.spec.luau` |
+| Decoder reporting, Actor-local recovery, assembly capacity release and unrelated-record isolation | `client/ActorStream.Faults.spec.luau`, `client/ActorView.DecoderRecovery.spec.luau`, `client/Client.Init.ActorViews.spec.luau` |
 | Private compact buffer framing; malformed/truncated/trailing/foreign traffic rejection (§24) | `shared/Networking/ResyncCodec.spec.luau` |
 | Ready/known-aware/removing/pending admission; deduplication; per-client/per-Actor bounds and disconnect cleanup (§25–26) | `server/Networking/ResyncRuntime.spec.luau`, `server/Networking/Resync.ActorViews.Integration.spec.luau` |
 | Production Reliable routing; handler ownership and teardown (§24–25) | `server/Networking/ServerNetworking.Resync.spec.luau` |
@@ -133,11 +136,14 @@ exit 2 indicates no verified result (for example, a launcher timeout).
 
 Both clients call normal `Client.Init` with production consumer installation.
 The server observes real factories and injects one discontinuous, valid Commit
-through the framework Reliable transport; it never simulates a recovery request
-or replacement callback. Recovery must use the real client-to-server buffer path
+through the framework Reliable transport. A deliberately narrow server admission
+window is precharged with an unknown-handle request. All recovery requests and
+replacement deliveries use the real client-to-server and server-to-client buffer paths
 and server admission, retain view identity, restore current truth and avoid event
 replay. Both clients verify private Owner visibility, stale private view
-invalidation, authoritative removal, distinct respawn and reset with a live view.
+invalidation, server-generated terminal halt under a narrow revision limit,
+membership/unavailability order, authoritative removal, distinct respawn and reset
+with a live view. The native run must observe rate-limit rejection before recovery.
 Real Character reassignment removes the old engine Model, so the fixture retires
 its Actor before respawn; it does not try to preserve an Actor whose Model was
 destroyed. Same-Actor Owner loss/gain remains covered by the N3/N4/N5 integration
@@ -182,7 +188,7 @@ lookup correctness and idle-work counters alone cannot prove asymptotic lookup
 complexity or the absence of every possible empty per-frame scan. The implementation
 must satisfy those architectural requirements as well as the executable tests.
 
-## Implementation validation
+## Initial implementation validation
 
 The implementation adds behavioral regression cases for reentrant private-owner
 teardown, registry collisions, malformed decoded containers, invalid initial
@@ -208,3 +214,47 @@ builds that cannot process recovery cannot complete a compatible handshake.
 Consumer documentation is in `docs-site/docs/documentation/Networking/actor-views.md`
 and the ActorViewRegistry, ActorView and DomainView API pages. Startup, replication
 domain and Actor lifecycle guides describe the installed runtime.
+
+## Consumer lifecycle and liveness audit
+
+Membership and terminal invalidation were missing consumer-facing guarantees.
+The approved public contract adds `OnDomainsChanged`, `IsAvailable`, and
+`OnUnavailable`. Replacement installs the full domain set and truth and retires
+omitted owners before membership Fire, followed by retained-domain state Fire.
+Terminal failure clears truth and availability before membership and unavailable
+notifications, while identity and Model binding continue. Authoritative removal
+retains its separate registry lifecycle and retires all owned signals.
+
+Single-shot recovery was a demonstrated liveness defect. The approved contract
+replaces exactly one request per episode with five timer-based opportunities at
+0/1/3/7/15 seconds and a 31-second elapsed deadline. Valid replacement, halt,
+removal and shutdown cancel pending work. Repeated invalid replacement cannot
+extend the episode. Admission caps sends at 32 per client and 4 per Actor within
+ten-second local windows, including successive episodes. Suppressed opportunities
+have no request queue. Exhaustion reports and terminally invalidates only that
+Actor's client truth; a delayed callback checks elapsed time before sending again.
+
+Decoder reporting and dropping unrelated decoded records were demonstrated
+correctness defects. Malformed physical packets are reported and discarded whole
+without guessing Actor attribution. Attributable record failures reach recovery
+through the private N4/N5 consumer seam. Invalid completed assembly releases its
+capacity first; rejected overlapping/stale chunks do not corrupt valid assembly.
+
+Optional nil state, retained last-good truth during recovery, terminal identity
+retention, independent Model binding, and no semantic-history replay remain
+intentional contracts. They require clearer consumer guidance, not extra public
+recovery controls or a second DomainView lifetime API. No wire layout or private
+protocol version changes are needed for this audit.
+
+Documentation corrections cover the sole `Client.Init` owner, consumer modules
+started after initialization, complete view acquisition, membership/lifetime
+reconciliation, Optional nil versus retirement, bounded recovery limitations,
+Character teardown versus reassociation, and overview claims about unavailable
+systems. The Docusaurus production build checks all routes and API anchors.
+
+Audit validation on 2026-10-17: `npm test` passes **148 suites / 1,813 tests**,
+formatting/lint and Luau types. Coverage remains above every unchanged per-file
+gate: **98.62% statements/lines, 96.38% branches, 99.45% functions**. The final
+native two-client fixture passes through Reset after **four rate-limit
+rejections and one admitted recovery request**, plus a genuine server-generated
+terminal halt on each client. `npm --prefix docs-site run build` passes.

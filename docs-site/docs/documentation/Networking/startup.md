@@ -42,6 +42,8 @@ Successful initialization establishes protocol readiness and installs server Act
 
 Successful `Client.Init()` means the [ActorView runtime](./actor-views) is ready for future traffic. It does not wait for an Actor baseline or for a Roblox Model to arrive. Subscribe to registry lifecycle events and inspect existing views when initializing a client system. Gameplay command APIs are separate from replicated views.
 
+Start consumer modules from the same successful startup boundary; those modules must not call `Client.Init()` again. Runtime Actor faults use the [ActorView lifecycle and recovery contract](./actor-views#initial-state-and-recovery), rather than restarting initialization.
+
 ## Handle startup failures
 
 Both entrypoints accept one attempt, including after failure. Fix the configuration or deployment and start a fresh server or client session rather than retrying the same module.
