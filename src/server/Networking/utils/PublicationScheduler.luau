@@ -13,6 +13,13 @@ type Stream = {
 	active: boolean,
 }
 
+type RuntimeState = {
+	options: Types.PublicationSchedulerOptions,
+	streams: { [any]: { [any]: Stream } },
+	active: { Stream },
+}
+type Runtime = typeof(setmetatable({} :: RuntimeState, PublicationScheduler))
+
 local function copy(value: any): any
 	if type(value) ~= "table" then
 		return value
@@ -170,8 +177,8 @@ local function truthBeforeTail(stream: Stream): { [string]: Types.PublicationDom
 	return truth
 end
 
-local function find(self: any, key: Types.PublicationStreamKey, create: boolean): Stream?
-	local actors = self.streams[key.recipient]
+local function find(self: Runtime, key: Types.PublicationStreamKey, create: boolean): Stream?
+	local actors: { [any]: Stream } = self.streams[key.recipient]
 	if actors == nil then
 		if not create then
 			return nil
@@ -179,21 +186,22 @@ local function find(self: any, key: Types.PublicationStreamKey, create: boolean)
 		actors = {}
 		self.streams[key.recipient] = actors
 	end
-	local stream = actors[key.actor]
+	local stream: Stream? = actors[key.actor]
 	if stream == nil and create then
-		stream = {
+		local created: Stream = {
 			key = { recipient = key.recipient, actor = key.actor },
 			records = {},
 			needsBaseline = false,
 			delivered = {},
 			active = false,
 		}
-		actors[key.actor] = stream
+		actors[key.actor] = created
+		stream = created
 	end
 	return stream
 end
 
-local function deactivate(self: any, stream: Stream): ()
+local function deactivate(self: Runtime, stream: Stream): ()
 	if not stream.active then
 		return
 	end
@@ -206,7 +214,7 @@ local function deactivate(self: any, stream: Stream): ()
 	end
 end
 
-local function activate(self: any, stream: Stream): ()
+local function activate(self: Runtime, stream: Stream): ()
 	if stream.active or #stream.records == 0 then
 		return
 	end
@@ -215,11 +223,13 @@ local function activate(self: any, stream: Stream): ()
 end
 
 function PublicationScheduler.new(options: Types.PublicationSchedulerOptions): Types.PublicationScheduler
-	return setmetatable({ options = options, streams = {}, active = {} }, PublicationScheduler) :: any
+	local state: RuntimeState = { options = options, streams = {}, active = {} }
+	local runtime: Runtime = setmetatable(state, PublicationScheduler)
+	return runtime :: Types.PublicationScheduler
 end
 
 function PublicationScheduler.Enqueue(
-	self: any,
+	self: Runtime,
 	key: Types.PublicationStreamKey,
 	commit: Types.PublicationFilteredCommit
 ): (boolean, string?)
@@ -267,7 +277,7 @@ function PublicationScheduler.Enqueue(
 	return true, nil
 end
 
-function PublicationScheduler.MarkBaselinePending(self: any, key: Types.PublicationStreamKey): ()
+function PublicationScheduler.MarkBaselinePending(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream = find(self, key, true) :: Stream
 	table.clear(stream.records)
 	stream.needsBaseline = true
@@ -275,7 +285,7 @@ function PublicationScheduler.MarkBaselinePending(self: any, key: Types.Publicat
 end
 
 function PublicationScheduler.ResetAfterBaseline(
-	self: any,
+	self: Runtime,
 	key: Types.PublicationStreamKey,
 	domains: { [string]: Types.PublicationDomainTruth }
 ): ()
@@ -286,7 +296,7 @@ function PublicationScheduler.ResetAfterBaseline(
 	deactivate(self, stream)
 end
 
-function PublicationScheduler.RemoveStream(self: any, key: Types.PublicationStreamKey): ()
+function PublicationScheduler.RemoveStream(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream? = find(self, key, false)
 	if stream == nil then
 		return
@@ -299,7 +309,10 @@ function PublicationScheduler.RemoveStream(self: any, key: Types.PublicationStre
 	end
 end
 
-function PublicationScheduler.GetStreamStatus(self: any, key: Types.PublicationStreamKey): Types.PublicationStreamStatus
+function PublicationScheduler.GetStreamStatus(
+	self: Runtime,
+	key: Types.PublicationStreamKey
+): Types.PublicationStreamStatus
 	local stream: Stream? = find(self, key, false)
 	if stream == nil then
 		return { needsBaseline = false, pendingRecords = 0, pendingEvents = 0, queuedBytes = 0 }
@@ -313,14 +326,14 @@ function PublicationScheduler.GetStreamStatus(self: any, key: Types.PublicationS
 	}
 end
 
-function PublicationScheduler.GetNextRecordBytes(self: any, key: Types.PublicationStreamKey): number?
+function PublicationScheduler.GetNextRecordBytes(self: Runtime, key: Types.PublicationStreamKey): number?
 	local stream: Stream? = find(self, key, false)
 	local pending: Pending? = if stream ~= nil then stream.records[1] else nil
 	return if pending ~= nil then pending.bytes else nil
 end
 
 function PublicationScheduler.DrainBudgeted(
-	self: any,
+	self: Runtime,
 	maxBytes: number,
 	maxRecords: number
 ): Types.PublicationDrainResult
@@ -332,7 +345,8 @@ function PublicationScheduler.DrainBudgeted(
 	end
 	local remainingVisits = #self.active
 	while #self.active > 0 and remainingVisits > 0 and #records < maxRecords do
-		local stream: Stream = table.remove(self.active, 1)
+		local stream: Stream = self.active[1]
+		table.remove(self.active, 1)
 		stream.active = false
 		visitedStreams += 1
 		remainingVisits -= 1
@@ -353,7 +367,7 @@ function PublicationScheduler.DrainBudgeted(
 	return { records = records, encodedBytes = encodedBytes, visitedStreams = visitedStreams }
 end
 
-function PublicationScheduler.Destroy(self: any): ()
+function PublicationScheduler.Destroy(self: Runtime): ()
 	table.clear(self.active)
 	table.clear(self.streams)
 end
