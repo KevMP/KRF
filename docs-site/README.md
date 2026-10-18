@@ -1,41 +1,38 @@
-# Website
+# KRF documentation site
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+The [KRF guides and API reference](https://kevmp.github.io/KRF/) use Docusaurus.
+Guides live in `docs/documentation`; the manual API reference lives in `docs/api`.
+Their routes, navigation, and sidebars are configured in `docusaurus.config.ts`,
+`sidebars.ts`, and `sidebarsApi.ts`.
 
-## Installation
+## Local development
 
-```bash
-yarn
+Use Node.js 20 or newer and npm. Run from `docs-site/`:
+
+```powershell
+npm ci
+npm start
 ```
 
-## Local Development
+Open `http://localhost:3000/KRF/`. Most content changes update without restarting.
 
-```bash
-yarn start
+## Validate and preview
+
+```powershell
+npm run typecheck
+npm run build
+npm run serve
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+The production build writes `build/` and fails on broken internal links. The
+preview serves that output at `http://localhost:3000/KRF/`. Check both the Docs
+and API navigation when changing routes or sidebars.
 
-## Build
-
-```bash
-yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+From the repository root, use `npm --prefix docs-site run build` or the equivalent
+`npm --prefix docs-site <command>`. Generated output and dependencies stay ignored.
 
 ## Deployment
 
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+`.github/workflows/docs-deploy.yml` builds and deploys to GitHub Pages when
+documentation changes reach `main`; it also supports manual dispatch. The site
+uses `https://kevmp.github.io` with the `/KRF/` base path.

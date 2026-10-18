@@ -9,7 +9,7 @@ Write for Roblox developers building games with KRF. Help them find the owning s
 
 ## Ground examples in the whole framework
 
-- Read `Charter.docx.md` for ownership and product direction. It includes planned systems and superseded descriptions; it does not prove an API ships.
+- Read `CHARTER.md` for ownership and product direction. It includes planned systems and superseded descriptions; it does not prove an API ships.
 - Read current public types and implementation, then relevant tests for validation, failures, ordering, and teardown.
 - Audit each example against adjacent systems, not only the page's system. Trace ownership of state, validation, payment, lifetime, replication, and cleanup.
 - Read nearby guides and API pages for contradictions and duplication. Inspect config, routes, and sidebars when changing navigation.

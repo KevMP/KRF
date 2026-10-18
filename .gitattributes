@@ -8,7 +8,5 @@
 
 * text=auto eol=lf
 
-.husky/* text eol=lf
-
 *.lua text eol=lf
 *.luau text eol=lf

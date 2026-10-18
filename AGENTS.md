@@ -1,5 +1,19 @@
 # KRF repository instructions
 
+## Repository hygiene
+
+- Use conventional branch prefixes such as `feat/`, `fix/`, `docs/` or `chore/`;
+  never use `codex/`.
+- Do not commit TDD plans, historical red-phase baselines, one-off engineering
+  reports or investigation diaries. Keep temporary evidence in ignored local
+  directories (such as `build/`), PR descriptions or GitHub issues.
+- Do not commit raw benchmark results, logs, coverage artifacts or
+  machine-specific evidence. Keep reproducible fixtures and workflow instructions.
+- Remove generated starter files that serve no current purpose. Before adding
+  standalone scripts or tooling, check and reuse existing workflows where practical.
+- Permanent documentation explains current contracts, usage, maintenance or
+  contributor workflows, rather than retelling a ticket's implementation.
+
 ## Follow the established system structure
 
 Before adding or reorganizing a system, inspect the comparable Actor, Controller,
@@ -78,7 +92,7 @@ Organize source by execution side and system: `src/<side>/<System>/`.
 - Run `npm run test:unit` for test changes and `npm test` before completion.
   Formatting/lint and Luau type checks must pass. Do not reduce coverage limits,
   skip tests or change runner selection to make a refactor appear successful.
-- For an intentionally red TDD branch, compare with its recorded baseline.
+- For an intentionally red TDD branch, compare with its local or issue/PR baseline.
   Preserve expected missing-behavior failures and all previously passing tests;
   module-loading, require-path, syntax, type and fixture failures are regressions.
 - Native networking contracts need real server/client coverage alongside injected
