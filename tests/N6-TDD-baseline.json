@@ -1,6 +1,7 @@
 {
   "issue": "https://github.com/KevMP/KRF/issues/76",
-  "phase": "TDD declarations and inert behavioral scaffolds; implementation awaits test-suite review",
+  "phase": "Historical red baseline recorded before implementation; counts and failures below describe the scaffold checkpoint only",
+  "scaffoldCommit": "56c170581b82cfd50e91df47dabde04e6fe8fb38",
   "baseCommit": "e31340542941a4762a740ae3f238c7948cbc0320",
   "beforeChanges": {
     "unitTestsPassed": 1813,

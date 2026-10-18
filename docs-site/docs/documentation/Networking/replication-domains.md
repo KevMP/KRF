@@ -6,7 +6,7 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Use custom domains for game-owned state. Stamina, Mana, and similar meters belong to [Resources](../Resource/resource-runtime). Built-in Tags, Resources, and Actions domains are not available yet; `ClientVisible` metadata alone does not publish their state.
+Use custom domains for game-owned state. KRF automatically publishes ClientVisible Tags through [TagsView](../Tags/tag-views); do not declare your own Tags domain. Stamina, Mana, and similar meters belong to [Resources](../Resource/resource-runtime). Built-in Resources and Actions domains are not available yet; their `ClientVisible` metadata alone does not publish state.
 
 Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run.
 
@@ -77,6 +77,8 @@ The committed-observer method belongs to your game; KRF prescribes no controller
 `snapshot` receives only the Actor, so its result is independent of the recipient. Use separate public and private domains when their projections differ. One domain may read several systems, and a controller may have no domain.
 
 KRF combines framework and game domains before startup validation. Duplicate domain ids, malformed events, invalid schemas or audiences, and missing required callbacks fail before publication. Event ids must be unique within a domain; different domains may reuse an event id.
+
+`KRF.Tags` is reserved for the built-in Tags projection, including when an empty visible Tag catalog causes that protocol domain to be omitted. Game definitions cannot claim it.
 
 Successful startup publishes immutable catalog metadata. Source-table edits cannot change the loaded contract; live gameplay state stays in the controller. Games cannot register or replace domains at runtime. Definitions contain semantic fields only: games supply no Remote references, wire ids, byte offsets, revisions, or flush settings.
 

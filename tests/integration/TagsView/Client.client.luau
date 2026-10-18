@@ -133,16 +133,6 @@ local function checkPrivacy(): ()
 		#children == 2 and children[1] == "Reliable:RemoteEvent" and children[2] == "Unreliable:UnreliableRemoteEvent",
 		"Tags added a separate framework transport"
 	)
-	for _, instance: Instance in ReplicatedStorage:GetDescendants() do
-		if instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent") then
-			assert(
-				instance == control
-					or instance == reliable
-					or (instance.Parent == root and instance.Name == Transport.UNRELIABLE_NAME),
-				"Tags created a Remote outside the ordinary framework transport"
-			)
-		end
-	end
 end
 
 local function runPhase(message: any): ()

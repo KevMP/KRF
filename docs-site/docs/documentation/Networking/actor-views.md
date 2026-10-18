@@ -33,6 +33,8 @@ Use the supplied view as the identity in removal callbacks. Signal handlers may 
 
 ## Read domains and observe changes
 
+For built-in Tags, prefer [`view:GetTags()`](../Tags/tag-views): it provides typed queries, immutable aggregate snapshots, semantic Tag events, and locally derived remaining durations. The same facade survives replacement baselines and Model streaming.
+
 `view:GetDomain(domainId)` returns a generic DomainView for a visible server-registered domain. Use the id declared by your game, such as `Game.Titles`; this is not a built-in domain. Unknown or invisible domains return `nil`; a visible Optional domain may legitimately have `GetState() == nil`. `GetDomainIds()` returns the visible ids in deterministic order. To check a retained domain, use `view:GetDomain(domain:GetId()) == domain`; state being `nil` does not distinguish an Optional value from retirement.
 
 `domain:GetState()` returns complete, recursively immutable truth. Nested Structs, Maps and Arrays are protected, and retained snapshots remain historical values after later changes. Do not modify them or attach client prediction to them; keep cosmetic local state separately.

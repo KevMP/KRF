@@ -11,6 +11,7 @@ local ServerTypes = require(KRF.server.Networking.types)
 local SharedTypes = require(KRF.shared.Networking.types)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
+local Adapter = require(KRF.server.Networking.utils.TagsReplication)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.TagsReplicationTestUtils)
 local PublicationUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
@@ -74,6 +75,47 @@ it("uses the authoritative longest finite duration even when a stack also contai
 			state = { ["Buff.Stack"] = { stackCount = 1 } },
 		},
 	})
+end)
+
+it("keeps retained snapshots immutable and unchanged across later additions, refreshes and removals", function()
+	TestUtils.add(fixture, "Status.Burning")
+	TestUtils.observe(fixture)
+	local captured: Adapter.ReplicatedTagsState = TestUtils.snapshot(fixture)
+	expect(table.isfrozen(captured)).toBe(true)
+	expect(table.isfrozen(captured["Status.Burning"])).toBe(true)
+	TestUtils.add(fixture, "Buff.Stack", 7)
+	TestUtils.add(fixture, "Status.Burning", 4)
+	expect(fixture.tags:RemoveTag("Status.Burning")).toBe(true)
+	expect(captured).toEqual({ ["Status.Burning"] = { stackCount = 1, expiresAt = 1010 } })
+	expect(TestUtils.snapshot(fixture)).toEqual({ ["Buff.Stack"] = { stackCount = 1, expiresAt = 1007 } })
+end)
+
+it("retries a rejected initial Tags snapshot against current truth without publishing the failed admission", function()
+	TestUtils.add(fixture, "Status.Burning")
+	fixture.clock.now = math.huge
+	local publication: ServerTypes.PublicationRuntime = PublicationUtils.createRuntime({ fixture.definition })
+	runtime = publication
+	local commits: { ServerTypes.PublicationCommit } = {}
+	publication:ObserveCommits(function(commit: ServerTypes.PublicationCommit)
+		table.insert(commits, commit)
+	end)
+	local attached: boolean, reason: string? = publication:AttachActor(fixture.actor)
+	expect(attached).toBe(false)
+	expect(reason).toBe("InvalidPublicationSnapshot:KRF.Tags")
+	expect(publication:GetAttachedActors()).toEqual({})
+	expect(publication:CaptureBaseline(fixture.actor)).toBeNil()
+	expect(commits).toEqual({})
+	fixture.clock.now = 1000
+	local retried: boolean, retryReason: string? = publication:AttachActor(fixture.actor)
+	expect(retryReason).toBeNil()
+	expect(retried).toBe(true)
+	expect(publication:CaptureBaseline(fixture.actor)).toEqual({
+		sequence = 0,
+		domains = { ["KRF.Tags"] = { value = { ["Status.Burning"] = { stackCount = 1, expiresAt = 1010 } } } },
+	})
+	TestUtils.add(fixture, "Status.Burning", 3)
+	expect(#commits).toBe(1)
+	expect(commits[1].events).toEqual({ { domainId = "KRF.Tags", eventId = "Refreshed", payload = "Status.Burning" } })
 end)
 
 it("fails missing-controller attachment observably and leaves no invented baseline or attachment", function()

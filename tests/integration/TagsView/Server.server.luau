@@ -14,6 +14,7 @@ local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Awareness = require(KRF.server.Networking.ActorAwarenessRuntime)
 local TagController = require(KRF.server.Tags.TagController)
+local Transport = require(KRF.shared.Networking.Transport)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("TagsViewTestControl") :: RemoteEvent
 
 Players.CharacterAutoLoads = false
@@ -27,6 +28,33 @@ local completedPhases: { string } = {}
 local ticks: number = 0
 local phase: string = "Ready"
 local finished: boolean = false
+
+local function captureRemotes(): { [Instance]: boolean }
+	local remotes: { [Instance]: boolean } = {}
+	for _, instance: Instance in ReplicatedStorage:GetDescendants() do
+		if instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent") or instance:IsA("RemoteFunction") then
+			remotes[instance] = true
+		end
+	end
+	return remotes
+end
+
+local function assertFrameworkRemotes(before: { [Instance]: boolean }): ()
+	local root: Instance? = ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME)
+	for instance: Instance in captureRemotes() do
+		if not before[instance] then
+			assert(
+				root ~= nil
+					and instance.Parent == root
+					and (
+						(instance.Name == Transport.RELIABLE_NAME and instance:IsA("RemoteEvent"))
+						or (instance.Name == Transport.UNRELIABLE_NAME and instance:IsA("UnreliableRemoteEvent"))
+					),
+				"Framework operation created a separate Remote: " .. instance:GetFullName()
+			)
+		end
+	end
+end
 
 -- Observe the real server factory without replacing its behavior or transport.
 Awareness.new = function(
@@ -154,6 +182,9 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 		return
 	end
 	local completed: boolean, reason: any = pcall(function()
+		-- Framework operations below are synchronous. Compare around each phase so
+		-- engine-owned Remotes (such as default chat) do not enter this assertion.
+		local remotesBefore: { [Instance]: boolean } = captureRemotes()
 		assert(player.Parent == Players and typeof(payload) == "buffer", "Expected a real native client report")
 		local report: any = HttpService:JSONDecode(buffer.tostring(payload))
 		assert(report.failure == nil, "Client " .. player.Name .. ": " .. tostring(report.failure))
@@ -180,6 +211,7 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 				advance()
 			end
 		end
+		assertFrameworkRemotes(remotesBefore)
 	end)
 	if not completed then
 		finish(false, tostring(reason))
@@ -189,6 +221,7 @@ end)
 task.delay(90, function()
 	finish(false, "Native N6 fixture timeout in " .. phase)
 end)
+local startupRemotes: { [Instance]: boolean } = captureRemotes()
 local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 	tags = {
 		{ id = "Buff.NativeStack", visibility = "ClientVisible", duplicateBehavior = "Stack", maxStacks = 3 },
@@ -233,4 +266,9 @@ local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 })
 if not initialized then
 	finish(false, if failure ~= nil then failure.reason else "Native Server.Init failed")
+else
+	local valid: boolean, reason: any = pcall(assertFrameworkRemotes, startupRemotes)
+	if not valid then
+		finish(false, tostring(reason))
+	end
 end

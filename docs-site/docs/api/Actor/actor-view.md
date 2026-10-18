@@ -23,6 +23,7 @@ end
 | --- | --- |
 | Method | [`GetId() -> string`](#id) |
 | Method | [`GetModel() -> Model?`](#model) |
+| Method | [`GetTags() -> TagsView`](#tags) |
 | Method | [`GetDomain(domainId: string) -> DomainView?`](#domain) |
 | Method | [`GetDomainIds() -> { string }`](#domains) |
 | Method | [`IsAvailable() -> boolean`](#available) |
@@ -43,6 +44,10 @@ Returns the currently bound local Model, or `nil` when unavailable.
 ### `GetDomain(domainId: string) -> DomainView?` {#domain}
 
 Returns the visible domain, or `nil` for an unknown, invisible or retired domain.
+
+### `GetTags() -> TagsView` {#tags}
+
+Returns this ActorView's stable read-only [TagsView](./tags-view), including an empty view when no visible Tags domain exists.
 
 ### `GetDomainIds() -> { string }` {#domains}
 
@@ -71,3 +76,4 @@ Fires once when terminal failure invalidates this view's domain truth.
 - [ActorViews guide](/Networking/actor-views)
 - [ActorView Registry](./actor-view-registry)
 - [DomainView](./domain-view)
+- [TagsView](./tags-view)
