@@ -21,6 +21,7 @@ const sidebarsApi: SidebarsConfig = {
         'Actor/actor-registry',
         'Actor/actor-view-registry',
         'Actor/actor-view',
+        'Actor/tags-view',
         'Actor/domain-view',
       ],
     },
