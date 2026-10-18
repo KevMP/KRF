@@ -5,7 +5,6 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: "Kevin's Roblox Framework",
   tagline: 'A server-authoritative RPG gameplay runtime for Roblox',
-  favicon: 'img/favicon.ico',
 
   future: {
     v4: true,
@@ -50,16 +49,6 @@ const config: Config = {
     [
       '@docusaurus/plugin-content-docs',
       {
-        id: 'learn',
-        path: 'docs/learn',
-        routeBasePath: 'learn',
-        sidebarPath: './sidebarsLearn.ts',
-        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
-      },
-    ],
-    [
-      '@docusaurus/plugin-content-docs',
-      {
         id: 'api',
         path: 'docs/api',
         routeBasePath: 'api',
@@ -75,23 +64,12 @@ const config: Config = {
     },
     navbar: {
       title: 'KRF',
-      // logo: {
-      //   alt: 'KRF Logo',
-      //   src: 'img/logo.svg',
-      // },
       items: [
         {
           type: 'docSidebar',
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
-        },
-        {
-          type: 'docSidebar',
-          sidebarId: 'learnSidebar',
-          docsPluginId: 'learn',
-          position: 'left',
-          label: 'Learn KRF',
         },
         {
           type: 'docSidebar',
@@ -117,15 +95,6 @@ const config: Config = {
               label: 'KRF Overview',
               to: '/',
             }
-          ],
-        },
-        {
-          title: 'Learn KRF',
-          items: [
-            {
-              label: 'Getting Started',
-              to: '/learn/intro',
-            },
           ],
         },
         {
