@@ -40,7 +40,7 @@ jobs:
         run: npm ci
 
       - name: Test CI tooling
-        run: npm run test:tooling
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       
       - name: Typecheck
         run: npm run typecheck

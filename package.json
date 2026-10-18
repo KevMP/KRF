@@ -10,7 +10,6 @@
     "prepare": "husky",
     "typecheck": "node ./scripts/typecheck.cjs",
     "test:lint": "stylua --check src tests && selene src tests",
-    "test:tooling": "python -m unittest discover -s scripts -p \"test_*.py\"",
     "test:unit": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1 && npm run coverage",
     "test:integration:n5": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n5-native.ps1",
     "test:integration:n6": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n6-native.ps1",
@@ -20,7 +19,7 @@
     "coverage:report": "npx nyc report",
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
-    "test": "npm run test:lint && npm run test:tooling && npm run typecheck && npm run test:unit"
+    "test": "npm run test:lint && npm run typecheck && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": "stylua"
