@@ -10,6 +10,9 @@ type Stream = {
 	key: Types.PublicationStreamKey,
 	records: { Pending },
 	needsBaseline: boolean,
+	pendingEvents: number,
+	queuedBytes: number,
+	barriers: number,
 	delivered: { [string]: Types.PublicationDomainTruth },
 	active: boolean,
 }
@@ -41,7 +44,9 @@ local function apply(value: any, patch: Types.PublicationPatch): any
 		return copy(patch.value)
 	end
 
-	local result = if type(value) == "table" then copy(value) else {}
+	-- Delivered subtrees are private. Copy only the path changed by this patch;
+	-- incoming replacement values and Map entries still cross an ownership boundary.
+	local result = if type(value) == "table" then table.clone(value) else {}
 
 	if patch.kind == "Struct" then
 		for field, change in patch.fields do
@@ -180,18 +185,6 @@ local function combine(
 	return { sequence = second.sequence, patches = patches, events = events }
 end
 
-local function pendingStats(stream: Stream): (number, number)
-	local events = 0
-	local bytes = 0
-
-	for _, record in stream.records do
-		events += #record.commit.events
-		bytes += record.bytes
-	end
-
-	return events, bytes
-end
-
 local function applyKnown(
 	truth: { [string]: Types.PublicationDomainTruth },
 	domainId: string,
@@ -207,7 +200,7 @@ local function applyKnown(
 end
 
 local function truthBeforeTail(stream: Stream): { [string]: Types.PublicationDomainTruth }
-	local truth: { [string]: Types.PublicationDomainTruth } = copy(stream.delivered)
+	local truth: { [string]: Types.PublicationDomainTruth } = table.clone(stream.delivered)
 
 	for index = 1, #stream.records - 1 do
 		for _, item in stream.records[index].commit.patches do
@@ -237,6 +230,9 @@ local function find(self: Runtime, key: Types.PublicationStreamKey, create: bool
 			key = { recipient = key.recipient, actor = key.actor },
 			records = {},
 			needsBaseline = false,
+			pendingEvents = 0,
+			queuedBytes = 0,
+			barriers = 0,
 			delivered = {},
 			active = false,
 		}
@@ -296,25 +292,14 @@ function PublicationScheduler.Enqueue(
 	local canMerge = tail ~= nil and #tail.commit.events == 0
 	local composed = if canMerge then combine(tail.commit, commit, truthBeforeTail(stream)) else commit
 	local newRecords = #records + (if canMerge or (#composed.patches == 0 and not isEvent) then 0 else 1)
-	local events, bytes = pendingStats(stream)
 	local size = if #composed.patches == 0 and #composed.events == 0 then 0 else self.options.MeasureRecord(composed)
-	local newBytes = bytes - (if canMerge then tail.bytes else 0) + size
-	local barriers = 0
-
-	for _, record in records do
-		if #record.commit.events > 0 then
-			barriers += 1
-		end
-	end
-
-	if isEvent then
-		barriers += 1
-	end
+	local newBytes = stream.queuedBytes - (if canMerge then tail.bytes else 0) + size
+	local barriers = stream.barriers + (if isEvent then 1 else 0)
 
 	if
 		newRecords > self.options.maxBarriers + 1
 		or barriers > self.options.maxBarriers
-		or events + #commit.events > self.options.maxEvents
+		or stream.pendingEvents + #commit.events > self.options.maxEvents
 		or newBytes > self.options.maxQueuedBytes
 	then
 		self:MarkBaselinePending(key)
@@ -324,10 +309,14 @@ function PublicationScheduler.Enqueue(
 
 	if canMerge then
 		table.remove(records)
+		stream.queuedBytes -= tail.bytes
 	end
 
 	if size > 0 then
 		table.insert(records, { commit = composed, bytes = size })
+		stream.queuedBytes += size
+		stream.pendingEvents += #composed.events
+		stream.barriers += if #composed.events > 0 then 1 else 0
 	end
 
 	activate(self, stream)
@@ -342,6 +331,9 @@ end
 function PublicationScheduler.MarkBaselinePending(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream = find(self, key, true) :: Stream
 	table.clear(stream.records)
+	stream.pendingEvents = 0
+	stream.queuedBytes = 0
+	stream.barriers = 0
 	stream.needsBaseline = true
 	deactivate(self, stream)
 end
@@ -353,6 +345,9 @@ function PublicationScheduler.ResetAfterBaseline(
 ): ()
 	local stream: Stream = find(self, key, true) :: Stream
 	table.clear(stream.records)
+	stream.pendingEvents = 0
+	stream.queuedBytes = 0
+	stream.barriers = 0
 	stream.needsBaseline = false
 	stream.delivered = copy(domains)
 	deactivate(self, stream)
@@ -385,13 +380,11 @@ function PublicationScheduler.GetStreamStatus(
 		return { needsBaseline = false, pendingRecords = 0, pendingEvents = 0, queuedBytes = 0 }
 	end
 
-	local events, bytes = pendingStats(stream)
-
 	return {
 		needsBaseline = stream.needsBaseline,
 		pendingRecords = #stream.records,
-		pendingEvents = events,
-		queuedBytes = bytes,
+		pendingEvents = stream.pendingEvents,
+		queuedBytes = stream.queuedBytes,
 	}
 end
 
@@ -427,6 +420,9 @@ function PublicationScheduler.DrainBudgeted(
 
 		if pending ~= nil and encodedBytes + pending.bytes <= maxBytes then
 			table.remove(stream.records, 1)
+			stream.pendingEvents -= #pending.commit.events
+			stream.queuedBytes -= pending.bytes
+			stream.barriers -= if #pending.commit.events > 0 then 1 else 0
 			table.insert(records, { stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes })
 			encodedBytes += pending.bytes
 
