@@ -2,6 +2,7 @@ import argparse
 import logging
 import urllib.request
 import urllib.error
+import urllib.parse
 import base64
 import sys
 import json
@@ -167,15 +168,24 @@ def getTaskLogs(api_key, task_path):
     }
     url = f'https://apis.roblox.com/cloud/v2/{task_path}/logs'
 
-    try:
-        response = makeRequest(url, headers=headers)
-    except urllib.error.HTTPError as e:
-        logging.error(f'Get task logs request failed, response body:\n{e.fp.read()}')
-        sys.exit(1)
+    messages = []
+    page_token = None
+    while True:
+        page_url = url
+        if page_token:
+            page_url += '?' + urllib.parse.urlencode({'pageToken': page_token})
+        try:
+            response = makeRequest(page_url, headers=headers)
+        except urllib.error.HTTPError as e:
+            logging.error(f'Get task logs request failed, response body:\n{e.fp.read()}')
+            sys.exit(1)
 
-    logs = json.loads(response.read())
-    messages = logs['luauExecutionSessionTaskLogs'][0]['messages']
-    return ''.join([m + '\n' for m in messages])
+        logs = json.loads(response.read())
+        for chunk in logs.get('luauExecutionSessionTaskLogs', []):
+            messages.extend(chunk.get('messages', []))
+        page_token = logs.get('nextPageToken')
+        if not page_token:
+            return ''.join(m + '\n' for m in messages)
 
 def handleLogs(task, log_output_file_path, api_key):
     logs = getTaskLogs(api_key, task['path'])

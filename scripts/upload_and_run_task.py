@@ -13,54 +13,18 @@ ROBLOX_API_KEY = os.environ["ROBLOX_API_KEY"]
 ROBLOX_UNIVERSE_ID = os.environ["ROBLOX_UNIVERSE_ID"]
 ROBLOX_PLACE_ID = os.environ["ROBLOX_PLACE_ID"]
 COVERAGE_OUTPUT = Path("coverage/coverage-final.json")
-COVERAGE_START_MARKER = "__KRF_COVERAGE_START__"
-COVERAGE_END_MARKER = "__KRF_COVERAGE_END__"
 
 def read_file(file_path):
     with open(file_path, "rb") as file:
         return file.read()
 
-def extract_coverage_payload(logs: str):
-    lines = logs.splitlines()
-    coverage_lines = []
-    stripped_lines = []
-    capturing_coverage = False
-    found_markers = False
-
-    for line in lines:
-        if line == COVERAGE_START_MARKER:
-            capturing_coverage = True
-            found_markers = True
-            stripped_lines.append("[coverage] Captured Istanbul payload from Roblox test run.")
-            continue
-
-        if line == COVERAGE_END_MARKER:
-            capturing_coverage = False
-            continue
-
-        if capturing_coverage:
-            coverage_lines.append(line)
-            continue
-
-        stripped_lines.append(line)
-
-    if not found_markers:
-        return None, logs
-
-    return "".join(coverage_lines), "\n".join(stripped_lines)
-
-def strip_coverage_payload(logs: str) -> str:
-    _, stripped_logs = extract_coverage_payload(logs)
-    return stripped_logs
-
-def write_coverage_report(logs: str) -> None:
-    coverage_payload, _ = extract_coverage_payload(logs)
-    if not coverage_payload:
-        print("Coverage markers not found in Luau logs")
-        return
+def write_coverage_report(task) -> None:
+    results = task.get("output", {}).get("results", [])
+    if len(results) != 1 or not isinstance(results[0], dict) or not results[0]:
+        raise RuntimeError("Luau task did not return a non-empty coverage report")
 
     COVERAGE_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    COVERAGE_OUTPUT.write_text(coverage_payload, encoding="utf-8")
+    COVERAGE_OUTPUT.write_text(json.dumps(results[0]), encoding="utf-8")
     print(f"Coverage report written to {COVERAGE_OUTPUT}")
 
 def upload_place(binary_path, universe_id, place_id, do_publish=False):
@@ -113,18 +77,22 @@ def run_luau_task(universe_id, place_id, place_version, script_file):
     task = pollForTaskCompletion(ROBLOX_API_KEY, task["path"])
     logs = getTaskLogs(ROBLOX_API_KEY, task["path"]) or ""
 
-    cleaned_logs = strip_coverage_payload(logs).rstrip()
-    if cleaned_logs:
-        print(cleaned_logs)
+    if logs.rstrip():
+        print(logs.rstrip())
 
-    write_coverage_report(logs)
     state = task.get("state", "UNKNOWN")
     print(f"Luau task state: {state}")
-    return 0 if state == "COMPLETE" else 1
+    if state != "COMPLETE":
+        print(f"Luau task failed: {json.dumps(task.get('error', {}))}", file=sys.stderr)
+        return 1
+
+    write_coverage_report(task)
+    return 0
 
 if __name__ == "__main__":
     binary_file = sys.argv[1]
     script_file = sys.argv[2]
 
+    COVERAGE_OUTPUT.unlink(missing_ok=True)
     place_version = upload_place(binary_file, ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID)
     sys.exit(run_luau_task(ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID, place_version, script_file))
