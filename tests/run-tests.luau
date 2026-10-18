@@ -23,18 +23,20 @@ local status, result = runCLI(ReplicatedStorage.Packages, {
 }, { ReplicatedStorage.Tests }):awaitStatus()
 
 local coverageReport = coverage.istanbul()
-local coverageJson = HttpService:JSONEncode(coverageReport)
 
-print(COVERAGE_START_MARKER)
-for startIndex = 1, string.len(coverageJson), COVERAGE_CHUNK_SIZE do
-	local endIndex = math.min(startIndex + COVERAGE_CHUNK_SIZE - 1, string.len(coverageJson))
-	print(string.sub(coverageJson, startIndex, endIndex))
-	-- Let the runner flush logs before Roblox's per-request POST limit is reached.
-	if startIndex % (COVERAGE_CHUNK_SIZE * 32) == 1 then
-		task.wait(0.1)
+if processServiceExists then
+	local coverageJson = HttpService:JSONEncode(coverageReport)
+	print(COVERAGE_START_MARKER)
+	for startIndex = 1, string.len(coverageJson), COVERAGE_CHUNK_SIZE do
+		local endIndex = math.min(startIndex + COVERAGE_CHUNK_SIZE - 1, string.len(coverageJson))
+		print(string.sub(coverageJson, startIndex, endIndex))
+		-- Let the runner flush logs before Roblox's per-request POST limit is reached.
+		if startIndex % (COVERAGE_CHUNK_SIZE * 32) == 1 then
+			task.wait(0.1)
+		end
 	end
+	print(COVERAGE_END_MARKER)
 end
-print(COVERAGE_END_MARKER)
 
 coverage.cleanup()
 
@@ -52,4 +54,5 @@ else
 	end
 end
 
-return nil
+-- Open Cloud retains only 450 KB of logs; task results support up to 4 MB.
+return coverageReport

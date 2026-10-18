@@ -31,6 +31,10 @@ function resolveRepoPath(filePath) {
 }
 
 function normalizeCoverageReport(report) {
+	if (!report || typeof report !== "object" || Array.isArray(report) || Object.keys(report).length === 0) {
+		throw new Error("Coverage report must be a non-empty Istanbul coverage object");
+	}
+
 	return Object.fromEntries(
 		Object.entries(report).map(([filePath, fileCoverage]) => {
 			const normalizedPath = resolveRepoPath(filePath);

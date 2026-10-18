@@ -38,6 +38,9 @@ jobs:
 
       - name: Install Node deps
         run: npm ci
+
+      - name: Test CI tooling
+        run: npm run test:tooling
       
       - name: Typecheck
         run: npm run typecheck
@@ -49,8 +52,9 @@ jobs:
         run: rojo build test.project.json -o dist.rbxl
 
       - name: Upload place and run tests
+        id: tests
         run: python3 -u scripts/upload_and_run_task.py dist.rbxl "$TEST_TASK_FILE"
 
-      - name: Generate coverage reports
-        if: always() && hashFiles('coverage/coverage-final.json') != ''
+      - name: Generate and check coverage
+        if: always() && steps.tests.outcome == 'success'
         run: npm run coverage
