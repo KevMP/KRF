@@ -8,8 +8,9 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local Selection: Types.RecipientSelectionModule = require(KRF.server.Networking.ActorRecipientSelection)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Selection: ServerNetworkingTypes.ActorRecipientSelectionModule =
+	require(KRF.server.Networking.utils.ActorRecipientSelection)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local originalSelection: typeof(Selection.ShouldBeAware) = Selection.ShouldBeAware
@@ -35,7 +36,7 @@ for _, actorFirst: boolean in { true, false } do
 				return player == selected
 			end
 			local actor: ActorTypes.Actor? = if actorFirst then TestUtils.actor(fixture, nil) else nil
-			local runtime: Types.Runtime = TestUtils.start(fixture)
+			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 			TestUtils.ready(fixture, selected)
 			TestUtils.ready(fixture, excluded)
 			if actor == nil then
@@ -55,7 +56,7 @@ end
 it("keeps Ready admission separate from the M0 policy that selects every recipient", function()
 	local first: Player = TestUtils.player(fixture)
 	local second: Player = TestUtils.player(fixture)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, first)
 	TestUtils.ready(fixture, second)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)

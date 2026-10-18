@@ -7,7 +7,7 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.client.Networking.ActorStreamTypes)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -19,7 +19,7 @@ afterEach(function()
 end)
 
 it("hands a baseline to N5 once only after all bytes and matching End arrive", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
 	local first: buffer = buffer.create(1)
 	local remaining: buffer = buffer.create(buffer.len(body) - 1)
@@ -82,9 +82,9 @@ it("discards an incomplete older generation and cannot mix its chunks into a rep
 end)
 
 it("completes a replacement using only its known handle and preserves the established actorId record", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture, 1, "ActorA", 1, 7)
-	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	TestUtils.replace(fixture, 1, 2, 9)
 	expect(runtime:GetByHandle(1)).toBe(original)
 	expect(runtime:GetByActorId("ActorA")).toBe(original)
@@ -94,7 +94,7 @@ it("completes a replacement using only its known handle and preserves the establ
 end)
 
 it("rejects a handle-only Begin for an unknown handle without inventing identity", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 99, generation = 1, totalBytes = buffer.len(body) },
@@ -106,7 +106,7 @@ it("rejects a handle-only Begin for an unknown handle without inventing identity
 end)
 
 it("rejects an oversized Begin before creating awareness or consuming later work", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -201,7 +201,7 @@ it("isolates incomplete assembly for several Actors in the same physical packet"
 end)
 
 it("fails observably with no N5 consumer instead of buffering decoded history", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture, true)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture, true)
 	local success: boolean, reason: string? = TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })
 	expect(success).toBe(false)
 	expect(reason).toBe("ActorStreamConsumerMissing")
@@ -210,9 +210,9 @@ it("fails observably with no N5 consumer instead of buffering decoded history", 
 end)
 
 it("rejects a conflicting actorId on an established handle while preserving the original record", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	local body: buffer = TestUtils.body(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorB", generation = 2, totalBytes = buffer.len(body) },
@@ -226,9 +226,9 @@ it("rejects a conflicting actorId on an established handle while preserving the 
 end)
 
 it("rejects a second handle for an actorId already known to the connection", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture)
-	local original: Types.ActorRecord? = runtime:GetByHandle(1)
+	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	local body: buffer = TestUtils.body(fixture)
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 2, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },

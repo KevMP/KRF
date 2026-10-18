@@ -4,12 +4,12 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
 it("rejects excessive aggregate collection work before writing any destination bytes", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({
 		first = Schema.Optional(Schema.Array(Schema.Struct({}), 60000)),
 		second = Schema.Array(Schema.Struct({}), 60000),
 	}))
@@ -27,7 +27,7 @@ it("rejects excessive aggregate collection work before writing any destination b
 end)
 
 it("round trips the collection work boundary with a fresh budget for every operation", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Struct({}), 100000))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Struct({}), 100000))
 	local emptyRecord: any = {}
 	local value: { any } = table.create(100000, emptyRecord)
 	local encoded: buffer = TestUtils.encode(codec, value)

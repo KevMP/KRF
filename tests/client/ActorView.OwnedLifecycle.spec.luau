@@ -1,0 +1,127 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
+local it: any = JestGlobals.it
+local expect: any = JestGlobals.expect
+local afterEach: any = JestGlobals.afterEach
+local Types = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+local Domains: Types.DomainViewModule = require(KRF.client.Actor.DomainView)
+local Actors: Types.ActorViewModule = require(KRF.client.Actor.ActorView)
+local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
+local Owner: Types.ActorViewRegistryOwner = require(KRF.client.Actor.utils.ActorViewRegistryState)
+local cleanups: { () -> () } = {}
+
+afterEach(function()
+	Owner.Reset()
+	for _, cleanup: () -> () in cleanups do
+		cleanup()
+	end
+	cleanups = {}
+end)
+
+it("retires a DomainView from its own notification and makes later private work inert", function()
+	local owner: Types.DomainViewOwner?, reason: string? = Domains.new("Game.Counter", 1, { "Changed" })
+	assert(owner ~= nil, reason)
+	table.insert(cleanups, function()
+		owner:Destroy()
+	end)
+	local changes: number = 0
+	local events: number = 0
+	local event: SignalTypes.Event<any>? = owner.view:GetEvent("Changed")
+	assert(event ~= nil, "Expected declared semantic event")
+	event:Connect(function(_payload: number)
+		events += 1
+	end)
+	owner.view.OnChanged:Connect(function(_change: Types.DomainChange)
+		changes += 1
+		owner:Destroy()
+		owner:Destroy()
+	end)
+	local change: Types.DomainChange = { previous = 1, current = 2, source = "Commit" }
+	table.freeze(change)
+	owner:InstallState(2)
+	owner:NotifyChanged(change)
+	owner:NotifyChanged(change)
+	owner:FireEvent("Changed", 2)
+	expect(changes).toBe(1)
+	expect(events).toBe(0)
+	expect(owner.view:GetState()).toBeNil()
+	expect(owner.view:GetEvent("Changed")).toBeNil()
+	local installed: boolean = pcall(function()
+		owner:InstallState(3)
+	end)
+	expect(installed).toBe(false)
+end)
+
+it("retires Actor-owned domains during a Model callback and ignores later Model notifications", function()
+	local domain: Types.DomainViewOwner?, reason: string? = Domains.new("Game.Counter", 1, {})
+	assert(domain ~= nil, reason)
+	local owner: Types.ActorViewOwner?, actorReason: string? = Actors.new("ActorA", nil, { ["Game.Counter"] = domain })
+	assert(owner ~= nil, actorReason)
+	local model: Model = Instance.new("Model")
+	table.insert(cleanups, function()
+		owner:Destroy()
+		model:Destroy()
+	end)
+	local changes: number = 0
+	local lifecycleNotifications: number = 0
+	owner.view.OnDomainsChanged:Connect(function(_change: Types.DomainMembershipChange)
+		lifecycleNotifications += 1
+	end)
+	owner.view.OnUnavailable:Connect(function()
+		lifecycleNotifications += 1
+	end)
+	owner.view.OnModelChanged:Connect(function(_previous: Model?, _current: Model?)
+		changes += 1
+		owner:Destroy()
+	end)
+	owner:InstallModel(model)
+	owner:NotifyModelChanged(nil, model)
+	owner:NotifyModelChanged(model, nil)
+	local membership: Types.DomainMembershipChange = { added = {}, removed = { "Game.Counter" } }
+	table.freeze(membership.added)
+	table.freeze(membership.removed)
+	owner:NotifyDomainsChanged(table.freeze(membership))
+	owner:NotifyUnavailable()
+	owner:Destroy()
+	expect(changes).toBe(1)
+	expect(lifecycleNotifications).toBe(0)
+	expect(owner.view:IsAvailable()).toBe(false)
+	expect(owner.view:GetModel()).toBeNil()
+	expect(owner.view:GetDomainIds()).toEqual({})
+	expect(owner.view:GetDomain("Game.Counter")).toBeNil()
+	expect(domain.view:GetState()).toBeNil()
+end)
+
+it("rejects identity and Model collisions and removes a bound registry entry idempotently", function()
+	local model: Model = Instance.new("Model")
+	local first: Types.ActorViewOwner? = Actors.new("ActorA", model, {})
+	local second: Types.ActorViewOwner? = Actors.new("ActorB", model, {})
+	local duplicate: Types.ActorViewOwner? = Actors.new("ActorA", nil, {})
+	assert(first ~= nil and second ~= nil and duplicate ~= nil, "Expected private ActorView owners")
+	table.insert(cleanups, function()
+		first:Destroy()
+		second:Destroy()
+		duplicate:Destroy()
+		model:Destroy()
+	end)
+	expect(Owner.Install(first.view)).toBe(true)
+	local installed: boolean, reason: string? = Owner.Install(second.view)
+	expect(installed).toBe(false)
+	expect(reason).toBe("ActorModelConflict")
+	installed, reason = Owner.Install(duplicate.view)
+	expect(installed).toBe(false)
+	expect(reason).toBe("ActorIdConflict")
+	installed, reason = Owner.InstallModel(second.view, nil, model)
+	expect(installed).toBe(false)
+	expect(reason).toBe("ActorViewUnavailable")
+	Owner.Remove(second.view)
+	expect(Registry.GetActorViewByModel(model)).toBe(first.view)
+	Owner.Remove(first.view)
+	Owner.Remove(first.view)
+	expect(Registry.GetActorViewByModel(model)).toBeNil()
+	expect(Registry.GetActorViewById("ActorA")).toBeNil()
+	expect(Registry.GetAllActorViews()).toEqual({})
+end)

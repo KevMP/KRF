@@ -8,16 +8,14 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local NetworkingTypes = require(KRF.server.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ServerTypes = require(KRF.server.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Server = require(KRF.server)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
@@ -44,10 +42,10 @@ it("loads the real domain before RegisterActor returns and publishes its immedia
 		Server.Init({ replicationDomains = { domain.definition } })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
-	local publication: PublicationTypes.Runtime? = Networking._GetPublicationRuntimeForTests()
+	local publication: ServerNetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Server.Init must install the real N3 runtime from its loaded catalog")
-	local commits: { PublicationTypes.Commit } = {}
-	publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	model = Instance.new("Model")
@@ -81,15 +79,15 @@ end)
 it("server reset destroys its installed runtime and disconnects a live domain", function()
 	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.Stamina", Schema.U8, 100)
 	expect(Server.Init({ replicationDomains = { domain.definition } })).toBe(true)
-	local publication: PublicationTypes.Runtime? = Networking._GetPublicationRuntimeForTests()
+	local publication: ServerNetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Expected startup-owned publication runtime")
 	model = Instance.new("Model")
 	model.Parent = workspace
 	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
 	expect(reason).toBeNil()
 	assert(actor ~= nil, "Expected registered Actor")
-	local commits: { PublicationTypes.Commit } = {}
-	publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	Server._ResetForTests()
@@ -104,16 +102,16 @@ end)
 it("rolls back an installed runtime and its observers when startup fails after publication", function()
 	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.Stamina", Schema.U8, 100)
 	local attached: ActorTypes.Actor = ActorEntity.new()
-	local publishedRuntime: PublicationTypes.Runtime? = nil
-	local commits: { PublicationTypes.Commit } = {}
-	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	local publishedRuntime: ServerNetworkingTypes.PublicationRuntime? = nil
+	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		local success: boolean, reason: string? = originalPublish(protocol)
 		if not success then
 			return false, reason
 		end
 		publishedRuntime = Networking._GetPublicationRuntimeForTests()
 		assert(publishedRuntime ~= nil, "Publication runtime must be installed during Networking startup")
-		publishedRuntime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+		publishedRuntime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 			table.insert(commits, commit)
 		end)
 		local attachedSuccessfully: boolean, attachReason: string? = publishedRuntime:AttachActor(attached)

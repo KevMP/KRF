@@ -5,7 +5,7 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
 local ClientTypes = require(KRF.client.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
@@ -81,7 +81,7 @@ function ClientTestUtils.new(): Fixture
 				fixture.timeoutCancelled = true
 			end
 		end,
-		InstallConsumers = function(_protocol: ProtocolTypes.ClientProtocol): (boolean, string?, (() -> ())?)
+		InstallConsumers = function(_protocol: SharedNetworkingTypes.ClientProtocol): (boolean, string?, (() -> ())?)
 			table.insert(fixture.order, "Consumers")
 			return true, nil, function(): ()
 				fixture.consumerCleanupCalls += 1

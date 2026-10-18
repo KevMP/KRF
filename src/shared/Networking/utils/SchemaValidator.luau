@@ -1,11 +1,11 @@
 --!strict
-local NetworkingTypes = require(script.Parent.Parent.types)
+local Types = require(script.Parent.Parent.types)
 local SchemaCollectionUtils = require(script.Parent.SchemaCollectionUtils)
 local SchemaPrimitives = require(script.Parent.SchemaPrimitives)
 
-type CompiledSchema = NetworkingTypes.CompiledSchema
+type CompiledSchema = Types.CompiledSchema
 
-local SchemaValidator = {} :: NetworkingTypes.SchemaValidator
+local SchemaValidator = {} :: Types.SchemaValidator
 
 function SchemaValidator.Validate(schema: CompiledSchema, value: any): (boolean, string?)
 	if schema.kind == "Optional" then
@@ -60,7 +60,7 @@ function SchemaValidator.Validate(schema: CompiledSchema, value: any): (boolean,
 				return false, "SchemaStructFieldUndeclared"
 			end
 		end
-		for _, field: NetworkingTypes.CompiledField in schema.fields do
+		for _, field: Types.CompiledField in schema.fields do
 			local fieldValue: any = rawget(value, field.name)
 			if fieldValue == nil and field.schema.kind ~= "Optional" then
 				return false, "SchemaStructFieldMissing"

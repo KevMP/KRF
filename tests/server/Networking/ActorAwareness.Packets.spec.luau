@@ -6,10 +6,10 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ActorTypes = require(KRF.server.Actor.types)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local Constants = require(KRF.shared.Networking.ActorProtocolConstants)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -24,7 +24,7 @@ it("batches different Actors' baseline and live records while preserving each st
 	local player: Player = TestUtils.player(fixture)
 	local first: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	local second: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(512, 8)
 	expect(#fixture.deliveries).toBe(1)
@@ -37,9 +37,9 @@ it("batches different Actors' baseline and live records while preserving each st
 	fixture.publicDomain.callbacks[second]()
 	runtime:Step(512, 8)
 	expect(#fixture.deliveries).toBe(1)
-	local records: { WireTypes.Record } = TestUtils.records(fixture, player)
+	local records: { SharedNetworkingTypes.ActorStreamRecord } = TestUtils.records(fixture, player)
 	expect(#records).toBe(2)
-	for _, record: WireTypes.Record in records do
+	for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 		expect(record.kind).toBe("Commit")
 		assert(record.kind == "Commit", "Expected live record")
 		expect(record.revision).toBe(2)
@@ -52,7 +52,7 @@ it("completes a large join within packet and concurrent baseline limits", functi
 	for _ = 1, 1200 do
 		table.insert(actors, TestUtils.actor(fixture, nil))
 	end
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(Constants.MAX_PACKET_BYTES * 2, 1200)
 	expect(#TestUtils.kind(fixture, player, "BaselineBegin")).toBe(Constants.MAX_PENDING_BASELINES)
@@ -85,7 +85,7 @@ it("drops a staged recipient packet if that connection closes during another Rel
 	local first: Player = TestUtils.player(fixture)
 	local departed: Player = TestUtils.player(fixture)
 	TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, first)
 	TestUtils.ready(fixture, departed)
 	fixture.dependencies.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
@@ -104,7 +104,7 @@ end)
 it("does not retry a failed removal or repeatedly report an already halted stream", function()
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local attempts: number = 0
 	fixture.dependencies.SendReliable = function(_player: Player, _payload: buffer): (boolean, string?)
 		attempts += 1
@@ -123,11 +123,11 @@ for _, boundary: string in { "BaselineBegin", "BaselineChunk", "BaselineEnd" } d
 	it("preserves a replacement requested reentrantly during delivery of " .. boundary, function()
 		local player: Player = TestUtils.player(fixture)
 		local actor: ActorTypes.Actor = TestUtils.actor(fixture, player)
-		local runtime: Types.Runtime = TestUtils.start(fixture)
+		local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 		local changed: boolean = false
 		fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
 			table.insert(fixture.deliveries, { player = recipient, payload = payload })
-			local records: { WireTypes.Record }?, reason: string? = fixture.codec.Decode(payload)
+			local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = fixture.codec.Decode(payload)
 			assert(records ~= nil, reason)
 			if not changed and records[1].kind == boundary then
 				changed = true

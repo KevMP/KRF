@@ -1,15 +1,15 @@
 --!strict
-local NetworkingTypes = require(script.Parent.types)
-local ProtocolTypes = require(script.Parent.Parent.Parent.shared.Networking.ProtocolTypes)
+local Types = require(script.Parent.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local ProtocolCodec = require(script.Parent.Parent.Parent.shared.Networking.ProtocolCodec)
-local Constants = require(script.Parent.Parent.Parent.shared.Networking.ProtocolConstants)
+local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ProtocolConstants)
 
-local ServerHandshake = {} :: NetworkingTypes.ServerHandshakeModule
+local ServerHandshake = {} :: Types.ServerHandshakeModule
 
 function ServerHandshake.new(
-	protocol: ProtocolTypes.PreparedProtocol,
-	dependencies: NetworkingTypes.HandshakeDependencies
-): NetworkingTypes.ServerHandshake
+	protocol: SharedNetworkingTypes.PreparedProtocol,
+	dependencies: Types.HandshakeDependencies
+): Types.ServerHandshake
 	type State = "SendingBootstrap" | "AwaitReady" | "Ready" | "Rejected"
 	type Observer = { callback: (Player) -> (), connected: boolean }
 	local states: { [Player]: State } = {}
@@ -19,7 +19,7 @@ function ServerHandshake.new(
 	local destroyed: boolean = false
 	local acknowledgement: buffer?, ackReason: string? = ProtocolCodec.Encode({ kind = "ReadyAck" })
 	assert(acknowledgement ~= nil, ackReason)
-	local runtime: NetworkingTypes.ServerHandshake = {} :: NetworkingTypes.ServerHandshake
+	local runtime: Types.ServerHandshake = {} :: Types.ServerHandshake
 
 	local function send(player: Player, payload: buffer): boolean
 		local completed: boolean, reason: any = pcall(dependencies.SendReliable, player, payload)
@@ -68,7 +68,7 @@ function ServerHandshake.new(
 		end
 	end
 
-	function runtime.Handle(_self: NetworkingTypes.ServerHandshake, player: Player, payload: any, ...: any): ()
+	function runtime.Handle(_self: Types.ServerHandshake, player: Player, payload: any, ...: any): ()
 		if
 			destroyed
 			or closed[player]
@@ -80,7 +80,7 @@ function ServerHandshake.new(
 		end
 		-- Client-originated bootstrap messages are tiny. Server-only manifest data
 		-- never reaches the parser through this callback.
-		local message: ProtocolTypes.Message? = ProtocolCodec.Decode(payload)
+		local message: SharedNetworkingTypes.ProtocolMessage? = ProtocolCodec.Decode(payload)
 		if message == nil then
 			return
 		end
@@ -111,11 +111,11 @@ function ServerHandshake.new(
 		end
 	end
 
-	function runtime.IsClientReady(_self: NetworkingTypes.ServerHandshake, player: Player): boolean
+	function runtime.IsClientReady(_self: Types.ServerHandshake, player: Player): boolean
 		return not destroyed and states[player] == "Ready"
 	end
 
-	function runtime.Send(_self: NetworkingTypes.ServerHandshake, player: Player, payload: buffer): (boolean, string?)
+	function runtime.Send(_self: Types.ServerHandshake, player: Player, payload: buffer): (boolean, string?)
 		if not runtime:IsClientReady(player) then
 			return false, "ClientNotReady"
 		end
@@ -125,15 +125,15 @@ function ServerHandshake.new(
 		return true, nil
 	end
 
-	function runtime.ObserveClientReady(_self: NetworkingTypes.ServerHandshake, callback: (Player) -> ()): () -> ()
+	function runtime.ObserveClientReady(_self: Types.ServerHandshake, callback: (Player) -> ()): () -> ()
 		return observe(readyObservers, callback)
 	end
 
-	function runtime.ObserveClientClosed(_self: NetworkingTypes.ServerHandshake, callback: (Player) -> ()): () -> ()
+	function runtime.ObserveClientClosed(_self: Types.ServerHandshake, callback: (Player) -> ()): () -> ()
 		return observe(closedObservers, callback)
 	end
 
-	function runtime.Close(_self: NetworkingTypes.ServerHandshake, player: Player): ()
+	function runtime.Close(_self: Types.ServerHandshake, player: Player): ()
 		if closed[player] then
 			return
 		end
@@ -142,7 +142,7 @@ function ServerHandshake.new(
 		notify(closedObservers, player, false)
 	end
 
-	function runtime.Destroy(_self: NetworkingTypes.ServerHandshake): ()
+	function runtime.Destroy(_self: Types.ServerHandshake): ()
 		if destroyed then
 			return
 		end
@@ -158,7 +158,7 @@ function ServerHandshake.new(
 		table.clear(closedObservers)
 	end
 
-	function runtime._GetConnectionCountForTests(_self: NetworkingTypes.ServerHandshake): number
+	function runtime._GetConnectionCountForTests(_self: Types.ServerHandshake): number
 		local count: number = 0
 		for _ in states do
 			count += 1

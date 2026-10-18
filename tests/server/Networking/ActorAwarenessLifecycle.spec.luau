@@ -6,8 +6,8 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local Lifecycle = require(KRF.server.Networking.ActorAwarenessLifecycle)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local Lifecycle = require(KRF.server.Networking.utils.ActorAwarenessLifecycle)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
@@ -21,7 +21,7 @@ it("makes lifecycle hooks harmless before installation and after the installed r
 	Lifecycle.Register(unbound)
 	Lifecycle.Unregister(unbound)
 	local fixture: TestUtils.Fixture = TestUtils.new()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	Lifecycle.Install(runtime)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
 	local player: Player = TestUtils.player(fixture)

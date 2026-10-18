@@ -5,11 +5,11 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
-type InvalidCase = { name: string, schema: NetworkingTypes.SchemaDefinition, value: any, reason: string }
+type InvalidCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, value: any, reason: string }
 local invalidCases: { InvalidCase } = {
 	{ name = "Boolean number coercion", schema = Schema.Boolean, value = 1, reason = "SchemaValueTypeInvalid" },
 	{ name = "U8 underflow", schema = Schema.U8, value = -1, reason = "SchemaIntegerOutOfRange" },
@@ -92,7 +92,7 @@ local invalidCases: { InvalidCase } = {
 }
 for _, testCase: InvalidCase in invalidCases do
 	it("rejects " .. testCase.name .. " in both measurement and writing with the N1 reason", function()
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		local destination: buffer = buffer.create(codec.maxSizeBytes)
 		local size: number?, measureReason: string? = codec.Measure(testCase.value)
 		local offset: number?, writeReason: string? = codec.Write(testCase.value, destination, 0)

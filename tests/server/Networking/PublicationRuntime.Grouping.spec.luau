@@ -8,17 +8,17 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
 local actor: ActorTypes.Actor
 local resource: TestUtils.DomainFixture
 local action: TestUtils.DomainFixture
-local runtime: PublicationTypes.Runtime
-local commits: { PublicationTypes.Commit } = {}
+local runtime: ServerNetworkingTypes.PublicationRuntime
+local commits: { ServerNetworkingTypes.PublicationCommit } = {}
 
 beforeEach(function()
 	actor = ActorEntity.new()
@@ -35,7 +35,7 @@ afterEach(function()
 end)
 
 local function attach(): ()
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	local success: boolean, reason: string? = runtime:AttachActor(actor)
@@ -60,8 +60,8 @@ it("seals two domains as one coherent commit and captures each only once at clos
 	expect(action.snapshotCalls).toBe(2)
 	expect(#commits).toBe(1)
 	expect(commits[1].sequence).toBe(1)
-	local patchesByDomain: { [string]: PublicationTypes.Patch } = {}
-	for _, patch: PublicationTypes.DomainPatch in commits[1].patches do
+	local patchesByDomain: { [string]: ServerNetworkingTypes.PublicationPatch } = {}
+	for _, patch: ServerNetworkingTypes.PublicationDomainPatch in commits[1].patches do
 		patchesByDomain[patch.domainId] = patch.patch
 	end
 	expect(patchesByDomain).toEqual({
@@ -146,8 +146,8 @@ end)
 
 it("dispatches a group only after all canonical domains and its sequence are committed", function()
 	attach()
-	local observed: PublicationTypes.Baseline? = nil
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local observed: ServerNetworkingTypes.PublicationBaseline? = nil
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		observed = runtime:CaptureBaseline(actor)
 		expect(observed).toEqual({
 			sequence = commit.sequence,
@@ -237,7 +237,7 @@ do
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
-		local captured: PublicationTypes.Baseline? = runtime:CaptureBaseline(actor)
+		local captured: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
 		assert(captured ~= nil, "Expected existing canonical baseline")
 		expect(captured.domains["Game.Resource"].value).toBe(100)
 		resource.callbacks[actor]()
@@ -247,7 +247,7 @@ end
 
 it("treats reentrant authoritative work from a commit observer as the next standalone commit", function()
 	attach()
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		if commit.sequence == 1 then
 			action.value = false
 			action.callbacks[actor]()
@@ -266,13 +266,13 @@ end)
 it("delivers reentrant commits in Actor sequence order to every observer", function()
 	attach()
 	local laterObserverSequences: { number } = {}
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		if commit.sequence == 1 then
 			action.value = false
 			action.callbacks[actor]()
 		end
 	end)
-	runtime:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(laterObserverSequences, commit.sequence)
 	end)
 	action.value = true

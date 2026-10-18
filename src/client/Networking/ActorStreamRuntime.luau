@@ -1,6 +1,6 @@
 --!strict
-local Types = require(script.Parent.ActorStreamTypes)
-local WireTypes = require(script.Parent.Parent.Parent.shared.Networking.ActorStreamTypes)
+local Types = require(script.Parent.types)
+local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 
 type Assembly = { generation: number, bytes: buffer, received: number, occupied: buffer }
 type State = {
@@ -13,14 +13,14 @@ local ActorStreamRuntime = {}
 ActorStreamRuntime.__index = ActorStreamRuntime
 
 type RuntimeState = {
-	codec: WireTypes.Codec,
-	consumer: Types.Consumer?,
-	options: Types.Options,
+	codec: SharedNetworkingTypes.ActorStreamCodec,
+	consumer: Types.ActorStreamConsumer?,
+	options: Types.ActorStreamOptions,
 	handles: { [number]: State },
 	ids: { [string]: State },
 	models: { [Model]: State },
-	candidates: { [Instance]: Types.Candidate },
-	candidatesByActorId: { [string]: { [Instance]: Types.Candidate } },
+	candidates: { [Instance]: Types.ActorModelCandidate },
+	candidatesByActorId: { [string]: { [Instance]: Types.ActorModelCandidate } },
 	retired: { [number]: boolean },
 	pendingCount: number,
 	destroyed: boolean,
@@ -42,11 +42,11 @@ function ActorStreamRuntime._unbind(self: Runtime, state: State): ()
 end
 
 function ActorStreamRuntime._bind(self: Runtime, state: State): ()
-	local candidates: { [Instance]: Types.Candidate }? = self.candidatesByActorId[state.record.actorId]
+	local candidates: { [Instance]: Types.ActorModelCandidate }? = self.candidatesByActorId[state.record.actorId]
 	if candidates == nil then
 		return
 	end
-	for _, candidate: Types.Candidate in candidates do
+	for _, candidate: Types.ActorModelCandidate in candidates do
 		if state.record.model ~= nil then
 			if state.record.model ~= candidate.model then
 				self.options.ReportFault("ActorModelConflict")
@@ -65,8 +65,8 @@ function ActorStreamRuntime._bind(self: Runtime, state: State): ()
 	end
 end
 
-function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): string?
-	local consumer: Types.Consumer? = self.consumer
+function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes.ActorStreamRecord): string?
+	local consumer: Types.ActorStreamConsumer? = self.consumer
 	assert(consumer ~= nil, "Expected installed Actor consumer")
 	if self.retired[record.handle] then
 		return "RetiredActorHandle"
@@ -181,12 +181,15 @@ function ActorStreamRuntime._record(self: Runtime, record: WireTypes.Record): st
 	if pending.received ~= buffer.len(pending.bytes) then
 		return "BaselineIncomplete"
 	end
-	local domains: { [string]: WireTypes.DomainTruth }?, reason: string? = self.codec.DecodeBaseline(pending.bytes)
+	-- This assembly is complete. Release it before either consumer callback so
+	-- recovery may deliver a fresh generation synchronously within the same limit.
+	state.pending = nil
+	self.pendingCount -= 1
+	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, reason: string? =
+		self.codec.DecodeBaseline(pending.bytes)
 	if domains == nil then
 		return reason
 	end
-	state.pending = nil
-	self.pendingCount -= 1
 	consumer.OnBaselineReady(state.record, record.revision, domains)
 	return nil
 end
@@ -202,31 +205,37 @@ function ActorStreamRuntime.Handle(self: Runtime, payload: any): (boolean, strin
 		end
 		return false, "ActorStreamConsumerMissing"
 	end
-	local records: { WireTypes.Record }?, reason: string? = self.codec.Decode(payload)
+	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = self.codec.Decode(payload)
 	if records == nil then
+		self.options.ReportFault(reason or "MalformedActorPacket")
 		return false, reason
 	end
-	for _, record: WireTypes.Record in records do
+	local firstFailure: string? = nil
+	for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 		local failure: string? = self:_record(record)
 		if failure ~= nil then
 			self.options.ReportFault(failure)
-			return false, failure
+			firstFailure = firstFailure or failure
+			local state: State? = self.handles[record.handle]
+			if state ~= nil and not state.halted then
+				self.consumer.OnActorFault(state.record, failure)
+			end
 		end
 	end
-	return true, nil
+	return firstFailure == nil, firstFailure
 end
 
-function ActorStreamRuntime.GetByHandle(self: Runtime, handle: number): Types.ActorRecord?
+function ActorStreamRuntime.GetByHandle(self: Runtime, handle: number): Types.ActorStreamRecord?
 	local state: State? = self.handles[handle]
 	return if state ~= nil then state.record else nil
 end
 
-function ActorStreamRuntime.GetByActorId(self: Runtime, actorId: string): Types.ActorRecord?
+function ActorStreamRuntime.GetByActorId(self: Runtime, actorId: string): Types.ActorStreamRecord?
 	local state: State? = self.ids[actorId]
 	return if state ~= nil then state.record else nil
 end
 
-function ActorStreamRuntime.GetByModel(self: Runtime, model: Model): Types.ActorRecord?
+function ActorStreamRuntime.GetByModel(self: Runtime, model: Model): Types.ActorStreamRecord?
 	local state: State? = self.models[model]
 	return if state ~= nil then state.record else nil
 end
@@ -253,11 +262,11 @@ function ActorStreamRuntime.Destroy(self: Runtime): ()
 end
 
 function ActorStreamRuntime.new(
-	codec: WireTypes.Codec,
-	consumer: Types.Consumer?,
-	discovery: Types.Discovery,
-	options: Types.Options
-): Types.Runtime
+	codec: SharedNetworkingTypes.ActorStreamCodec,
+	consumer: Types.ActorStreamConsumer?,
+	discovery: Types.ActorModelDiscovery,
+	options: Types.ActorStreamOptions
+): Types.ActorStreamRuntime
 	local runtimeState: RuntimeState = {
 		codec = codec,
 		consumer = consumer,
@@ -274,12 +283,12 @@ function ActorStreamRuntime.new(
 		disconnects = {},
 	}
 	local self: Runtime = setmetatable(runtimeState, ActorStreamRuntime)
-	local function added(candidate: Types.Candidate): ()
+	local function added(candidate: Types.ActorModelCandidate): ()
 		if self.destroyed or self.candidates[candidate.marker] ~= nil then
 			return
 		end
 		self.candidates[candidate.marker] = candidate
-		local candidates: { [Instance]: Types.Candidate } = self.candidatesByActorId[candidate.actorId] or {}
+		local candidates: { [Instance]: Types.ActorModelCandidate } = self.candidatesByActorId[candidate.actorId] or {}
 		self.candidatesByActorId[candidate.actorId] = candidates
 		candidates[candidate.marker] = candidate
 		local state: State? = self.ids[candidate.actorId]
@@ -294,12 +303,12 @@ function ActorStreamRuntime.new(
 			if self.destroyed then
 				return
 			end
-			local candidate: Types.Candidate? = self.candidates[marker]
+			local candidate: Types.ActorModelCandidate? = self.candidates[marker]
 			if candidate == nil then
 				return
 			end
 			self.candidates[marker] = nil
-			local candidates: { [Instance]: Types.Candidate }? = self.candidatesByActorId[candidate.actorId]
+			local candidates: { [Instance]: Types.ActorModelCandidate }? = self.candidatesByActorId[candidate.actorId]
 			if candidates ~= nil then
 				candidates[marker] = nil
 				if next(candidates) == nil then
@@ -311,7 +320,7 @@ function ActorStreamRuntime.new(
 				-- Marker lifetime is separate from Model lifetime. Another marker for
 				-- this Actor may still support the current binding.
 				if candidates ~= nil then
-					for _, remaining: Types.Candidate in candidates do
+					for _, remaining: Types.ActorModelCandidate in candidates do
 						if remaining.model == candidate.model then
 							return
 						end
@@ -322,11 +331,11 @@ function ActorStreamRuntime.new(
 			end
 		end)
 	)
-	for _, candidate: Types.Candidate in discovery.GetCandidates() do
+	for _, candidate: Types.ActorModelCandidate in discovery.GetCandidates() do
 		added(candidate)
 	end
 	-- The public interface erases private state; Luau treats metatable method receivers invariantly.
-	return self :: Types.Runtime
+	return self :: Types.ActorStreamRuntime
 end
 
 return ActorStreamRuntime

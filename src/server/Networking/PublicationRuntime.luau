@@ -1,6 +1,6 @@
 --!strict
-local PublicationTypes = require(script.Parent.PublicationTypes)
-local PublicationCapture = require(script.Parent.PublicationCapture)
+local Types = require(script.Parent.types)
+local PublicationCapture = require(script.Parent.utils.PublicationCapture)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SchemaCollectionUtils = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
@@ -10,14 +10,28 @@ PublicationRuntime.__index = PublicationRuntime
 
 type Attachment = {
 	sequence: number,
-	captures: { [string]: PublicationTypes.CaptureResult },
+	captures: { [string]: Types.PublicationCaptureResult },
 	disconnects: { { domainId: string, callback: () -> () } },
 	active: boolean,
 	depth: number,
 	touched: { [string]: boolean },
-	events: { PublicationTypes.Event },
+	events: { Types.PublicationEvent },
 	poisoned: boolean,
 }
+
+type RuntimeState = {
+	domains: { ReplicationTypes.LoadedReplicationDomainDefinition },
+	plans: { [string]: Types.PublicationCapturePlan },
+	eventsByDomain: { [string]: { [string]: Types.PublicationCapturePlan } },
+	options: Types.PublicationRuntimeOptions?,
+	attachments: { [ActorTypes.Actor]: Attachment },
+	orderedActors: { ActorTypes.Actor },
+	observers: { (Types.PublicationCommit) -> () },
+	pendingCommits: { Types.PublicationCommit },
+	dispatching: boolean,
+	destroyed: boolean,
+}
+type Runtime = typeof(setmetatable({} :: RuntimeState, PublicationRuntime))
 
 local function runSync(callback: () -> ...any): (boolean, string, ...any)
 	local thread = coroutine.create(callback)
@@ -32,14 +46,14 @@ local function runSync(callback: () -> ...any): (boolean, string, ...any)
 	return true, "", first, second
 end
 
-local function fault(self: any, actor: ActorTypes.Actor, domainId: string, reason: string): ()
+local function fault(self: Runtime, actor: ActorTypes.Actor, domainId: string, reason: string): ()
 	if self.options ~= nil and self.options.ReportFault ~= nil then
 		pcall(self.options.ReportFault, { actorId = actor:GetId(), domainId = domainId, reason = reason })
 	end
 end
 
 local function eventsFor(
-	self: any,
+	self: Runtime,
 	actor: ActorTypes.Actor,
 	attachment: Attachment,
 	domainId: string,
@@ -49,7 +63,7 @@ local function eventsFor(
 		return
 	end
 	local definitions = self.eventsByDomain[domainId]
-	local stagedEvents: { PublicationTypes.Event } = {}
+	local stagedEvents: { Types.PublicationEvent } = {}
 	local count: number? = SchemaCollectionUtils.GetArrayLength(reported)
 	if count == nil then
 		if attachment.depth > 0 then
@@ -84,11 +98,11 @@ local function eventsFor(
 end
 
 local function captureDomain(
-	self: any,
+	self: Runtime,
 	actor: ActorTypes.Actor,
 	domain: ReplicationTypes.LoadedReplicationDomainDefinition,
-	previous: PublicationTypes.CaptureResult?
-): PublicationTypes.CaptureResult
+	previous: Types.PublicationCaptureResult?
+): Types.PublicationCaptureResult
 	local ok, kind, value = runSync(function(): any
 		return domain.snapshot(actor)
 	end)
@@ -105,7 +119,7 @@ local function captureDomain(
 	return captured
 end
 
-local function dispatchCommits(self: any): ()
+local function dispatchCommits(self: Runtime): ()
 	if self.dispatching then
 		return
 	end
@@ -113,7 +127,7 @@ local function dispatchCommits(self: any): ()
 	local failed = false
 	local failure: any = nil
 	while #self.pendingCommits > 0 and not self.destroyed do
-		local commit: PublicationTypes.Commit = table.remove(self.pendingCommits, 1) :: PublicationTypes.Commit
+		local commit: Types.PublicationCommit = table.remove(self.pendingCommits, 1) :: Types.PublicationCommit
 		for _, observer in table.clone(self.observers) do
 			if self.destroyed then
 				break
@@ -131,13 +145,13 @@ local function dispatchCommits(self: any): ()
 	end
 end
 
-local function publish(self: any, actor: ActorTypes.Actor, attachment: Attachment): ()
+local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attachment): ()
 	local touched = attachment.touched
 	local events = attachment.events
 	attachment.touched = {}
 	attachment.events = {}
-	local staged: { [string]: PublicationTypes.CaptureResult } = {}
-	local patches: { PublicationTypes.DomainPatch } = {}
+	local staged: { [string]: Types.PublicationCaptureResult } = {}
+	local patches: { Types.PublicationDomainPatch } = {}
 	for _, domain in self.domains do
 		if touched[domain.id] then
 			local captured = captureDomain(self, actor, domain, attachment.captures[domain.id])
@@ -166,29 +180,29 @@ end
 
 function PublicationRuntime.new(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	options: PublicationTypes.RuntimeOptions?
-): PublicationTypes.Runtime
-	local domains = table.clone(catalog.orderedDefinitions)
+	options: Types.PublicationRuntimeOptions?
+): Types.PublicationRuntime
+	local domains: { ReplicationTypes.LoadedReplicationDomainDefinition } = table.clone(catalog.orderedDefinitions)
 	table.sort(
 		domains,
 		function(
-			a: ReplicationTypes.LoadedReplicationDomainDefinition,
-			b: ReplicationTypes.LoadedReplicationDomainDefinition
+			first: ReplicationTypes.LoadedReplicationDomainDefinition,
+			second: ReplicationTypes.LoadedReplicationDomainDefinition
 		): boolean
-			return a.id < b.id
+			return first.id < second.id
 		end
 	)
-	local plans: { [string]: PublicationTypes.CapturePlan } = {}
-	local eventsByDomain: { [string]: { [string]: PublicationTypes.CapturePlan } } = {}
+	local plans: { [string]: Types.PublicationCapturePlan } = {}
+	local eventsByDomain: { [string]: { [string]: Types.PublicationCapturePlan } } = {}
 	for _, domain in domains do
 		plans[domain.id] = PublicationCapture.Compile(domain.state)
-		local eventPlans: { [string]: PublicationTypes.CapturePlan } = {}
+		local eventPlans: { [string]: Types.PublicationCapturePlan } = {}
 		for _, event in domain.events do
 			eventPlans[event.id] = PublicationCapture.Compile(event.payload)
 		end
 		eventsByDomain[domain.id] = eventPlans
 	end
-	return setmetatable({
+	local state: RuntimeState = {
 		domains = domains,
 		plans = plans,
 		eventsByDomain = eventsByDomain,
@@ -199,7 +213,10 @@ function PublicationRuntime.new(
 		pendingCommits = {},
 		dispatching = false,
 		destroyed = false,
-	}, PublicationRuntime) :: any
+	}
+	local runtime: Runtime = setmetatable(state, PublicationRuntime)
+	-- Erase private fields only at the interface boundary, matching other runtimes.
+	return runtime :: Types.PublicationRuntime
 end
 
 function PublicationRuntime.ValidateEventBounds(
@@ -216,7 +233,7 @@ function PublicationRuntime.ValidateEventBounds(
 	return true, nil
 end
 
-function PublicationRuntime.AttachActor(self: any, actor: ActorTypes.Actor): (boolean, string?)
+function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor): (boolean, string?)
 	if self.destroyed then
 		return false, "PublicationRuntimeDestroyed"
 	end
@@ -270,7 +287,7 @@ function PublicationRuntime.AttachActor(self: any, actor: ActorTypes.Actor): (bo
 	return true, nil
 end
 
-function PublicationRuntime.DetachActor(self: any, actor: ActorTypes.Actor): ()
+function PublicationRuntime.DetachActor(self: Runtime, actor: ActorTypes.Actor): ()
 	local attachment: Attachment? = self.attachments[actor]
 	if attachment == nil then
 		return
@@ -290,28 +307,28 @@ function PublicationRuntime.DetachActor(self: any, actor: ActorTypes.Actor): ()
 	end
 end
 
-function PublicationRuntime.GetActorSequence(self: any, actor: ActorTypes.Actor): number
+function PublicationRuntime.GetActorSequence(self: Runtime, actor: ActorTypes.Actor): number
 	local attachment: Attachment? = self.attachments[actor]
 	return if attachment == nil then 0 else attachment.sequence
 end
 
-function PublicationRuntime.GetAttachedActors(self: any): { ActorTypes.Actor }
+function PublicationRuntime.GetAttachedActors(self: Runtime): { ActorTypes.Actor }
 	return table.clone(self.orderedActors)
 end
 
-function PublicationRuntime.CaptureBaseline(self: any, actor: ActorTypes.Actor): PublicationTypes.Baseline?
+function PublicationRuntime.CaptureBaseline(self: Runtime, actor: ActorTypes.Actor): Types.PublicationBaseline?
 	local attachment: Attachment? = self.attachments[actor]
 	if attachment == nil then
 		return nil
 	end
-	local domains: { [string]: PublicationTypes.DomainTruth } = {}
+	local domains: { [string]: Types.PublicationDomainTruth } = {}
 	for domainId, captured in attachment.captures do
 		domains[domainId] = table.freeze({ value = captured.value })
 	end
 	return table.freeze({ sequence = attachment.sequence, domains = table.freeze(domains) })
 end
 
-function PublicationRuntime.ObserveCommits(self: any, observer: (PublicationTypes.Commit) -> ()): () -> ()
+function PublicationRuntime.ObserveCommits(self: Runtime, observer: (Types.PublicationCommit) -> ()): () -> ()
 	table.insert(self.observers, observer)
 	local active = true
 	return function(): ()
@@ -328,7 +345,7 @@ function PublicationRuntime.ObserveCommits(self: any, observer: (PublicationType
 	end
 end
 
-function PublicationRuntime.WithActorCommit(self: any, actor: ActorTypes.Actor, callback: () -> ()): ()
+function PublicationRuntime.WithActorCommit(self: Runtime, actor: ActorTypes.Actor, callback: () -> ()): ()
 	local attachment: Attachment? = self.attachments[actor]
 	if attachment == nil then
 		local ok, kind, failure = runSync(callback)
@@ -354,7 +371,7 @@ function PublicationRuntime.WithActorCommit(self: any, actor: ActorTypes.Actor, 
 	end
 end
 
-function PublicationRuntime.Destroy(self: any): ()
+function PublicationRuntime.Destroy(self: Runtime): ()
 	if self.destroyed then
 		return
 	end

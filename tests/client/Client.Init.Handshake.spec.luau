@@ -8,8 +8,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local Client: ClientTypes.Client = require(KRF.client)
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -53,7 +53,7 @@ end)
 it("installs internal consumers with reconstructed codecs before sending READY", function()
 	local installCalls: number = 0
 	fixture.dependencies.InstallConsumers = function(
-		protocol: ProtocolTypes.ClientProtocol
+		protocol: SharedNetworkingTypes.ClientProtocol
 	): (boolean, string?, (() -> ())?)
 		installCalls += 1
 		expect(protocol.domainsById["Game.Actions"].id).toBe("Game.Actions")
@@ -71,7 +71,7 @@ end)
 
 it("handles immediate bootstrap and acknowledgement responses without losing the startup result", function()
 	fixture.onSend = function(payload: buffer): ()
-		local message: ProtocolTypes.Message = ProtocolTestUtils.decode(payload)
+		local message: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(payload)
 		if message.kind == "Hello" then
 			TestUtils.bootstrap(fixture)
 		elseif message.kind == "Ready" then

@@ -1,13 +1,12 @@
 --!strict
-local ProtocolTypes = require(script.Parent.ProtocolTypes)
-local NetworkingTypes = require(script.Parent.types)
-local Constants = require(script.Parent.ProtocolConstants)
+local Types = require(script.Parent.types)
+local Constants = require(script.Parent.utils.ProtocolConstants)
 local SchemaCompiler = require(script.Parent.utils.SchemaCompiler)
 local CodecCompiler = require(script.Parent.CodecCompiler)
 local CollectionUtils = require(script.Parent.utils.SchemaCollectionUtils)
 local BufferUtils = require(script.Parent.utils.CodecBufferUtils)
 
-local ManifestCompiler = {} :: ProtocolTypes.ManifestCompiler
+local ManifestCompiler = {} :: Types.ManifestCompiler
 
 local function onlyFields(value: any, allowed: { [string]: boolean }): boolean
 	if type(value) ~= "table" then
@@ -21,21 +20,19 @@ local function onlyFields(value: any, allowed: { [string]: boolean }): boolean
 	return true
 end
 
-local function codecFor(definition: NetworkingTypes.SchemaDefinition): (NetworkingTypes.CompiledCodec?, string?)
-	local schema: NetworkingTypes.CompiledSchema?, reason: string? = SchemaCompiler.Compile(definition)
+local function codecFor(definition: Types.SchemaDefinition): (Types.CompiledCodec?, string?)
+	local schema: Types.CompiledSchema?, reason: string? = SchemaCompiler.Compile(definition)
 	if schema == nil then
 		return nil, if reason == "SchemaKindInvalid" then "UnsupportedSchema" else "MalformedBootstrap"
 	end
-	local codec: NetworkingTypes.CompiledCodec?, codecReason: string? = CodecCompiler.Compile(schema)
+	local codec: Types.CompiledCodec?, codecReason: string? = CodecCompiler.Compile(schema)
 	if codec == nil then
 		return nil, codecReason or "UnsupportedSchema"
 	end
 	return codec, nil
 end
 
-function ManifestCompiler.Reconstruct(
-	manifest: ProtocolTypes.ProtocolManifest
-): (ProtocolTypes.ClientProtocol?, string?)
+function ManifestCompiler.Reconstruct(manifest: Types.ProtocolManifest): (Types.ClientProtocol?, string?)
 	if not onlyFields(manifest, { version = true, domains = true }) then
 		return nil, "MalformedBootstrap"
 	end
@@ -49,9 +46,9 @@ function ManifestCompiler.Reconstruct(
 	if domainCount == nil then
 		return nil, "MalformedBootstrap"
 	end
-	local domainsById: { [string]: ProtocolTypes.ClientDomain } = {}
-	local domainsByCode: { [number]: ProtocolTypes.ClientDomain } = {}
-	for _, domain: ProtocolTypes.ManifestDomain in manifest.domains do
+	local domainsById: { [string]: Types.ClientDomain } = {}
+	local domainsByCode: { [number]: Types.ClientDomain } = {}
+	for _, domain: Types.ManifestDomain in manifest.domains do
 		if not onlyFields(domain, { id = true, code = true, state = true, events = true }) then
 			return nil, "MalformedBootstrap"
 		end
@@ -69,13 +66,13 @@ function ManifestCompiler.Reconstruct(
 		if eventCount == nil then
 			return nil, "MalformedBootstrap"
 		end
-		local stateCodec: NetworkingTypes.CompiledCodec?, stateReason: string? = codecFor(domain.state)
+		local stateCodec: Types.CompiledCodec?, stateReason: string? = codecFor(domain.state)
 		if stateCodec == nil then
 			return nil, stateReason
 		end
-		local eventsById: { [string]: ProtocolTypes.ClientEvent } = {}
-		local eventsByCode: { [number]: ProtocolTypes.ClientEvent } = {}
-		for _, event: ProtocolTypes.ManifestEvent in domain.events do
+		local eventsById: { [string]: Types.ClientEvent } = {}
+		local eventsByCode: { [number]: Types.ClientEvent } = {}
+		for _, event: Types.ManifestEvent in domain.events do
 			if not onlyFields(event, { id = true, code = true, payload = true }) then
 				return nil, "MalformedBootstrap"
 			end
@@ -89,18 +86,18 @@ function ManifestCompiler.Reconstruct(
 			then
 				return nil, "MalformedBootstrap"
 			end
-			local codec: NetworkingTypes.CompiledCodec?, reason: string? = codecFor(event.payload)
+			local codec: Types.CompiledCodec?, reason: string? = codecFor(event.payload)
 			if codec == nil then
 				return nil, reason
 			end
-			local installed: ProtocolTypes.ClientEvent = { id = event.id, code = event.code, codec = codec }
+			local installed: Types.ClientEvent = { id = event.id, code = event.code, codec = codec }
 			table.freeze(installed)
-			eventsById[event.id] = installed :: ProtocolTypes.ClientEvent?
-			eventsByCode[event.code] = installed :: ProtocolTypes.ClientEvent?
+			eventsById[event.id] = installed :: Types.ClientEvent?
+			eventsByCode[event.code] = installed :: Types.ClientEvent?
 		end
 		table.freeze(eventsById)
 		table.freeze(eventsByCode)
-		local installed: ProtocolTypes.ClientDomain = {
+		local installed: Types.ClientDomain = {
 			id = domain.id,
 			code = domain.code,
 			stateCodec = stateCodec,
@@ -108,14 +105,14 @@ function ManifestCompiler.Reconstruct(
 			eventsByCode = eventsByCode,
 		}
 		table.freeze(installed)
-		domainsById[domain.id] = installed :: ProtocolTypes.ClientDomain?
-		domainsByCode[domain.code] = installed :: ProtocolTypes.ClientDomain?
+		domainsById[domain.id] = installed :: Types.ClientDomain?
+		domainsByCode[domain.code] = installed :: Types.ClientDomain?
 	end
 	table.freeze(domainsById)
 	table.freeze(domainsByCode)
-	local runtime: ProtocolTypes.ClientProtocol = { domainsById = domainsById, domainsByCode = domainsByCode }
+	local runtime: Types.ClientProtocol = { domainsById = domainsById, domainsByCode = domainsByCode }
 	table.freeze(runtime)
-	return runtime :: ProtocolTypes.ClientProtocol?, nil
+	return runtime :: Types.ClientProtocol?, nil
 end
 
 return ManifestCompiler

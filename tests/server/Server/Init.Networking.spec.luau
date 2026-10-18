@@ -8,17 +8,17 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ServerTypes = require(KRF.server.types)
-local NetworkingTypes = require(KRF.server.Networking.types)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local ControllerTypes = require(KRF.server.Controller.types)
 local TagTypes = require(KRF.server.Tags.types)
 local ResourceTypes = require(KRF.server.Resource.types)
 local ActionTypes = require(KRF.server.Action.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local Server = require(KRF.server)
-local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
-local Transport: ProtocolTypes.Transport = require(KRF.shared.Networking.Transport)
+local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 local Controllers: ControllerTypes.ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
@@ -60,7 +60,7 @@ it("prepares Networking from owned N1 metadata before publishing any catalog", f
 	local prepareCalls: number = 0
 	Networking.Prepare = function(
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog
-	): (ProtocolTypes.PreparedProtocol?, string?)
+	): (SharedNetworkingTypes.PreparedProtocol?, string?)
 		prepareCalls += 1
 		expectUnpublished()
 		expect(table.isfrozen(catalog)).toBe(true)
@@ -73,7 +73,7 @@ it("prepares Networking from owned N1 metadata before publishing any catalog", f
 	expect(failure).toBeNil()
 	expect(prepareCalls).toBe(1)
 	expect(Networking._IsInitialized()).toBe(true)
-	local owned: ProtocolTypes.OwnedTransport?, reason: string? = Transport.Locate(ReplicatedStorage)
+	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(ReplicatedStorage)
 	expect(reason).toBeNil()
 	assert(owned ~= nil, "Expected server-owned framework transport")
 	expect(#owned.root:GetDescendants()).toBe(2)
@@ -85,7 +85,7 @@ do
 	it("surfaces Networking " .. reason .. " without publishing any startup registry", function()
 		Networking.Prepare = function(
 			_catalog: ReplicationTypes.PreparedReplicationDomainCatalog
-		): (ProtocolTypes.PreparedProtocol?, string?)
+		): (SharedNetworkingTypes.PreparedProtocol?, string?)
 			return nil, reason
 		end
 		local success: boolean, failure: ServerTypes.StartupFailure? =
@@ -98,17 +98,17 @@ do
 end
 
 it("rolls back catalog publication if transport activation fails after protocol preparation", function()
-	local prepared: ProtocolTypes.PreparedProtocol = {
+	local prepared: SharedNetworkingTypes.PreparedProtocol = {
 		manifest = { version = Constants.PROTOCOL_VERSION, domains = {} },
 		bootstrapBuffer = buffer.create(1),
 		runtime = { domainsById = {}, domainsByCode = {} },
 	}
 	Networking.Prepare = function(
 		_catalog: ReplicationTypes.PreparedReplicationDomainCatalog
-	): (ProtocolTypes.PreparedProtocol?, string?)
+	): (SharedNetworkingTypes.PreparedProtocol?, string?)
 		return prepared, nil
 	end
-	Networking.Publish = function(protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		expect(protocol).toBe(prepared)
 		return false, "TransportConflict"
 	end
@@ -139,7 +139,7 @@ end)
 it("keeps unexpected preparation failures observable with every startup registry unpublished", function()
 	Networking.Prepare = function(
 		_catalog: ReplicationTypes.PreparedReplicationDomainCatalog
-	): (ProtocolTypes.PreparedProtocol?, string?)
+	): (SharedNetworkingTypes.PreparedProtocol?, string?)
 		error("UnexpectedNetworkingPreparationFailure")
 	end
 	local success: boolean? = nil

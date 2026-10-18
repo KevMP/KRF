@@ -17,9 +17,9 @@ local SignalModule = require(SignalFolder.SignalModule)
 local OwnedSignalsModule = require(SignalFolder.OwnedSignals)
 local ControllerRegistry = require(script.Parent.Parent.Controller.ControllerRegistry)
 local Server = require(script.Parent.Parent)
-local PublicationLifecycle = require(script.Parent.Parent.Networking.ActorPublicationLifecycle)
-local AwarenessLifecycle = require(script.Parent.Parent.Networking.ActorAwarenessLifecycle)
-local Marker = require(script.Parent.Parent.Networking.ActorModelMarker)
+local PublicationLifecycle = require(script.Parent.Parent.Networking.utils.ActorPublicationLifecycle)
+local AwarenessLifecycle = require(script.Parent.Parent.Networking.utils.ActorAwarenessLifecycle)
+local Marker = require(script.Parent.Parent.Networking.utils.ActorModelMarker)
 
 local ActorRuntime = {} :: ActorRuntime
 

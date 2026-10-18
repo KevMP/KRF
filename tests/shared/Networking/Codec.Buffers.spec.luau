@@ -5,12 +5,12 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
 it("writes at a non-zero offset without changing surrounding caller-owned bytes", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(8))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(8))
 	local size: number?, measureReason: string? = codec.Measure("hello")
 	expect(measureReason).toBeNil()
 	assert(size ~= nil, "Expected a measured size")
@@ -28,8 +28,8 @@ it("writes at a non-zero offset without changing surrounding caller-owned bytes"
 end)
 
 it("writes sequential codecs directly into one exact-sized buffer", function()
-	local header: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U16)
-	local body: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.String(8), 2))
+	local header: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U16)
+	local body: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.String(8), 2))
 	local value: { string } = { "first", "last" }
 	local bodySize: number?, measureReason: string? = body.Measure(value)
 	expect(measureReason).toBeNil()
@@ -53,7 +53,7 @@ it("writes sequential codecs directly into one exact-sized buffer", function()
 end)
 
 it("detects insufficient destination capacity before touching the buffer", function()
-	local codec: NetworkingTypes.CompiledCodec =
+	local codec: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ first = Schema.U32, last = Schema.String(8) }))
 	local value: any = { first = 42, last = "hello" }
 	local size: number?, measureReason: string? = codec.Measure(value)
@@ -74,7 +74,7 @@ it("detects insufficient destination capacity before touching the buffer", funct
 end)
 
 it("rejects invalid write offsets without changing the destination", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U8)
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U8)
 	local destination: buffer = buffer.create(4)
 	buffer.fill(destination, 0, 165)
 	local original: string = buffer.tostring(destination)
@@ -87,9 +87,9 @@ it("rejects invalid write offsets without changing the destination", function()
 end)
 
 it("reports the sum of fixed Struct fields without treating Optional fields as fixed", function()
-	local fixed: NetworkingTypes.CompiledCodec =
+	local fixed: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ active = Schema.Boolean, count = Schema.U16, amount = Schema.F64 }))
-	local variable: NetworkingTypes.CompiledCodec =
+	local variable: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ value = Schema.Optional(Schema.U16) }))
 	expect(fixed.fixedSizeBytes).toBe(11)
 	expect(fixed.maxSizeBytes).toBe(11)
@@ -99,7 +99,7 @@ it("reports the sum of fixed Struct fields without treating Optional fields as f
 end)
 
 it("supports zero-byte Structs at the end of the buffer", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({}))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({}))
 	local destination: buffer = buffer.create(2)
 	local offset: number?, reason: string? = codec.Write({}, destination, 2)
 	local value: any, readOffset: number?, readReason: string? = codec.Read(destination, 2, 2)
@@ -114,14 +114,14 @@ end)
 
 it("measures variable-sized values exactly across collection prefix width boundaries", function()
 	for _, maximum: number in { 1, 255, 256, 65535, 65536 } do
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(maximum))
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(maximum))
 		TestUtils.expectRoundTrip(codec, "")
 		TestUtils.expectRoundTrip(codec, string.rep("x", maximum))
 	end
 end)
 
 it("does not mutate consumer tables while measuring or encoding unordered Maps", function()
-	local codec: NetworkingTypes.CompiledCodec =
+	local codec: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Map(Schema.String(8), Schema.Struct({ count = Schema.U8 }), 2))
 	local value: any = { alpha = { count = 0 }, beta = { count = 255 } }
 	TestUtils.expectRoundTrip(codec, value)

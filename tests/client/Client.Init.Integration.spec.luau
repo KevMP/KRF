@@ -10,7 +10,7 @@ local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
 local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
@@ -73,7 +73,7 @@ it("completes Client.Init through the real server handshake without sending Acto
 		callbackCalls += 1
 		return nil
 	end
-	local protocol: ProtocolTypes.PreparedProtocol = ServerTestUtils.prepare({ domain })
+	local protocol: SharedNetworkingTypes.PreparedProtocol = ServerTestUtils.prepare({ domain })
 	local player: Player = ProtocolTestUtils.createPlayer()
 	table.insert(players, player)
 	local fixture: ClientTestUtils.Fixture = ClientTestUtils.new()
@@ -110,11 +110,11 @@ it("completes Client.Init through the real server handshake without sending Acto
 end)
 
 it("boots two isolated client modules with the same server codebook and reusable manifest buffer", function()
-	local protocol: ProtocolTypes.PreparedProtocol =
+	local protocol: SharedNetworkingTypes.PreparedProtocol =
 		ServerTestUtils.prepare({ DomainTestUtils.createDomain("Game.State") })
 	local fixtures: { [Player]: ClientTestUtils.Fixture } = {}
 	local deliveries: { [Player]: { buffer } } = {}
-	local installed: { ProtocolTypes.ClientProtocol } = {}
+	local installed: { SharedNetworkingTypes.ClientProtocol } = {}
 	local bootstrapBuffers: { buffer } = {}
 	runtime = Handshake.new(protocol, {
 		SendReliable = function(player: Player, payload: buffer): ()
@@ -141,7 +141,7 @@ it("boots two isolated client modules with the same server codebook and reusable
 			runtime:Handle(player, payload)
 		end
 		fixture.dependencies.InstallConsumers = function(
-			clientProtocol: ProtocolTypes.ClientProtocol
+			clientProtocol: SharedNetworkingTypes.ClientProtocol
 		): (boolean, string?, (() -> ())?)
 			table.insert(installed, clientProtocol)
 			return true, nil, nil
@@ -169,7 +169,7 @@ it("boots two isolated client modules with the same server codebook and reusable
 	expect(installed[1].domainsById["Game.State"].code).toBe(installed[2].domainsById["Game.State"].code)
 	local encoded: buffer =
 		CodecTestUtils.encode(protocol.runtime.domainsById["Game.State"].stateCodec, { active = false })
-	for _, clientProtocol: ProtocolTypes.ClientProtocol in installed do
+	for _, clientProtocol: SharedNetworkingTypes.ClientProtocol in installed do
 		local value: any, offset: number?, reason: string? =
 			clientProtocol.domainsById["Game.State"].stateCodec.Read(encoded, 0, buffer.len(encoded))
 		expect(value).toEqual({ active = false })

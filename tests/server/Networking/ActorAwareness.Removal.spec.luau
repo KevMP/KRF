@@ -8,7 +8,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -20,7 +20,7 @@ afterEach(function()
 end)
 
 it("discards unsent initial baseline and queues exactly one reliable removal", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -34,7 +34,7 @@ it("discards unsent initial baseline and queues exactly one reliable removal", f
 end)
 
 it("preserves sent ordering but discards unsent live history and replacement on removal", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -58,7 +58,7 @@ it("preserves sent ordering but discards unsent live history and replacement on 
 end)
 
 it("continues another Actor's queued publication when one Actor unregisters", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local removed: ActorTypes.Actor = TestUtils.actor(fixture, nil)
@@ -78,7 +78,7 @@ it("continues another Actor's queued publication when one Actor unregisters", fu
 end)
 
 it("releases the N3 commit subscription and ignores retained producer callbacks after destroy", function()
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)

@@ -5,12 +5,12 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Codec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Codec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ProtocolTestUtils)
 
-local rejectionReasons: { ProtocolTypes.RejectionReason } = {
+local rejectionReasons: { SharedNetworkingTypes.ProtocolRejectionReason } = {
 	"ProtocolMismatch",
 	"MalformedPacket",
 	"UnsupportedSchema",
@@ -21,7 +21,7 @@ local rejectionReasons: { ProtocolTypes.RejectionReason } = {
 it("owns a frozen closed rejection codebook with unique one-byte codes", function()
 	local codes: { [number]: boolean } = {}
 	local count: number = 0
-	for reason: ProtocolTypes.RejectionReason, code: number in Constants.REJECTION_CODES do
+	for reason: SharedNetworkingTypes.ProtocolRejectionReason, code: number in Constants.REJECTION_CODES do
 		expect(table.find(rejectionReasons, reason)).never.toBeNil()
 		expect(code >= 0 and code <= 255 and code % 1 == 0).toBe(true)
 		expect(codes[code]).toBeNil()
@@ -33,7 +33,7 @@ it("owns a frozen closed rejection codebook with unique one-byte codes", functio
 	expect(Constants.REJECT_PACKET_BYTES).toBe(2)
 end)
 
-for _, rejectionReason: ProtocolTypes.RejectionReason in rejectionReasons do
+for _, rejectionReason: SharedNetworkingTypes.ProtocolRejectionReason in rejectionReasons do
 	it("encodes " .. rejectionReason .. " as a fixed-size reason code rather than a diagnostic string", function()
 		local payload: buffer = TestUtils.encode({ kind = "Reject", reason = rejectionReason })
 		expect(buffer.len(payload)).toBe(Constants.REJECT_PACKET_BYTES)
@@ -70,7 +70,7 @@ end
 it("rejects an unknown wire reason code instead of decoding it as arbitrary text", function()
 	local payload: buffer = TestUtils.encode({ kind = "Reject", reason = "ProtocolMismatch" })
 	buffer.writeu8(payload, 1, 255)
-	local message: ProtocolTypes.Message?, reason: string? = Codec.Decode(payload)
+	local message: SharedNetworkingTypes.ProtocolMessage?, reason: string? = Codec.Decode(payload)
 	expect(message).toBeNil()
 	expect(reason).toBe("ProtocolRejectionReasonInvalid")
 end)
@@ -80,7 +80,7 @@ it("rejects every truncation of the fixed rejection packet without throwing", fu
 	for length: number = 0, Constants.REJECT_PACKET_BYTES - 1 do
 		local payload: buffer = buffer.create(length)
 		buffer.copy(payload, 0, valid, 0, length)
-		local message: ProtocolTypes.Message? = nil
+		local message: SharedNetworkingTypes.ProtocolMessage? = nil
 		local reason: string? = nil
 		local completed: boolean = pcall(function()
 			message, reason = Codec.Decode(payload)
@@ -101,7 +101,7 @@ for _, length: number in { 3, Constants.MAX_BOOTSTRAP_BYTES + 1 } do
 			local payload: buffer = buffer.create(length)
 			buffer.copy(payload, 0, valid)
 			buffer.fill(payload, Constants.REJECT_PACKET_BYTES, (string.byte("x")))
-			local message: ProtocolTypes.Message? = nil
+			local message: SharedNetworkingTypes.ProtocolMessage? = nil
 			local reason: string? = nil
 			local completed: boolean = pcall(function()
 				message, reason = Codec.Decode(payload)

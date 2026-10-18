@@ -9,8 +9,8 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Registry: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 local TestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)

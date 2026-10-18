@@ -13,7 +13,7 @@ local TagTypes = require(KRF.server.Tags.types)
 local ResourceTypes = require(KRF.server.Resource.types)
 local ActionTypes = require(KRF.server.Action.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Server = require(KRF.server)
 local Controllers: ControllerTypes.ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
 local Tags: TagTypes.TagRegistry = require(KRF.server.Tags.TagRegistry)
@@ -112,7 +112,7 @@ for _, testCase: FailureCase in cases do
 end
 
 it("keeps unexpected Networking activation failure observable after rolling back catalogs", function()
-	Networking.Publish = function(_protocol: ProtocolTypes.PreparedProtocol): (boolean, string?)
+	Networking.Publish = function(_protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		error("ActivationFailure")
 	end
 	local success: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})

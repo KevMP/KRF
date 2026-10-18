@@ -5,11 +5,11 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
-type TruncationCase = { name: string, schema: NetworkingTypes.SchemaDefinition, value: any }
+type TruncationCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, value: any }
 local truncationCases: { TruncationCase } = {
 	{ name = "U32", schema = Schema.U32, value = 123 },
 	{ name = "F64", schema = Schema.F64, value = 1.25 },
@@ -25,7 +25,7 @@ local truncationCases: { TruncationCase } = {
 }
 for _, testCase: TruncationCase in truncationCases do
 	it("rejects every truncation of " .. testCase.name .. " without reading beyond the supplied limit", function()
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		local encoded: buffer = TestUtils.encode(codec, testCase.value)
 		for limit: number = 0, buffer.len(encoded) - 1 do
 			-- Physical bytes remain available: only the logical boundary truncates.
@@ -38,7 +38,7 @@ for _, testCase: TruncationCase in truncationCases do
 end
 
 it("rejects invalid read boundaries before invoking buffer operations", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U8)
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U8)
 	local source: buffer = buffer.create(2)
 	local invalidBounds: { { number } } =
 		{ { -1, 2 }, { 0.5, 2 }, { 2, 1 }, { 0, 3 }, { 0, 1.5 }, { 0, -1 }, { math.huge, 2 }, { 0, 0 / 0 } }
@@ -63,13 +63,13 @@ it("rejects non-canonical Boolean and Optional presence bytes", function()
 end)
 
 it("rejects an Enum ordinal outside its membership", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Enum({ "Idle", "Running" }))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Enum({ "Idle", "Running" }))
 	local source: buffer = TestUtils.encode(codec, "Idle")
 	buffer.fill(source, 0, 255)
 	TestUtils.expectReadFailure(codec, source, 0, buffer.len(source), "CodecEnumOrdinalInvalid")
 end)
 
-type LengthCase = { name: string, schema: NetworkingTypes.SchemaDefinition, empty: any, reason: string }
+type LengthCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, empty: any, reason: string }
 local lengthCases: { LengthCase } = {
 	{ name = "String", schema = Schema.String(2), empty = "", reason = "SchemaStringTooLong" },
 	{ name = "Array", schema = Schema.Array(Schema.U8, 2), empty = {}, reason = "SchemaArrayTooLong" },
@@ -77,20 +77,20 @@ local lengthCases: { LengthCase } = {
 }
 for _, testCase: LengthCase in lengthCases do
 	it("rejects a declared " .. testCase.name .. " length over its bound before examining missing entries", function()
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		local source: buffer = TestUtils.collectionPrefix(codec, testCase.empty, 255)
 		TestUtils.expectReadFailure(codec, source, 0, buffer.len(source), testCase.reason)
 	end)
 end
 
 it("rejects a bounded String length that exceeds the remaining bytes", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(8))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.String(8))
 	local source: buffer = TestUtils.collectionPrefix(codec, "", 8)
 	TestUtils.expectReadFailure(codec, source, 0, buffer.len(source), "CodecTruncated")
 end)
 
 it("rejects duplicate Map keys instead of overwriting the first value", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Map(Schema.U8, Schema.Boolean, 2))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Map(Schema.U8, Schema.Boolean, 2))
 	local prefix: buffer = TestUtils.collectionPrefix(codec, {}, 2)
 	local source: buffer = buffer.create(buffer.len(prefix) + 4)
 	buffer.copy(source, 0, prefix)
@@ -102,7 +102,7 @@ it("rejects duplicate Map keys instead of overwriting the first value", function
 end)
 
 it("rejects absent Optional Array entries rather than creating holes", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Optional(Schema.U8), 2))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Optional(Schema.U8), 2))
 	local prefix: buffer = TestUtils.collectionPrefix(codec, {}, 1)
 	local source: buffer = buffer.create(buffer.len(prefix) + 1)
 	buffer.copy(source, 0, prefix)
@@ -111,7 +111,8 @@ it("rejects absent Optional Array entries rather than creating holes", function(
 end)
 
 it("rejects absent Optional Map values rather than silently deleting declared entries", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Map(Schema.U8, Schema.Optional(Schema.U8), 2))
+	local codec: SharedNetworkingTypes.CompiledCodec =
+		TestUtils.compile(Schema.Map(Schema.U8, Schema.Optional(Schema.U8), 2))
 	local prefix: buffer = TestUtils.collectionPrefix(codec, {}, 1)
 	local source: buffer = buffer.create(buffer.len(prefix) + 2)
 	buffer.copy(source, 0, prefix)
@@ -121,8 +122,8 @@ it("rejects absent Optional Map values rather than silently deleting declared en
 end)
 
 it("rejects non-finite floating point bit patterns on decode", function()
-	for _, definition: NetworkingTypes.SchemaDefinition in { Schema.F32, Schema.F64 } do
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(definition)
+	for _, definition: SharedNetworkingTypes.SchemaDefinition in { Schema.F32, Schema.F64 } do
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(definition)
 		local source: buffer = buffer.create(codec.maxSizeBytes)
 		for _, value: number in { math.huge, -math.huge, 0 / 0 } do
 			if definition.kind == "F32" then
@@ -136,20 +137,20 @@ it("rejects non-finite floating point bit patterns on decode", function()
 end)
 
 it("rejects malformed data at depth without throwing and remains usable afterward", function()
-	local definition: NetworkingTypes.SchemaDefinition = Schema.U32
+	local definition: SharedNetworkingTypes.SchemaDefinition = Schema.U32
 	local value: any = 42
 	for _ = 1, 32 do
 		definition = Schema.Struct({ child = Schema.Optional(Schema.Array(definition, 1)) })
 		value = { child = { value } }
 	end
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(definition)
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(definition)
 	local encoded: buffer = TestUtils.encode(codec, value)
 	TestUtils.expectReadFailure(codec, encoded, 0, buffer.len(encoded) - 1, "CodecTruncated")
 	TestUtils.expectRoundTrip(codec, value)
 end)
 
 it("returns the end of one value and leaves following bytes for the next codec", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U16)
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.U16)
 	local source: buffer = buffer.create(4)
 	buffer.writeu16(source, 0, 65535)
 	buffer.writeu16(source, 2, 42)
@@ -164,7 +165,8 @@ it("returns the end of one value and leaves following bytes for the next codec",
 end)
 
 it("rejects enormous zero-byte collection work even when the declared schema bound permits the count", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Array(Schema.Struct({}), 9007199254740991))
+	local codec: SharedNetworkingTypes.CompiledCodec =
+		TestUtils.compile(Schema.Array(Schema.Struct({}), 9007199254740991))
 	local source: buffer = TestUtils.collectionPrefix(codec, {}, 2 ^ 40)
 	TestUtils.expectReadFailure(codec, source, 0, buffer.len(source), "CodecDecodeWorkExceeded")
 	TestUtils.expectRoundTrip(codec, { {}, {} })

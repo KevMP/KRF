@@ -23,7 +23,7 @@ Follow the server Script and client LocalScript patterns in [Initializing KRF](.
 
 1. `Server.Init(config)` validates the domain catalog and event size bounds, compiles state and event codecs, and installs an immutable global protocol catalog and server publication runtime before returning success. It does not yield.
 2. `Client.Init()` waits for the framework transport within a bounded deadline. It installs its receive listener before requesting bootstrap data.
-3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs and installs its Actor packet receiver before declaring readiness.
+3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs and installs its Actor decoder, ActorView consumer and packet receiver before declaring readiness.
 4. The server marks the client ready and sends its acknowledgement before notifying framework readiness observers. `Client.Init()` returns success only after receiving that acknowledgement.
 
 Repeated bootstrap requests while the server is waiting for readiness do not resend the catalog or restart setup. Duplicate readiness messages do not repeat the acknowledgement or readiness notification. Removing a player clears that connection's readiness.
@@ -40,7 +40,9 @@ The bootstrap carries domain and event identities, protocol codes, and semantic 
 
 Successful initialization establishes protocol readiness and installs server Actor publication and recipient streams. When an Actor registers, KRF captures its initial domain state and observes subsequent committed mutations; unregistering the Actor or resetting the server releases those observers.
 
-Default client startup installs no Actor-data consumer. It rejects Actor packets before decoding or assembly and warns once with `ActorStreamConsumerMissing`, even after `Client.Init()` succeeds. Public Actor views, client state accessors, and a gameplay command API are unavailable. See [Actor replication](./actor-replication) for server delivery and recovery behavior.
+Successful `Client.Init()` means the [ActorView runtime](./actor-views) is ready for future traffic. It does not wait for an Actor baseline or for a Roblox Model to arrive. Subscribe to registry lifecycle events and inspect existing views when initializing a client system. Gameplay command APIs are separate from replicated views.
+
+Start consumer modules from the same successful startup boundary; those modules must not call `Client.Init()` again. Runtime Actor faults use the [ActorView lifecycle and recovery contract](./actor-views#initial-state-and-recovery), rather than restarting initialization.
 
 ## Handle startup failures
 

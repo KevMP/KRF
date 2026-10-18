@@ -1,12 +1,11 @@
 --!strict
-local Types = require(script.Parent.ActorStreamTypes)
-local ProtocolTypes = require(script.Parent.ProtocolTypes)
-local Constants = require(script.Parent.ActorProtocolConstants)
+local Types = require(script.Parent.types)
+local Constants = require(script.Parent.utils.ActorProtocolConstants)
 local Bytes = require(script.Parent.utils.ActorBuffer)
 local PatchCompiler = require(script.Parent.utils.ActorPatchCompiler)
 local Collections = require(script.Parent.utils.SchemaCollectionUtils)
 
-local ActorStreamCodec = {} :: Types.CodecModule
+local ActorStreamCodec = {} :: Types.ActorStreamCodecModule
 
 local kinds: { [string]: number } =
 	{ BaselineBegin = 0, BaselineChunk = 1, BaselineEnd = 2, Commit = 3, ActorRemove = 4, ActorHalt = 5 }
@@ -43,17 +42,20 @@ local function readCount(cursor: Bytes.Cursor): number
 	return length
 end
 
-function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schemas: Types.SchemaCatalog): Types.Codec
+function ActorStreamCodec.Compile(
+	protocol: Types.ClientProtocol,
+	schemas: Types.ActorSchemaCatalog
+): Types.ActorStreamCodec
 	local plans: { [string]: PatchCompiler.Plan } = {}
 	for id: string, schema in schemas do
 		plans[id] = PatchCompiler.Compile(schema)
 	end
-	local function domain(cursor: Bytes.Cursor): ProtocolTypes.ClientDomain
-		local found: ProtocolTypes.ClientDomain? = protocol.domainsByCode[Bytes.ReadUnsigned(cursor, 4)]
+	local function domain(cursor: Bytes.Cursor): Types.ClientDomain
+		local found: Types.ClientDomain? = protocol.domainsByCode[Bytes.ReadUnsigned(cursor, 4)]
 		assert(found ~= nil, "UnknownDomainCode")
 		return found
 	end
-	local function writeRecord(cursor: Bytes.Cursor, record: Types.Record): ()
+	local function writeRecord(cursor: Bytes.Cursor, record: Types.ActorStreamRecord): ()
 		assert(kinds[record.kind] ~= nil and record.handle > 0, "MalformedActorPacket")
 		Bytes.Unsigned(cursor, kinds[record.kind], 1)
 		Bytes.Unsigned(cursor, record.handle, 4)
@@ -76,8 +78,8 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 			Bytes.Unsigned(cursor, record.revision, 4)
 			cursor.context = "InvalidActorPatch"
 			count(cursor, record.patches)
-			for _, change: Types.DomainPatch in record.patches do
-				local found: ProtocolTypes.ClientDomain? = protocol.domainsById[change.domainId]
+			for _, change: Types.ActorDomainPatch in record.patches do
+				local found: Types.ClientDomain? = protocol.domainsById[change.domainId]
 				local plan: PatchCompiler.Plan? = plans[change.domainId]
 				assert(found ~= nil and plan ~= nil, "UnknownDomainCode")
 				Bytes.Unsigned(cursor, found.code, 4)
@@ -85,10 +87,10 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 			end
 			cursor.context = "InvalidActorEvent"
 			count(cursor, record.events)
-			for _, event: Types.Event in record.events do
-				local found: ProtocolTypes.ClientDomain? = protocol.domainsById[event.domainId]
+			for _, event: Types.ActorEvent in record.events do
+				local found: Types.ClientDomain? = protocol.domainsById[event.domainId]
 				assert(found ~= nil, "UnknownDomainCode")
-				local compiled: ProtocolTypes.ClientEvent? = found.eventsById[event.eventId]
+				local compiled: Types.ClientEvent? = found.eventsById[event.eventId]
 				assert(compiled ~= nil, "UnknownEventCode")
 				Bytes.Unsigned(cursor, found.code, 4)
 				Bytes.Unsigned(cursor, compiled.code, 4)
@@ -97,7 +99,7 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 		end
 		cursor.context = "MalformedActorPacket"
 	end
-	local function readRecord(cursor: Bytes.Cursor): Types.Record
+	local function readRecord(cursor: Bytes.Cursor): Types.ActorStreamRecord
 		local kind: number = Bytes.ReadUnsigned(cursor, 1)
 		local handle: number = Bytes.ReadUnsigned(cursor, 4)
 		assert(handle > 0, "MalformedActorPacket")
@@ -133,19 +135,19 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 			}
 		elseif kind == 3 then
 			local revision: number = Bytes.ReadUnsigned(cursor, 4)
-			local patches: { Types.DomainPatch } = {}
-			local events: { Types.Event } = {}
+			local patches: { Types.ActorDomainPatch } = {}
+			local events: { Types.ActorEvent } = {}
 			cursor.context = "InvalidActorPatch"
 			for _ = 1, readCount(cursor) do
-				local found: ProtocolTypes.ClientDomain = domain(cursor)
+				local found: Types.ClientDomain = domain(cursor)
 				local plan: PatchCompiler.Plan? = plans[found.id]
 				assert(plan ~= nil, "UnknownDomainCode")
 				table.insert(patches, { domainId = found.id, patch = plan.Read(cursor) })
 			end
 			cursor.context = "InvalidActorEvent"
 			for _ = 1, readCount(cursor) do
-				local found: ProtocolTypes.ClientDomain = domain(cursor)
-				local event: ProtocolTypes.ClientEvent? = found.eventsByCode[Bytes.ReadUnsigned(cursor, 4)]
+				local found: Types.ClientDomain = domain(cursor)
+				local event: Types.ClientEvent? = found.eventsByCode[Bytes.ReadUnsigned(cursor, 4)]
 				assert(event ~= nil, "UnknownEventCode")
 				table.insert(
 					events,
@@ -161,23 +163,23 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 		assert(kind == 4, "MalformedActorPacket")
 		return { kind = "ActorRemove", handle = handle }
 	end
-	local function writePacket(cursor: Bytes.Cursor, records: { Types.Record }): ()
+	local function writePacket(cursor: Bytes.Cursor, records: { Types.ActorStreamRecord }): ()
 		Bytes.Unsigned(cursor, Constants.PACKET_KIND, 1)
 		Bytes.Unsigned(cursor, 0, 4)
 		count(cursor, records)
-		for _, record: Types.Record in records do
+		for _, record: Types.ActorStreamRecord in records do
 			writeRecord(cursor, record)
 		end
 	end
 	return {
-		Measure = function(records: { Types.Record }): (number?, string?)
+		Measure = function(records: { Types.ActorStreamRecord }): (number?, string?)
 			return protected(function(): number
 				return Bytes.Measure(function(cursor: Bytes.Cursor)
 					writePacket(cursor, records)
 				end, Constants.MAX_PACKET_BYTES, "MalformedActorPacket")
 			end, "MalformedActorPacket")
 		end,
-		Encode = function(records: { Types.Record }): (buffer?, string?)
+		Encode = function(records: { Types.ActorStreamRecord }): (buffer?, string?)
 			return protected(function(): buffer
 				local payload: buffer = Bytes.Encode(function(cursor: Bytes.Cursor)
 					writePacket(cursor, records)
@@ -186,8 +188,8 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 				return payload
 			end, "MalformedActorPacket")
 		end,
-		Decode = function(payload: any): ({ Types.Record }?, string?)
-			return protected(function(): { Types.Record }
+		Decode = function(payload: any): ({ Types.ActorStreamRecord }?, string?)
+			return protected(function(): { Types.ActorStreamRecord }
 				assert(typeof(payload) == "buffer", "MalformedActorPacket")
 				local length: number = buffer.len(payload)
 				assert(length >= 9 and length <= Constants.MAX_PACKET_BYTES, "MalformedActorPacket")
@@ -202,7 +204,7 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 					Bytes.ReadUnsigned(cursor, 1) == Constants.PACKET_KIND and Bytes.ReadUnsigned(cursor, 4) == length,
 					"MalformedActorPacket"
 				)
-				local records: { Types.Record } = {}
+				local records: { Types.ActorStreamRecord } = {}
 				for _ = 1, readCount(cursor) do
 					table.insert(records, readRecord(cursor))
 				end
@@ -210,7 +212,7 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 				return records
 			end, "MalformedActorPacket")
 		end,
-		EncodeBaseline = function(domains: { [string]: Types.DomainTruth }): (buffer?, string?)
+		EncodeBaseline = function(domains: { [string]: Types.ActorDomainTruth }): (buffer?, string?)
 			return protected(function(): buffer
 				local ids: { string } = {}
 				for id: string in next, domains do
@@ -221,7 +223,7 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 					Bytes.Charge(cursor, #ids)
 					Bytes.Unsigned(cursor, #ids, 4)
 					for _, id: string in ids do
-						local found: ProtocolTypes.ClientDomain? = protocol.domainsById[id]
+						local found: Types.ClientDomain? = protocol.domainsById[id]
 						assert(found ~= nil, "InvalidActorBaseline")
 						Bytes.Unsigned(cursor, found.code, 4)
 						Bytes.Value(cursor, found.stateCodec, domains[id].value)
@@ -229,8 +231,8 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 				end, Constants.MAX_BASELINE_BYTES, "InvalidActorBaseline")
 			end, "InvalidActorBaseline")
 		end,
-		DecodeBaseline = function(payload: buffer): ({ [string]: Types.DomainTruth }?, string?)
-			return protected(function(): { [string]: Types.DomainTruth }
+		DecodeBaseline = function(payload: buffer): ({ [string]: Types.ActorDomainTruth }?, string?)
+			return protected(function(): { [string]: Types.ActorDomainTruth }
 				assert(
 					typeof(payload) == "buffer" and buffer.len(payload) <= Constants.MAX_BASELINE_BYTES,
 					"InvalidActorBaseline"
@@ -242,9 +244,9 @@ function ActorStreamCodec.Compile(protocol: ProtocolTypes.ClientProtocol, schema
 					remaining = Constants.MAX_WORK,
 					context = "InvalidActorBaseline",
 				}
-				local domains: { [string]: Types.DomainTruth } = {}
+				local domains: { [string]: Types.ActorDomainTruth } = {}
 				for _ = 1, readCount(cursor) do
-					local found: ProtocolTypes.ClientDomain = domain(cursor)
+					local found: Types.ClientDomain = domain(cursor)
 					assert(domains[found.id] == nil, "InvalidActorBaseline")
 					domains[found.id] = { value = Bytes.ReadValue(cursor, found.stateCodec) }
 				end

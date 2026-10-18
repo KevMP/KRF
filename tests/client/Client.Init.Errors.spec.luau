@@ -8,9 +8,9 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
-local Compiler: ProtocolTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
+local Compiler: SharedNetworkingTypes.ManifestCompiler = require(KRF.shared.Networking.ManifestCompiler)
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
@@ -66,7 +66,9 @@ for _, phase: string in { "discovery", "listener connection", "timeout schedulin
 end
 
 it("surfaces unexpected codec reconstruction failure through the receive boundary", function()
-	Compiler.Reconstruct = function(_manifest: ProtocolTypes.ProtocolManifest): (ProtocolTypes.ClientProtocol?, string?)
+	Compiler.Reconstruct = function(
+		_manifest: SharedNetworkingTypes.ProtocolManifest
+	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		error("ReconstructionFailure")
 	end
 	TestUtils.start(fixture)
@@ -88,7 +90,7 @@ end)
 for _, behavior: string in { "throws", "yields" } do
 	it("rejects a private consumer installer that " .. behavior .. " without yielding transport dispatch", function()
 		fixture.dependencies.InstallConsumers = function(
-			_protocol: ProtocolTypes.ClientProtocol
+			_protocol: SharedNetworkingTypes.ClientProtocol
 		): (boolean, string?, (() -> ())?)
 			if behavior == "throws" then
 				error("InstallerFailure")
@@ -106,7 +108,7 @@ end
 it("continues failure cleanup when an installed consumer disposer throws", function()
 	local cleanupCalls: number = 0
 	fixture.dependencies.InstallConsumers = function(
-		_protocol: ProtocolTypes.ClientProtocol
+		_protocol: SharedNetworkingTypes.ClientProtocol
 	): (boolean, string?, (() -> ())?)
 		return true, nil, function(): ()
 			cleanupCalls += 1

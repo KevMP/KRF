@@ -4,11 +4,10 @@ local KRF = ReplicatedStorage.Packages.KRF
 
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Constants = require(KRF.shared.Networking.ProtocolConstants)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Codec: ProtocolTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Codec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
 
 local ProtocolTestUtils = {}
 
@@ -20,7 +19,7 @@ function ProtocolTestUtils.createPlayer(): Player
 	return identity :: any
 end
 
-function ProtocolTestUtils.manifest(): ProtocolTypes.ProtocolManifest
+function ProtocolTestUtils.manifest(): SharedNetworkingTypes.ProtocolManifest
 	return {
 		version = Constants.PROTOCOL_VERSION,
 		domains = {
@@ -35,15 +34,15 @@ function ProtocolTestUtils.manifest(): ProtocolTypes.ProtocolManifest
 	}
 end
 
-function ProtocolTestUtils.encode(message: ProtocolTypes.Message): buffer
+function ProtocolTestUtils.encode(message: SharedNetworkingTypes.ProtocolMessage): buffer
 	local encoded: buffer?, reason: string? = Codec.Encode(message)
 	expect(reason).toBeNil()
 	assert(encoded ~= nil, "Expected a protocol buffer")
 	return encoded
 end
 
-function ProtocolTestUtils.decode(payload: buffer): ProtocolTypes.Message
-	local message: ProtocolTypes.Message?, reason: string? = Codec.Decode(payload)
+function ProtocolTestUtils.decode(payload: buffer): SharedNetworkingTypes.ProtocolMessage
+	local message: SharedNetworkingTypes.ProtocolMessage?, reason: string? = Codec.Decode(payload)
 	expect(reason).toBeNil()
 	assert(message ~= nil, "Expected a protocol message")
 	return message

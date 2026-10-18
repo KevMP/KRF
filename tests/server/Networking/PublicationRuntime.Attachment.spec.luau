@@ -7,14 +7,14 @@ local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
-local runtime: PublicationTypes.Runtime? = nil
+local runtime: ServerNetworkingTypes.PublicationRuntime? = nil
 afterEach(function()
 	if runtime ~= nil then
 		runtime:Destroy()
@@ -67,10 +67,11 @@ for _, case: AttachmentFailureCase in failures do
 		local first: TestUtils.DomainFixture = TestUtils.createDomain("Game.A", Schema.U8, 1)
 		local second: TestUtils.DomainFixture = TestUtils.createDomain("Game.B", Schema.U8, 1)
 		case.configure(second)
-		local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition })
+		local publication: ServerNetworkingTypes.PublicationRuntime =
+			TestUtils.createRuntime({ first.definition, second.definition })
 		runtime = publication
-		local commits: { PublicationTypes.Commit } = {}
-		publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+		local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+		publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 			table.insert(commits, commit)
 		end)
 		local success: boolean?, reason: string? = nil, nil
@@ -108,10 +109,11 @@ it("rejects a yielding observe adapter synchronously, unwinds attachment, and ca
 		end
 		return originalObserve(observedActor, onCommitted)
 	end
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition })
+	local publication: ServerNetworkingTypes.PublicationRuntime =
+		TestUtils.createRuntime({ first.definition, second.definition })
 	runtime = publication
-	local commits: { PublicationTypes.Commit } = {}
-	publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	local attached: boolean? = nil
@@ -146,7 +148,8 @@ it("captures domains with no observe adapter or no returned disconnect", functio
 	): (() -> ())?
 		return nil
 	end
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition })
+	local publication: ServerNetworkingTypes.PublicationRuntime =
+		TestUtils.createRuntime({ first.definition, second.definition })
 	runtime = publication
 	local success: boolean, reason: string? = publication:AttachActor(actor)
 	expect(success).toBe(true)
@@ -166,10 +169,11 @@ it("disconnects every observer exactly once and ignores stale producer callbacks
 	local actor: ActorTypes.Actor = ActorEntity.new()
 	local first: TestUtils.DomainFixture = TestUtils.createDomain("Game.A", Schema.U8, 1)
 	local second: TestUtils.DomainFixture = TestUtils.createDomain("Game.B", Schema.U8, 2)
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition })
+	local publication: ServerNetworkingTypes.PublicationRuntime =
+		TestUtils.createRuntime({ first.definition, second.definition })
 	runtime = publication
-	local commits: { PublicationTypes.Commit } = {}
-	publication:ObserveCommits(function(commit: PublicationTypes.Commit): ()
+	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
 	expect(publication:AttachActor(actor)).toBe(true)
@@ -194,12 +198,15 @@ it("continues teardown after a disconnect throws and reports Actor/domain contex
 			error("DisconnectFailure")
 		end
 	end
-	local faults: { PublicationTypes.Fault } = {}
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ first.definition, second.definition }, {
-		ReportFault = function(fault: PublicationTypes.Fault): ()
-			table.insert(faults, fault)
-		end,
-	})
+	local faults: { ServerNetworkingTypes.PublicationFault } = {}
+	local publication: ServerNetworkingTypes.PublicationRuntime = TestUtils.createRuntime(
+		{ first.definition, second.definition },
+		{
+			ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
+				table.insert(faults, fault)
+			end,
+		}
+	)
 	runtime = publication
 	expect(publication:AttachActor(actor)).toBe(true)
 	local success: boolean = pcall(function(): ()
@@ -215,7 +222,7 @@ it("destroys all live attachments idempotently without retaining Actor history",
 	local firstActor: ActorTypes.Actor = ActorEntity.new()
 	local secondActor: ActorTypes.Actor = ActorEntity.new()
 	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.State", Schema.U8, 1)
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ domain.definition })
+	local publication: ServerNetworkingTypes.PublicationRuntime = TestUtils.createRuntime({ domain.definition })
 	runtime = publication
 	expect(publication:AttachActor(firstActor)).toBe(true)
 	expect(publication:AttachActor(secondActor)).toBe(true)
@@ -231,7 +238,7 @@ end)
 it("keeps a duplicate attachment idempotent and refuses attachment after destruction", function()
 	local actor: ActorTypes.Actor = ActorEntity.new()
 	local domain: TestUtils.DomainFixture = TestUtils.createDomain("Game.State", Schema.U8, 1)
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ domain.definition })
+	local publication: ServerNetworkingTypes.PublicationRuntime = TestUtils.createRuntime({ domain.definition })
 	runtime = publication
 	expect(publication:AttachActor(actor)).toBe(true)
 	expect(publication:AttachActor(actor)).toBe(true)
@@ -255,9 +262,9 @@ it("rejects a yielding live snapshot synchronously and preserves the last valid 
 		end
 		return domain.value
 	end
-	local faults: { PublicationTypes.Fault } = {}
-	local publication: PublicationTypes.Runtime = TestUtils.createRuntime({ domain.definition }, {
-		ReportFault = function(fault: PublicationTypes.Fault): ()
+	local faults: { ServerNetworkingTypes.PublicationFault } = {}
+	local publication: ServerNetworkingTypes.PublicationRuntime = TestUtils.createRuntime({ domain.definition }, {
+		ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
 			table.insert(faults, fault)
 		end,
 	})

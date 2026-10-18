@@ -66,7 +66,7 @@ The example assumes `GameCombatController` is a controller module beside your st
 
 ## Client initialization
 
-Call `Client.Init()` from a LocalScript, such as your startup script in `StarterPlayerScripts`. It may yield while the framework transport replicates and the client completes protocol setup.
+Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
 
 ```lua title="Startup.client.luau"
 --!strict
@@ -84,7 +84,7 @@ end
 -- Continue your game's client startup here.
 ```
 
-A successful return means the client has installed the server's protocol catalog and received its readiness acknowledgement. It does not create client Actor views or make replicated Actor state available to gameplay code. See [Networking startup](./Networking/startup) for ownership, ordering, and failure handling.
+A successful return means the client has installed the server's protocol catalog and ActorView runtime and received its readiness acknowledgement. Views become available as complete Actor baselines arrive; success does not guarantee that any view exists yet. See [ActorViews](./Networking/actor-views) for client state access and [Networking startup](./Networking/startup) for failure handling.
 
 `Client.Init` accepts one attempt per client lifetime, including a failed attempt. Discovery and the handshake share a bounded deadline; handle a failure at your startup boundary rather than retrying initialization in a loop.
 

@@ -7,17 +7,14 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
-local Types = require(KRF.server.Networking.AwarenessTypes)
-local ClientTypes = require(KRF.client.Networking.ActorStreamTypes)
-local PublicationTypes = require(KRF.server.Networking.PublicationTypes)
-local ProtocolTypes = require(KRF.shared.Networking.ProtocolTypes)
-local WireTypes = require(KRF.shared.Networking.ActorStreamTypes)
-local SchemaTypes = require(KRF.shared.Networking.types)
-local Schema: SchemaTypes.Schema = require(KRF.shared.Networking.Schema)
-local Publication: PublicationTypes.RuntimeModule = require(KRF.server.Networking.PublicationRuntime)
+local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local Publication: ServerNetworkingTypes.PublicationRuntimeModule = require(KRF.server.Networking.PublicationRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
-local Codec: WireTypes.CodecModule = require(KRF.shared.Networking.ActorStreamCodec)
-local Constants = require(KRF.shared.Networking.ActorProtocolConstants)
+local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
+local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 local ClientUtils = require(script.Parent.Parent.Parent.client.Utils.ActorStreamTestUtils)
 local DomainUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
@@ -41,9 +38,9 @@ afterEach(function()
 	TestUtils.destroy(fixture)
 end)
 
-local function connect(): Types.Runtime
+local function connect(): ServerNetworkingTypes.ActorAwarenessRuntime
 	client.codec = fixture.codec
-	local receiver: ClientTypes.Runtime = ClientUtils.start(client)
+	local receiver: ClientNetworkingTypes.ActorStreamRuntime = ClientUtils.start(client)
 	fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
 		table.insert(fixture.deliveries, { player = recipient, payload = payload })
 		local accepted: boolean, reason: string? = receiver:Handle(payload)
@@ -51,12 +48,12 @@ local function connect(): Types.Runtime
 		expect(accepted).toBe(true)
 		return true, nil
 	end
-	local runtime: Types.Runtime = TestUtils.start(fixture)
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	return runtime
 end
 
-local function drain(runtime: Types.Runtime, budget: number?): ()
+local function drain(runtime: ServerNetworkingTypes.ActorAwarenessRuntime, budget: number?): ()
 	for _ = 1, 64 do
 		runtime:Step(budget or Constants.STEP_BYTES, Constants.STEP_RECORDS)
 	end
@@ -67,14 +64,14 @@ it("delivers more Actors than the production client can assemble concurrently", 
 	for _ = 1, Constants.MAX_PENDING_BASELINES + 9 do
 		table.insert(actors, TestUtils.actor(fixture, nil))
 	end
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	drain(runtime)
 	expect(#client.baselines).toBe(#actors)
 	expect(client.faults).toEqual({})
 	expect(fixture.faults).toEqual({})
 	for _, actor: ActorTypes.Actor in actors do
 		assert(client.runtime ~= nil, "Expected connected receiver")
-		local record: ClientTypes.ActorRecord? = client.runtime:GetByActorId(actor:GetId())
+		local record: ClientNetworkingTypes.ActorStreamRecord? = client.runtime:GetByActorId(actor:GetId())
 		assert(record ~= nil, "Every Actor must establish an identity")
 		expect(record.handle).toBe(runtime:GetHandle(player, actor))
 	end
@@ -92,18 +89,18 @@ do
 		fixture.publicDomain.definition.state = Schema.String(50000)
 		fixture.publicDomain.value = "initial"
 		fixture.catalog = DomainUtils.prepare({ fixture.publicDomain.definition, fixture.ownerDomain.definition })
-		local protocol: ProtocolTypes.PreparedProtocol?, reason: string? = Networking.Prepare(fixture.catalog)
+		local protocol: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(fixture.catalog)
 		expect(reason).toBeNil()
 		assert(protocol ~= nil, "Expected string-state protocol")
 		fixture.protocol = protocol
 		fixture.publication = Publication.new(fixture.catalog)
-		local schemas: WireTypes.SchemaCatalog = {}
+		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
 		for id, definition in fixture.catalog.definitionsById do
 			schemas[id] = definition.state
 		end
 		fixture.codec = Codec.Compile(protocol.runtime, schemas)
 		local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-		local runtime: Types.Runtime = connect()
+		local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 		drain(runtime)
 		local large: string = string.rep("x", delivery.size)
 		local measured: number? = fixture.codec.Measure({
@@ -153,7 +150,7 @@ it("releases reservations for failed initial sends so later Actors can establish
 	for _ = 1, Constants.MAX_PENDING_BASELINES + 3 do
 		TestUtils.actor(fixture, nil)
 	end
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	local send: typeof(fixture.dependencies.SendReliable) = fixture.dependencies.SendReliable
 	local first: boolean = true
 	fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
@@ -178,14 +175,14 @@ for _, faultSource: string in { "revision", "send" } do
 		if faultSource == "revision" then
 			fixture.options.maxRevision = 0
 		end
-		local runtime: Types.Runtime = connect()
+		local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 		local send: typeof(fixture.dependencies.SendReliable) = fixture.dependencies.SendReliable
 		local allowCleanup: boolean = false
 		local cleanupAttempts: number = 0
 		fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
-			local records: { WireTypes.Record }? = fixture.codec.Decode(payload)
+			local records: { SharedNetworkingTypes.ActorStreamRecord }? = fixture.codec.Decode(payload)
 			assert(records ~= nil, "Expected valid delivery")
-			for _, record: WireTypes.Record in records do
+			for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 				if record.kind == "ActorHalt" then
 					cleanupAttempts += 1
 					if not allowCleanup then
@@ -236,7 +233,7 @@ for _, completedBaseline: boolean in { false, true } do
 			else
 				fixture.options.maxRevision = 0
 			end
-			local runtime: Types.Runtime = connect()
+			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 			drain(runtime)
 			if completedBaseline then
 				local handle: number? = runtime:GetHandle(player, actor)
@@ -247,7 +244,7 @@ for _, completedBaseline: boolean in { false, true } do
 				drain(runtime)
 			end
 			assert(client.runtime ~= nil, "Expected connected receiver")
-			local record: ClientTypes.ActorRecord? = client.runtime:GetByActorId(actor:GetId())
+			local record: ClientNetworkingTypes.ActorStreamRecord? = client.runtime:GetByActorId(actor:GetId())
 			assert(record ~= nil, "Terminal failure must preserve awareness")
 			expect(client.halted).toEqual({ record })
 			expect(#client.baselines).toBe(if completedBaseline then 1 else 0)
@@ -269,7 +266,7 @@ it("cleans faults raised reentrantly before the initial Begin send returns", fun
 		table.insert(actors, TestUtils.actor(fixture, nil))
 	end
 	local unrelated: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	local send: typeof(fixture.dependencies.SendReliable) = fixture.dependencies.SendReliable
 	local faulted: boolean = false
 	fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
@@ -293,7 +290,7 @@ end)
 
 it("retries removal of a known incomplete assembly until reliable cleanup succeeds", function()
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, nil)
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
 	local send: typeof(fixture.dependencies.SendReliable) = fixture.dependencies.SendReliable
 	local attempts: number = 0
@@ -319,7 +316,7 @@ it("keeps an incomplete assembly slot across overload recapture", function()
 	for _ = 1, Constants.MAX_PENDING_BASELINES + 2 do
 		TestUtils.actor(fixture, nil)
 	end
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 1 } })
 	fixture.publicDomain.value = 12
@@ -336,15 +333,15 @@ it("preserves admission and generation changes made reentrantly while Begin and 
 	for _ = 1, Constants.MAX_PENDING_BASELINES + 2 do
 		TestUtils.actor(fixture, nil)
 	end
-	local runtime: Types.Runtime = connect()
+	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = connect()
 	local send: typeof(fixture.dependencies.SendReliable) = fixture.dependencies.SendReliable
 	local began: boolean = false
 	local ended: boolean = false
 	fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
 		local accepted: boolean, reason: string? = send(recipient, payload)
-		local records: { WireTypes.Record }? = fixture.codec.Decode(payload)
+		local records: { SharedNetworkingTypes.ActorStreamRecord }? = fixture.codec.Decode(payload)
 		assert(records ~= nil, "Expected decoded delivery")
-		for _, record: WireTypes.Record in records do
+		for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 			if record.handle == runtime:GetHandle(player, actor) then
 				if record.kind == "BaselineBegin" and not began then
 					began = true

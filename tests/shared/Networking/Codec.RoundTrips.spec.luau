@@ -5,11 +5,11 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
-local NetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
-type RoundTripCase = { name: string, schema: NetworkingTypes.SchemaDefinition, values: { any }, width: number? }
+type RoundTripCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, values: { any }, width: number? }
 local primitiveCases: { RoundTripCase } = {
 	{ name = "Boolean", schema = Schema.Boolean, values = { false, true }, width = 1 },
 	{ name = "U8", schema = Schema.U8, values = { 0, 1, 255 }, width = 1 },
@@ -23,7 +23,7 @@ local primitiveCases: { RoundTripCase } = {
 }
 for _, testCase: RoundTripCase in primitiveCases do
 	it("round-trips " .. testCase.name .. " boundaries with an exact fixed size", function()
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		expect(codec.fixedSizeBytes).toBe(testCase.width)
 		expect(codec.maxSizeBytes).toBe(testCase.width)
 		for _, value: any in testCase.values do
@@ -33,7 +33,7 @@ for _, testCase: RoundTripCase in primitiveCases do
 end
 
 it("rounds F32 through its supported representation without requiring F64 precision", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.F32)
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.F32)
 	local expected: buffer = buffer.create(4)
 	buffer.writef32(expected, 0, 0.1)
 	local encoded: buffer = TestUtils.encode(codec, 0.1)
@@ -78,7 +78,7 @@ local collectionCases: { RoundTripCase } = {
 }
 for _, testCase: RoundTripCase in collectionCases do
 	it("round-trips " .. testCase.name .. " without changing consumer values", function()
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		for _, value: any in testCase.values do
 			TestUtils.expectRoundTrip(codec, value)
 		end
@@ -86,14 +86,14 @@ for _, testCase: RoundTripCase in collectionCases do
 end
 
 it("distinguishes a successfully decoded absent Optional from decode failure", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Optional(Schema.Boolean))
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Optional(Schema.Boolean))
 	TestUtils.expectRoundTrip(codec, nil)
 	TestUtils.expectRoundTrip(codec, false)
 	TestUtils.expectRoundTrip(codec, true)
 end)
 
 it("round-trips nested Map, Array, Struct, Enum and Optional combinations", function()
-	local codec: NetworkingTypes.CompiledCodec =
+	local codec: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Map(
 			Schema.String(8),
 			Schema.Array(
@@ -112,7 +112,7 @@ it("round-trips nested Map, Array, Struct, Enum and Optional combinations", func
 end)
 
 it("writes Struct fields positionally and Enum values as compact ordinals", function()
-	local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({
+	local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(Schema.Struct({
 		aVeryLongFieldName = Schema.U8,
 		zAnotherLongFieldName = Schema.Enum({ "AReallyLongEnumValue", "AnotherLongEnumValue" }),
 	}))
@@ -125,7 +125,7 @@ end)
 
 it("reports finite integral maximum sizes for every composite kind", function()
 	for _, testCase: RoundTripCase in collectionCases do
-		local codec: NetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		expect(codec.maxSizeBytes >= 0 and codec.maxSizeBytes < math.huge).toBe(true)
 		expect(codec.maxSizeBytes % 1).toBe(0)
 	end
