@@ -1,0 +1,517 @@
+{
+  "clients": 2,
+  "phase": "6:0:Reset",
+  "ticks": 2100,
+  "cases": [
+    {
+      "actors": 25,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 32358,
+          "player": "Player1",
+          "serverSentActorPackets": 12,
+          "metrics": {
+            "payloadBytes": 32358,
+            "observationSeconds": 2.2507627001032233,
+            "actorPackets": 12,
+            "heartbeatMs": {
+              "min": 14.068669639527798,
+              "mean": 16.677622614359414,
+              "p95": 18.135396763682365,
+              "max": 19.116653129458427,
+              "median": 16.88791811466217,
+              "negativeSamples": 0,
+              "count": 135
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 32358,
+          "player": "Player2",
+          "serverSentActorPackets": 12,
+          "metrics": {
+            "payloadBytes": 32358,
+            "observationSeconds": 2.2528560999780893,
+            "actorPackets": 12,
+            "heartbeatMs": {
+              "min": 13.868680223822594,
+              "mean": 16.66764888084597,
+              "p95": 18.09806376695633,
+              "max": 19.05771903693676,
+              "median": 16.841519623994827,
+              "negativeSamples": 0,
+              "count": 135
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 2.2187526000197977,
+      "serverMutationUs": {
+        "min": 68.80005821585655,
+        "mean": 87.64400534952681,
+        "p95": 140.9000251442194,
+        "max": 207.50006660819054,
+        "median": 78.00012826919556,
+        "negativeSamples": 0,
+        "count": 300
+      },
+      "rounds": 12,
+      "mode": "Steady",
+      "requestedWaveIntervalSeconds": 0.2,
+      "serverHeartbeatMs": {
+        "min": 14.893244951963425,
+        "mean": 16.664444924379787,
+        "p95": 18.124883994460106,
+        "max": 18.99920217692852,
+        "median": 16.926780343055725,
+        "negativeSamples": 0,
+        "count": 137
+      },
+      "committedBatches": 300,
+      "waveCompletionAckMs": {
+        "min": 32.477299915626645,
+        "mean": 34.07006246076586,
+        "p95": 34.66919995844364,
+        "max": 50.0989998690784,
+        "median": 33.24239980429411,
+        "negativeSamples": 0,
+        "count": 24
+      },
+      "consumerObservedEstimateMs": {
+        "min": 24.486064910888672,
+        "mean": 29.278745651245117,
+        "p95": 34.68799591064453,
+        "max": 35.791873931884766,
+        "median": 28.19204330444336,
+        "negativeSamples": 0,
+        "count": 600
+      }
+    },
+    {
+      "actors": 25,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 8252,
+          "player": "Player1",
+          "serverSentActorPackets": 3,
+          "metrics": {
+            "payloadBytes": 8252,
+            "observationSeconds": 0.053226100048050284,
+            "actorPackets": 3,
+            "heartbeatMs": {
+              "min": 15.165606513619423,
+              "mean": 16.397399827837944,
+              "p95": 17.937377095222473,
+              "max": 17.937377095222473,
+              "median": 16.089215874671936,
+              "negativeSamples": 0,
+              "count": 3
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 8252,
+          "player": "Player2",
+          "serverSentActorPackets": 3,
+          "metrics": {
+            "payloadBytes": 8252,
+            "observationSeconds": 0.06801490020006895,
+            "actorPackets": 3,
+            "heartbeatMs": {
+              "min": 16.080815345048904,
+              "mean": 17.216761596500874,
+              "p95": 18.09091866016388,
+              "max": 18.09091866016388,
+              "median": 16.951005905866623,
+              "negativeSamples": 0,
+              "count": 4
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 0.007927800063043833,
+      "serverMutationUs": {
+        "min": 66.20003841817379,
+        "mean": 103.92266946534316,
+        "p95": 198.69999960064888,
+        "max": 362.5000827014446,
+        "median": 88.59997615218163,
+        "negativeSamples": 0,
+        "count": 75
+      },
+      "rounds": 3,
+      "mode": "Burst",
+      "requestedWaveIntervalSeconds": 0,
+      "serverHeartbeatMs": {
+        "min": 15.89183323085308,
+        "mean": 16.55445396900177,
+        "p95": 16.923142597079277,
+        "max": 16.923142597079277,
+        "median": 16.923142597079277,
+        "negativeSamples": 0,
+        "count": 5
+      },
+      "committedBatches": 75,
+      "waveCompletionAckMs": {
+        "min": 30.01040010713041,
+        "mean": 44.54565005532155,
+        "p95": 61.687400098890066,
+        "max": 61.687400098890066,
+        "median": 44.75390003062785,
+        "negativeSamples": 0,
+        "count": 6
+      },
+      "consumerObservedEstimateMs": {
+        "min": 29.787063598632812,
+        "mean": 41.17016315460205,
+        "p95": 61.88511848449707,
+        "max": 63.03596496582031,
+        "median": 39.5510196685791,
+        "negativeSamples": 0,
+        "count": 150
+      }
+    },
+    {
+      "actors": 50,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 64716,
+          "player": "Player1",
+          "serverSentActorPackets": 24,
+          "metrics": {
+            "payloadBytes": 64716,
+            "observationSeconds": 2.3698917001020163,
+            "actorPackets": 24,
+            "heartbeatMs": {
+              "min": 13.071837835013866,
+              "mean": 16.66303312169834,
+              "p95": 18.408838659524918,
+              "max": 20.110519602894783,
+              "median": 16.901569440960884,
+              "negativeSamples": 0,
+              "count": 142
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 64716,
+          "player": "Player2",
+          "serverSentActorPackets": 24,
+          "metrics": {
+            "payloadBytes": 64716,
+            "observationSeconds": 2.370357499923557,
+            "actorPackets": 24,
+            "heartbeatMs": {
+              "min": 12.963729910552502,
+              "mean": 16.66989274532862,
+              "p95": 18.920142203569412,
+              "max": 20.033419132232666,
+              "median": 16.916507855057716,
+              "negativeSamples": 0,
+              "count": 142
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 2.218975500203669,
+      "serverMutationUs": {
+        "min": 69.00005973875523,
+        "mean": 82.0863312886407,
+        "p95": 103.00008580088615,
+        "max": 233.400147408247,
+        "median": 77.30000652372837,
+        "negativeSamples": 0,
+        "count": 600
+      },
+      "rounds": 12,
+      "mode": "Steady",
+      "requestedWaveIntervalSeconds": 0.2,
+      "serverHeartbeatMs": {
+        "min": 14.43930622190237,
+        "mean": 17.516795199119695,
+        "p95": 18.144715577363968,
+        "max": 134.37704741954803,
+        "median": 16.929909586906433,
+        "negativeSamples": 0,
+        "count": 137
+      },
+      "committedBatches": 600,
+      "waveCompletionAckMs": {
+        "min": 31.226800056174397,
+        "mean": 37.32534583347539,
+        "p95": 50.76740006916225,
+        "max": 51.25850019976497,
+        "median": 33.78250007517636,
+        "negativeSamples": 0,
+        "count": 24
+      },
+      "consumerObservedEstimateMs": {
+        "min": 21.474838256835938,
+        "mean": 30.007936755816143,
+        "p95": 36.38291358947754,
+        "max": 43.328046798706055,
+        "median": 31.80694580078125,
+        "negativeSamples": 0,
+        "count": 1200
+      }
+    },
+    {
+      "actors": 50,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 16495,
+          "player": "Player1",
+          "serverSentActorPackets": 5,
+          "metrics": {
+            "payloadBytes": 16495,
+            "observationSeconds": 0.08778539998456836,
+            "actorPackets": 5,
+            "heartbeatMs": {
+              "min": 11.977272108197212,
+              "mean": 16.656099632382393,
+              "p95": 20.96022665500641,
+              "max": 20.96022665500641,
+              "median": 16.407396644353867,
+              "negativeSamples": 0,
+              "count": 5
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 16495,
+          "player": "Player2",
+          "serverSentActorPackets": 5,
+          "metrics": {
+            "payloadBytes": 16495,
+            "observationSeconds": 0.10237970016896725,
+            "actorPackets": 5,
+            "heartbeatMs": {
+              "min": 13.97083792835474,
+              "mean": 16.526623163372278,
+              "p95": 19.958339631557465,
+              "max": 19.958339631557465,
+              "median": 16.088496893644333,
+              "negativeSamples": 0,
+              "count": 6
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 0.016949200071394444,
+      "serverMutationUs": {
+        "min": 78.4001313149929,
+        "mean": 111.36131050686042,
+        "p95": 154.2000100016594,
+        "max": 200.59989765286446,
+        "median": 110.39990931749344,
+        "negativeSamples": 0,
+        "count": 150
+      },
+      "rounds": 3,
+      "mode": "Burst",
+      "requestedWaveIntervalSeconds": 0,
+      "serverHeartbeatMs": {
+        "min": 12.10046373307705,
+        "mean": 17.054681666195393,
+        "p95": 22.184183821082115,
+        "max": 22.184183821082115,
+        "median": 17.142323777079582,
+        "negativeSamples": 0,
+        "count": 8
+      },
+      "committedBatches": 150,
+      "waveCompletionAckMs": {
+        "min": 51.03290011174977,
+        "mean": 75.78025005447368,
+        "p95": 106.95819999091327,
+        "max": 106.95819999091327,
+        "median": 73.01070005632937,
+        "negativeSamples": 0,
+        "count": 6
+      },
+      "consumerObservedEstimateMs": {
+        "min": 35.443782806396484,
+        "mean": 53.75072320302328,
+        "p95": 86.50708198547363,
+        "max": 87.9981517791748,
+        "median": 51.05400085449219,
+        "negativeSamples": 0,
+        "count": 300
+      }
+    },
+    {
+      "actors": 100,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 129432,
+          "player": "Player2",
+          "serverSentActorPackets": 48,
+          "metrics": {
+            "payloadBytes": 129432,
+            "observationSeconds": 2.28797940001823,
+            "actorPackets": 48,
+            "heartbeatMs": {
+              "min": 11.972388252615929,
+              "mean": 16.671820985574794,
+              "p95": 18.978910520672798,
+              "max": 20.879648625850677,
+              "median": 16.868097707629204,
+              "negativeSamples": 0,
+              "count": 137
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 129432,
+          "player": "Player1",
+          "serverSentActorPackets": 48,
+          "metrics": {
+            "payloadBytes": 129432,
+            "observationSeconds": 2.3048561001196504,
+            "actorPackets": 48,
+            "heartbeatMs": {
+              "min": 11.620841920375824,
+              "mean": 16.66770936867249,
+              "p95": 20.04978060722351,
+              "max": 21.997448056936264,
+              "median": 16.975894570350647,
+              "negativeSamples": 0,
+              "count": 138
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 2.224388899980113,
+      "serverMutationUs": {
+        "min": 68.70017386972904,
+        "mean": 87.38533535506576,
+        "p95": 125.30013918876648,
+        "max": 224.800081923604,
+        "median": 78.90001870691776,
+        "negativeSamples": 0,
+        "count": 1200
+      },
+      "rounds": 12,
+      "mode": "Steady",
+      "requestedWaveIntervalSeconds": 0.2,
+      "serverHeartbeatMs": {
+        "min": 14.936625026166439,
+        "mean": 16.664785587583943,
+        "p95": 18.01823452115059,
+        "max": 19.285015761852264,
+        "median": 16.9281754642725,
+        "negativeSamples": 0,
+        "count": 139
+      },
+      "committedBatches": 1200,
+      "waveCompletionAckMs": {
+        "min": 65.1738999877125,
+        "mean": 76.41347918737058,
+        "p95": 83.33950000815094,
+        "max": 83.4784999024123,
+        "median": 81.98029990307987,
+        "negativeSamples": 0,
+        "count": 24
+      },
+      "consumerObservedEstimateMs": {
+        "min": 29.201030731201172,
+        "mean": 41.049033304055534,
+        "p95": 61.97404861450195,
+        "max": 72.47495651245117,
+        "median": 37.50300407409668,
+        "negativeSamples": 0,
+        "count": 2400
+      }
+    },
+    {
+      "actors": 100,
+      "clients": [
+        {
+          "serverSentPayloadBytes": 32990,
+          "player": "Player2",
+          "serverSentActorPackets": 10,
+          "metrics": {
+            "payloadBytes": 32990,
+            "observationSeconds": 0.2038059001788497,
+            "actorPackets": 10,
+            "heartbeatMs": {
+              "min": 12.022956274449825,
+              "mean": 16.69060850205521,
+              "p95": 22.121379151940346,
+              "max": 22.121379151940346,
+              "median": 16.03016071021557,
+              "negativeSamples": 0,
+              "count": 12
+            }
+          }
+        },
+        {
+          "serverSentPayloadBytes": 32990,
+          "player": "Player1",
+          "serverSentActorPackets": 10,
+          "metrics": {
+            "payloadBytes": 32990,
+            "observationSeconds": 0.3179846000857651,
+            "actorPackets": 10,
+            "heartbeatMs": {
+              "min": 12.012504041194916,
+              "mean": 26.504590331266325,
+              "p95": 130.8162808418274,
+              "max": 130.8162808418274,
+              "median": 17.01771467924118,
+              "negativeSamples": 0,
+              "count": 12
+            }
+          }
+        }
+      ],
+      "mutationWindowSeconds": 0.03089129994623363,
+      "serverMutationUs": {
+        "min": 71.20007649064064,
+        "mean": 101.67733145256837,
+        "p95": 157.70015306770802,
+        "max": 842.9000154137611,
+        "median": 90.79999290406704,
+        "negativeSamples": 0,
+        "count": 300
+      },
+      "rounds": 3,
+      "mode": "Burst",
+      "requestedWaveIntervalSeconds": 0,
+      "serverHeartbeatMs": {
+        "min": 13.013871386647224,
+        "mean": 17.471558071280782,
+        "p95": 35.94842925667763,
+        "max": 35.94842925667763,
+        "median": 16.997331753373146,
+        "negativeSamples": 0,
+        "count": 19
+      },
+      "committedBatches": 300,
+      "waveCompletionAckMs": {
+        "min": 100.26259999722242,
+        "mean": 158.97121672363332,
+        "p95": 294.5545001421124,
+        "max": 294.5545001421124,
+        "median": 122.80600005760789,
+        "negativeSamples": 0,
+        "count": 6
+      },
+      "consumerObservedEstimateMs": {
+        "min": 50.672054290771484,
+        "mean": 98.86181354522705,
+        "p95": 144.14215087890625,
+        "max": 276.62205696105957,
+        "median": 89.22791481018066,
+        "negativeSamples": 0,
+        "count": 600
+      }
+    }
+  ],
+  "success": true,
+  "environment": {
+    "cpu": "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
+    "studioFileVersion": "0, 743, 0, 7431133",
+    "measuredAtUtc": "2026-10-18T16:22:37.5361030Z"
+  }
+}
