@@ -15,11 +15,13 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUti
 local fixture: TestUtils.Fixture
 local player: Player
 local actor: ActorTypes.Actor
+
 beforeEach(function()
 	fixture = TestUtils.new()
 	player = TestUtils.player(fixture)
 	actor = TestUtils.actor(fixture, nil)
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -49,14 +51,17 @@ it("captures synchronously with a matching fence and queues an immediate later c
 	assert(handle ~= nil, "Expected handle")
 	expect(TestUtils.baseline(fixture, player, handle)).toEqual({ ["Game.Public"] = { value = 10 } })
 	local ended: boolean = false
+
 	for _, record: SharedNetworkingTypes.ActorStreamRecord in TestUtils.records(fixture, player) do
 		if record.kind == "BaselineEnd" then
 			ended = true
 		end
+
 		if record.kind == "Commit" then
 			expect(ended).toBe(true)
 		end
 	end
+
 	local commits: { any } = TestUtils.kind(fixture, player, "Commit")
 	expect(#commits).toBe(1)
 	expect(commits[1].patches).toEqual({ { domainId = "Game.Public", patch = { kind = "Replace", value = 12 } } })
@@ -79,6 +84,7 @@ it("does not leave a yield gap between stream creation and fence installation", 
 	TestUtils.start(fixture)
 	local original: typeof(fixture.publication.CaptureBaseline) = fixture.publication.CaptureBaseline
 	local capturedSequence: number? = nil
+
 	fixture.publication.CaptureBaseline = function(
 		self,
 		current: ActorTypes.Actor
@@ -86,11 +92,14 @@ it("does not leave a yield gap between stream creation and fence installation", 
 		local baseline: ServerNetworkingTypes.PublicationBaseline? = original(self, current)
 		assert(baseline ~= nil, "Expected canonical capture")
 		capturedSequence = baseline.sequence
+
 		return baseline
 	end
+
 	local readyThread: thread = coroutine.create(function(): ()
 		TestUtils.ready(fixture, player)
 	end)
+
 	local completed: boolean, reason: any = coroutine.resume(readyThread)
 	expect(completed).toBe(true)
 	expect(reason).toBeNil()
@@ -104,6 +113,7 @@ end)
 
 it("reconstructs the exact bounded baseline across chunks with one matching generation", function()
 	fixture.options.maxChunkBytes = 1
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
@@ -114,12 +124,14 @@ it("reconstructs the exact bounded baseline across chunks with one matching gene
 	expect(#chunks > 1).toBe(true)
 	expect(#ends).toBe(1)
 	local nextOffset: number = 0
+
 	for _, chunk: any in chunks do
 		expect(chunk.generation).toBe(begins[1].generation)
 		expect(chunk.offset).toBe(nextOffset)
 		expect(buffer.len(chunk.bytes) <= 1).toBe(true)
 		nextOffset += buffer.len(chunk.bytes)
 	end
+
 	expect(nextOffset).toBe(begins[1].totalBytes)
 	expect(ends[1].generation).toBe(begins[1].generation)
 	local handle: number? = runtime:GetHandle(player, actor)
@@ -142,6 +154,7 @@ it("deduplicates replacement requests and captures current truth in a newer gene
 	TestUtils.drain(fixture)
 	local first: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
 	local previousEnd: any = TestUtils.kind(fixture, player, "BaselineEnd")[1]
+
 	fixture.publicDomain.value = 14
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 14 } })
 	fixture.deliveries = {}
@@ -164,22 +177,27 @@ end)
 it("marks an excessive event backlog discontinuous and recaptures without replaying old history", function()
 	fixture.options.maxEvents = 2
 	fixture.options.maxChunkBytes = 1
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(256, 1)
 	local firstGeneration: number = TestUtils.kind(fixture, player, "BaselineBegin")[1].generation
+
 	for value: number = 11, 30 do
 		fixture.publicDomain.value = value
 		fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = value } })
 	end
+
 	TestUtils.drain(fixture)
 	local begins: { any } = TestUtils.kind(fixture, player, "BaselineBegin")
 	local ends: { any } = TestUtils.kind(fixture, player, "BaselineEnd")
 	expect(#begins >= 2).toBe(true)
 	expect(begins[#begins].generation > firstGeneration).toBe(true)
+
 	for _, ended: any in ends do
 		expect(ended.generation).never.toBe(firstGeneration)
 	end
+
 	local handle: number? = runtime:GetHandle(player, actor)
 	assert(handle ~= nil, "Expected handle")
 	expect(TestUtils.baseline(fixture, player, handle)).toEqual({ ["Game.Public"] = { value = 30 } })
@@ -192,10 +210,13 @@ it("keeps every physical send within its byte budget and respects zero work budg
 	runtime:Step(0, 8)
 	runtime:Step(256, 0)
 	expect(fixture.deliveries).toEqual({})
+
 	for _ = 1, 32 do
 		runtime:Step(96, 2)
 	end
+
 	expect(#TestUtils.kind(fixture, player, "BaselineEnd")).toBe(1)
+
 	for _, delivery: TestUtils.Delivery in fixture.deliveries do
 		expect(buffer.len(delivery.payload) <= 96).toBe(true)
 	end
@@ -204,14 +225,17 @@ end)
 it("recaptures after byte pressure without retaining an unbounded state backlog", function()
 	fixture.options.maxQueuedBytes = 1
 	fixture.options.maxChunkBytes = 1
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	runtime:Step(256, 1)
 	local original: any = TestUtils.kind(fixture, player, "BaselineBegin")[1]
+
 	for value: number = 11, 30 do
 		fixture.publicDomain.value = value
 		fixture.publicDomain.callbacks[actor]()
 	end
+
 	TestUtils.drain(fixture)
 	local begins: { any } = TestUtils.kind(fixture, player, "BaselineBegin")
 	expect(begins[#begins].generation > original.generation).toBe(true)
@@ -230,9 +254,11 @@ it("does not starve another live Actor while this Actor's replacement is pending
 	expect(runtime:RequestReplacementBaseline(player, handle, nil)).toBe(true)
 	fixture.publicDomain.value = 15
 	fixture.publicDomain.callbacks[other]()
+
 	for _ = 1, 8 do
 		runtime:Step(96, 1)
 	end
+
 	local commits: { any } = TestUtils.kind(fixture, player, "Commit")
 	expect(#commits).toBe(1)
 	expect(commits[1].handle).toBe(runtime:GetHandle(player, other))

@@ -12,15 +12,19 @@ local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local SchemaCompiler: SharedNetworkingTypes.SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
 local Codecs: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+
 local Scheduler: ServerNetworkingTypes.PublicationSchedulerModule =
 	require(KRF.server.Networking.utils.PublicationScheduler)
+
 local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationSchedulerTestUtils)
 
 local scheduler: ServerNetworkingTypes.PublicationScheduler
 local stream: ServerNetworkingTypes.PublicationStreamKey = { recipient = "PlayerA", actor = "ActorX" }
+
 beforeEach(function()
 	scheduler = TestUtils.createScheduler()
 end)
+
 afterEach(function()
 	scheduler:Destroy()
 end)
@@ -28,24 +32,29 @@ end)
 it("does no stream traversal or record sizing while idle even with dozens of dormant streams", function()
 	local measureCalls: number = 0
 	scheduler:Destroy()
+
 	scheduler = Scheduler.new({
 		maxBarriers = 8,
 		maxEvents = 16,
 		maxQueuedBytes = 1024,
 		MeasureRecord = function(): number
 			measureCalls += 1
+
 			return 16
 		end,
 	})
+
 	for actorIndex: number = 1, 64 do
 		for recipientIndex: number = 1, 8 do
 			scheduler:ResetAfterBaseline({ recipient = recipientIndex, actor = actorIndex }, {})
 		end
 	end
+
 	for _ = 1, 10 do
 		local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(64, 4)
 		expect(drained).toEqual({ records = {}, encodedBytes = 0, visitedStreams = 0 })
 	end
+
 	expect(measureCalls).toBe(0)
 end)
 
@@ -53,6 +62,7 @@ it("activates only the enqueued stream and returns to idle after it drains", fun
 	for actorIndex: number = 1, 64 do
 		scheduler:ResetAfterBaseline({ recipient = stream.recipient, actor = actorIndex }, {})
 	end
+
 	expect(scheduler:Enqueue(stream, TestUtils.scalar(1, "Game.State", 1, nil))).toBe(true)
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(16, 1)
 	expect(#drained.records).toBe(1)
@@ -84,6 +94,7 @@ for _, limits: { number } in { { 32, 8, 2 }, { 128, 1, 1 }, { 15, 8, 0 }, { 0, 8
 					true
 				)
 			end
+
 			local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(limits[1], limits[2])
 			expect(#drained.records).toBe(limits[3])
 			expect(drained.encodedBytes).toBe(limits[3] * 16)
@@ -103,15 +114,19 @@ for _, sameRecipient: boolean in { true, false } do
 				recipient = if sameRecipient then stream.recipient else "PlayerB",
 				actor = if sameRecipient then "ActorY" else stream.actor,
 			}
+
 			expect(scheduler:Enqueue(stream, TestUtils.scalar(1, "Game.State", 1, "Changed"))).toBe(true)
 			expect(scheduler:Enqueue(quiet, TestUtils.scalar(1, "Game.State", 1, "Changed"))).toBe(true)
 			local quietDelivered: boolean = false
+
 			for sequence: number = 2, 3 do
 				expect(scheduler:Enqueue(stream, TestUtils.scalar(sequence, "Game.State", sequence, "Changed"))).toBe(
 					true
 				)
+
 				local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(16, 1)
 				expect(#drained.records).toBe(1)
+
 				if
 					drained.records[1].stream.recipient == quiet.recipient
 					and drained.records[1].stream.actor == quiet.actor
@@ -119,20 +134,24 @@ for _, sameRecipient: boolean in { true, false } do
 					quietDelivered = true
 				end
 			end
+
 			expect(quietDelivered).toBe(true)
 		end
 	)
 end
 
 type OverflowCase = { name: string, barriers: number, events: number, bytes: number }
+
 local overflowCases: { OverflowCase } = {
 	{ name = "sealed barrier count", barriers = 2, events = 100, bytes = 1024 },
 	{ name = "semantic event count", barriers = 100, events = 2, bytes = 1024 },
 	{ name = "encoded queue bytes", barriers = 100, events = 100, bytes = 32 },
 }
+
 for _, case: OverflowCase in overflowCases do
 	it("admits the exact " .. case.name .. " limit then becomes discontinuous on the next record", function()
 		scheduler:Destroy()
+
 		scheduler = Scheduler.new({
 			maxBarriers = case.barriers,
 			maxEvents = case.events,
@@ -141,34 +160,42 @@ for _, case: OverflowCase in overflowCases do
 				return 16
 			end,
 		})
+
 		for sequence: number = 1, 2 do
 			local success: boolean, reason: string? =
 				scheduler:Enqueue(stream, TestUtils.scalar(sequence, "Game.State", sequence, "Changed"))
+
 			expect(success).toBe(true)
 			expect(reason).toBeNil()
 		end
+
 		expect(scheduler:GetStreamStatus(stream)).toEqual({
 			needsBaseline = false,
 			pendingRecords = 2,
 			pendingEvents = 2,
 			queuedBytes = 32,
 		})
+
 		local success: boolean, reason: string? =
 			scheduler:Enqueue(stream, TestUtils.scalar(3, "Game.State", 3, "Changed"))
+
 		expect(success).toBe(false)
 		expect(reason).toBe("PublicationStreamOverloaded")
+
 		expect(scheduler:GetStreamStatus(stream)).toEqual({
 			needsBaseline = true,
 			pendingRecords = 0,
 			pendingEvents = 0,
 			queuedBytes = 0,
 		})
+
 		expect(scheduler:DrainBudgeted(1024, 8).records).toEqual({})
 	end)
 end
 
 it("counts multiple semantic events inside one barrier against the event bound", function()
 	scheduler:Destroy()
+
 	scheduler = Scheduler.new({
 		maxBarriers = 8,
 		maxEvents = 1,
@@ -177,6 +204,7 @@ it("counts multiple semantic events inside one barrier against the event bound",
 			return 16
 		end,
 	})
+
 	local success: boolean, reason: string? = scheduler:Enqueue(stream, {
 		sequence = 1,
 		patches = {},
@@ -185,6 +213,7 @@ it("counts multiple semantic events inside one barrier against the event bound",
 			{ domainId = "Game.State", eventId = "Second", payload = {} },
 		},
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("PublicationStreamOverloaded")
 	expect(scheduler:GetStreamStatus(stream).needsBaseline).toBe(true)
@@ -192,6 +221,7 @@ end)
 
 it("rejects a single impossible-sized record instead of leaving undeliverable backlog", function()
 	scheduler:Destroy()
+
 	scheduler = Scheduler.new({
 		maxBarriers = 8,
 		maxEvents = 16,
@@ -200,9 +230,11 @@ it("rejects a single impossible-sized record instead of leaving undeliverable ba
 			return 16
 		end,
 	})
+
 	local success: boolean, reason: string? = scheduler:Enqueue(stream, TestUtils.scalar(1, "Game.State", 1, "Changed"))
 	expect(success).toBe(false)
 	expect(reason).toBe("PublicationStreamOverloaded")
+
 	expect(scheduler:GetStreamStatus(stream)).toEqual({
 		needsBaseline = true,
 		pendingRecords = 0,
@@ -213,37 +245,45 @@ end)
 
 it("stops retaining both incremental state and event history while a baseline is pending", function()
 	scheduler:MarkBaselinePending(stream)
+
 	for sequence: number = 1, 1000 do
 		for _, eventId: string in { "", "Changed" } do
 			local success: boolean, reason: string? = scheduler:Enqueue(
 				stream,
 				TestUtils.scalar(sequence, "Game.State", sequence % 100, if eventId == "" then nil else eventId)
 			)
+
 			expect(success).toBe(false)
 			expect(reason).toBe("PublicationBaselinePending")
 		end
 	end
+
 	expect(scheduler:GetStreamStatus(stream)).toEqual({
 		needsBaseline = true,
 		pendingRecords = 0,
 		pendingEvents = 0,
 		queuedBytes = 0,
 	})
+
 	expect(scheduler:DrainBudgeted(1024, 8).records).toEqual({})
 end)
 
 it("isolates one discontinuous recipient/Actor stream from the other Actor and other recipient", function()
 	local otherActor: ServerNetworkingTypes.PublicationStreamKey = { recipient = stream.recipient, actor = "ActorY" }
 	local otherRecipient: ServerNetworkingTypes.PublicationStreamKey = { recipient = "PlayerB", actor = stream.actor }
+
 	for _, key: ServerNetworkingTypes.PublicationStreamKey in { stream, otherActor, otherRecipient } do
 		expect(scheduler:Enqueue(key, TestUtils.scalar(1, "Game.State", 1, "Changed"))).toBe(true)
 	end
+
 	scheduler:MarkBaselinePending(stream)
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(2)
+
 	for _, record: ServerNetworkingTypes.PublicationRecord in drained.records do
 		expect(record.stream.recipient == stream.recipient and record.stream.actor == stream.actor).toBe(false)
 	end
+
 	expect(scheduler:GetStreamStatus(otherActor).needsBaseline).toBe(false)
 	expect(scheduler:GetStreamStatus(otherRecipient).needsBaseline).toBe(false)
 end)
@@ -263,9 +303,11 @@ end)
 
 it("removes obsolete stream work idempotently without disturbing other active streams", function()
 	local other: ServerNetworkingTypes.PublicationStreamKey = { recipient = stream.recipient, actor = "ActorY" }
+
 	for _, key: ServerNetworkingTypes.PublicationStreamKey in { stream, other } do
 		expect(scheduler:Enqueue(key, TestUtils.scalar(1, "Game.State", 1, "Changed"))).toBe(true)
 	end
+
 	scheduler:RemoveStream(stream)
 	scheduler:RemoveStream(stream)
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
@@ -280,9 +322,11 @@ it("releases a recipient bucket when its last Actor stream is removed", function
 	local first: ServerNetworkingTypes.PublicationStreamKey = { recipient = recipient, actor = "ActorA" }
 	local second: ServerNetworkingTypes.PublicationStreamKey = { recipient = recipient, actor = "ActorB" }
 	local unrelated: ServerNetworkingTypes.PublicationStreamKey = { recipient = otherRecipient, actor = "ActorA" }
+
 	for _, key: ServerNetworkingTypes.PublicationStreamKey in { first, second, unrelated } do
 		expect(scheduler:Enqueue(key, TestUtils.scalar(1, "Game.State", 1, nil))).toBe(true)
 	end
+
 	scheduler:RemoveStream(first)
 	expect((scheduler :: any).streams[recipient]).never.toBeNil()
 	expect(scheduler:GetStreamStatus(second).pendingRecords).toBe(1)
@@ -300,14 +344,18 @@ it("bounds representative state churn by live streams rather than mutation count
 			expect(scheduler:Enqueue(key, TestUtils.scalar(sequence, "Game.State", sequence, nil))).toBe(true)
 		end
 	end
+
 	local totalBytes: number = 0
+
 	for actorIndex: number = 1, 64 do
 		local status: ServerNetworkingTypes.PublicationStreamStatus =
 			scheduler:GetStreamStatus({ recipient = stream.recipient, actor = actorIndex })
+
 		expect(status.pendingRecords).toBe(1)
 		expect(status.needsBaseline).toBe(false)
 		totalBytes += status.queuedBytes
 	end
+
 	expect(totalBytes).toBe(64 * 16)
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 64)
 	expect(#drained.records).toBe(64)
@@ -317,18 +365,22 @@ end)
 it("replaces the mutable tail byte charge using measured N2 bytes for variable-size values", function()
 	local compiled: SharedNetworkingTypes.CompiledSchema?, compileReason: string? =
 		SchemaCompiler.Compile(Schema.String(32))
+
 	expect(compileReason).toBeNil()
 	assert(compiled ~= nil, "Expected String schema")
 	local codec: SharedNetworkingTypes.CompiledCodec?, codecReason: string? = Codecs.Compile(compiled)
 	expect(codecReason).toBeNil()
 	assert(codec ~= nil, "Expected String codec")
+
 	local function measure(commit: ServerNetworkingTypes.PublicationFilteredCommit): number
 		local patch: ServerNetworkingTypes.PublicationPatch = commit.patches[1].patch
 		assert(patch.kind == "Replace", "Expected scalar String replacement")
 		local bytes: number?, reason: string? = codec.Measure(patch.value)
 		assert(bytes ~= nil and reason == nil, "Expected valid encoded String")
+
 		return bytes + 8 -- Synthetic fixed framing, private to this test.
 	end
+
 	scheduler:Destroy()
 	scheduler = Scheduler.new({ maxBarriers = 8, maxEvents = 16, maxQueuedBytes = 128, MeasureRecord = measure })
 	local longer: ServerNetworkingTypes.PublicationFilteredCommit = TestUtils.scalar(1, "Game.State", "1234567890", nil)

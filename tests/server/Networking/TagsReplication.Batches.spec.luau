@@ -9,9 +9,11 @@ local TagTypes = require(ReplicatedStorage.Packages.KRF.server.Tags.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.TagsReplicationTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -27,6 +29,7 @@ it("installs every touched entry before one batch callback and preserves visible
 	TestUtils.add(fixture, "Buff.Stack", 4)
 	expect(fixture.commits).toEqual({})
 	local events: { TagTypes.TagMutationEvent } = fixture.tags:_finishMutationBatch()
+
 	expect(fixture.commits).toEqual({
 		{
 			events = {
@@ -42,6 +45,7 @@ it("installs every touched entry before one batch callback and preserves visible
 			},
 		},
 	})
+
 	fixture.tags:_dispatchMutationEvents(events)
 	expect(#fixture.commits).toBe(1)
 end)
@@ -52,6 +56,7 @@ it("preserves Add then Remove occurrences even when the batch ends with empty st
 	TestUtils.add(fixture, "Status.Permanent")
 	expect(fixture.tags:RemoveTag("Status.Permanent")).toBe(true)
 	local events: { TagTypes.TagMutationEvent } = fixture.tags:_finishMutationBatch()
+
 	expect(fixture.commits).toEqual({
 		{
 			events = {
@@ -61,6 +66,7 @@ it("preserves Add then Remove occurrences even when the batch ends with empty st
 			state = {},
 		},
 	})
+
 	fixture.tags:_dispatchMutationEvents(events)
 end)
 
@@ -74,10 +80,12 @@ it("defers nested batches until the outer Commit and does not publish again duri
 	expect(fixture.commits).toEqual({})
 	local events: { TagTypes.TagMutationEvent } = fixture.tags:_finishMutationBatch()
 	expect(#fixture.commits).toBe(1)
+
 	expect(fixture.commits[1].events).toEqual({
 		{ id = "Added", payload = "Status.Permanent" },
 		{ id = "Added", payload = "Status.Burning" },
 	})
+
 	fixture.tags:_dispatchMutationEvents(events)
 	expect(#fixture.commits).toBe(1)
 end)
@@ -95,6 +103,7 @@ it("ignores empty and all-private batches without suppressing the following visi
 	fixture.tags:_beginMutationBatch()
 	TestUtils.add(fixture, "Status.Permanent")
 	fixture.tags:_dispatchMutationEvents(fixture.tags:_finishMutationBatch())
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Status.Permanent" } },

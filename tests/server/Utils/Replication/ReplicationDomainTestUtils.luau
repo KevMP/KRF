@@ -8,6 +8,7 @@ local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+
 local Registry: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
 
@@ -29,6 +30,7 @@ function ReplicationDomainTestUtils.prepare(
 	local prepared: ReplicationTypes.PreparedReplicationDomainCatalog?, reason: string? = Registry.Prepare(definitions)
 	expect(reason).toBeNil()
 	expect(prepared).never.toBeNil()
+
 	return prepared :: ReplicationTypes.PreparedReplicationDomainCatalog
 end
 

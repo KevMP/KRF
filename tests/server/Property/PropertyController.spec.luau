@@ -117,9 +117,11 @@ it("does not fire change events when setting the same value already stored", fun
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 		resolvedEventCount += 1
 	end)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 		umbrellaEventCount += 1
 	end)
@@ -156,6 +158,7 @@ it("fires base, resolved, and umbrella events in order when creating a property"
 			expect(newValue).toBe(40)
 		end
 	)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			table.insert(eventOrder, "resolved")
@@ -165,6 +168,7 @@ it("fires base, resolved, and umbrella events in order when creating a property"
 			expect(newValue).toBe(40)
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		table.insert(eventOrder, "umbrella")
 		umbrellaPayload = change
@@ -214,6 +218,7 @@ it("fires specific change events only when values change and reports previous va
 			baseNewValue = newValue
 		end
 	)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			resolvedEventCount += 1
@@ -223,6 +228,7 @@ it("fires specific change events only when values change and reports previous va
 			resolvedNewValue = newValue
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		umbrellaPayload = change
 	end)

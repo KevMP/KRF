@@ -21,6 +21,7 @@ it("closes a suspended coroutine that yielded directly", function()
 	local suspendedThread: thread = coroutine.create(function()
 		coroutine.yield()
 	end)
+
 	coroutine.resume(suspendedThread)
 
 	ActionControllerHooks.CancelSuspendedThread(suspendedThread)

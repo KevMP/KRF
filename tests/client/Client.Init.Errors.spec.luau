@@ -21,9 +21,11 @@ beforeEach(function()
 	Client._ResetForTests()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	Compiler.Reconstruct = originalReconstruct
 	Client._ResetForTests()
+
 	if fixture.initThread ~= nil and coroutine.status(fixture.initThread) ~= "dead" then
 		coroutine.close(fixture.initThread)
 	end
@@ -60,6 +62,7 @@ for _, phase: string in { "discovery", "listener connection", "timeout schedulin
 				error("AdapterFailure")
 			end
 		end
+
 		TestUtils.start(fixture)
 		expectInternalFailure("AdapterFailure")
 	end)
@@ -71,6 +74,7 @@ it("surfaces unexpected codec reconstruction failure through the receive boundar
 	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		error("ReconstructionFailure")
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.bootstrap(fixture)
 	expectInternalFailure("ReconstructionFailure")
@@ -79,9 +83,11 @@ end)
 
 it("surfaces READY send failure and disposes installed consumers", function()
 	TestUtils.start(fixture)
+
 	fixture.transport.SendReliable = function(_payload: buffer): ()
 		error("ReadySendFailure")
 	end
+
 	TestUtils.bootstrap(fixture)
 	expectInternalFailure("ReadySendFailure")
 	expect(fixture.consumerCleanupCalls).toBe(1)
@@ -95,9 +101,12 @@ for _, behavior: string in { "throws", "yields" } do
 			if behavior == "throws" then
 				error("InstallerFailure")
 			end
+
 			coroutine.yield()
+
 			return true, nil, nil
 		end
+
 		TestUtils.start(fixture)
 		TestUtils.bootstrap(fixture)
 		expectInternalFailure(if behavior == "throws" then "InstallerFailure" else "Yielded")
@@ -107,6 +116,7 @@ end
 
 it("continues failure cleanup when an installed consumer disposer throws", function()
 	local cleanupCalls: number = 0
+
 	fixture.dependencies.InstallConsumers = function(
 		_protocol: SharedNetworkingTypes.ClientProtocol
 	): (boolean, string?, (() -> ())?)
@@ -115,6 +125,7 @@ it("continues failure cleanup when an installed consumer disposer throws", funct
 			error("CleanupFailure")
 		end
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.bootstrap(fixture)
 	assert(fixture.timeoutCallback ~= nil, "Expected a scheduled timeout")

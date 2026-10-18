@@ -29,6 +29,7 @@ it("bootstraps compatible client codecs for every N1 schema kind", function()
 		array = Schema.Array(Schema.Boolean, 2),
 		map = Schema.Map(Schema.String(4), Schema.Struct({ count = Schema.U16 }), 2),
 	})
+
 	local manifest: SharedNetworkingTypes.ProtocolManifest = {
 		version = Constants.PROTOCOL_VERSION,
 		domains = {
@@ -40,12 +41,15 @@ it("bootstraps compatible client codecs for every N1 schema kind", function()
 			},
 		},
 	}
+
 	local decoded: SharedNetworkingTypes.ProtocolMessage =
 		TestUtils.decode(TestUtils.encode({ kind = "Bootstrap", manifest = manifest }))
+
 	assert(decoded.kind == "Bootstrap", "Expected Bootstrap")
 	local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(decoded.manifest)
 	expect(reason).toBeNil()
 	assert(runtime ~= nil, "Expected client protocol")
+
 	local value: any = {
 		boolean = false,
 		u8 = 255,
@@ -61,7 +65,9 @@ it("bootstraps compatible client codecs for every N1 schema kind", function()
 		array = { false, true },
 		map = { zero = { count = 0 } },
 	}
+
 	local encoded: buffer = CodecTestUtils.encode(CodecTestUtils.compile(definition), value)
+
 	for _, codec: SharedNetworkingTypes.CompiledCodec in
 		{
 			runtime.domainsById["Game.AllKinds"].stateCodec,
@@ -80,16 +86,19 @@ it("reconstructs matching bidirectional domain and event mappings with compatibl
 	local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 	expect(reason).toBeNil()
 	assert(runtime ~= nil, "Expected a client protocol")
+
 	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		local installed: SharedNetworkingTypes.ClientDomain = runtime.domainsById[domain.id]
 		expect(runtime.domainsByCode[domain.code]).toBe(installed)
 		expect(installed.code).toBe(domain.code)
+
 		for _, event: SharedNetworkingTypes.ManifestEvent in domain.events do
 			local installedEvent: SharedNetworkingTypes.ClientEvent = installed.eventsById[event.id]
 			expect(installed.eventsByCode[event.code]).toBe(installedEvent)
 			CodecTestUtils.expectRoundTrip(installedEvent.codec, { count = 65535 })
 		end
 	end
+
 	CodecTestUtils.expectRoundTrip(runtime.domainsById["Game.Actions"].stateCodec, { mode = "Idle", active = false })
 	CodecTestUtils.expectRoundTrip(runtime.domainsById["Game.Inventory"].stateCodec, { "first", "second" })
 end)
@@ -105,6 +114,7 @@ it("reconstructs usable codecs after a buffer-backed manifest round trip", funct
 end)
 
 type InvalidManifestCase = { name: string, mutate: (any) -> (), reason: string }
+
 local invalidCases: { InvalidManifestCase } = {
 	{
 		name = "protocol mismatch",
@@ -191,15 +201,18 @@ local invalidCases: { InvalidManifestCase } = {
 		reason = "MalformedBootstrap",
 	},
 }
+
 for _, testCase: InvalidManifestCase in invalidCases do
 	it("rejects " .. testCase.name .. " without publishing partial decoder metadata", function()
 		local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
 		testCase.mutate(manifest)
 		local runtime: SharedNetworkingTypes.ClientProtocol? = nil
 		local reason: string? = nil
+
 		local completed: boolean = pcall(function()
 			runtime, reason = Compiler.Reconstruct(manifest)
 		end)
+
 		expect(completed).toBe(true)
 		expect(runtime).toBeNil()
 		expect(reason).toBe(testCase.reason)
@@ -209,21 +222,25 @@ end
 it("allows empty global catalogs and the same event id in different domains", function()
 	local empty: SharedNetworkingTypes.ClientProtocol?, emptyReason: string? =
 		Compiler.Reconstruct({ version = Constants.PROTOCOL_VERSION, domains = {} })
+
 	expect(emptyReason).toBeNil()
 	assert(empty ~= nil, "Expected empty protocol")
 	expect(empty.domainsById).toEqual({})
 	expect(empty.domainsByCode).toEqual({})
 	local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
 	local secondDomain: SharedNetworkingTypes.ManifestDomain = manifest.domains[2]
+
 	manifest.domains[2] = {
 		id = secondDomain.id,
 		code = secondDomain.code,
 		state = secondDomain.state,
 		events = { { id = "Changed", code = 0, payload = manifest.domains[1].events[1].payload } },
 	}
+
 	local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 	expect(reason).toBeNil()
 	assert(runtime ~= nil, "Expected protocol")
+
 	expect(runtime.domainsById["Game.Actions"].eventsById.Changed).never.toBe(
 		runtime.domainsById["Game.Inventory"].eventsById.Changed
 	)

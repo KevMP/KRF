@@ -22,15 +22,19 @@ function ActorEntity.new(model: Model?): Actor
 		if controllers[key] ~= nil then
 			return false
 		end
+
 		controllers[key] = controller
+
 		return true
 	end
 
 	function actor:GetControllerKeys(): { string }
 		local keys: { string } = {}
+
 		for key, _ in controllers do
 			table.insert(keys, key)
 		end
+
 		return keys
 	end
 
@@ -40,7 +44,9 @@ function ActorEntity.new(model: Model?): Actor
 
 	function actor:RemoveController(key: string): Controller?
 		local controller: Controller? = self:GetController(key)
+
 		controllers[key] = nil
+
 		return controller
 	end
 

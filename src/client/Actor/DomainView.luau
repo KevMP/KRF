@@ -16,13 +16,17 @@ function DomainView.new(domainId: string, immutableState: any, eventIds: { strin
 	local signals: { OwnedSignals.OwnedSignal } = { changed }
 	local events: { [string]: SignalTypes.Event<any> } = {}
 	local writableEvents: { [string]: SignalTypes.Signal<any> } = {}
+
 	for _, eventId: string in eventIds do
 		local signal: SignalTypes.Signal<any> = Signal.new()
+
 		writableEvents[eventId] = signal
 		events[eventId] = Signal.wrapEvent(signal)
 		table.insert(signals, signal)
 	end
+
 	local owned: SignalTypes.OwnedSignals = OwnedSignals.new(signals)
+
 	local view: Types.DomainView = table.freeze({
 		GetId = function(_self: Types.DomainView): string
 			return domainId
@@ -35,6 +39,7 @@ function DomainView.new(domainId: string, immutableState: any, eventIds: { strin
 		end,
 		OnChanged = Signal.wrapEvent(changed),
 	})
+
 	return {
 		view = view,
 		InstallState = function(_self: Types.DomainViewOwner, state: any): ()
@@ -52,6 +57,7 @@ function DomainView.new(domainId: string, immutableState: any, eventIds: { strin
 			if not destroyed then
 				local signal: SignalTypes.Signal<any>? = writableEvents[eventId]
 				assert(signal ~= nil, "UndeclaredDomainEvent")
+
 				owned:WithDeferredDestroy(function()
 					signal:Fire(payload)
 				end)
@@ -61,6 +67,7 @@ function DomainView.new(domainId: string, immutableState: any, eventIds: { strin
 			if destroyed then
 				return
 			end
+
 			destroyed = true
 			current = nil
 			table.clear(events)

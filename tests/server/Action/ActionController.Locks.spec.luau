@@ -32,17 +32,21 @@ afterEach(function()
 	for _, controller: ActionController in controllers do
 		controller:Destroy()
 	end
+
 	ActionRegistry._resetForTests()
 end)
 
 local function loadDefinitions(definitions: { ActionDefinition }): ()
 	local factories: { ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local loaded: boolean, reason: string? = ActionRegistry.Load(factories, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -51,8 +55,10 @@ end
 local function createController(): (Actor, ActionController)
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: ActionController = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
@@ -62,6 +68,7 @@ it("runs lockless and disjoint-lock Actions concurrently", function()
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Aim", visibility = "ServerOnly", autoGrant = true, locks = { "Combat" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local waiting: any = controller:RequestAction("Action.Wait")
 	local sprinting: any = controller:RequestAction("Action.Sprint")
@@ -78,6 +85,7 @@ it("scopes the same lock id independently to each Actor", function()
 	loadDefinitions({
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _firstActor: Actor, firstController: ActionController = createController()
 	local _secondActor: Actor, secondController: ActionController = createController()
 	expect(firstController:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
@@ -89,6 +97,7 @@ it("rejects a conflicting lifetime lock without activating or consuming a sequen
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local sprint: any = controller:RequestAction("Action.Sprint")
 	expect(sprint).toEqual({ accepted = true, sequenceId = 1 })
@@ -103,6 +112,7 @@ it("acquires a lifetime lock set all at once and leaves free locks unclaimed on 
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Combat", "Movement" } },
 		{ id = "Action.Attack", visibility = "ServerOnly", autoGrant = true, locks = { "Combat" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = false, reason = "ActionLockConflict" })
@@ -121,6 +131,7 @@ it("uses exact loaded allowlist ids and never grants same-id instances an except
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local first: any = controller:RequestAction("Action.Sprint")
 	expect(first.accepted).toBe(true)
@@ -140,6 +151,7 @@ it("allows a same-id instance to preempt when its exact id is explicitly allowli
 			interruptibleBy = { "Action.Sprint" },
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local first: any = controller:RequestAction("Action.Sprint")
 	expect(first.accepted).toBe(true)
@@ -149,8 +161,10 @@ end)
 
 it("uses loaded static metadata even if a later factory result changes the allowlist", function()
 	local factoryCalls: number = 0
+
 	local factory: ActionFactory = function(): ActionDefinition
 		factoryCalls += 1
+
 		return {
 			id = "Action.Sprint",
 			visibility = "ServerOnly",
@@ -159,9 +173,11 @@ it("uses loaded static metadata even if a later factory result changes the allow
 			interruptibleBy = if factoryCalls == 1 then {} else { "Action.Dodge" },
 		}
 	end
+
 	local dodgeFactory: ActionFactory = function(): ActionDefinition
 		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } }
 	end
+
 	expect((ActionRegistry.Load({ factory, dodgeFactory }, {}, {}))).toBe(true)
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -172,6 +188,7 @@ it("releases lifetime locks before End and Interrupt hooks dispatch", function()
 	local controller: ActionController? = nil
 	local observed: { boolean } = {}
 	local replacements: { number } = {}
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -181,6 +198,7 @@ it("releases lifetime locks before End and Interrupt hooks dispatch", function()
 			onEnd = function(_context: ActionExecutionContext): ()
 				local result: any = (controller :: ActionController):RequestAction("Action.Roll")
 				table.insert(observed, result.accepted)
+
 				if result.accepted then
 					table.insert(replacements, result.sequenceId)
 				end
@@ -188,6 +206,7 @@ it("releases lifetime locks before End and Interrupt hooks dispatch", function()
 			onInterrupt = function(_context: ActionExecutionContext, _reason: string): ()
 				local result: any = (controller :: ActionController):RequestAction("Action.Roll")
 				table.insert(observed, result.accepted)
+
 				if result.accepted then
 					table.insert(replacements, result.sequenceId)
 				end
@@ -195,6 +214,7 @@ it("releases lifetime locks before End and Interrupt hooks dispatch", function()
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local first: any = (controller :: ActionController):RequestAction("Action.Sprint")
@@ -208,6 +228,7 @@ end)
 it("has acquired lifetime locks before onStart runs", function()
 	local controller: ActionController? = nil
 	local competing: any = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -220,6 +241,7 @@ it("has acquired lifetime locks before onStart runs", function()
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect((controller :: ActionController):RequestAction("Action.Sprint").accepted).toBe(true)
@@ -231,6 +253,7 @@ it("passes the owner context and incoming request identity to the captured inter
 	local hookContext: ActionExecutionContext? = nil
 	local incoming: ActionInterruptionContext? = nil
 	local parameters: { [string]: number } = { direction = 1 }
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -244,11 +267,13 @@ it("passes the owner context and incoming request identity to the captured inter
 			canBeInterruptedBy = function(context: ActionExecutionContext, value: ActionInterruptionContext): boolean
 				hookContext = context
 				incoming = value
+
 				return true
 			end,
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Dodge", parameters).accepted).toBe(true)
@@ -260,6 +285,7 @@ end)
 
 it("lets a captured hook narrow the static allowlist but never expand it", function()
 	local calls: number = 0
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -272,12 +298,14 @@ it("lets a captured hook narrow the static allowlist but never expand it", funct
 				_incoming: ActionInterruptionContext
 			): boolean
 				calls += 1
+
 				return false
 			end,
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local owner: any = controller:RequestAction("Action.Sprint")
 	expect(controller:RequestAction("Action.Roll")).toEqual({ accepted = false, reason = "ActionLockConflict" })
@@ -290,8 +318,10 @@ end)
 it("does not execute a startup hook when the active implementation omitted it", function()
 	local factoryCalls: number = 0
 	local startupCalls: number = 0
+
 	local ownerFactory: ActionFactory = function(): ActionDefinition
 		factoryCalls += 1
+
 		return {
 			id = "Action.Sprint",
 			visibility = "ServerOnly",
@@ -301,14 +331,17 @@ it("does not execute a startup hook when the active implementation omitted it", 
 			canBeInterruptedBy = if factoryCalls == 1
 				then function(): boolean
 					startupCalls += 1
+
 					return false
 				end
 				else nil,
 		}
 	end
+
 	local dodgeFactory: ActionFactory = function(): ActionDefinition
 		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } }
 	end
+
 	expect((ActionRegistry.Load({ ownerFactory, dodgeFactory }, {}, {}))).toBe(true)
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -319,6 +352,7 @@ end)
 it("evaluates distinct conflicting owners by sequence and interrupts none when one denies", function()
 	local decisions: { number } = {}
 	local interrupted: { number } = {}
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -331,6 +365,7 @@ it("evaluates distinct conflicting owners by sequence and interrupts none when o
 				_incoming: ActionInterruptionContext
 			): boolean
 				table.insert(decisions, context.sequenceId)
+
 				return true
 			end,
 			onInterrupt = function(context: ActionExecutionContext, _reason: string): ()
@@ -348,6 +383,7 @@ it("evaluates distinct conflicting owners by sequence and interrupts none when o
 				_incoming: ActionInterruptionContext
 			): boolean
 				table.insert(decisions, context.sequenceId)
+
 				return false
 			end,
 			onInterrupt = function(context: ActionExecutionContext, _reason: string): ()
@@ -356,6 +392,7 @@ it("evaluates distinct conflicting owners by sequence and interrupts none when o
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Combat", "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local sprint: any = controller:RequestAction("Action.Sprint")
 	local aim: any = controller:RequestAction("Action.Aim")
@@ -375,15 +412,19 @@ it("commits every preemption before callbacks and dispatches in sequence order",
 	local competingDuringFirstCallback: any = nil
 	local bothRetiredAtIncomingStart: boolean? = nil
 	local competingDuringIncomingStart: any = nil
+
 	local function interrupted(context: ActionExecutionContext, reason: string): ()
 		if #dispatch == 0 then
 			bothRetiredBeforeFirstCallback = not contexts["Action.Sprint"]:IsActive()
 				and not contexts["Action.Aim"]:IsActive()
+
 			competingDuringFirstCallback = (controller :: ActionController):RequestAction("Action.Roll")
 		end
+
 		table.insert(dispatch, context.actionId)
 		table.insert(reasons, reason)
 	end
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -414,14 +455,17 @@ it("commits every preemption before callbacks and dispatches in sequence order",
 			locks = { "Movement", "Combat" },
 			onStart = function(context: ActionExecutionContext)
 				contexts[context.actionId] = context
+
 				bothRetiredAtIncomingStart = not contexts["Action.Sprint"]:IsActive()
 					and not contexts["Action.Aim"]:IsActive()
+
 				competingDuringIncomingStart = (controller :: ActionController):RequestAction("Action.Roll")
 				table.insert(dispatch, "Action.Dodge")
 			end,
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect((controller :: ActionController):RequestAction("Action.Sprint").accepted).toBe(true)
@@ -442,6 +486,7 @@ it("issues every preemption event before an owner hook starts another Action", f
 	local counterStartedBeforeReturn: boolean? = nil
 	local counterStarted: boolean = false
 	local dodgeStarted: boolean = false
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -479,23 +524,28 @@ it("issues every preemption event before an owner hook starts another Action", f
 			end,
 		},
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local activeController: ActionController = controller :: ActionController
 	expect(activeController:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(activeController:RequestAction("Action.Aim")).toEqual({ accepted = true, sequenceId = 2 })
+
 	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
 		table.insert(events, "Interrupted " .. event.actionId)
 	end)
+
 	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
 		table.insert(events, "Started " .. event.actionId)
 	end)
+
 	expect(activeController:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 3 })
 	expect(counterRequest).toEqual({ accepted = true, sequenceId = 4 })
 	expect(counterStartedBeforeReturn).toBe(true)
 	expect(dodgeStarted).toBe(true)
 	task.wait()
 	task.wait()
+
 	expect(events).toEqual({
 		"Interrupted Action.Sprint",
 		"Interrupted Action.Aim",
@@ -512,6 +562,7 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 	local dodgeStarted: boolean = false
 	local counterStarted: boolean = false
 	local nestedCallbacksRanBeforeReturn: boolean? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -547,19 +598,23 @@ it("emits Started before Interrupted when an interruption hook preempts the inco
 			end,
 		},
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local activeController: ActionController = controller :: ActionController
+
 	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
 		if event.actionId == "Action.Dodge" then
 			table.insert(dodgeEvents, "Started")
 		end
 	end)
+
 	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
 		if event.actionId == "Action.Dodge" then
 			table.insert(dodgeEvents, "Interrupted")
 		end
 	end)
+
 	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
 	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 2 })
 	expect(counterRequest).toEqual({ accepted = true, sequenceId = 3 })
@@ -576,6 +631,7 @@ it("runs a reentrant EndAction hook before returning to an interruption hook", f
 	local endResult: boolean? = nil
 	local endHookRan: boolean = false
 	local endHookRanBeforeReturn: boolean? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -598,6 +654,7 @@ it("runs a reentrant EndAction hook before returning to an interruption hook", f
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
@@ -612,6 +669,7 @@ end)
 it("rebuilds the conflict plan after a decision hook ends its own Action", function()
 	local controller: ActionController? = nil
 	local decisions: { number } = {}
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -625,11 +683,13 @@ it("rebuilds the conflict plan after a decision hook ends its own Action", funct
 			): boolean
 				table.insert(decisions, context.sequenceId)
 				context:End()
+
 				return true
 			end,
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local sprint: any = (controller :: ActionController):RequestAction("Action.Sprint")
@@ -645,6 +705,7 @@ it("preempts unchanged lock owners when a decision starts an unrelated lockless 
 	local decisionCalls: number = 0
 	local interruptionCalls: number = 0
 	local unrelatedRequests: { ActionTypes.ActionRequestResult } = {}
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -658,6 +719,7 @@ it("preempts unchanged lock owners when a decision starts an unrelated lockless 
 			canBeInterruptedBy = function(): boolean
 				decisionCalls += 1
 				table.insert(unrelatedRequests, (controller :: ActionController):RequestAction("Action.Emote"))
+
 				return true
 			end,
 			onInterrupt = function(): ()
@@ -674,6 +736,7 @@ it("preempts unchanged lock owners when a decision starts an unrelated lockless 
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect((controller :: ActionController):RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
@@ -688,6 +751,7 @@ end)
 it("does not commit a stale plan when a decision hook starts a new conflicting owner", function()
 	local controller: ActionController? = nil
 	local nested: any = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -701,19 +765,23 @@ it("does not commit a stale plan when a decision hook starts a new conflicting o
 			): boolean
 				context:End()
 				nested = (controller :: ActionController):RequestAction("Action.Roll")
+
 				return true
 			end,
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect((controller :: ActionController):RequestAction("Action.Sprint").accepted).toBe(true)
+
 	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({
 		accepted = false,
 		reason = "ActionLockConflict",
 	})
+
 	expect(nested).toEqual({ accepted = true, sequenceId = 2 })
 	expect(((controller :: ActionController):EndAction(nested.sequenceId))).toBe(true)
 end)
@@ -721,6 +789,7 @@ end)
 it("rechecks an incoming grant revoked by an interruption decision hook", function()
 	local controller: ActionController? = nil
 	local ownerContext: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -733,18 +802,22 @@ it("rechecks an incoming grant revoked by an interruption decision hook", functi
 			end,
 			canBeInterruptedBy = function(): boolean
 				(controller :: ActionController):SetGrants("Learned", {})
+
 				return true
 			end,
 		},
 		{ id = "Action.Dodge", visibility = "ServerOnly", locks = { "Movement" } },
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect(((controller :: ActionController):SetGrants("Learned", { "Action.Dodge" }))).toBe(true)
 	expect((controller :: ActionController):RequestAction("Action.Sprint").accepted).toBe(true)
+
 	expect((controller :: ActionController):RequestAction("Action.Dodge")).toEqual({
 		accepted = false,
 		reason = "ActionNotGranted",
 	})
+
 	expect((ownerContext :: ActionExecutionContext):IsActive()).toBe(true)
 end)

@@ -34,9 +34,11 @@ afterEach(function()
 			ActorRuntime.UnregisterActor(actor, "TestCleanup")
 		end
 	end
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	Server._ResetForTests()
 end)
 
@@ -51,6 +53,7 @@ local function registerActor(): (Actor, ActionController)
 	table.insert(actors, registeredActor)
 	local controller: ActionController? = registeredActor:GetController("ActionController") :: ActionController?
 	expect(controller).never.toBeNil()
+
 	return registeredActor, controller :: ActionController
 end
 
@@ -77,6 +80,7 @@ it("gives each Actor independent source grants while sharing the loaded auto-gra
 			end,
 		},
 	})
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	local _firstActor: Actor, firstController: ActionController = registerActor()

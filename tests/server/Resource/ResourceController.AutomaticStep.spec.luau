@@ -50,6 +50,7 @@ it("automatically restores enabled actors at the fixed ten hertz interval", func
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Stamina")
 	local changes: { ResourceChange } = {}
@@ -62,9 +63,11 @@ it("automatically restores enabled actors at the fixed ten hertz interval", func
 	end)
 
 	actor.enabled = true
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return #changes >= 1
 	end, 60)).toBe(true)
+
 	expect(changes[1].currentOldValue).toBe(0)
 	expect(changes[1].currentNewValue).toBe(1)
 
@@ -93,6 +96,7 @@ it("skips disabled actors until they become enabled", function()
 
 		local actor: Actor, propertyController: PropertyController =
 			ResourceControllerTestUtils.createActorWithPropertyController()
+
 		local resourceController: ResourceController = ResourceControllerModule.new(actor)
 		local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Focus")
 
@@ -140,8 +144,10 @@ it("dispatches only to regen controllers and unregisters them on Destroy", funct
 
 		local regenActor: Actor, regenPropertyController: PropertyController =
 			ResourceControllerTestUtils.createActorWithPropertyController()
+
 		local staticActor: Actor, staticPropertyController: PropertyController =
 			ResourceControllerTestUtils.createActorWithPropertyController()
+
 		local regenController: ResourceController = ResourceControllerModule.new(regenActor)
 		local staticController: ResourceController = ResourceControllerModule.new(staticActor)
 		local addRegenOk: boolean, addRegenReason: string? = regenController:AddResource("Resource.Mana")
@@ -155,9 +161,11 @@ it("dispatches only to regen controllers and unregisters them on Destroy", funct
 		expect(addRegenReason).toBeNil()
 		expect(addStaticOk).toBe(true)
 		expect(addStaticReason).toBeNil()
+
 		regenControllerProbe.Step = function(_self: any, _deltaTime: number): ()
 			regenStepCount += 1
 		end
+
 		staticControllerProbe.Step = function(_self: any, _deltaTime: number): ()
 			staticStepCount += 1
 		end

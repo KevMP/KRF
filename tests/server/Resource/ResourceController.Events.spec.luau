@@ -50,6 +50,7 @@ it("fires OnResourceAdded on successful add without firing OnResourceChanged", f
 		addedActor = eventActor
 		addedResourceId = resourceId
 	end)
+
 	local changedConnection = resourceController.OnResourceChanged:Connect(function(_change: ResourceChange)
 		changedCount += 1
 	end)
@@ -63,6 +64,7 @@ it("fires OnResourceAdded on successful add without firing OnResourceChanged", f
 		if addedCount == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -125,10 +127,12 @@ it("fires OnResourceChanged only when SetCurrent changes the final current value
 		if #changes == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
 	expect(#changes).toBe(1)
+
 	expect(changes[1]).toEqual({
 		actor = actor,
 		resourceId = "Resource.Resolve",
@@ -158,10 +162,12 @@ it("fires OnResourceChanged only when SetCurrent changes the final current value
 		if #changes == 2 then
 			break
 		end
+
 		task.wait()
 	end
 
 	expect(#changes).toBe(2)
+
 	expect(changes[2]).toEqual({
 		actor = actor,
 		resourceId = "Resource.Resolve",
@@ -225,6 +231,7 @@ it("fires OnResourceChanged for Spend only when current value changes", function
 		if #changes == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -282,6 +289,7 @@ it("fires OnResourceChanged for Restore only when current value changes", functi
 		if #changes == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -299,6 +307,7 @@ it("fires OnResourceChanged for Restore only when current value changes", functi
 		if #changes == 2 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -355,6 +364,7 @@ it("fires OnResourceChanged for Drain only when current value changes", function
 		if #changes == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -372,6 +382,7 @@ it("fires OnResourceChanged for Drain only when current value changes", function
 		if #changes == 2 then
 			break
 		end
+
 		task.wait()
 	end
 

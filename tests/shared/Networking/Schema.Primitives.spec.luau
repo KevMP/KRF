@@ -10,6 +10,7 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.SchemaTestUtils)
 
 type SchemaDefinition = SharedNetworkingTypes.SchemaDefinition
 type CompiledSchema = SharedNetworkingTypes.CompiledSchema
+
 type IntegerCase = { name: string, definition: SchemaDefinition, minimum: number, maximum: number }
 
 local integers: { IntegerCase } = {
@@ -31,25 +32,30 @@ for _, integerCase: IntegerCase in integers do
 		TestUtils.expectValid(compiled, integerCase.maximum - 1)
 		TestUtils.expectValid(compiled, integerCase.maximum)
 	end)
+
 	it(integerCase.name .. " rejects the integer immediately below its legal range", function()
 		local compiled: CompiledSchema = TestUtils.compile(integerCase.definition)
 		TestUtils.expectInvalid(compiled, integerCase.minimum - 1, "SchemaIntegerOutOfRange")
 	end)
+
 	it(integerCase.name .. " rejects the integer immediately above its legal range", function()
 		local compiled: CompiledSchema = TestUtils.compile(integerCase.definition)
 		TestUtils.expectInvalid(compiled, integerCase.maximum + 1, "SchemaIntegerOutOfRange")
 	end)
+
 	it(integerCase.name .. " rejects positive and negative fractional values without rounding", function()
 		local compiled: CompiledSchema = TestUtils.compile(integerCase.definition)
 		TestUtils.expectInvalid(compiled, 0.5, "SchemaIntegerMustBeIntegral")
 		TestUtils.expectInvalid(compiled, -0.5, "SchemaIntegerMustBeIntegral")
 	end)
+
 	it(integerCase.name .. " rejects NaN and both infinities", function()
 		local compiled: CompiledSchema = TestUtils.compile(integerCase.definition)
 		TestUtils.expectInvalid(compiled, 0 / 0, "SchemaNumberMustBeFinite")
 		TestUtils.expectInvalid(compiled, math.huge, "SchemaNumberMustBeFinite")
 		TestUtils.expectInvalid(compiled, -math.huge, "SchemaNumberMustBeFinite")
 	end)
+
 	it(integerCase.name .. " rejects missing values and does not coerce strings or booleans", function()
 		local compiled: CompiledSchema = TestUtils.compile(integerCase.definition)
 		TestUtils.expectInvalid(compiled, nil, "SchemaValueTypeInvalid")
@@ -71,10 +77,12 @@ it("Boolean accepts true and false while rejecting nil and truthy values of othe
 end)
 
 type FloatCase = { name: string, definition: SchemaDefinition, maximum: number }
+
 local floats: { FloatCase } = {
 	{ name = "F32", definition = Schema.F32, maximum = 3.4028234663852886e38 },
 	{ name = "F64", definition = Schema.F64, maximum = 1.7976931348623157e308 },
 }
+
 for _, floatCase: FloatCase in floats do
 	it(floatCase.name .. " accepts finite positive and negative values including its representable limits", function()
 		local compiled: CompiledSchema = TestUtils.compile(floatCase.definition)
@@ -85,12 +93,14 @@ for _, floatCase: FloatCase in floats do
 		TestUtils.expectValid(compiled, floatCase.maximum)
 		TestUtils.expectValid(compiled, -floatCase.maximum)
 	end)
+
 	it(floatCase.name .. " rejects NaN and both infinities", function()
 		local compiled: CompiledSchema = TestUtils.compile(floatCase.definition)
 		TestUtils.expectInvalid(compiled, 0 / 0, "SchemaNumberMustBeFinite")
 		TestUtils.expectInvalid(compiled, math.huge, "SchemaNumberMustBeFinite")
 		TestUtils.expectInvalid(compiled, -math.huge, "SchemaNumberMustBeFinite")
 	end)
+
 	it(floatCase.name .. " rejects nil and non-number values without coercion", function()
 		local compiled: CompiledSchema = TestUtils.compile(floatCase.definition)
 		TestUtils.expectInvalid(compiled, nil, "SchemaValueTypeInvalid")

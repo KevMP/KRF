@@ -7,6 +7,7 @@
 rojo = "rojo-rbx/rojo@7.6.1"
 selene = "Kampfkarren/selene@0.30.0"
 StyLua = "JohnnyMorganz/StyLua@2.3.1"
+breathers = "0hirume/breathers@0.6.3"
 wally = "UpliftGames/wally@0.3.2"
 wally-package-types = "JohnnyMorganz/wally-package-types@1.6.2"
 run-in-roblox = "rojo-rbx/run-in-roblox@0.3.0"

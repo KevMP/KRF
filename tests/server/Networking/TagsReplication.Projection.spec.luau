@@ -17,14 +17,17 @@ local PublicationUtils = require(script.Parent.Parent.Utils.Networking.Publicati
 
 local fixture: TestUtils.Fixture
 local runtime: ServerTypes.PublicationRuntime? = nil
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	if runtime ~= nil then
 		runtime:Destroy()
 		runtime = nil
 	end
+
 	TestUtils.destroy(fixture)
 end)
 
@@ -47,6 +50,7 @@ it("captures pre-existing visible aggregate truth with finite anchors and no ser
 	local attached: boolean, reason: string? = publication:AttachActor(fixture.actor)
 	expect(reason).toBeNil()
 	expect(attached).toBe(true)
+
 	expect(publication:CaptureBaseline(fixture.actor)).toEqual({
 		sequence = 0,
 		domains = {
@@ -69,6 +73,7 @@ it("uses the authoritative longest finite duration even when a stack also contai
 	expect(TestUtils.snapshot(fixture)).toEqual({ ["Buff.Stack"] = { stackCount = 2, expiresAt = 1007 } })
 	TestUtils.step(fixture, 7)
 	expect(TestUtils.snapshot(fixture)).toEqual({ ["Buff.Stack"] = { stackCount = 1 } })
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Expired", payload = "Buff.Stack" } },
@@ -93,12 +98,15 @@ end)
 it("retries a rejected initial Tags snapshot against current truth without publishing the failed admission", function()
 	TestUtils.add(fixture, "Status.Burning")
 	fixture.clock.now = math.huge
+
 	local publication: ServerTypes.PublicationRuntime = PublicationUtils.createRuntime({ fixture.definition })
 	runtime = publication
 	local commits: { ServerTypes.PublicationCommit } = {}
+
 	publication:ObserveCommits(function(commit: ServerTypes.PublicationCommit)
 		table.insert(commits, commit)
 	end)
+
 	local attached: boolean, reason: string? = publication:AttachActor(fixture.actor)
 	expect(attached).toBe(false)
 	expect(reason).toBe("InvalidPublicationSnapshot:KRF.Tags")
@@ -109,10 +117,12 @@ it("retries a rejected initial Tags snapshot against current truth without publi
 	local retried: boolean, retryReason: string? = publication:AttachActor(fixture.actor)
 	expect(retryReason).toBeNil()
 	expect(retried).toBe(true)
+
 	expect(publication:CaptureBaseline(fixture.actor)).toEqual({
 		sequence = 0,
 		domains = { ["KRF.Tags"] = { value = { ["Status.Burning"] = { stackCount = 1, expiresAt = 1010 } } } },
 	})
+
 	TestUtils.add(fixture, "Status.Burning", 3)
 	expect(#commits).toBe(1)
 	expect(commits[1].events).toEqual({ { domainId = "KRF.Tags", eventId = "Refreshed", payload = "Status.Burning" } })
@@ -146,13 +156,17 @@ end)
 
 it("unwinds the Tag observer when a later domain fails attachment and retries without retaining stale state", function()
 	local invalid: PublicationUtils.DomainFixture = PublicationUtils.createDomain("ZGame.Invalid", Schema.U8, 256)
+
 	local publication: ServerTypes.PublicationRuntime =
 		PublicationUtils.createRuntime({ fixture.definition, invalid.definition })
+
 	runtime = publication
 	local commits: { ServerTypes.PublicationCommit } = {}
+
 	publication:ObserveCommits(function(commit: ServerTypes.PublicationCommit)
 		table.insert(commits, commit)
 	end)
+
 	local attached: boolean, reason: string? = publication:AttachActor(fixture.actor)
 	expect(attached).toBe(false)
 	expect(reason).toBe("InvalidPublicationSnapshot:ZGame.Invalid")
@@ -163,6 +177,7 @@ it("unwinds the Tag observer when a later domain fails attachment and retries wi
 	local retried: boolean, retryReason: string? = publication:AttachActor(fixture.actor)
 	expect(retryReason).toBeNil()
 	expect(retried).toBe(true)
+
 	expect(publication:CaptureBaseline(fixture.actor)).toEqual({
 		sequence = 0,
 		domains = {
@@ -170,6 +185,7 @@ it("unwinds the Tag observer when a later domain fails attachment and retries wi
 			["ZGame.Invalid"] = { value = 1 },
 		},
 	})
+
 	TestUtils.add(fixture, "Status.Burning", 3)
 	expect(#commits).toBe(1)
 	expect(commits[1].events).toEqual({ { domainId = "KRF.Tags", eventId = "Refreshed", payload = "Status.Burning" } })

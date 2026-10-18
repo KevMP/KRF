@@ -20,6 +20,7 @@ local controllers: { ActionController } = {}
 beforeEach(function()
 	ActionRegistry._resetForTests()
 	controllers = {}
+
 	local loaded: boolean, reason: string? = ActionRegistry.Load({
 		function()
 			return { id = "Action.A", visibility = "ServerOnly" }
@@ -31,6 +32,7 @@ beforeEach(function()
 			return { id = "Action.C", visibility = "ServerOnly" }
 		end,
 	}, {}, {})
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 end)
@@ -39,12 +41,14 @@ afterEach(function()
 	for _, controller: ActionController in controllers do
 		controller:Destroy()
 	end
+
 	ActionRegistry._resetForTests()
 end)
 
 local function createController(): ActionController
 	local controller: ActionController = ActionControllerModule.new(ActorEntity.new())
 	table.insert(controllers, controller)
+
 	return controller
 end
 
@@ -52,9 +56,11 @@ it("rejects non-string and empty source ids without changing grants or emitting 
 	local controller: ActionController = createController()
 	expect((controller:SetGrants("Learned", { "Action.A" }))).toBe(true)
 	local eventCount: number = 0
+
 	local connection = controller.OnActionGrantChanged:Connect(function()
 		eventCount += 1
 	end)
+
 	for _, invalidSource: any in { 12, {}, "" } :: { any } do
 		local success: boolean, reason: string? = controller:SetGrants(invalidSource, { "Action.B" })
 		expect(success).toBe(false)
@@ -62,6 +68,7 @@ it("rejects non-string and empty source ids without changing grants or emitting 
 		expect(reason).never.toBe("")
 		expect(controller:GetGrantedActions()).toEqual({ "Action.A" })
 	end
+
 	task.wait()
 	task.wait()
 	expect(eventCount).toBe(0)
@@ -79,6 +86,7 @@ end)
 it("rejects non-array grant input and leaves the previous source contribution intact", function()
 	local controller: ActionController = createController()
 	expect((controller:SetGrants("Learned", { "Action.A" }))).toBe(true)
+
 	for _, invalidList: any in { false, "Action.B", { ["Action.B"] = true }, { [2] = "Action.B" } } :: { any } do
 		local success: boolean, reason: string? = controller:SetGrants("Learned", invalidList)
 		expect(success).toBe(false)
@@ -91,9 +99,11 @@ it("rejects non-string, empty, and unknown Action ids atomically", function()
 	local controller: ActionController = createController()
 	expect((controller:SetGrants("Learned", { "Action.A" }))).toBe(true)
 	local eventCount: number = 0
+
 	local connection = controller.OnActionGrantChanged:Connect(function()
 		eventCount += 1
 	end)
+
 	for _, invalidAction: any in { 5, "", "Action.Unknown" } :: { any } do
 		local success: boolean, reason: string? = controller:SetGrants("Learned", { "Action.B", invalidAction })
 		expect(success).toBe(false)
@@ -101,6 +111,7 @@ it("rejects non-string, empty, and unknown Action ids atomically", function()
 		expect(reason).never.toBe("")
 		expect(controller:GetGrantedActions()).toEqual({ "Action.A" })
 	end
+
 	task.wait()
 	task.wait()
 	expect(eventCount).toBe(0)

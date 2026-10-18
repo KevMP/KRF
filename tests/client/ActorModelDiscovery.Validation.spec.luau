@@ -8,14 +8,17 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientNetworkingTypes = require(KRF.client.Networking.types)
+
 local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
 	require(KRF.client.Networking.utils.ActorModelDiscovery)
+
 local Identity = require(KRF.shared.Networking.utils.ActorModelIdentity)
 
 local root: Folder
 local model: Model
 local marker: StringValue
 local discovery: ClientNetworkingTypes.ActorModelDiscoveryAdapter?
+
 beforeEach(function()
 	root = Instance.new("Folder")
 	root.Parent = workspace
@@ -27,11 +30,14 @@ beforeEach(function()
 	marker.Parent = model
 	discovery = nil
 end)
+
 afterEach(function()
 	if discovery ~= nil then
 		discovery.Destroy()
 	end
+
 	root:Destroy()
+
 	if marker.Parent == nil then
 		marker:Destroy()
 	end
@@ -44,6 +50,7 @@ it("ignores malformed tagged markers and markers outside its discovery root", fu
 	CollectionService:AddTag(wrongClass, Identity.TAG)
 	CollectionService:AddTag(marker, Identity.TAG)
 	marker.Name = "GameChild"
+
 	local adapter: ClientNetworkingTypes.ActorModelDiscoveryAdapter = Discovery.new(root)
 	discovery = adapter
 	expect(adapter.GetCandidates()).toEqual({})
@@ -75,12 +82,15 @@ it("reconciles marker value and name changes and deduplicates valid hierarchy no
 	discovery = adapter
 	local added: { string } = {}
 	local removed: { Instance } = {}
+
 	local stopAdded: () -> () = adapter.ObserveAdded(function(candidate: ClientNetworkingTypes.ActorModelCandidate)
 		table.insert(added, candidate.actorId)
 	end)
+
 	local stopRemoved: () -> () = adapter.ObserveRemoved(function(instance: Instance)
 		table.insert(removed, instance)
 	end)
+
 	local group: Folder = Instance.new("Folder")
 	group.Parent = root
 	model.Parent = group
@@ -112,17 +122,22 @@ it("disconnects all native observers and rejects subscriptions after repeated de
 	local adapter: ClientNetworkingTypes.ActorModelDiscoveryAdapter = Discovery.new(root)
 	discovery = adapter
 	local calls: number = 0
+
 	adapter.ObserveAdded(function(_candidate: ClientNetworkingTypes.ActorModelCandidate)
 		calls += 1
 	end)
+
 	adapter.ObserveRemoved(function(_marker: Instance)
 		calls += 1
 	end)
+
 	adapter.Destroy()
 	adapter.Destroy()
+
 	local stop: () -> () = adapter.ObserveAdded(function(_candidate: ClientNetworkingTypes.ActorModelCandidate)
 		calls += 1
 	end)
+
 	stop()
 	stop()
 	marker.Value = "ActorB"

@@ -26,6 +26,7 @@ it("TagValidator.ValidateTagDefinition rejects missing and non-table definitions
 
 	local isNonTableValid: boolean, nonTableReason: string? =
 		TagValidator.ValidateTagDefinition("not a table" :: any, {})
+
 	expect(isNonTableValid).toBe(false)
 	expect(nonTableReason).toBe("TagDefinitionMustBeTable")
 end)
@@ -46,6 +47,7 @@ it("TagValidator.ValidateTagDefinition requires duplicateBehavior and visibility
 
 	local isMissingDuplicateBehaviorValid: boolean, missingDuplicateBehaviorReason: string? =
 		TagValidator.ValidateTagDefinition(missingDuplicateBehavior, {})
+
 	expect(isMissingDuplicateBehaviorValid).toBe(false)
 	expect(missingDuplicateBehaviorReason).toBe("TagDuplicateBehaviorMissing")
 
@@ -54,6 +56,7 @@ it("TagValidator.ValidateTagDefinition requires duplicateBehavior and visibility
 
 	local isNonStringDuplicateBehaviorValid: boolean, nonStringDuplicateBehaviorReason: string? =
 		TagValidator.ValidateTagDefinition(nonStringDuplicateBehavior, {})
+
 	expect(isNonStringDuplicateBehaviorValid).toBe(false)
 	expect(nonStringDuplicateBehaviorReason).toBe("TagDuplicateBehaviorMustBeString")
 
@@ -62,6 +65,7 @@ it("TagValidator.ValidateTagDefinition requires duplicateBehavior and visibility
 
 	local isMissingVisibilityValid: boolean, missingVisibilityReason: string? =
 		TagValidator.ValidateTagDefinition(missingVisibility, {})
+
 	expect(isMissingVisibilityValid).toBe(false)
 	expect(missingVisibilityReason).toBe("TagVisibilityMissing")
 
@@ -70,6 +74,7 @@ it("TagValidator.ValidateTagDefinition requires duplicateBehavior and visibility
 
 	local isNonStringVisibilityValid: boolean, nonStringVisibilityReason: string? =
 		TagValidator.ValidateTagDefinition(nonStringVisibility, {})
+
 	expect(isNonStringVisibilityValid).toBe(false)
 	expect(nonStringVisibilityReason).toBe("TagVisibilityMustBeString")
 end)

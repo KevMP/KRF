@@ -14,8 +14,10 @@ local Client: ClientTypes.Client = require(KRF.client)
 local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
 local Runtime: ClientNetworkingTypes.ActorViewRuntimeModule = require(KRF.client.Networking.ActorViewRuntime)
 local Stream: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
+
 local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
 	require(KRF.client.Networking.utils.ActorModelDiscovery)
+
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local Consumer = require(KRF.client.Networking.utils.ActorStreamConsumer)
 local ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
@@ -49,15 +51,19 @@ beforeEach(function()
 	Native.DiscoverTransport = fixture.dependencies.DiscoverTransport
 	Native.ScheduleTimeout = fixture.dependencies.ScheduleTimeout
 	Native.Resume = fixture.dependencies.Resume
+
 	local originalSend: (buffer) -> () = fixture.transport.SendReliable
+
 	fixture.transport.SendReliable = function(payload: buffer)
 		local message: SharedNetworkingTypes.ProtocolMessage? = ProtocolCodec.Decode(payload)
+
 		if message ~= nil then
 			originalSend(payload)
 		else
 			table.insert(resync, payload)
 		end
 	end
+
 	Discovery.new = function(_root: Instance?): ClientNetworkingTypes.ActorModelDiscoveryAdapter
 		return {
 			GetCandidates = stream.discovery.GetCandidates,
@@ -66,6 +72,7 @@ beforeEach(function()
 			Destroy = function(): () end,
 		}
 	end
+
 	Runtime.new = function(
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		schemas: SharedNetworkingTypes.ActorSchemaCatalog,
@@ -75,19 +82,24 @@ beforeEach(function()
 		table.insert(fixture.order, "ActorViews")
 		local runtime: ClientNetworkingTypes.ActorViewRuntime = originalNew(protocol, schemas, options)
 		local destroy: typeof(runtime.Destroy) = runtime.Destroy
+
 		runtime.Destroy = function(self: ClientNetworkingTypes.ActorViewRuntime)
 			destroyed += 1
 			destroy(self)
 		end
+
 		return runtime
 	end
 end)
+
 afterEach(function()
 	Client._ResetForTests()
 	Consumer.Install(nil)
+
 	if fixture.initThread ~= nil and coroutine.status(fixture.initThread) ~= "dead" then
 		coroutine.close(fixture.initThread)
 	end
+
 	Runtime.new = originalNew
 	Stream.new = originalStream
 	Discovery.new = originalDiscovery
@@ -103,6 +115,7 @@ local function start(): ()
 		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
 		fixture.result = { success = success, failure = failure }
 	end)
+
 	local completed: boolean, reason: any = coroutine.resume(fixture.initThread :: thread)
 	expect(completed).toBe(true)
 	expect(reason).toBeNil()
@@ -110,12 +123,15 @@ end
 
 local function baseline(): buffer
 	local body: buffer = StreamUtils.body(stream)
+
 	local payload: buffer?, reason: string? = stream.codec.Encode({
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 		{ kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = 1, generation = 1, revision = 1 },
 	})
+
 	assert(payload ~= nil, reason)
+
 	return payload
 end
 
@@ -137,6 +153,7 @@ it("consumes immediate ACK-following Actor traffic through the default receive p
 			TestUtils.emit(fixture, baseline())
 		end
 	end
+
 	start()
 	TestUtils.bootstrap(fixture)
 	expect(fixture.result).toEqual({ success = true })
@@ -156,8 +173,10 @@ it("creates a later ActorView after successful Init and sends resync over the in
 	TestUtils.emit(fixture, baseline())
 	local view: PublicTypes.ActorView? = Registry.GetActorViewById("ActorA")
 	assert(view ~= nil, "Expected future baseline publication")
+
 	local gap: buffer?, reason: string? =
 		stream.codec.Encode({ { kind = "Commit", handle = 1, revision = 3, patches = {}, events = {} } })
+
 	assert(gap ~= nil, reason)
 	TestUtils.emit(fixture, gap)
 	expect(#resync).toBe(1)
@@ -170,6 +189,7 @@ for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" }
 		start()
 		TestUtils.bootstrap(fixture)
 		expect(created).toBe(1)
+
 		if failure == "ReadyRejected" then
 			TestUtils.emit(fixture, ProtocolUtils.encode({ kind = "Reject", reason = "ReadyRejected" }))
 		elseif failure == "HandshakeTimeout" then
@@ -178,6 +198,7 @@ for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" }
 		else
 			Client._ResetForTests()
 		end
+
 		TestUtils.expectFailure(fixture, failure)
 		Client._ResetForTests()
 		expect(destroyed).toBe(1)
@@ -206,6 +227,7 @@ it("sends no READY and releases N4 discovery if N5 construction fails", function
 	): ClientNetworkingTypes.ActorViewRuntime
 		error("ForcedActorViewConstructionFailure", 0)
 	end
+
 	start()
 	TestUtils.bootstrap(fixture)
 	TestUtils.expectFailure(fixture, "StartupInternalFailure:ForcedActorViewConstructionFailure")
@@ -216,6 +238,7 @@ end)
 
 it("reports malformed Actor framing once through the native reporter and continues valid production traffic", function()
 	local faults: { string } = {}
+
 	Stream.new = function(
 		codec: SharedNetworkingTypes.ActorStreamCodec,
 		consumer: ClientNetworkingTypes.ActorStreamConsumer?,
@@ -223,12 +246,15 @@ it("reports malformed Actor framing once through the native reporter and continu
 		options: ClientNetworkingTypes.ActorStreamOptions
 	): ClientNetworkingTypes.ActorStreamRuntime
 		local report: (string) -> () = options.ReportFault
+
 		options.ReportFault = function(reason: string)
 			table.insert(faults, reason)
 			report(reason)
 		end
+
 		return originalStream(codec, consumer, discovery, options)
 	end
+
 	start()
 	TestUtils.bootstrap(fixture)
 	TestUtils.acknowledge(fixture)

@@ -12,6 +12,7 @@ local Codecs: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networkin
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ProtocolTestUtils)
 
 local originalCompile: typeof(Codecs.Compile) = Codecs.Compile
+
 afterEach(function()
 	Codecs.Compile = originalCompile
 end)
@@ -25,6 +26,7 @@ for _, value: any in { false, "manifest", {}, { version = 1, domains = {}, [1] =
 end
 
 type AdmissionCase = { name: string, mutate: (any) -> () }
+
 local cases: { AdmissionCase } = {
 	{
 		name = "sparse domain catalog",
@@ -77,6 +79,7 @@ local cases: { AdmissionCase } = {
 		end,
 	},
 }
+
 for _, testCase: AdmissionCase in cases do
 	it("rejects " .. testCase.name .. " without publishing a partially compiled runtime", function()
 		local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
@@ -94,8 +97,10 @@ for _, providedReason: boolean in { true, false } do
 		): (SharedNetworkingTypes.CompiledCodec?, string?)
 			return nil, if providedReason then "UnsupportedSchema" else nil
 		end
+
 		local runtime: SharedNetworkingTypes.ClientProtocol?, reason: string? =
 			Compiler.Reconstruct(TestUtils.manifest())
+
 		expect(runtime).toBeNil()
 		expect(reason).toBe("UnsupportedSchema")
 	end)

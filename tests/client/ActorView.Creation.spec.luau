@@ -13,9 +13,11 @@ local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -25,10 +27,12 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 	StreamUtils.add(fixture.stream, candidate)
 	local added: { PublicTypes.ActorView } = {}
 	local observed: { any } = {}
+
 	table.insert(
 		fixture.connections,
 		fixture.runtime.registry.OnActorViewAdded:Connect(function(view: PublicTypes.ActorView)
 			table.insert(added, view)
+
 			table.insert(observed, {
 				id = view:GetId(),
 				model = view:GetModel(),
@@ -37,13 +41,16 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 			})
 		end)
 	)
+
 	local truth: { [string]: SharedNetworkingTypes.ActorDomainTruth } = TestUtils.truth()
 	local body: buffer?, reason: string? = fixture.stream.codec.EncodeBaseline(truth)
 	assert(body ~= nil, reason)
+
 	TestUtils.send(
 		fixture,
 		{ { kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) } }
 	)
+
 	expect(fixture.runtime.registry.GetAllActorViews()).toEqual({})
 	expect(fixture.runtime.registry.GetActorViewByModel(candidate.model)).toBeNil()
 	TestUtils.send(fixture, { { kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body } })
@@ -52,6 +59,7 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 	TestUtils.send(fixture, { { kind = "BaselineEnd", handle = 1, generation = 1, revision = 10 } })
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	expect(added).toEqual({ view })
+
 	expect(observed).toEqual({
 		{
 			id = "ActorA",
@@ -60,7 +68,9 @@ it("publishes nothing until the complete initial baseline ends, then publishes e
 			state = truth["Game.Stamina"].value,
 		},
 	})
+
 	expect(fixture.runtime.registry.GetActorViewByModel(candidate.model)).toBe(view)
+
 	for id: string, domain: SharedNetworkingTypes.ActorDomainTruth in truth do
 		expect(TestUtils.domain(fixture, id):GetState()).toEqual(domain.value)
 	end
@@ -100,10 +110,12 @@ end)
 it("rejects a second handle claiming an existing actorId without overwriting current truth", function()
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
+
 	local accepted: boolean, reason: string? = StreamUtils.send(
 		fixture.stream,
 		{ { kind = "BaselineBegin", handle = 2, actorId = "ActorA", generation = 1, totalBytes = 1 } }
 	)
+
 	expect(accepted).toBe(false)
 	expect(reason).toBe("ActorIdConflict")
 	expect(TestUtils.view(fixture)).toBe(view)

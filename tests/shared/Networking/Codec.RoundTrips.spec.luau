@@ -10,6 +10,7 @@ local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schem
 local TestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUtils)
 
 type RoundTripCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, values: { any }, width: number? }
+
 local primitiveCases: { RoundTripCase } = {
 	{ name = "Boolean", schema = Schema.Boolean, values = { false, true }, width = 1 },
 	{ name = "U8", schema = Schema.U8, values = { 0, 1, 255 }, width = 1 },
@@ -21,11 +22,13 @@ local primitiveCases: { RoundTripCase } = {
 	{ name = "F32", schema = Schema.F32, values = { -1.5, 0, 1.25, 3.4028234663852886e38 }, width = 4 },
 	{ name = "F64", schema = Schema.F64, values = { -1e300, 0, math.pi, 1e300 }, width = 8 },
 }
+
 for _, testCase: RoundTripCase in primitiveCases do
 	it("round-trips " .. testCase.name .. " boundaries with an exact fixed size", function()
 		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
 		expect(codec.fixedSizeBytes).toBe(testCase.width)
 		expect(codec.maxSizeBytes).toBe(testCase.width)
+
 		for _, value: any in testCase.values do
 			TestUtils.expectRoundTrip(codec, value)
 		end
@@ -76,9 +79,11 @@ local collectionCases: { RoundTripCase } = {
 		values = { { array = { false, true }, map = { zero = 0, last = 255 } } },
 	},
 }
+
 for _, testCase: RoundTripCase in collectionCases do
 	it("round-trips " .. testCase.name .. " without changing consumer values", function()
 		local codec: SharedNetworkingTypes.CompiledCodec = TestUtils.compile(testCase.schema)
+
 		for _, value: any in testCase.values do
 			TestUtils.expectRoundTrip(codec, value)
 		end
@@ -105,6 +110,7 @@ it("round-trips nested Map, Array, Struct, Enum and Optional combinations", func
 			),
 			2
 		))
+
 	TestUtils.expectRoundTrip(codec, {
 		alpha = { { mode = "Idle" }, { mode = "Active", detail = { amount = 0.5 } } },
 		beta = {},
@@ -116,8 +122,10 @@ it("writes Struct fields positionally and Enum values as compact ordinals", func
 		aVeryLongFieldName = Schema.U8,
 		zAnotherLongFieldName = Schema.Enum({ "AReallyLongEnumValue", "AnotherLongEnumValue" }),
 	}))
+
 	local encoded: buffer =
 		TestUtils.encode(codec, { aVeryLongFieldName = 42, zAnotherLongFieldName = "AnotherLongEnumValue" })
+
 	expect(buffer.len(encoded) < string.len("aVeryLongFieldName")).toBe(true)
 	expect(buffer.readu8(encoded, 0)).toBe(42)
 	TestUtils.expectRoundTrip(codec, { aVeryLongFieldName = 42, zAnotherLongFieldName = "AReallyLongEnumValue" })

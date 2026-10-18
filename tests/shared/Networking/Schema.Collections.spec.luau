@@ -19,6 +19,7 @@ it("Struct accepts complete nested state with false and zero-valued required fie
 		guard = Schema.F32,
 		effect = Schema.Struct({ stacks = Schema.U8, remaining = Schema.Optional(Schema.F32) }),
 	}))
+
 	TestUtils.expectValid(compiled, { blocking = false, guard = 0, effect = { stacks = 0 } })
 	TestUtils.expectValid(compiled, { blocking = true, guard = 10, effect = { stacks = 2, remaining = 1.5 } })
 end)
@@ -34,6 +35,7 @@ it("Struct rejects invalid field types and undeclared fields at every nesting le
 	local compiled: CompiledSchema = TestUtils.compile(Schema.Struct({
 		stats = Schema.Struct({ guard = Schema.F32 }),
 	}))
+
 	TestUtils.expectInvalid(compiled, { stats = { guard = true } }, "SchemaValueTypeInvalid")
 	TestUtils.expectInvalid(compiled, { stats = { guard = 10 }, extra = false }, "SchemaStructFieldUndeclared")
 	TestUtils.expectInvalid(compiled, { stats = { guard = 10, extra = false } }, "SchemaStructFieldUndeclared")
@@ -83,6 +85,7 @@ it("Array accepts empty, dense interior, and maximum-length ordered values", fun
 end)
 
 type ArrayShapeCase = { name: string, value: any }
+
 local invalidArrays: { ArrayShapeCase } = {
 	{ name = "a missing first element", value = { [2] = 1 } },
 	{ name = "an interior hole", value = { [1] = 1, [3] = 3 } },
@@ -93,6 +96,7 @@ local invalidArrays: { ArrayShapeCase } = {
 	{ name = "a string key", value = { extra = 1 } },
 	{ name = "mixed array and record keys", value = { [1] = 1, extra = 1 } },
 }
+
 for _, shapeCase: ArrayShapeCase in invalidArrays do
 	it("Array rejects " .. shapeCase.name .. " independently of Luau's length operator", function()
 		local compiled: CompiledSchema = TestUtils.compile(Schema.Array(Schema.U8, 3))
@@ -165,10 +169,13 @@ it("Map validates nested Struct, Array, Optional, and Map state recursively", fu
 		}),
 		2
 	))
+
 	TestUtils.expectValid(compiled, { Burn = { stacks = 2, sources = { { [1] = true }, {} } } })
+
 	TestUtils.expectInvalid(compiled, {
 		Burn = { stacks = 2, sources = { { [65536] = true } } },
 	}, "SchemaIntegerOutOfRange")
+
 	TestUtils.expectInvalid(compiled, {
 		Burn = { stacks = 2, sources = { { [1] = true, [2] = false, [3] = true } } },
 	}, "SchemaMapTooLarge")
@@ -179,6 +186,7 @@ it("validation preserves array order and leaves valid and invalid input tables u
 		values = Schema.Array(Schema.U8, 3),
 		optional = Schema.Optional(Schema.Boolean),
 	}))
+
 	local validValue: any = { values = { 3, 1, 2 } }
 	local invalidValue: any = { values = { 3, 256, 2 }, extra = false }
 	TestUtils.expectValid(compiled, validValue)

@@ -19,6 +19,7 @@ function ServerProtocolTestUtils.prepare(
 	local protocol: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
 	expect(reason).toBeNil()
 	assert(protocol ~= nil, "Expected prepared server protocol")
+
 	return protocol
 end
 

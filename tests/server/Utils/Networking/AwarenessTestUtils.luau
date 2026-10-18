@@ -19,6 +19,7 @@ local DomainUtils = require(script.Parent.Parent.Replication.ReplicationDomainTe
 local ProtocolUtils = require(script.Parent.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
 export type Delivery = { player: Player, payload: buffer }
+
 export type Fixture = {
 	publication: ServerNetworkingTypes.PublicationRuntime,
 	runtime: ServerNetworkingTypes.ActorAwarenessRuntime?,
@@ -44,18 +45,23 @@ local TestUtils = {}
 function TestUtils.new(): Fixture
 	local publicDomain: PublicationUtils.DomainFixture = PublicationUtils.createDomain("Game.Public", Schema.U8, 10)
 	publicDomain.definition.events = { { id = "Changed", payload = Schema.U8 } }
+
 	local ownerDomain: PublicationUtils.DomainFixture = PublicationUtils.createDomain("Game.Private", Schema.U8, 20)
 	ownerDomain.definition.audience = "Owner"
 	ownerDomain.definition.events = { { id = "Changed", payload = Schema.U8 } }
+
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog =
 		DomainUtils.prepare({ publicDomain.definition, ownerDomain.definition })
+
 	local protocol: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
 	expect(reason).toBeNil()
 	assert(protocol ~= nil, "Expected N2 protocol")
 	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+
 	for _, definition: ReplicationTypes.LoadedReplicationDomainDefinition in catalog.orderedDefinitions do
 		schemas[definition.id] = definition.state
 	end
+
 	local fixture: Fixture = {
 		publication = Publication.new(catalog),
 		runtime = nil,
@@ -82,14 +88,17 @@ function TestUtils.new(): Fixture
 		},
 		dependencies = {} :: ServerNetworkingTypes.ActorAwarenessDependencies,
 	}
+
 	fixture.dependencies = {
 		IsClientReady = function(player: Player): boolean
 			return fixture.readyPlayers[player] == true
 		end,
 		ObserveClientReady = function(callback: (Player) -> ()): () -> ()
 			table.insert(fixture.readyObservers, callback)
+
 			return function(): ()
 				local index: number? = table.find(fixture.readyObservers, callback)
+
 				if index ~= nil then
 					table.remove(fixture.readyObservers, index)
 				end
@@ -97,8 +106,10 @@ function TestUtils.new(): Fixture
 		end,
 		ObserveClientClosed = function(callback: (Player) -> ()): () -> ()
 			table.insert(fixture.closedObservers, callback)
+
 			return function(): ()
 				local index: number? = table.find(fixture.closedObservers, callback)
+
 				if index ~= nil then
 					table.remove(fixture.closedObservers, index)
 				end
@@ -106,6 +117,7 @@ function TestUtils.new(): Fixture
 		end,
 		SendReliable = function(player: Player, payload: buffer): (boolean, string?)
 			table.insert(fixture.deliveries, { player = player, payload = payload })
+
 			return true, nil
 		end,
 		GetPlayerFromCharacter = function(model: Model): Player?
@@ -113,8 +125,10 @@ function TestUtils.new(): Fixture
 		end,
 		ObserveAssociationChanged = function(callback: (Model) -> ()): () -> ()
 			table.insert(fixture.associationObservers, callback)
+
 			return function(): ()
 				local index: number? = table.find(fixture.associationObservers, callback)
+
 				if index ~= nil then
 					table.remove(fixture.associationObservers, index)
 				end
@@ -124,6 +138,7 @@ function TestUtils.new(): Fixture
 			table.insert(fixture.faults, fault)
 		end,
 	}
+
 	return fixture
 end
 
@@ -135,35 +150,44 @@ function TestUtils.start(fixture: Fixture): ServerNetworkingTypes.ActorAwareness
 		fixture.dependencies,
 		fixture.options
 	)
+
 	fixture.runtime = runtime
+
 	return runtime
 end
 
 function TestUtils.player(fixture: Fixture): Player
 	local player: Player = ProtocolUtils.createPlayer()
 	table.insert(fixture.instances, player)
+
 	return player
 end
 
 function TestUtils.actor(fixture: Fixture, owner: Player?): ActorTypes.Actor
 	local model: Model = Instance.new("Model")
 	table.insert(fixture.instances, model)
+
 	local actor: ActorTypes.Actor = ActorEntity.new(model)
 	actor.enabled = true
+
 	if owner ~= nil then
 		fixture.owners[model] = owner
 	end
+
 	local attached: boolean, reason: string? = fixture.publication:AttachActor(actor)
 	expect(attached).toBe(true)
 	expect(reason).toBeNil()
+
 	if fixture.runtime ~= nil then
 		fixture.runtime:OnActorRegistered(actor)
 	end
+
 	return actor
 end
 
 function TestUtils.ready(fixture: Fixture, player: Player): ()
 	fixture.readyPlayers[player] = true
+
 	for _, callback: (Player) -> () in table.clone(fixture.readyObservers) do
 		callback(player)
 	end
@@ -171,6 +195,7 @@ end
 
 function TestUtils.close(fixture: Fixture, player: Player): ()
 	fixture.readyPlayers[player] = nil
+
 	for _, callback: (Player) -> () in table.clone(fixture.closedObservers) do
 		callback(player)
 	end
@@ -179,6 +204,7 @@ end
 function TestUtils.associate(fixture: Fixture, actor: ActorTypes.Actor, player: Player?): ()
 	assert(actor.model ~= nil, "Expected Character Model")
 	fixture.owners[actor.model] = player
+
 	-- Publish the dependency event. The fixture never calls the runtime's refresh method.
 	for _, callback: (Model) -> () in table.clone(fixture.associationObservers) do
 		callback(actor.model)
@@ -187,33 +213,41 @@ end
 
 function TestUtils.records(fixture: Fixture, player: Player): { SharedNetworkingTypes.ActorStreamRecord }
 	local result: { SharedNetworkingTypes.ActorStreamRecord } = {}
+
 	for _, delivery: Delivery in fixture.deliveries do
 		if delivery.player == player then
 			expect(typeof(delivery.payload)).toBe("buffer")
+
 			local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? =
 				fixture.codec.Decode(delivery.payload)
+
 			expect(reason).toBeNil()
 			assert(records ~= nil, "Expected decodable Actor packet")
+
 			for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 				table.insert(result, record)
 			end
 		end
 	end
+
 	return result
 end
 
 function TestUtils.kind(fixture: Fixture, player: Player, kind: string): { any }
 	local result: { any } = {}
+
 	for _, record: SharedNetworkingTypes.ActorStreamRecord in TestUtils.records(fixture, player) do
 		if record.kind == kind then
 			table.insert(result, record)
 		end
 	end
+
 	return result
 end
 
 function TestUtils.drain(fixture: Fixture): ()
 	assert(fixture.runtime ~= nil, "Expected awareness runtime")
+
 	-- A fixed number of scheduler passes; no waits or dependence on frame timing.
 	for _ = 1, 32 do
 		fixture.runtime:Step(256, 8)
@@ -229,10 +263,12 @@ function TestUtils.baseline(
 	local generation: number = 0
 	local assembled: buffer? = nil
 	local ended: boolean = false
+
 	for _, record: SharedNetworkingTypes.ActorStreamRecord in TestUtils.records(fixture, player) do
 		if record.handle ~= handle then
 			continue
 		end
+
 		if record.kind == "BaselineBegin" then
 			totalBytes = record.totalBytes
 			generation = record.generation
@@ -246,12 +282,16 @@ function TestUtils.baseline(
 			ended = true
 		end
 	end
+
 	expect(ended).toBe(true)
 	assert(assembled ~= nil, "Expected baseline bytes")
+
 	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, reason: string? =
 		fixture.codec.DecodeBaseline(assembled)
+
 	expect(reason).toBeNil()
 	assert(domains ~= nil, "Expected decoded baseline")
+
 	return domains
 end
 
@@ -259,10 +299,13 @@ function TestUtils.destroy(fixture: Fixture): ()
 	if fixture.runtime ~= nil then
 		fixture.runtime:Destroy()
 	end
+
 	fixture.publication:Destroy()
+
 	for _, instance: Instance in fixture.instances do
 		instance:Destroy()
 	end
+
 	Networking._ResetForTests()
 end
 

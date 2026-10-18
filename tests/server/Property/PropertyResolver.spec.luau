@@ -271,6 +271,7 @@ it("ignores later set, min, and max entries when they are not stronger than the 
 			stackCount = 1,
 		},
 	}
+
 	local minEntries: { ModifierEntry } = {
 		{
 			modifier = {
@@ -285,6 +286,7 @@ it("ignores later set, min, and max entries when they are not stronger than the 
 			stackCount = 1,
 		},
 	}
+
 	local maxEntries: { ModifierEntry } = {
 		{
 			modifier = {

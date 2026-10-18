@@ -11,11 +11,13 @@ local ActionControllerTagRequirements = {}
 
 function ActionControllerTagRequirements.Validate(actor: Actor, definition: LoadedActionDefinition): string?
 	local tags: TagController? = actor:GetController("TagController") :: TagController?
+
 	for _, tagId: string in definition.requiredTags do
 		if tags == nil or not tags:HasTag(tagId) then
 			return "ActionRequiredTagMissing:" .. tagId
 		end
 	end
+
 	if tags ~= nil then
 		for _, tagId: string in definition.blockedTags do
 			if tags:HasTag(tagId) then
@@ -23,6 +25,7 @@ function ActionControllerTagRequirements.Validate(actor: Actor, definition: Load
 			end
 		end
 	end
+
 	return nil
 end
 

@@ -47,6 +47,7 @@ end)
 it("rejects every truncated request and trailing bytes without choosing a public wire layout", function()
 	local payload: buffer?, reason: string? = Codec.Encode(1)
 	assert(payload ~= nil, reason)
+
 	for length: number = 0, buffer.len(payload) - 1 do
 		local truncated: buffer = buffer.create(length)
 		buffer.copy(truncated, 0, payload, 0, length)
@@ -55,6 +56,7 @@ it("rejects every truncated request and trailing bytes without choosing a public
 		expect(request).toBeNil()
 		expect(reason).toBe("MalformedResyncRequest")
 	end
+
 	local extra: buffer = buffer.create(buffer.len(payload) + 1)
 	buffer.copy(extra, 0, payload)
 	local request: Codec.Request?
@@ -68,6 +70,7 @@ it("cannot confuse bootstrap or server Actor traffic with a resync request", fun
 		ProtocolUtils.encode({ kind = "Ready" }),
 		ActorUtils.encode(ActorUtils.codec(), { { kind = "ActorRemove", handle = 1 } }),
 	}
+
 	for _, payload: buffer in payloads do
 		local request: Codec.Request?, reason: string? = Codec.Decode(payload)
 		expect(request).toBeNil()

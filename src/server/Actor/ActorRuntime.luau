@@ -31,6 +31,7 @@ local ActorUnregisteringEvent: SignalTypes.Event<Actor, string?> = SignalModule.
 
 local ActorUnregisteredSignal: SignalTypes.Signal<Actor, string?> = SignalModule.new()
 local ActorUnregisteredEvent: SignalTypes.Event<Actor, string?> = SignalModule.wrapEvent(ActorUnregisteredSignal)
+
 local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
 	ActorRegisteredSignal,
 	ActorUnregisteringSignal,
@@ -39,6 +40,7 @@ local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
 
 local function DestroyController(controllerKey: string, controller: Controller): ()
 	local ok: boolean, err: any = pcall((controller :: any).Destroy, controller, nil)
+
 	if not ok then
 		warn("[ActorRuntime] Controller Destroy failed key=", controllerKey, " err=", err)
 	end
@@ -58,29 +60,37 @@ function ActorRuntime.RegisterActor(model: Model, _opts: RegisterActorOpts?): (A
 		if not attachSuccess then
 			ActorRuntime.DetachAllControllers(actor)
 			ActorRegistry.UnbindModel(actor)
+
 			return nil, attachFailReason
 		end
 
 		local publicationSuccess: boolean, publicationReason: string? = PublicationLifecycle.AttachActor(actor)
+
 		if not publicationSuccess then
 			ActorRuntime.DetachAllControllers(actor)
 			ActorRegistry.UnbindModel(actor)
+
 			return nil, publicationReason
 		end
 
 		local marked: boolean, markerReason: string? = Marker.Install(actor)
+
 		if not marked then
 			Marker.Remove(actor)
 			PublicationLifecycle.DetachActor(actor)
 			ActorRuntime.DetachAllControllers(actor)
 			ActorRegistry.UnbindModel(actor)
+
 			return nil, markerReason
 		end
+
 		actor.enabled = true
 		AwarenessLifecycle.Register(actor)
+
 		ownedSignals:WithDeferredDestroy(function()
 			ActorRegisteredSignal:Fire(actor)
 		end)
+
 		return actor, nil
 	else
 		return nil, reason
@@ -93,6 +103,7 @@ function ActorRuntime.UnregisterActor(actor: Actor, reason: string?): (boolean, 
 	end
 
 	actor.enabled = false
+
 	ownedSignals:WithDeferredDestroy(function()
 		ActorUnregisteringSignal:Fire(actor, reason)
 		AwarenessLifecycle.Unregister(actor)
@@ -131,7 +142,9 @@ function ActorRuntime.AttachControllers(actor: Actor): (boolean, string?)
 			returnErrorMessage = "FactoryError:" .. controllerKey
 			break
 		end
+
 		local controller: Controller? = factoryResult
+
 		if not controller then
 			returnErrorMessage = "FactoryDidNotCreateController:" .. controllerKey
 			break
@@ -143,11 +156,13 @@ function ActorRuntime.AttachControllers(actor: Actor): (boolean, string?)
 		end
 
 		local attachSuccess: boolean = actor:SetController(controllerKey, controller)
+
 		if not attachSuccess then
 			returnErrorMessage = "ControllerAttachmentFailed:" .. controllerKey
 			DestroyController(controllerKey, controller)
 			break
 		end
+
 		table.insert(attachedKeysThisCall, controllerKey)
 	end
 
@@ -155,10 +170,12 @@ function ActorRuntime.AttachControllers(actor: Actor): (boolean, string?)
 		for index: number = #attachedKeysThisCall, 1, -1 do
 			local controllerKey: string = attachedKeysThisCall[index]
 			local removedController: Controller? = actor:RemoveController(controllerKey)
+
 			if removedController then
 				DestroyController(controllerKey, removedController)
 			end
 		end
+
 		return false, returnErrorMessage
 	end
 
@@ -168,6 +185,7 @@ end
 function ActorRuntime.DetachAllControllers(actor: Actor): ()
 	for _, controllerKey: string in actor:GetControllerKeys() do
 		local controller: Controller? = actor:RemoveController(controllerKey)
+
 		if controller then
 			DestroyController(controllerKey, controller)
 		end

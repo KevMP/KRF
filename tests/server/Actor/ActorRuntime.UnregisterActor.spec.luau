@@ -25,11 +25,13 @@ beforeEach(function()
 	local started: boolean, failure = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+
 	return nil
 end)
 
 afterEach(function()
 	Server._ResetForTests()
+
 	return nil
 end)
 
@@ -204,11 +206,13 @@ it("UnregisterActor is idempotent (second call does no work)", function()
 
 		ActorRuntime.DetachAllControllers = function(actor: Actor): ()
 			detachCalls += 1
+
 			return originalDetachAllControllers(actor)
 		end
 
 		ActorRegistry.UnbindModel = function(actor: Actor): boolean
 			unbindCalls += 1
+
 			return originalUnbindModel(actor)
 		end
 
@@ -243,6 +247,7 @@ it("UnregisterActor is idempotent (second call does no work)", function()
 	if unregisteringConnection then
 		unregisteringConnection:Disconnect()
 	end
+
 	if unregisteredConnection then
 		unregisteredConnection:Disconnect()
 	end
@@ -304,6 +309,7 @@ it("UnregisterActor ordering: Unregistering fires before cleanup + unbind; Unreg
 			expect(sawUnregisteringEvent).toBe(true)
 
 			sawDetachAllControllers = true
+
 			return originalDetachAllControllers(eventActor)
 		end
 
@@ -313,11 +319,13 @@ it("UnregisterActor ordering: Unregistering fires before cleanup + unbind; Unreg
 			expect(sawDetachAllControllers).toBe(true)
 
 			sawUnbindModel = true
+
 			return originalUnbindModel(eventActor)
 		end
 
 		local unregisterOk: boolean, unregisterReason: string? =
 			ActorRuntime.UnregisterActor(registeredActor, reasonValue)
+
 		expect(unregisterOk).toBe(true)
 		expect(unregisterReason).toBeNil()
 
@@ -326,6 +334,7 @@ it("UnregisterActor ordering: Unregistering fires before cleanup + unbind; Unreg
 			if sawUnregisteredEvent then
 				break
 			end
+
 			task.wait()
 		end
 
@@ -343,6 +352,7 @@ it("UnregisterActor ordering: Unregistering fires before cleanup + unbind; Unreg
 	if unregisteringConnection then
 		unregisteringConnection:Disconnect()
 	end
+
 	if unregisteredConnection then
 		unregisteredConnection:Disconnect()
 	end
@@ -387,6 +397,7 @@ it("ModelGone triggers full teardown via ActorRuntime (reason=ModelGone)", funct
 			unregisteringConnection:Disconnect()
 			unregisteringConnection = nil
 		end
+
 		if unregisteredConnection then
 			unregisteredConnection:Disconnect()
 			unregisteredConnection = nil
@@ -399,9 +410,11 @@ it("ModelGone triggers full teardown via ActorRuntime (reason=ModelGone)", funct
 	local function run()
 		ActorRuntime.AttachControllers = function(actor: Actor): (boolean, string?)
 			local ok: boolean = actor:SetController(controllerKey, controller)
+
 			if not ok then
 				return false, "SetControllerFailed"
 			end
+
 			return true, nil
 		end
 
@@ -439,6 +452,7 @@ it("ModelGone triggers full teardown via ActorRuntime (reason=ModelGone)", funct
 			if unregisteredEventCount == 1 then
 				break
 			end
+
 			task.wait()
 		end
 

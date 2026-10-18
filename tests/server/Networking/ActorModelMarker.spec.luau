@@ -15,15 +15,19 @@ local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local model: Model
 local actor: ActorTypes.Actor
 local clones: { Model } = {}
+
 beforeEach(function()
 	model = Instance.new("Model")
 	actor = ActorEntity.new(model)
 end)
+
 afterEach(function()
 	model:Destroy()
+
 	for _, clone: Model in clones do
 		clone:Destroy()
 	end
+
 	clones = {}
 end)
 

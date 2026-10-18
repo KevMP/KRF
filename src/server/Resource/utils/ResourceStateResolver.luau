@@ -34,9 +34,11 @@ local function ResolveNumericSource(
 	end
 
 	local resolvedValue: number? = propertyController:GetResolvedProperty(propertyName)
+
 	if resolvedValue == nil then
 		return nil, "ResourcePropertyUnresolved:" .. propertyName
 	end
+
 	-- Property and Tag arithmetic can produce non-finite values. Keep invalid
 	-- derived state outside Resource Runtime's last valid cached snapshot.
 	if not math.isfinite(resolvedValue) then
@@ -51,18 +53,22 @@ function ResourceStateResolver.Resolve(
 	definition: LoadedResourceDefinition
 ): (number?, number?, number?, string?)
 	local resolvedMin: number?, minReason: string? = ResolveNumericSource(propertyController, definition.min)
+
 	if resolvedMin == nil then
 		return nil, nil, nil, minReason
 	end
 
 	local resolvedMax: number?, maxReason: string? = ResolveNumericSource(propertyController, definition.max)
+
 	if resolvedMax == nil then
 		return nil, nil, nil, maxReason
 	end
 
 	local resolvedRegenRate: number? = nil
+
 	if definition.regen ~= nil then
 		local regenRate: number?, regenReason: string? = ResolveNumericSource(propertyController, definition.regen.rate)
+
 		if regenRate == nil then
 			return nil, nil, nil, regenReason
 		end

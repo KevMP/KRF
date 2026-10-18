@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
+
 local Scheduler: ServerNetworkingTypes.PublicationSchedulerModule =
 	require(KRF.server.Networking.utils.PublicationScheduler)
 
@@ -28,9 +29,11 @@ function PublicationSchedulerTestUtils.scalar(
 	eventId: string?
 ): ServerNetworkingTypes.PublicationFilteredCommit
 	local events: { ServerNetworkingTypes.PublicationEvent } = {}
+
 	if eventId ~= nil then
 		table.insert(events, { domainId = domainId, eventId = eventId, payload = {} })
 	end
+
 	return {
 		sequence = sequence,
 		patches = { { domainId = domainId, patch = { kind = "Replace", value = value } } },

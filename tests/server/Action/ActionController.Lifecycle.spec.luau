@@ -28,6 +28,7 @@ afterEach(function()
 	for _, controller: any in controllers do
 		controller:Destroy()
 	end
+
 	ActionRegistry._resetForTests()
 end)
 
@@ -37,12 +38,16 @@ local function createController(definition: ActionDefinition): (Actor, any)
 			return table.clone(definition)
 		end,
 	}, {}, {})
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
+
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
@@ -57,10 +62,13 @@ end
 
 it("creates a frozen execution shell containing only KRF identity and capabilities", function()
 	local contexts: { any } = {}
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(context: any)
 		table.insert(contexts, context)
 	end
+
 	local actor: Actor, controller: any = createController(definition)
 	local parameters: { [string]: any } = { value = 7 }
 	local first: any = controller:RequestAction("Action.Sprint", parameters)
@@ -77,9 +85,11 @@ it("creates a frozen execution shell containing only KRF identity and capabiliti
 	expect(contexts[2]:IsActive()).toBe(true)
 	expect(contexts[1].state).toBeNil()
 	expect(contexts[1].OnStopRequested).toBeNil()
+
 	expect(function()
 		contexts[1].sequenceId = second.sequenceId
 	end).toThrow()
+
 	expect((controller:EndAction(first.sequenceId))).toBe(true)
 	expect(contexts[1]:IsActive()).toBe(false)
 	expect(contexts[2]:IsActive()).toBe(true)
@@ -95,10 +105,13 @@ end)
 
 it("keeps an Action active after its onStart callback returns normally", function()
 	local context: any = nil
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect(result.accepted).toBe(true)
@@ -108,20 +121,26 @@ end)
 
 it("issues Started before onStart and preserves acceptance after synchronous self-End", function()
 	local observed: { string } = {}
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(context: any)
 		table.insert(observed, "start")
 		expect((context:End())).toBe(true)
 	end
+
 	local actor: Actor, controller: any = createController(definition)
 	local startedEvent: any = nil
 	local endedEvent: any = nil
+
 	controller.OnActionStarted:Connect(function(event: any)
 		startedEvent = event
 	end)
+
 	controller.OnActionEnded:Connect(function(event: any)
 		endedEvent = event
 	end)
+
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect(result).toEqual({ accepted = true, sequenceId = 1 })
 	expect(observed).toEqual({ "start" })
@@ -139,26 +158,34 @@ it("commits End before onEnd and emits one Ended event without Interrupt", funct
 	local endCount: number = 0
 	local endedCount: number = 0
 	local interruptedCount: number = 0
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 	end
+
 	definition.onEnd = function(value: any)
 		endCount += 1
 		hookContext = value
 		hookActive = value:IsActive()
 		repeatEnd = value:End()
 	end
+
 	definition.onInterrupt = function()
 		interruptedCount += 1
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
+
 	controller.OnActionEnded:Connect(function()
 		endedCount += 1
 	end)
+
 	controller.OnActionInterrupted:Connect(function()
 		interruptedCount += 1
 	end)
+
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
 	expect(context:IsActive()).toBe(false)
@@ -179,19 +206,25 @@ it("commits Interrupt before onInterrupt and preserves its reason in event and h
 	local hookActive: boolean? = nil
 	local hookReason: string? = nil
 	local event: any = nil
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 	end
+
 	definition.onInterrupt = function(value: any, reason: string)
 		hookContext = value
 		hookActive = value:IsActive()
 		hookReason = reason
 	end
+
 	local actor: Actor, controller: any = createController(definition)
+
 	controller.OnActionInterrupted:Connect(function(value: any)
 		event = value
 	end)
+
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect((controller:InterruptAction(result.sequenceId, "GameCancelled"))).toBe(true)
 	flushEvents()
@@ -207,6 +240,7 @@ it("rejects invalid sequence ids and interruption reasons without terminating th
 	local definition: ActionDefinition = action()
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
+
 	for _, sequenceId: any in { 0, -1, 1.5, "1", {} } :: { any } do
 		local ended: boolean, endReason: string? = controller:EndAction(sequenceId)
 		local stopped: boolean, stopReason: string? = controller:RequestStop(sequenceId)
@@ -215,11 +249,13 @@ it("rejects invalid sequence ids and interruption reasons without terminating th
 		expect(stopped).toBe(false)
 		expect(type(stopReason)).toBe("string")
 	end
+
 	for _, reason: any in { "", 12, {} } :: { any } do
 		local interrupted: boolean, failureReason: string? = controller:InterruptAction(result.sequenceId, reason)
 		expect(interrupted).toBe(false)
 		expect(type(failureReason)).toBe("string")
 	end
+
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
 end)
 
@@ -244,15 +280,19 @@ it("self-Interrupt from onStart remains an accepted request with one terminal tr
 	local selfInterrupted: boolean? = nil
 	local afterInterrupt: boolean = false
 	local hookCount: number = 0
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 		selfInterrupted = value:Interrupt("GameCancelled")
 		afterInterrupt = true
 	end
+
 	definition.onInterrupt = function()
 		hookCount += 1
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	expect(controller:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(afterInterrupt).toBe(true)
@@ -266,15 +306,19 @@ it("interrupts an active Action once when onStart errors", function()
 	local interruptedCount: number = 0
 	local interruptedReason: string? = nil
 	local hookActive: boolean? = nil
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(): ()
 		error("start boom")
 	end
+
 	definition.onInterrupt = function(context: any, reason: string)
 		hookActive = context:IsActive()
 		interruptedCount += 1
 		interruptedReason = reason
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect(result).toEqual({ accepted = true, sequenceId = 1 })
@@ -287,18 +331,24 @@ end)
 it("does not make a second terminal transition when onStart errors after self-End", function()
 	local endedCount: number = 0
 	local interruptedCount: number = 0
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(context: any): ()
 		context:End()
 		error("late start boom")
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
+
 	controller.OnActionEnded:Connect(function()
 		endedCount += 1
 	end)
+
 	controller.OnActionInterrupted:Connect(function()
 		interruptedCount += 1
 	end)
+
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	flushEvents()
 	expect(endedCount).toBe(1)
@@ -308,19 +358,24 @@ end)
 it("keeps committed End or Interrupt after a terminal callback errors", function()
 	for _, terminal: string in { "End", "Interrupt" } do
 		local definition: ActionDefinition = action()
+
 		definition.onEnd = function(): ()
 			error("end boom")
 		end
+
 		definition.onInterrupt = function(): ()
 			error("interrupt boom")
 		end
+
 		local _actor: Actor, controller: any = createController(definition)
 		local result: any = controller:RequestAction("Action.Sprint")
+
 		if terminal == "End" then
 			expect((controller:EndAction(result.sequenceId))).toBe(true)
 		else
 			expect((controller:InterruptAction(result.sequenceId, "Manual"))).toBe(true)
 		end
+
 		expect((controller:EndAction(result.sequenceId))).toBe(false)
 		controller:Destroy()
 		ActionRegistry._resetForTests()
@@ -331,22 +386,27 @@ it("contains a yielding terminal hook without keeping its Action active", functi
 	for _, terminal: string in { "End", "Interrupt" } do
 		local continued: boolean = false
 		local definition: ActionDefinition = action()
+
 		local callback = function(): ()
 			task.wait()
 			continued = true
 		end
+
 		if terminal == "End" then
 			definition.onEnd = callback
 		else
 			definition.onInterrupt = callback
 		end
+
 		local _actor: Actor, controller: any = createController(definition)
 		local result: any = controller:RequestAction("Action.Sprint")
+
 		if terminal == "End" then
 			expect((controller:EndAction(result.sequenceId))).toBe(true)
 		else
 			expect((controller:InterruptAction(result.sequenceId, "Manual"))).toBe(true)
 		end
+
 		expect((controller:EndAction(result.sequenceId))).toBe(false)
 		flushEvents()
 		expect(continued).toBe(false)

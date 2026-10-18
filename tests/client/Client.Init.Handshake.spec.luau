@@ -20,8 +20,10 @@ beforeEach(function()
 	Client._ResetForTests()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	Client._ResetForTests()
+
 	if fixture.initThread ~= nil and coroutine.status(fixture.initThread) ~= "dead" then
 		coroutine.close(fixture.initThread)
 	end
@@ -52,6 +54,7 @@ end)
 
 it("installs internal consumers with reconstructed codecs before sending READY", function()
 	local installCalls: number = 0
+
 	fixture.dependencies.InstallConsumers = function(
 		protocol: SharedNetworkingTypes.ClientProtocol
 	): (boolean, string?, (() -> ())?)
@@ -59,8 +62,10 @@ it("installs internal consumers with reconstructed codecs before sending READY",
 		expect(protocol.domainsById["Game.Actions"].id).toBe("Game.Actions")
 		expect(protocol.domainsById["Game.Actions"].stateCodec.maxSizeBytes > 0).toBe(true)
 		expect(#fixture.sent).toBe(1)
+
 		return true, nil, nil
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.bootstrap(fixture)
 	expect(installCalls).toBe(1)
@@ -72,12 +77,14 @@ end)
 it("handles immediate bootstrap and acknowledgement responses without losing the startup result", function()
 	fixture.onSend = function(payload: buffer): ()
 		local message: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(payload)
+
 		if message.kind == "Hello" then
 			TestUtils.bootstrap(fixture)
 		elseif message.kind == "Ready" then
 			TestUtils.acknowledge(fixture)
 		end
 	end
+
 	TestUtils.start(fixture)
 	expect(fixture.result).toEqual({ success = true })
 	expect(fixture.order).toEqual({ "Listen", "Hello", "Consumers", "Ready" })

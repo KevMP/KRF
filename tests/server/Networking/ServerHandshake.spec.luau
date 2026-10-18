@@ -13,8 +13,10 @@ local ReplicationTypes = require(KRF.server.Replication.types)
 local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
 local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ServerProtocolTestUtils)
 local DomainTestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -31,6 +33,7 @@ beforeEach(function()
 	players = { ProtocolTestUtils.createPlayer(), ProtocolTestUtils.createPlayer() }
 	sent = {}
 	protocol = TestUtils.prepare({ DomainTestUtils.createDomain("Game.State") })
+
 	runtime = Handshake.new(protocol, {
 		SendReliable = function(player: Player, payload: buffer): ()
 			table.insert(sent, { player = player, payload = payload })
@@ -43,15 +46,19 @@ afterEach(function()
 		runtime:Destroy()
 		runtime = nil
 	end
+
 	Compiler.Compile = originalCompile
+
 	for _, player: Player in players do
 		player:Destroy()
 	end
+
 	Domains._resetForTests()
 end)
 
 local function getRuntime(): ServerNetworkingTypes.ServerHandshake
 	assert(runtime ~= nil, "Expected handshake runtime")
+
 	return runtime
 end
 
@@ -77,23 +84,29 @@ for _, repeatCount: number in { 1, 1000 } do
 		"ignores " .. tostring(repeatCount) .. " repeated HELLO packets while AwaitReady without amplifying traffic",
 		function()
 			local readyCalls: number = 0
+
 			getRuntime():ObserveClientReady(function(): ()
 				readyCalls += 1
 			end)
+
 			hello(players[1])
 			expect(#sent).toBe(1)
 			expect(sent[1].payload).toBe(protocol.bootstrapBuffer)
 			local connectionCount: number = getRuntime():_GetConnectionCountForTests()
 			local compileCalls: number = 0
+
 			Compiler.Compile = function(
 				schema: SharedNetworkingTypes.CompiledSchema
 			): (SharedNetworkingTypes.CompiledCodec?, string?)
 				compileCalls += 1
+
 				return originalCompile(schema)
 			end
+
 			for _ = 1, repeatCount do
 				hello(players[1])
 			end
+
 			expect(#sent).toBe(1)
 			expect(getRuntime():_GetConnectionCountForTests()).toBe(connectionCount)
 			expect(getRuntime():IsClientReady(players[1])).toBe(false)
@@ -113,8 +126,10 @@ it("rejects an incompatible version and never accepts a subsequent READY", funct
 		players[1],
 		ProtocolTestUtils.encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION + 1 })
 	)
+
 	ready(players[1])
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
+
 	for _, message: SentMessage in sent do
 		expect(ProtocolTestUtils.decode(message.payload).kind == "Bootstrap").toBe(false)
 	end
@@ -123,6 +138,7 @@ end)
 it("rejects READY before HELLO without creating partial readiness", function()
 	ready(players[1])
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
+
 	for _, message: SentMessage in sent do
 		expect(ProtocolTestUtils.decode(message.payload).kind == "ReadyAck").toBe(false)
 	end
@@ -133,19 +149,25 @@ it("marks ready before sending READY_ACK and fires Ready observers exactly once 
 	local readyCalls: number = 0
 	local publication: buffer = buffer.fromstring("future publication")
 	getRuntime():Destroy()
+
 	runtime = Handshake.new(protocol, {
 		SendReliable = function(player: Player, payload: buffer): ()
 			if payload == publication then
 				table.insert(order, "Publication")
+
 				return
 			end
+
 			local message: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(payload)
+
 			if message.kind == "ReadyAck" then
 				expect(getRuntime():IsClientReady(player)).toBe(true)
 			end
+
 			table.insert(order, message.kind)
 		end,
 	})
+
 	getRuntime():ObserveClientReady(function(player: Player): ()
 		readyCalls += 1
 		expect(player).toBe(players[1])
@@ -155,6 +177,7 @@ it("marks ready before sending READY_ACK and fires Ready observers exactly once 
 		expect(sentPublication).toBe(true)
 		expect(reason).toBeNil()
 	end)
+
 	local disconnect: () -> () = getRuntime():ObserveClientReady(function(): () end)
 	disconnect()
 	hello(players[1])
@@ -197,12 +220,15 @@ end)
 
 it("reuses one global bootstrap across two clients without recompiling codecs", function()
 	local compileCalls: number = 0
+
 	Compiler.Compile = function(
 		schema: SharedNetworkingTypes.CompiledSchema
 	): (SharedNetworkingTypes.CompiledCodec?, string?)
 		compileCalls += 1
+
 		return originalCompile(schema)
 	end
+
 	hello(players[1])
 	hello(players[2])
 	expect(sent[1].payload).toBe(protocol.bootstrapBuffer)
@@ -219,6 +245,7 @@ it("rejects repeated malformed, non-buffer and unknown traffic without throwing 
 	local initialCount: number = getRuntime():_GetConnectionCountForTests()
 	local unknown: buffer = buffer.create(1)
 	buffer.writeu8(unknown, 0, 255)
+
 	local completed: boolean = pcall(function()
 		for _ = 1, 1000 do
 			for _, payload: any in { {}, false, "HELLO", buffer.create(0), unknown } do
@@ -226,6 +253,7 @@ it("rejects repeated malformed, non-buffer and unknown traffic without throwing 
 			end
 		end
 	end)
+
 	expect(completed).toBe(true)
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
 	expect(getRuntime():_GetConnectionCountForTests() <= initialCount + 1).toBe(true)
@@ -237,8 +265,10 @@ it("rejects additional RemoteEvent arguments instead of accepting positional han
 		ProtocolTestUtils.encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION }),
 		{ extra = true }
 	)
+
 	ready(players[1])
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
+
 	for _, message: SentMessage in sent do
 		expect(ProtocolTestUtils.decode(message.payload).kind == "Bootstrap").toBe(false)
 	end
@@ -246,9 +276,11 @@ end)
 
 it("cleans waiting and ready connections and fires Closed exactly once per teardown", function()
 	local closed: { Player } = {}
+
 	getRuntime():ObserveClientClosed(function(player: Player): ()
 		table.insert(closed, player)
 	end)
+
 	hello(players[1])
 	hello(players[2])
 	ready(players[1])
@@ -266,12 +298,15 @@ end)
 it("supports idempotent observer unsubscribe and runtime destruction", function()
 	local readyCalls: number = 0
 	local closedCalls: number = 0
+
 	local unsubscribeReady: () -> () = getRuntime():ObserveClientReady(function(): ()
 		readyCalls += 1
 	end)
+
 	local unsubscribeClosed: () -> () = getRuntime():ObserveClientClosed(function(): ()
 		closedCalls += 1
 	end)
+
 	unsubscribeReady()
 	unsubscribeReady()
 	unsubscribeClosed()
@@ -289,10 +324,12 @@ end)
 it("runs both valid handshake callbacks to completion without yielding", function()
 	local messages: { SharedNetworkingTypes.ProtocolMessage } =
 		{ { kind = "Hello", version = Constants.PROTOCOL_VERSION }, { kind = "Ready" } }
+
 	for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 		local thread: thread = coroutine.create(function()
 			getRuntime():Handle(players[1], ProtocolTestUtils.encode(message))
 		end)
+
 		local completed: boolean = coroutine.resume(thread)
 		expect(completed).toBe(true)
 		expect(coroutine.status(thread)).toBe("dead")
@@ -301,6 +338,7 @@ end)
 
 it("does not accept READY when bootstrap transmission failed", function()
 	getRuntime():Destroy()
+
 	runtime = Handshake.new(protocol, {
 		SendReliable = function(_player: Player, payload: buffer): ()
 			if ProtocolTestUtils.decode(payload).kind == "Bootstrap" then
@@ -308,11 +346,13 @@ it("does not accept READY when bootstrap transmission failed", function()
 			end
 		end,
 	})
+
 	-- An unexpected engine send failure may be surfaced or reported internally;
 	-- either way the connection must not advance to AwaitReady.
 	local _completed: boolean = pcall(function()
 		hello(players[1])
 	end)
+
 	ready(players[1])
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
 end)
@@ -323,11 +363,14 @@ it("rejects server-originated message kinds on the client-to-server lane", funct
 		{ kind = "ReadyAck" },
 		{ kind = "Reject", reason = "ReadyRejected" },
 	}
+
 	for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 		getRuntime():Handle(players[1], ProtocolTestUtils.encode(message))
 	end
+
 	ready(players[1])
 	expect(getRuntime():IsClientReady(players[1])).toBe(false)
+
 	for _, message: SentMessage in sent do
 		expect(ProtocolTestUtils.decode(message.payload).kind == "ReadyAck").toBe(false)
 	end
@@ -335,9 +378,11 @@ end)
 
 it("destroys pending and ready connections with exactly one Closed notification each", function()
 	local closed: { [Player]: number } = {}
+
 	getRuntime():ObserveClientClosed(function(player: Player): ()
 		closed[player] = (closed[player] or 0) + 1
 	end)
+
 	hello(players[1])
 	hello(players[2])
 	ready(players[1])

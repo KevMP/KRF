@@ -13,6 +13,7 @@ it("rejects excessive aggregate collection work before writing any destination b
 		first = Schema.Optional(Schema.Array(Schema.Struct({}), 60000)),
 		second = Schema.Array(Schema.Struct({}), 60000),
 	}))
+
 	local emptyRecord: any = {}
 	local value: any = { first = table.create(60000, emptyRecord), second = table.create(60000, emptyRecord) }
 	local destination: buffer = buffer.fromstring("unchanged")
@@ -31,6 +32,7 @@ it("round trips the collection work boundary with a fresh budget for every opera
 	local emptyRecord: any = {}
 	local value: { any } = table.create(100000, emptyRecord)
 	local encoded: buffer = TestUtils.encode(codec, value)
+
 	for _ = 1, 2 do
 		local decoded: any, offset: number?, reason: string? = codec.Read(encoded, 0, buffer.len(encoded))
 		expect(#decoded).toBe(100000)

@@ -8,6 +8,7 @@ function BuiltInReplicationDomains.Build(
 	catalogs: ReplicationTypes.ReplicationDomainBuildCatalogs
 ): ({ ReplicationTypes.ReplicationDomainDefinition }?, string?)
 	local tags: ReplicationTypes.ReplicationDomainDefinition? = TagsReplication.Build(catalogs.tags)
+
 	return if tags ~= nil then { tags } else {}, nil
 end
 

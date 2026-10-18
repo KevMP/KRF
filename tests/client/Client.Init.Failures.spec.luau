@@ -22,9 +22,11 @@ beforeEach(function()
 	Client._ResetForTests()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	Compiler.Reconstruct = originalReconstruct
 	Client._ResetForTests()
+
 	if fixture.initThread ~= nil and coroutine.status(fixture.initThread) ~= "dead" then
 		coroutine.close(fixture.initThread)
 	end
@@ -34,8 +36,10 @@ for _, reason: string in { "TransportUnavailable", "InvalidTransport" } do
 	it("returns structured " .. reason .. " from bounded discovery without sending HELLO", function()
 		fixture.dependencies.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransport?, string?)
 			expect(deadline).toBe(100 + Constants.INIT_TIMEOUT_SECONDS)
+
 			return nil, reason
 		end
+
 		TestUtils.start(fixture)
 		TestUtils.expectFailure(fixture, reason)
 		expect(fixture.sent).toEqual({})
@@ -45,16 +49,20 @@ end
 
 it("fails exact protocol mismatch before reconstructing server schemas", function()
 	local reconstructCalls: number = 0
+
 	Compiler.Reconstruct = function(
 		_manifest: SharedNetworkingTypes.ProtocolManifest
 	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		reconstructCalls += 1
 		error("Mismatched manifests must not be interpreted")
 	end
+
 	TestUtils.start(fixture)
 	local compatible: SharedNetworkingTypes.ProtocolManifest = ProtocolTestUtils.manifest()
+
 	local manifest: SharedNetworkingTypes.ProtocolManifest =
 		{ version = compatible.version + 1, domains = compatible.domains }
+
 	TestUtils.emit(fixture, ProtocolTestUtils.encode({ kind = "Bootstrap", manifest = manifest }))
 	TestUtils.expectFailure(fixture, "ProtocolMismatch")
 	expect(reconstructCalls).toBe(0)
@@ -79,6 +87,7 @@ it("distinguishes unsupported schema reconstruction from malformed bootstrap", f
 	): (SharedNetworkingTypes.ClientProtocol?, string?)
 		return nil, "UnsupportedSchema"
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.bootstrap(fixture)
 	TestUtils.expectFailure(fixture, "UnsupportedSchema")
@@ -99,9 +108,11 @@ end)
 for _, phase: string in { "awaiting bootstrap", "awaiting acknowledgement" } do
 	it("times out while " .. phase .. " and cleans pending startup exactly once", function()
 		TestUtils.start(fixture)
+
 		if phase == "awaiting acknowledgement" then
 			TestUtils.bootstrap(fixture)
 		end
+
 		expect(fixture.timeoutSeconds ~= nil and (fixture.timeoutSeconds :: number) > 0).toBe(true)
 		assert(fixture.timeoutCallback ~= nil, "Expected bounded timeout")
 		fixture.timeoutCallback()
@@ -135,6 +146,7 @@ it("fails a private consumer installation failure before sending READY", functio
 	): (boolean, string?, (() -> ())?)
 		return false, "InternalConsumerInitializationFailed", nil
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.bootstrap(fixture)
 	TestUtils.expectFailure(fixture, "InternalConsumerInitializationFailed")
@@ -144,10 +156,13 @@ end)
 
 it("rejects a second attempt after failure without discovering transports again", function()
 	local discoveries: number = 0
+
 	fixture.dependencies.DiscoverTransport = function(_deadline: number): (ClientTypes.ClientTransport?, string?)
 		discoveries += 1
+
 		return nil, "TransportUnavailable"
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.expectFailure(fixture, "TransportUnavailable")
 	local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
@@ -172,12 +187,14 @@ for _, inputKind: string in { "non-buffer payload", "unknown opcode", "positiona
 	it("rejects " .. inputKind .. " without throwing or dispatching valid bootstrap work", function()
 		TestUtils.start(fixture)
 		local payload: any = {}
+
 		if inputKind == "unknown opcode" then
 			payload = buffer.create(1)
 			buffer.writeu8(payload, 0, 255)
 		elseif inputKind == "positional bootstrap arguments" then
 			payload = ProtocolTestUtils.encode({ kind = "Bootstrap", manifest = ProtocolTestUtils.manifest() })
 		end
+
 		local completed: boolean = pcall(function()
 			if inputKind == "positional bootstrap arguments" then
 				TestUtils.emit(fixture, payload, { extra = true })
@@ -185,9 +202,11 @@ for _, inputKind: string in { "non-buffer payload", "unknown opcode", "positiona
 				TestUtils.emit(fixture, payload)
 			end
 		end)
+
 		expect(completed).toBe(true)
 		expect(Client._IsInitialized()).toBe(false)
 		expect(#fixture.sent).toBe(1)
+
 		if fixture.result ~= nil then
 			expect(fixture.result.success).toBe(false)
 		end
@@ -201,10 +220,12 @@ it("does not reinstall consumers or send READY again for a duplicate bootstrap",
 	expect(#fixture.sent).toBe(2)
 	expect(Client._IsInitialized()).toBe(false)
 	local installCalls: number = 0
+
 	for _, step: string in fixture.order do
 		if step == "Consumers" then
 			installCalls += 1
 		end
 	end
+
 	expect(installCalls).toBe(1)
 end)

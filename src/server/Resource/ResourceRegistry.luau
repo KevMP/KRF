@@ -44,6 +44,7 @@ function ResourceRegistry.Load(definitions: { ResourceDefinition }): (boolean, s
 	table.freeze(orderedDefinitions)
 
 	isLoaded = true
+
 	return true, nil
 end
 

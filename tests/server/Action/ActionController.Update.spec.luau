@@ -31,8 +31,10 @@ end
 local function createController(): (Actor, any)
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
@@ -45,9 +47,11 @@ beforeEach(function()
 	ActionRegistry._resetForTests()
 	controllers = {}
 	now = 100
+
 	ActionControllerUpdates._setClockForTests(function(): number
 		return now
 	end)
+
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(false)
 end)
 
@@ -55,6 +59,7 @@ afterEach(function()
 	for _, controller: any in controllers do
 		controller:Destroy()
 	end
+
 	ActionControllerUpdates._setClockForTests(nil)
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	ActionRegistry._resetForTests()
@@ -64,6 +69,7 @@ it("never schedules an Action whose activation has no onUpdate", function()
 	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
 		return { id = "Action.Wait", visibility = "ServerOnly", autoGrant = true }
 	end
+
 	loadFactory(factory)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Wait")
@@ -76,9 +82,11 @@ end)
 it("captures each activation's callback and private state, including state set by onStart", function()
 	local factoryCalls: number = 0
 	local observations: { string } = {}
+
 	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
 		factoryCalls += 1
 		local privateCount: number = factoryCalls * 10
+
 		return {
 			id = "Action.Channel",
 			visibility = "ServerOnly",
@@ -92,6 +100,7 @@ it("captures each activation's callback and private state, including state set b
 			end,
 		}
 	end
+
 	loadFactory(factory)
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
@@ -107,6 +116,7 @@ it("keeps the captured callback when the factory's returned table changes later"
 	local source: ActionDefinition? = nil
 	local firstCalls: number = 0
 	local replacementCalls: number = 0
+
 	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
 		local definition: ActionDefinition = {
 			id = "Action.Channel",
@@ -116,16 +126,22 @@ it("keeps the captured callback when the factory's returned table changes later"
 				firstCalls += 1
 			end,
 		}
+
 		source = definition
+
 		return definition
 	end
+
 	loadFactory(factory)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
+
 	local capturedSource: ActionDefinition = source :: ActionDefinition
+
 	capturedSource.onUpdate = function(): ()
 		replacementCalls += 1
 	end
+
 	heartbeat(0.05)
 	expect(firstCalls).toBe(1)
 	expect(replacementCalls).toBe(0)
@@ -134,6 +150,7 @@ end)
 
 it("waits at least 0.05 seconds and never catches up after a stall", function()
 	local updates: { number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -144,6 +161,7 @@ it("waits at least 0.05 seconds and never catches up after a stall", function()
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
 	heartbeat(0.02)
@@ -160,6 +178,7 @@ end)
 
 it("measures the first delta from activation and later deltas from the previous dispatch", function()
 	local deltas: { number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -172,6 +191,7 @@ it("measures the first delta from activation and later deltas from the previous 
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
 	heartbeat(0.03)
@@ -187,6 +207,7 @@ end)
 
 it("samples each instance's time immediately before its callback", function()
 	local deltas: { number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -194,12 +215,14 @@ it("samples each instance's time immediately before its callback", function()
 			autoGrant = true,
 			onUpdate = function(context: ActionExecutionContext, deltaTime: number): ()
 				table.insert(deltas, deltaTime)
+
 				if context.sequenceId == 1 then
 					now += 0.02
 				end
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
 	local second: any = controller:RequestAction("Action.Channel")
@@ -213,6 +236,7 @@ end)
 
 it("does not dispatch an update with a zero or non-finite measured delta", function()
 	local deltas: { number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -223,6 +247,7 @@ it("does not dispatch an update with a zero or non-finite measured delta", funct
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
 	ActionControllerUpdates._heartbeatForTests(0.05)
@@ -240,6 +265,7 @@ end)
 it("skips an Action ended before its turn and defers a reentrant start", function()
 	local seen: { number } = {}
 	local controller: any = nil
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -247,6 +273,7 @@ it("skips an Action ended before its turn and defers a reentrant start", functio
 			autoGrant = true,
 			onUpdate = function(context: ActionExecutionContext, _deltaTime: number): ()
 				table.insert(seen, context.sequenceId)
+
 				if context.sequenceId == 1 then
 					controller:EndAction(2)
 					controller:RequestAction("Action.Channel")
@@ -254,6 +281,7 @@ it("skips an Action ended before its turn and defers a reentrant start", functio
 			end,
 		}
 	end)
+
 	local _actor: Actor
 	_actor, controller = createController()
 	controller:RequestAction("Action.Channel")
@@ -269,6 +297,7 @@ it("takes a global snapshot before an Actor can start an Action on another Actor
 	local sourceActor: Actor? = nil
 	local sourceController: any = nil
 	local targetController: any = nil
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -276,6 +305,7 @@ it("takes a global snapshot before an Actor can start an Action on another Actor
 			autoGrant = true,
 			onUpdate = function(context: ActionExecutionContext, _deltaTime: number): ()
 				table.insert(seen, if context.actor == sourceActor then "source" else "target")
+
 				if context.sequenceId == 1 and context.actor == sourceActor then
 					targetController:RequestAction("Action.Channel")
 				elseif context.sequenceId == 1 then
@@ -284,6 +314,7 @@ it("takes a global snapshot before an Actor can start an Action on another Actor
 			end,
 		}
 	end)
+
 	sourceActor, sourceController = createController()
 	local _targetActor: Actor
 	_targetActor, targetController = createController()
@@ -301,6 +332,7 @@ it("skips a captured Actor group destroyed by another Actor's update", function(
 	local sourceActor: Actor? = nil
 	local sourceController: any = nil
 	local targetController: any = nil
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -317,6 +349,7 @@ it("skips a captured Actor group destroyed by another Actor's update", function(
 			end,
 		}
 	end)
+
 	sourceActor, sourceController = createController()
 	local _targetActor: Actor
 	_targetActor, targetController = createController()
@@ -330,8 +363,10 @@ end)
 it("never uses the catalog callback when an activation omits onUpdate", function()
 	local factoryCalls: number = 0
 	local catalogCalls: number = 0
+
 	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
 		factoryCalls += 1
+
 		if factoryCalls == 1 then
 			return {
 				id = "Action.Channel",
@@ -342,8 +377,10 @@ it("never uses the catalog callback when an activation omits onUpdate", function
 				end,
 			}
 		end
+
 		return { id = "Action.Channel", visibility = "ServerOnly", autoGrant = true }
 	end
+
 	loadFactory(factory)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
@@ -357,21 +394,26 @@ it("steps a runtime onUpdate even when the startup factory result omitted it", f
 	local factoryCalls: number = 0
 	local observedContext: ActionExecutionContext? = nil
 	local observedDelta: number? = nil
+
 	local factory: ActionTypes.ActionFactory = function(): ActionDefinition
 		factoryCalls += 1
+
 		local definition: ActionDefinition = {
 			id = "Action.Channel",
 			visibility = "ServerOnly",
 			autoGrant = true,
 		}
+
 		if factoryCalls == 2 then
 			definition.onUpdate = function(context: ActionExecutionContext, deltaTime: number): ()
 				observedContext = context
 				observedDelta = deltaTime
 			end
 		end
+
 		return definition
 	end
+
 	loadFactory(factory)
 	local actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
@@ -389,6 +431,7 @@ end)
 
 it("allows self-End and self-Interrupt without updating those instances again", function()
 	local counts: { [number]: number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -396,6 +439,7 @@ it("allows self-End and self-Interrupt without updating those instances again", 
 			autoGrant = true,
 			onUpdate = function(context: ActionExecutionContext, _deltaTime: number): ()
 				counts[context.sequenceId] = (counts[context.sequenceId] or 0) + 1
+
 				if context.sequenceId == 1 then
 					context:End()
 				else
@@ -404,6 +448,7 @@ it("allows self-End and self-Interrupt without updating those instances again", 
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
 	local second: any = controller:RequestAction("Action.Channel")
@@ -418,6 +463,7 @@ end)
 it("interrupts a thrown update once and continues with the next instance", function()
 	local reasons: { string } = {}
 	local updatedSecond: number = 0
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -427,6 +473,7 @@ it("interrupts a thrown update once and continues with the next instance", funct
 				if context.sequenceId == 1 then
 					error("update boom")
 				end
+
 				updatedSecond += 1
 			end,
 			onInterrupt = function(_context: ActionExecutionContext, reason: string): ()
@@ -434,6 +481,7 @@ it("interrupts a thrown update once and continues with the next instance", funct
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
 	local second: any = controller:RequestAction("Action.Channel")
@@ -447,6 +495,7 @@ end)
 it("retires a yielding update and interrupts its Action exactly once", function()
 	local resumed: boolean = false
 	local reasons: { string } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -461,6 +510,7 @@ it("retires a yielding update and interrupts its Action exactly once", function(
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
 	heartbeat(0.05)
@@ -474,6 +524,7 @@ end)
 it("does not interrupt again if an update ends its Action before throwing", function()
 	local ended: number = 0
 	local interrupted: number = 0
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -491,6 +542,7 @@ it("does not interrupt again if an update ends its Action before throwing", func
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	controller:RequestAction("Action.Channel")
 	heartbeat(0.05)
@@ -500,6 +552,7 @@ end)
 
 it("updates membership before start and terminal hooks run", function()
 	local observations: { boolean } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -517,6 +570,7 @@ it("updates membership before start and terminal hooks run", function()
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Channel")
 	controller:EndAction(first.sequenceId)
@@ -528,6 +582,7 @@ end)
 it("skips an Action interrupted before its snapshot turn", function()
 	local seen: { number } = {}
 	local controller: any = nil
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -535,12 +590,14 @@ it("skips an Action interrupted before its snapshot turn", function()
 			autoGrant = true,
 			onUpdate = function(context: ActionExecutionContext, _deltaTime: number): ()
 				table.insert(seen, context.sequenceId)
+
 				if context.sequenceId == 1 then
 					controller:InterruptAction(2, "Manual")
 				end
 			end,
 		}
 	end)
+
 	local _actor: Actor
 	_actor, controller = createController()
 	controller:RequestAction("Action.Channel")
@@ -552,6 +609,7 @@ end)
 
 it("removes every update-enabled Action before destruction hooks run", function()
 	local eligibleDuringTeardown: { boolean } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -563,6 +621,7 @@ it("removes every update-enabled Action before destruction hooks run", function(
 			end,
 		}
 	end)
+
 	local _actor: Actor, controller: any = createController()
 	controller:RequestAction("Action.Channel")
 	controller:RequestAction("Action.Channel")
@@ -574,6 +633,7 @@ end)
 
 it("keeps one scheduler until the last update-enabled Action leaves and reconnects cleanly", function()
 	local calls: number = 0
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -584,6 +644,7 @@ it("keeps one scheduler until the last update-enabled Action leaves and reconnec
 			end,
 		}
 	end)
+
 	local _firstActor: Actor, firstController: any = createController()
 	local _secondActor: Actor, secondController: any = createController()
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
@@ -606,6 +667,7 @@ end)
 
 it("automatically dispatches updates from Heartbeat while an eligible Action is active", function()
 	local deltas: { number } = {}
+
 	loadFactory(function(): ActionDefinition
 		return {
 			id = "Action.Channel",
@@ -616,16 +678,20 @@ it("automatically dispatches updates from Heartbeat while an eligible Action is 
 			end,
 		}
 	end)
+
 	ActionControllerUpdates._setClockForTests(nil)
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	local _actor: Actor, controller: any = createController()
 	local result: any = controller:RequestAction("Action.Channel")
+
 	for _attempt: number = 1, 30 do
 		if #deltas > 0 then
 			break
 		end
+
 		task.wait()
 	end
+
 	expect(#deltas > 0).toBe(true)
 	expect(math.isfinite(deltas[1]) and deltas[1] > 0).toBe(true)
 	expect((controller:EndAction(result.sequenceId))).toBe(true)

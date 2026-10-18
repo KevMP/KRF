@@ -9,6 +9,7 @@ local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEnt
 
 local function sortStrings(values: { string }): { string }
 	table.sort(values)
+
 	return values
 end
 
@@ -49,6 +50,7 @@ end)
 
 it("sets, gets, and removes controllers by key", function()
 	local actor: ActorEntity.Actor = ActorEntity.new()
+
 	local controller1: ActorEntity.Controller = {
 		Destroy = function(_self) end,
 	}
@@ -61,9 +63,11 @@ end)
 
 it("rejects controller overwrite until removed", function()
 	local actor: ActorEntity.Actor = ActorEntity.new()
+
 	local controller1: ActorEntity.Controller = {
 		Destroy = function(_self) end,
 	}
+
 	local controller2: ActorEntity.Controller = {
 		Destroy = function(_self) end,
 	}

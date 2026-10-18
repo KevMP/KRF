@@ -114,6 +114,7 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 			`{sourcePrefix}ValueMustBeNumber`,
 			`{sourcePrefix}ValueMustBeFiniteNumber`
 		)
+
 		if not isSourceValueValid then
 			return false, sourceValueFailReason
 		end
@@ -142,6 +143,7 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 		`{sourcePrefix}DefaultBaseValueMustBeNumber`,
 		`{sourcePrefix}DefaultBaseValueMustBeFiniteNumber`
 	)
+
 	if not isDefaultBaseValueValid then
 		return false, defaultBaseValueFailReason
 	end
@@ -193,11 +195,13 @@ local function ValidateResourceRegen(regen: ResourceRegenDefinition?): (boolean,
 
 	local isRegenRateValid: boolean, regenRateFailReason: string? =
 		ValidateNumericSource(regenRate, "ResourceRegenRate")
+
 	if not isRegenRateValid then
 		return false, regenRateFailReason
 	end
 
 	local defaultResolvedRate: number = GetDefaultResolvedNumericSourceValue(regenRate)
+
 	if defaultResolvedRate < 0 then
 		return false, "ResourceRegenRateCannotBeNegative"
 	end
@@ -213,6 +217,7 @@ local function ValidateDefaultResolvedBounds(definition: ResourceDefinition): (b
 	end
 
 	local defaultResolvedMax: number = GetDefaultResolvedNumericSourceValue(definition.max)
+
 	if defaultResolvedMax < defaultResolvedMin then
 		return false, "ResourceDefaultMaxLessThanDefaultMin"
 	end
@@ -257,51 +262,60 @@ function ResourceValidator.ValidateResourceDefinition(
 	end
 
 	local isResourceIdValid: boolean, resourceIdFailReason: string? = ValidateResourceId(definition, loadedResources)
+
 	if not isResourceIdValid then
 		return false, resourceIdFailReason
 	end
 
 	local isResourceVisibilityValid: boolean, resourceVisibilityFailReason: string? =
 		ValidateResourceVisibility(definition)
+
 	if not isResourceVisibilityValid then
 		return false, resourceVisibilityFailReason
 	end
 
 	local isResourceInitialValueValid: boolean, resourceInitialValueFailReason: string? =
 		ValidateResourceInitialValue(definition)
+
 	if not isResourceInitialValueValid then
 		return false, resourceInitialValueFailReason
 	end
 
 	local isResourceAutoAssignValid: boolean, resourceAutoAssignFailReason: string? =
 		ValidateResourceAutoAssign(definition)
+
 	if not isResourceAutoAssignValid then
 		return false, resourceAutoAssignFailReason
 	end
 
 	local isResourceMaxValid: boolean, resourceMaxFailReason: string? = ValidateResourceMax(definition)
+
 	if not isResourceMaxValid then
 		return false, resourceMaxFailReason
 	end
 
 	local isResourceMinValid: boolean, resourceMinFailReason: string? = ValidateResourceMin(definition)
+
 	if not isResourceMinValid then
 		return false, resourceMinFailReason
 	end
 
 	local isResourceRegenValid: boolean, resourceRegenFailReason: string? = ValidateResourceRegen(definition.regen)
+
 	if not isResourceRegenValid then
 		return false, resourceRegenFailReason
 	end
 
 	local isDefaultResolvedBoundsValid: boolean, defaultResolvedBoundsFailReason: string? =
 		ValidateDefaultResolvedBounds(definition)
+
 	if not isDefaultResolvedBoundsValid then
 		return false, defaultResolvedBoundsFailReason
 	end
 
 	local isInitialValueWithinDefaultResolvedBoundsValid: boolean, initialValueWithinDefaultResolvedBoundsFailReason: string? =
 		ValidateInitialValueWithinDefaultResolvedBounds(definition)
+
 	if not isInitialValueWithinDefaultResolvedBoundsValid then
 		return false, initialValueWithinDefaultResolvedBoundsFailReason
 	end

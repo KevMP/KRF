@@ -40,21 +40,26 @@ afterEach(function()
 			ActorRuntime.UnregisterActor(actor, "TestCleanup")
 		end
 	end
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	TagControllerModule._setAutomaticSteppingEnabledForTests(true)
 	Server._ResetForTests()
 end)
 
 local function initialize(definitions: { ActionDefinition }, tags: { TagDefinition }): ()
 	local factories: { ActionTypes.ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local started: boolean, failure = Server.Init({ actions = factories, tags = tags })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
@@ -72,6 +77,7 @@ local function registerActor(): (Actor, ActionController, TagController)
 	local tags: TagController = registered:GetController("TagController") :: TagController
 	expect(actions).never.toBeNil()
 	expect(tags).never.toBeNil()
+
 	return registered, actions, tags
 end
 
@@ -87,6 +93,7 @@ it("uses the Tag Runtime's Stack and maxStacks behavior across activations", fun
 			maxStacks = 2,
 		},
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
 	TagControllerModule.Step(1)
@@ -110,6 +117,7 @@ it("refreshes an Action-applied Refresh Tag without creating another instance", 
 	}, {
 		{ id = "Tag.Bleeding", visibility = "ServerOnly", duplicateBehavior = "Refresh", defaultDuration = 2 },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
 	TagControllerModule.Step(2)
@@ -130,12 +138,15 @@ it("does not change an existing Ignore Tag when an Action reapplies it", functio
 	}, {
 		{ id = "Tag.Shielded", visibility = "ServerOnly", duplicateBehavior = "Ignore" },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect((tags:AddTag("Tag.Shielded", { duration = 2 }))).toBe(true)
 	local changed: number = 0
+
 	tags.OnTagChanged:Connect(function()
 		changed += 1
 	end)
+
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
 	expect(tags:GetTagInstances("Tag.Shielded")[1].duration).toBe(2)
 	expect(#tags:GetTagInstances("Tag.Shielded")).toBe(1)
@@ -152,6 +163,7 @@ it("uses Tag default duration when omitted and explicit duration when provided",
 			appliedTags = { { id = "Tag.Bleeding", duration = 8 } },
 		} :: any,
 	}, { { id = "Tag.Bleeding", visibility = "ServerOnly", duplicateBehavior = "Stack", defaultDuration = 3 } })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Default").accepted).toBe(true)
 	expect(actions:RequestAction("Action.Override").accepted).toBe(true)
@@ -162,6 +174,7 @@ end)
 
 it("ticks and expires an Action-applied Tag while updating Property modifiers", function()
 	local tickCount: number = 0
+
 	initialize(
 		{ { id = "Action.Attack", visibility = "ServerOnly", autoGrant = true, appliedTags = { "Tag.Haste" } } :: any },
 		{
@@ -178,6 +191,7 @@ it("ticks and expires an Action-applied Tag while updating Property modifiers", 
 			},
 		}
 	)
+
 	local actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local properties: PropertyController = actor:GetController("PropertyController") :: PropertyController
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
@@ -204,6 +218,7 @@ it("applies declarative Tags only to the owning Actor", function()
 		{ id = "Tag.Blocking", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 		{ id = "Tag.Bleeding", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 	})
+
 	local _firstActor: Actor, actions: ActionController, firstTags: TagController = registerActor()
 	local _secondActor: Actor, _secondActions: ActionController, secondTags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
@@ -223,6 +238,7 @@ it("does not remove later unrelated Tag state after an active Tag expires", func
 	}, {
 		{ id = "Tag.Blocking", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
@@ -244,6 +260,7 @@ it("retains ownership when two active applications refresh the same new Tag", fu
 	}, {
 		{ id = "Tag.Blocking", visibility = "ServerOnly", duplicateBehavior = "Refresh" },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
@@ -273,6 +290,7 @@ it("preserves the applied contribution when both fields use the same Tag", funct
 		{ id = "Tag.Stack", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 		{ id = "Tag.Refresh", visibility = "ServerOnly", duplicateBehavior = "Refresh" },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local stacked: any = actions:RequestAction("Action.Stack")
 	expect(stacked.accepted).toBe(true)

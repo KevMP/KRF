@@ -15,30 +15,37 @@ local cleanups: { () -> () } = {}
 
 afterEach(function()
 	Owner.Reset()
+
 	for _, cleanup: () -> () in cleanups do
 		cleanup()
 	end
+
 	cleanups = {}
 end)
 
 it("retires a DomainView from its own notification and makes later private work inert", function()
 	local owner: Types.DomainViewOwner?, reason: string? = Domains.new("Game.Counter", 1, { "Changed" })
 	assert(owner ~= nil, reason)
+
 	table.insert(cleanups, function()
 		owner:Destroy()
 	end)
+
 	local changes: number = 0
 	local events: number = 0
 	local event: SignalTypes.Event<any>? = owner.view:GetEvent("Changed")
 	assert(event ~= nil, "Expected declared semantic event")
+
 	event:Connect(function(_payload: number)
 		events += 1
 	end)
+
 	owner.view.OnChanged:Connect(function(_change: Types.DomainChange)
 		changes += 1
 		owner:Destroy()
 		owner:Destroy()
 	end)
+
 	local change: Types.DomainChange = { previous = 1, current = 2, source = "Commit" }
 	table.freeze(change)
 	owner:InstallState(2)
@@ -49,9 +56,11 @@ it("retires a DomainView from its own notification and makes later private work 
 	expect(events).toBe(0)
 	expect(owner.view:GetState()).toBeNil()
 	expect(owner.view:GetEvent("Changed")).toBeNil()
+
 	local installed: boolean = pcall(function()
 		owner:InstallState(3)
 	end)
+
 	expect(installed).toBe(false)
 end)
 
@@ -61,22 +70,28 @@ it("retires Actor-owned domains during a Model callback and ignores later Model 
 	local owner: Types.ActorViewOwner?, actorReason: string? = Actors.new("ActorA", nil, { ["Game.Counter"] = domain })
 	assert(owner ~= nil, actorReason)
 	local model: Model = Instance.new("Model")
+
 	table.insert(cleanups, function()
 		owner:Destroy()
 		model:Destroy()
 	end)
+
 	local changes: number = 0
 	local lifecycleNotifications: number = 0
+
 	owner.view.OnDomainsChanged:Connect(function(_change: Types.DomainMembershipChange)
 		lifecycleNotifications += 1
 	end)
+
 	owner.view.OnUnavailable:Connect(function()
 		lifecycleNotifications += 1
 	end)
+
 	owner.view.OnModelChanged:Connect(function(_previous: Model?, _current: Model?)
 		changes += 1
 		owner:Destroy()
 	end)
+
 	owner:InstallModel(model)
 	owner:NotifyModelChanged(nil, model)
 	owner:NotifyModelChanged(model, nil)
@@ -101,12 +116,14 @@ it("rejects identity and Model collisions and removes a bound registry entry ide
 	local second: Types.ActorViewOwner? = Actors.new("ActorB", model, {})
 	local duplicate: Types.ActorViewOwner? = Actors.new("ActorA", nil, {})
 	assert(first ~= nil and second ~= nil and duplicate ~= nil, "Expected private ActorView owners")
+
 	table.insert(cleanups, function()
 		first:Destroy()
 		second:Destroy()
 		duplicate:Destroy()
 		model:Destroy()
 	end)
+
 	expect(Owner.Install(first.view)).toBe(true)
 	local installed: boolean, reason: string? = Owner.Install(second.view)
 	expect(installed).toBe(false)

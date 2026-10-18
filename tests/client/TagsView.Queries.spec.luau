@@ -11,6 +11,7 @@ local Tags: Types.TagsViewModule = require(KRF.client.Actor.TagsView)
 local TestUtils = require(script.Parent.Utils.TagsViewTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new({
 		["Status.Z"] = { stackCount = 2, expiresAt = 1008 },
@@ -18,6 +19,7 @@ beforeEach(function()
 		["Status.B"] = { stackCount = 3, expiresAt = 1005 },
 	})
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -40,6 +42,7 @@ it("derives a new point-in-time snapshot on each query while prior snapshots rem
 	local first: Types.ActiveTagSnapshot? = fixture.view:GetTag("Status.Z")
 	expect(first).toEqual({ tagId = "Status.Z", stackCount = 2, remainingDuration = 8 })
 	fixture.clock.now = 1003.25
+
 	local later: Types.ActiveTagSnapshot? = fixture.view:GetTag("Status.Z")
 	expect(later).toEqual({ tagId = "Status.Z", stackCount = 2, remainingDuration = 4.75 })
 	expect(later).never.toBe(first)
@@ -49,9 +52,11 @@ end)
 
 it("clamps at zero without local removal, stack changes or fabricated expiry notifications", function()
 	local expired: { string } = {}
+
 	fixture.view.OnTagExpired:Connect(function(tagId: string)
 		table.insert(expired, tagId)
 	end)
+
 	fixture.clock.now = 1008
 	expect(fixture.view:GetTag("Status.Z")).toEqual({ tagId = "Status.Z", stackCount = 2, remainingDuration = 0 })
 	fixture.clock.now = 5000
@@ -67,22 +72,29 @@ end)
 
 it("returns every active id once in sorted semantic order with frozen collection and entries", function()
 	local snapshots: { Types.ActiveTagSnapshot } = fixture.view:GetActiveTags()
+
 	expect(snapshots).toEqual({
 		{ tagId = "Buff.A", stackCount = 1 },
 		{ tagId = "Status.B", stackCount = 3, remainingDuration = 5 },
 		{ tagId = "Status.Z", stackCount = 2, remainingDuration = 8 },
 	})
+
 	expect(table.isfrozen(snapshots)).toBe(true)
+
 	for _, snapshot: Types.ActiveTagSnapshot in snapshots do
 		expect(table.isfrozen(snapshot)).toBe(true)
 	end
+
 	local changed: boolean = pcall(function()
 		(snapshots :: any)[1] = { tagId = "Corrupted", stackCount = 99 }
 	end)
+
 	expect(changed).toBe(false)
+
 	local entryChanged: boolean = pcall(function()
 		(snapshots[1] :: any).stackCount = 99
 	end)
+
 	expect(entryChanged).toBe(false)
 	expect(fixture.view:GetTag("Buff.A")).toEqual({ tagId = "Buff.A", stackCount = 1 })
 end)
@@ -92,9 +104,11 @@ it("prevents mutation of GetTag snapshots and keeps them detached from future do
 	expect(snapshot).toEqual({ tagId = "Status.Z", stackCount = 2, remainingDuration = 8 })
 	assert(snapshot ~= nil, "Expected active snapshot")
 	expect(table.isfrozen(snapshot)).toBe(true)
+
 	local changed: boolean = pcall(function()
 		(snapshot :: any).remainingDuration = 999
 	end)
+
 	expect(changed).toBe(false)
 	TestUtils.install(fixture, { ["Status.Z"] = { stackCount = 1, expiresAt = 1002 } }, "Baseline")
 	expect(fixture.view:GetTag("Status.Z")).toEqual({ tagId = "Status.Z", stackCount = 1, remainingDuration = 2 })
@@ -114,6 +128,7 @@ it("returns an immutable empty view when the server omits KRF.Tags without readi
 	end, function(): number
 		error("AnEmptyViewHasNoCountdownToDerive")
 	end)
+
 	local success: boolean, reason: any = pcall(function()
 		expect(table.isfrozen(empty.view)).toBe(true)
 		expect(empty.view:HasTag("Status.Z")).toBe(false)
@@ -121,6 +136,7 @@ it("returns an immutable empty view when the server omits KRF.Tags without readi
 		expect(empty.view:GetActiveTags()).toEqual({})
 		expect(table.isfrozen(empty.view:GetActiveTags())).toBe(true)
 	end)
+
 	empty:Destroy()
 	expect(reason).toBeNil()
 	expect(success).toBe(true)
@@ -128,6 +144,7 @@ end)
 
 it("exposes no client mutation, timing anchor, controller, installation or writable Signal surface", function()
 	expect(table.isfrozen(fixture.view)).toBe(true)
+
 	for _, member: string in
 		{
 			"AddTag",
@@ -143,16 +160,20 @@ it("exposes no client mutation, timing anchor, controller, installation or writa
 	do
 		expect((fixture.view :: any)[member]).toBeNil()
 	end
+
 	for _, member: string in { "OnTagAdded", "OnTagRefreshed", "OnTagRemoved", "OnTagExpired", "OnStateChanged" } do
 		local readable: boolean = pcall(function()
 			return (fixture.view :: any)[member].Fire
 		end)
+
 		expect(readable).toBe(false)
 	end
+
 	local changed: boolean = pcall(function()
 		(fixture.view :: any).HasTag = function(): boolean
 			return true
 		end
 	end)
+
 	expect(changed).toBe(false)
 end)

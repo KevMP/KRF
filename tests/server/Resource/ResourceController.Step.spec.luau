@@ -38,6 +38,7 @@ it("restores static regen in units per second and preserves fractional values", 
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Stamina")
 
@@ -67,6 +68,7 @@ it("does nothing without regen or when deltaTime is invalid or non-positive", fu
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Focus")
 	local changedCount: number = 0
@@ -114,6 +116,7 @@ it("clamps regen at max and does not fire a second change for a no-op step", fun
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Guard")
 	local changes: { ResourceChange } = {}
@@ -126,6 +129,7 @@ it("clamps regen at max and does not fire a second change for a no-op step", fun
 	end)
 
 	resourceController:Step(1)
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return #changes == 1
 	end)).toBe(true)
@@ -166,6 +170,7 @@ it("uses later property-backed regen rates without firing for the regen-only rec
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Mana")
 	local changedCount: number = 0
@@ -178,9 +183,11 @@ it("uses later property-backed regen rates without firing for the regen-only rec
 	end)
 
 	resourceController:Step(2)
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return changedCount == 1
 	end)).toBe(true)
+
 	expect(resourceController:GetCurrent("Resource.Mana")).toBe(4)
 
 	local setRegenOk: boolean, setRegenReason: string? = propertyController:SetBaseProperty("ManaRegen", 5)
@@ -191,9 +198,11 @@ it("uses later property-backed regen rates without firing for the regen-only rec
 	expect(changedCount).toBe(1)
 
 	resourceController:Step(2)
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return changedCount == 2
 	end)).toBe(true)
+
 	expect(resourceController:GetCurrent("Resource.Mana")).toBe(14)
 
 	local disableRegenOk: boolean, disableRegenReason: string? = propertyController:SetBaseProperty("ManaRegen", 0)
@@ -233,6 +242,7 @@ it("recomputes property-backed bounds and clamps current in both directions", fu
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Resolve")
 	local changes: { ResourceChange } = {}
@@ -247,12 +257,14 @@ it("recomputes property-backed bounds and clamps current in both directions", fu
 	local lowerMaxOk: boolean, lowerMaxReason: string? = propertyController:SetBaseProperty("MaxResolve", 40)
 	expect(lowerMaxOk).toBe(true)
 	expect(lowerMaxReason).toBeNil()
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return #changes == 1
 	end)).toBe(true)
 
 	expect(resourceController:GetCurrent("Resource.Resolve")).toBe(40)
 	expect(resourceController:GetMax("Resource.Resolve")).toBe(40)
+
 	expect(changes[1]).toEqual({
 		actor = actor,
 		resourceId = "Resource.Resolve",
@@ -267,6 +279,7 @@ it("recomputes property-backed bounds and clamps current in both directions", fu
 	local raiseMaxOk: boolean, raiseMaxReason: string? = propertyController:SetBaseProperty("MaxResolve", 100)
 	expect(raiseMaxOk).toBe(true)
 	expect(raiseMaxReason).toBeNil()
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return #changes == 2
 	end)).toBe(true)
@@ -280,6 +293,7 @@ it("recomputes property-backed bounds and clamps current in both directions", fu
 	local raiseMinOk: boolean, raiseMinReason: string? = propertyController:SetBaseProperty("MinResolve", 60)
 	expect(raiseMinOk).toBe(true)
 	expect(raiseMinReason).toBeNil()
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return #changes == 3
 	end)).toBe(true)
@@ -315,6 +329,7 @@ it("preserves the last valid bounds when property-backed bounds become invalid",
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Posture")
 	local changedCount: number = 0
@@ -339,8 +354,10 @@ it("preserves the last valid bounds when property-backed bounds become invalid",
 
 	local restoreValidityOk: boolean, restoreValidityReason: string? =
 		propertyController:SetBaseProperty("MaxPosture", 150)
+
 	expect(restoreValidityOk).toBe(true)
 	expect(restoreValidityReason).toBeNil()
+
 	expect(ResourceControllerTestUtils.waitUntil(function(): boolean
 		return changedCount == 1
 	end)).toBe(true)
@@ -369,6 +386,7 @@ it("ignores unrelated property changes without recomputing assigned resources", 
 
 	local actor: Actor, propertyController: PropertyController =
 		ResourceControllerTestUtils.createActorWithPropertyController()
+
 	local resourceController: ResourceController = ResourceControllerModule.new(actor)
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Heat")
 	local changedCount: number = 0
@@ -382,6 +400,7 @@ it("ignores unrelated property changes without recomputing assigned resources", 
 
 	local setUnrelatedOk: boolean, setUnrelatedReason: string? =
 		propertyController:SetBaseProperty("UnrelatedResourceProperty", 25)
+
 	expect(setUnrelatedOk).toBe(true)
 	expect(setUnrelatedReason).toBeNil()
 	task.wait()

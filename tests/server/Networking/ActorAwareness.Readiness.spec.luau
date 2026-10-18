@@ -12,9 +12,11 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -57,9 +59,11 @@ it("creates exactly one baseline for each existing N3 attached Actor", function(
 	expect(runtime:IsAware(player, first)).toBe(true)
 	expect(runtime:IsAware(player, second)).toBe(true)
 	local ids: { string } = {}
+
 	for _, record: any in TestUtils.kind(fixture, player, "BaselineBegin") do
 		table.insert(ids, record.actorId)
 	end
+
 	table.sort(ids)
 	local expectedIds: { string } = { first:GetId(), second:GetId() }
 	table.sort(expectedIds)
@@ -110,10 +114,13 @@ it("does not enumerate attached Actors again during idle scheduler passes", func
 	TestUtils.actor(fixture, nil)
 	local original: typeof(fixture.publication.GetAttachedActors) = fixture.publication.GetAttachedActors
 	local calls: number = 0
+
 	fixture.publication.GetAttachedActors = function(self): { ActorTypes.Actor }
 		calls += 1
+
 		return original(self)
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.ready(fixture, TestUtils.player(fixture))
 	local initializationCalls: number = calls
@@ -127,10 +134,13 @@ it("touches only current Ready recipients when a new Actor registers after anoth
 	local remaining: Player = TestUtils.player(fixture)
 	local checked: { Player } = {}
 	local original: typeof(fixture.dependencies.IsClientReady) = fixture.dependencies.IsClientReady
+
 	fixture.dependencies.IsClientReady = function(player: Player): boolean
 		table.insert(checked, player)
+
 		return original(player)
 	end
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, departed)
 	TestUtils.ready(fixture, remaining)

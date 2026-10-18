@@ -12,8 +12,10 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local Marker: ServerNetworkingTypes.ActorModelMarkerModule = require(KRF.server.Networking.utils.ActorModelMarker)
+
 local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
 	require(KRF.client.Networking.utils.ActorModelDiscovery)
+
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -33,8 +35,10 @@ beforeEach(function()
 	actor = ActorEntity.new(model)
 	actor.enabled = true
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
+
 	if discovery ~= nil then
 		discovery.Destroy()
 		discovery = nil
@@ -51,15 +55,19 @@ for _, markerFirst: boolean in { true, false } do
 				expect(installed).toBe(true)
 				expect(reason).toBeNil()
 			end
+
 			discovery = Discovery.new(root)
 			fixture.discovery = discovery
+
 			local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 			TestUtils.establish(fixture, 1, actor:GetId())
+
 			if not markerFirst then
 				local installed: boolean, reason: string? = Marker.Install(actor)
 				expect(installed).toBe(true)
 				expect(reason).toBeNil()
 			end
+
 			-- Allow native CollectionService/ancestry notifications to run, without firing fake Candidates.
 			task.wait()
 			local installedMarker: Instance? = Marker.GetMarker(model)
@@ -90,6 +98,7 @@ it("unbinds and rebinds a real marked Model when it leaves and re-enters the dis
 	expect(reason).toBeNil()
 	discovery = Discovery.new(root)
 	fixture.discovery = discovery
+
 	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	TestUtils.establish(fixture, 1, actor:GetId(), 1, 7)
 	task.wait()

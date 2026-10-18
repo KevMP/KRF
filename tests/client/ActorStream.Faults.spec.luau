@@ -9,9 +9,11 @@ local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local Types = require(ReplicatedStorage.Packages.KRF.client.Networking.types)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -34,10 +36,12 @@ it("continues unrelated Actor records in a decoded packet after an Actor-local f
 	TestUtils.start(fixture)
 	TestUtils.establish(fixture, 1, "ActorA", 1, 1)
 	TestUtils.establish(fixture, 2, "ActorB", 1, 1)
+
 	local accepted: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineEnd", handle = 1, generation = 1, revision = 2 },
 		{ kind = "Commit", handle = 2, revision = 2, patches = {}, events = {} },
 	})
+
 	expect(accepted).toBe(false)
 	expect(reason).toBe("BaselineNotPending")
 	expect(fixture.faults).toEqual({ "BaselineNotPending" })

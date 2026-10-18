@@ -13,11 +13,14 @@ local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegi
 local RegistryOwner: Types.ActorViewRegistryOwner = require(KRF.client.Actor.utils.ActorViewRegistryState)
 
 local cleanups: { () -> () } = {}
+
 afterEach(function()
 	RegistryOwner.Reset()
+
 	for _, cleanup: () -> () in cleanups do
 		cleanup()
 	end
+
 	cleanups = {}
 end)
 
@@ -26,19 +29,25 @@ it("separates DomainView state installation from change and semantic notificatio
 	local owner: Types.DomainViewOwner?, reason: string? = Domains.new("Game.Stamina", previous, { "Changed" })
 	expect(reason).toBeNil()
 	assert(owner ~= nil, "Expected private DomainView owner")
+
 	table.insert(cleanups, function()
 		owner:Destroy()
 	end)
+
 	local changes: { Types.DomainChange } = {}
 	local events: { number } = {}
+
 	owner.view.OnChanged:Connect(function(change: Types.DomainChange)
 		table.insert(changes, change)
 	end)
+
 	local event: SignalTypes.Event<any>? = owner.view:GetEvent("Changed")
 	assert(event ~= nil, "Expected declared event")
+
 	event:Connect(function(payload: number)
 		table.insert(events, payload)
 	end)
+
 	local current: any = table.freeze({ current = 75 })
 	owner:InstallState(current)
 	expect(owner.view:GetState()).toBe(current)
@@ -55,17 +64,23 @@ it("separates ActorView Model installation from its public Model notification", 
 	local owner: Types.ActorViewOwner?, reason: string? = Actors.new("ActorA", nil, {})
 	expect(reason).toBeNil()
 	assert(owner ~= nil, "Expected private ActorView owner")
+
 	table.insert(cleanups, function()
 		owner:Destroy()
 	end)
+
 	local model: Model = Instance.new("Model")
+
 	table.insert(cleanups, function()
 		model:Destroy()
 	end)
+
 	local changes: { any } = {}
+
 	owner.view.OnModelChanged:Connect(function(previous: Model?, current: Model?)
 		table.insert(changes, { previous = previous, current = current })
 	end)
+
 	owner:InstallModel(model)
 	expect(owner.view:GetId()).toBe("ActorA")
 	expect(owner.view:GetModel()).toBe(model)
@@ -78,16 +93,21 @@ it("publishes through the private registry owner while keeping the same immutabl
 	local owner: Types.ActorViewOwner?, reason: string? = Actors.new("ActorA", nil, {})
 	expect(reason).toBeNil()
 	assert(owner ~= nil, "Expected privately owned ActorView")
+
 	table.insert(cleanups, function()
 		owner:Destroy()
 	end)
+
 	local added: { Types.ActorView } = {}
+
 	local connection: SignalTypes.Connection = Registry.OnActorViewAdded:Connect(function(view: Types.ActorView)
 		table.insert(added, view)
 	end)
+
 	table.insert(cleanups, function()
 		connection:Disconnect()
 	end)
+
 	local installed: boolean
 	installed, reason = RegistryOwner.Install(owner.view)
 	expect(installed).toBe(true)

@@ -28,6 +28,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects missing and non-table d
 
 	local isNonTableValid: boolean, nonTableReason: string? =
 		ResourceValidator.ValidateResourceDefinition("not a table" :: any, {})
+
 	expect(isNonTableValid).toBe(false)
 	expect(nonTableReason).toBe("ResourceDefinitionMustBeTable")
 end)
@@ -40,6 +41,7 @@ it(
 
 		local isMissingIdValid: boolean, missingIdReason: string? =
 			ResourceValidator.ValidateResourceDefinition(missingIdDefinition, {})
+
 		expect(isMissingIdValid).toBe(false)
 		expect(missingIdReason).toBe("ResourceIdMissing")
 
@@ -48,6 +50,7 @@ it(
 
 		local isEmptyIdValid: boolean, emptyIdReason: string? =
 			ResourceValidator.ValidateResourceDefinition(emptyIdDefinition, {})
+
 		expect(isEmptyIdValid).toBe(false)
 		expect(emptyIdReason).toBe("ResourceIdCannotBeEmpty")
 
@@ -58,14 +61,17 @@ it(
 			ResourceValidator.ValidateResourceDefinition(nonStringIdDefinition, {
 				["Resource.Stamina"] = createValidResourceDefinition(),
 			})
+
 		expect(isNonStringIdValid).toBe(false)
 		expect(nonStringIdReason).toBe("ResourceIdMustBeString")
 
 		local duplicateIdDefinition: ResourceDefinition = createValidResourceDefinition()
+
 		local isDuplicateIdValid: boolean, duplicateIdReason: string? =
 			ResourceValidator.ValidateResourceDefinition(duplicateIdDefinition, {
 				["Resource.Stamina"] = createValidResourceDefinition(),
 			})
+
 		expect(isDuplicateIdValid).toBe(false)
 		expect(duplicateIdReason).toBe("ResourceIdAlreadyRegistered")
 	end
@@ -77,6 +83,7 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 
 	local isMissingVisibilityValid: boolean, missingVisibilityReason: string? =
 		ResourceValidator.ValidateResourceDefinition(missingVisibilityDefinition, {})
+
 	expect(isMissingVisibilityValid).toBe(false)
 	expect(missingVisibilityReason).toBe("ResourceVisibilityMissing")
 
@@ -85,6 +92,7 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 
 	local isNonStringVisibilityValid: boolean, nonStringVisibilityReason: string? =
 		ResourceValidator.ValidateResourceDefinition(nonStringVisibilityDefinition, {})
+
 	expect(isNonStringVisibilityValid).toBe(false)
 	expect(nonStringVisibilityReason).toBe("ResourceVisibilityMustBeString")
 
@@ -93,6 +101,7 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 
 	local isInvalidVisibilityValid: boolean, invalidVisibilityReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidVisibilityDefinition, {})
+
 	expect(isInvalidVisibilityValid).toBe(false)
 	expect(invalidVisibilityReason).toBe("ResourceVisibilityInvalid")
 
@@ -101,6 +110,7 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 
 	local isInvalidInitialValueValid: boolean, invalidInitialValueReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidInitialValueDefinition, {})
+
 	expect(isInvalidInitialValueValid).toBe(false)
 	expect(invalidInitialValueReason).toBe("ResourceInitialValueMustBeNumber")
 
@@ -109,6 +119,7 @@ it("ResourceValidator.ValidateResourceDefinition requires valid visibility and s
 
 	local isInvalidAutoAssignValid: boolean, invalidAutoAssignReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidAutoAssignDefinition, {})
+
 	expect(isInvalidAutoAssignValid).toBe(false)
 	expect(invalidAutoAssignReason).toBe("ResourceAutoAssignMustBeBoolean")
 end)
@@ -119,20 +130,24 @@ it("ResourceValidator.ValidateResourceDefinition rejects non-finite numeric meta
 
 	local isInvalidInitialValueValid: boolean, invalidInitialValueReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidInitialValueDefinition, {})
+
 	expect(isInvalidInitialValueValid).toBe(false)
 	expect(invalidInitialValueReason).toBe("ResourceInitialValueMustBeFiniteNumber")
 
 	local invalidStaticMaxSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(invalidStaticMaxSourceDefinition :: any).max = {
 		value = math.huge,
 	}
 
 	local isInvalidStaticMaxSourceValid: boolean, invalidStaticMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidStaticMaxSourceDefinition, {})
+
 	expect(isInvalidStaticMaxSourceValid).toBe(false)
 	expect(invalidStaticMaxSourceReason).toBe("ResourceMaxValueMustBeFiniteNumber")
 
 	local invalidPropertyBackedMinDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(invalidPropertyBackedMinDefinition :: any).min = {
 		propertyName = "MinStamina",
 		defaultBaseValue = math.huge,
@@ -140,10 +155,12 @@ it("ResourceValidator.ValidateResourceDefinition rejects non-finite numeric meta
 
 	local isInvalidPropertyBackedMinValid: boolean, invalidPropertyBackedMinReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidPropertyBackedMinDefinition, {})
+
 	expect(isInvalidPropertyBackedMinValid).toBe(false)
 	expect(invalidPropertyBackedMinReason).toBe("ResourceMinDefaultBaseValueMustBeFiniteNumber")
 
 	local invalidRegenRateDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(invalidRegenRateDefinition :: any).regen = {
 		rate = {
 			value = math.huge,
@@ -152,6 +169,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects non-finite numeric meta
 
 	local isInvalidRegenRateValid: boolean, invalidRegenRateReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidRegenRateDefinition, {})
+
 	expect(isInvalidRegenRateValid).toBe(false)
 	expect(invalidRegenRateReason).toBe("ResourceRegenRateValueMustBeFiniteNumber")
 end)
@@ -162,6 +180,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isMissingMaxValid: boolean, missingMaxReason: string? =
 		ResourceValidator.ValidateResourceDefinition(missingMaxDefinition, {})
+
 	expect(isMissingMaxValid).toBe(false)
 	expect(missingMaxReason).toBe("ResourceMaxMissing")
 
@@ -170,10 +189,12 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isNonTableMaxSourceValid: boolean, nonTableMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(nonTableMaxSourceDefinition, {})
+
 	expect(isNonTableMaxSourceValid).toBe(false)
 	expect(nonTableMaxSourceReason).toBe("ResourceMaxMustBeTable")
 
 	local mixedMaxSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(mixedMaxSourceDefinition :: any).max = {
 		value = 100,
 		propertyName = "MaxStamina",
@@ -182,6 +203,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isMixedMaxSourceValid: boolean, mixedMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(mixedMaxSourceDefinition, {})
+
 	expect(isMixedMaxSourceValid).toBe(false)
 	expect(mixedMaxSourceReason).toBe("ResourceMaxCannotUseValueAndPropertyNameTogether")
 
@@ -190,20 +212,24 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isEmptyMaxSourceValid: boolean, emptyMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(emptyMaxSourceDefinition, {})
+
 	expect(isEmptyMaxSourceValid).toBe(false)
 	expect(emptyMaxSourceReason).toBe("ResourceMaxMustProvideValueOrPropertyName")
 
 	local nonNumericStaticMaxSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(nonNumericStaticMaxSourceDefinition :: any).max = {
 		value = "100",
 	}
 
 	local isNonNumericStaticMaxSourceValid: boolean, nonNumericStaticMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(nonNumericStaticMaxSourceDefinition, {})
+
 	expect(isNonNumericStaticMaxSourceValid).toBe(false)
 	expect(nonNumericStaticMaxSourceReason).toBe("ResourceMaxValueMustBeNumber")
 
 	local invalidStaticMaxSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(invalidStaticMaxSourceDefinition :: any).max = {
 		value = 100,
 		defaultBaseValue = 100,
@@ -211,10 +237,12 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isInvalidStaticMaxSourceValid: boolean, invalidStaticMaxSourceReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidStaticMaxSourceDefinition, {})
+
 	expect(isInvalidStaticMaxSourceValid).toBe(false)
 	expect(invalidStaticMaxSourceReason).toBe("ResourceMaxDefaultBaseValueRequiresPropertyName")
 
 	local nonStringPropertyBackedMaxDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(nonStringPropertyBackedMaxDefinition :: any).max = {
 		propertyName = 123,
 		defaultBaseValue = 100,
@@ -222,10 +250,12 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isNonStringPropertyBackedMaxValid: boolean, nonStringPropertyBackedMaxReason: string? =
 		ResourceValidator.ValidateResourceDefinition(nonStringPropertyBackedMaxDefinition, {})
+
 	expect(isNonStringPropertyBackedMaxValid).toBe(false)
 	expect(nonStringPropertyBackedMaxReason).toBe("ResourceMaxPropertyNameMustBeString")
 
 	local invalidPropertyBackedMinDefinition: ResourceDefinition = createValidResourceDefinition();
+
 	(invalidPropertyBackedMinDefinition :: any).min = {
 		propertyName = "",
 		defaultBaseValue = 0,
@@ -233,6 +263,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	local isInvalidPropertyBackedMinValid: boolean, invalidPropertyBackedMinReason: string? =
 		ResourceValidator.ValidateResourceDefinition(invalidPropertyBackedMinDefinition, {})
+
 	expect(isInvalidPropertyBackedMinValid).toBe(false)
 	expect(invalidPropertyBackedMinReason).toBe("ResourceMinPropertyNameCannotBeEmpty")
 end)
@@ -241,16 +272,19 @@ it(
 	"ResourceValidator.ValidateResourceDefinition rejects property-backed numeric sources without usable defaults",
 	function()
 		local missingDefaultBaseValueDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(missingDefaultBaseValueDefinition :: any).max = {
 			propertyName = "MaxStamina",
 		}
 
 		local isMissingDefaultBaseValueValid: boolean, missingDefaultBaseValueReason: string? =
 			ResourceValidator.ValidateResourceDefinition(missingDefaultBaseValueDefinition, {})
+
 		expect(isMissingDefaultBaseValueValid).toBe(false)
 		expect(missingDefaultBaseValueReason).toBe("ResourceMaxDefaultBaseValueMissing")
 
 		local nonNumericDefaultBaseValueDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(nonNumericDefaultBaseValueDefinition :: any).max = {
 			propertyName = "MaxStamina",
 			defaultBaseValue = "100",
@@ -258,6 +292,7 @@ it(
 
 		local isNonNumericDefaultBaseValueValid: boolean, nonNumericDefaultBaseValueReason: string? =
 			ResourceValidator.ValidateResourceDefinition(nonNumericDefaultBaseValueDefinition, {})
+
 		expect(isNonNumericDefaultBaseValueValid).toBe(false)
 		expect(nonNumericDefaultBaseValueReason).toBe("ResourceMaxDefaultBaseValueMustBeNumber")
 	end
@@ -271,6 +306,7 @@ it(
 
 		local isNonTableRegenValid: boolean, nonTableRegenReason: string? =
 			ResourceValidator.ValidateResourceDefinition(nonTableRegenDefinition, {})
+
 		expect(isNonTableRegenValid).toBe(false)
 		expect(nonTableRegenReason).toBe("ResourceRegenMustBeTable")
 
@@ -279,10 +315,12 @@ it(
 
 		local isMissingRegenRateValid: boolean, missingRegenRateReason: string? =
 			ResourceValidator.ValidateResourceDefinition(missingRegenRateDefinition, {})
+
 		expect(isMissingRegenRateValid).toBe(false)
 		expect(missingRegenRateReason).toBe("ResourceRegenRateMissing")
 
 		local invalidRegenRateSourceDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(invalidRegenRateSourceDefinition :: any).regen = {
 			rate = {
 				propertyName = "",
@@ -292,10 +330,12 @@ it(
 
 		local isInvalidRegenRateSourceValid: boolean, invalidRegenRateSourceReason: string? =
 			ResourceValidator.ValidateResourceDefinition(invalidRegenRateSourceDefinition, {})
+
 		expect(isInvalidRegenRateSourceValid).toBe(false)
 		expect(invalidRegenRateSourceReason).toBe("ResourceRegenRatePropertyNameCannotBeEmpty")
 
 		local negativeStaticRegenRateDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(negativeStaticRegenRateDefinition :: any).regen = {
 			rate = {
 				value = -1,
@@ -304,10 +344,12 @@ it(
 
 		local isNegativeStaticRegenRateValid: boolean, negativeStaticRegenRateReason: string? =
 			ResourceValidator.ValidateResourceDefinition(negativeStaticRegenRateDefinition, {})
+
 		expect(isNegativeStaticRegenRateValid).toBe(false)
 		expect(negativeStaticRegenRateReason).toBe("ResourceRegenRateCannotBeNegative")
 
 		local negativePropertyBackedRegenRateDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(negativePropertyBackedRegenRateDefinition :: any).regen = {
 			rate = {
 				propertyName = "StaminaRegen",
@@ -317,6 +359,7 @@ it(
 
 		local isNegativePropertyBackedRegenRateValid: boolean, negativePropertyBackedRegenRateReason: string? =
 			ResourceValidator.ValidateResourceDefinition(negativePropertyBackedRegenRateDefinition, {})
+
 		expect(isNegativePropertyBackedRegenRateValid).toBe(false)
 		expect(negativePropertyBackedRegenRateReason).toBe("ResourceRegenRateCannotBeNegative")
 	end
@@ -326,10 +369,12 @@ it(
 	"ResourceValidator.ValidateResourceDefinition rejects definitions whose default max resolves below default min",
 	function()
 		local invalidBoundsDefinition: ResourceDefinition = createValidResourceDefinition();
+
 		(invalidBoundsDefinition :: any).min = {
 			propertyName = "MinStamina",
 			defaultBaseValue = 25,
 		}
+
 		(invalidBoundsDefinition :: any).max = {
 			propertyName = "MaxStamina",
 			defaultBaseValue = 10,
@@ -337,6 +382,7 @@ it(
 
 		local isInvalidBoundsValid: boolean, invalidBoundsReason: string? =
 			ResourceValidator.ValidateResourceDefinition(invalidBoundsDefinition, {})
+
 		expect(isInvalidBoundsValid).toBe(false)
 		expect(invalidBoundsReason).toBe("ResourceDefaultMaxLessThanDefaultMin")
 	end
@@ -350,6 +396,7 @@ it(
 
 		local isBelowDefaultMinValid: boolean, belowDefaultMinReason: string? =
 			ResourceValidator.ValidateResourceDefinition(belowDefaultMinDefinition, {})
+
 		expect(isBelowDefaultMinValid).toBe(false)
 		expect(belowDefaultMinReason).toBe("ResourceInitialValueLessThanDefaultMin")
 
@@ -358,6 +405,7 @@ it(
 
 		local isAboveDefaultMaxValid: boolean, aboveDefaultMaxReason: string? =
 			ResourceValidator.ValidateResourceDefinition(aboveDefaultMaxDefinition, {})
+
 		expect(isAboveDefaultMaxValid).toBe(false)
 		expect(aboveDefaultMaxReason).toBe("ResourceInitialValueGreaterThanDefaultMax")
 	end
@@ -374,17 +422,21 @@ end)
 
 it("ResourceValidator.ValidateResourceDefinition accepts property-backed min, max, and regen sources", function()
 	local definition: ResourceDefinition = createValidResourceDefinition();
+
 	(definition :: any).min = {
 		propertyName = "MinStamina",
 		defaultBaseValue = 0,
 	}
+
 	(definition :: any).max = {
 		propertyName = "MaxStamina",
 		defaultBaseValue = 100,
 	}
+
 	(definition :: any).initialValue = 75
 	(definition :: any).autoAssign = true
 	(definition :: any).visibility = "ClientVisible"
+
 	(definition :: any).regen = {
 		rate = {
 			propertyName = "StaminaRegen",

@@ -13,6 +13,7 @@ function AwarenessScheduling.ObserveStep(callback: () -> ()): () -> ()
 	local connection: RBXScriptConnection = RunService.Heartbeat:Connect(function(_deltaTime: number)
 		callback()
 	end)
+
 	return function(): ()
 		connection:Disconnect()
 	end

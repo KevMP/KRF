@@ -6,19 +6,23 @@ local Domains: Types.DomainViewModule = require(KRF.client.Actor.DomainView)
 local Tags: Types.TagsViewModule = require(KRF.client.Actor.TagsView)
 
 export type WireState = { [string]: { read stackCount: number, read expiresAt: number? } }
+
 export type Fixture = {
 	domain: Types.DomainViewOwner,
 	owner: Types.TagsViewOwner,
 	view: Types.TagsView,
 	clock: { now: number },
 }
+
 local TestUtils = {}
 
 function TestUtils.freeze(state: WireState): WireState
 	local owned: WireState = {}
+
 	for id: string, entry in state do
 		owned[id] = table.freeze(table.clone(entry))
 	end
+
 	return table.freeze(owned)
 end
 
@@ -29,13 +33,16 @@ function TestUtils.new(initial: WireState?): Fixture
 		"Removed",
 		"Expired",
 	})
+
 	assert(domain ~= nil, reason)
 	local clock = { now = 1000 }
+
 	local owner: Types.TagsViewOwner = Tags.new(function(): Types.DomainView?
 		return domain.view
 	end, function(): number
 		return clock.now
 	end)
+
 	return { domain = domain, owner = owner, view = owner.view, clock = clock }
 end
 

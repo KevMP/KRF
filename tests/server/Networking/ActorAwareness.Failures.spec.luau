@@ -13,11 +13,13 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUti
 local fixture: TestUtils.Fixture
 local player: Player
 local actor: ActorTypes.Actor
+
 beforeEach(function()
 	fixture = TestUtils.new()
 	player = TestUtils.player(fixture)
 	actor = TestUtils.actor(fixture, nil)
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -27,16 +29,20 @@ for _, withReason: boolean in { true, false } do
 		"halts a failed Reliable send once and still retires that Actor on removal with reason=" .. tostring(withReason),
 		function()
 			local attempts: number = 0
+
 			fixture.dependencies.SendReliable = function(_player: Player, _payload: buffer): (boolean, string?)
 				attempts += 1
+
 				return false, if withReason then "ForcedSendFailure" else nil
 			end
+
 			local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 			TestUtils.ready(fixture, player)
 			local handle: number? = runtime:GetHandle(player, actor)
 			assert(handle ~= nil, "Expected stream handle")
 			TestUtils.drain(fixture)
 			expect(attempts).toBe(1)
+
 			expect(fixture.faults).toEqual({
 				{
 					player = player,
@@ -44,13 +50,17 @@ for _, withReason: boolean in { true, false } do
 					reason = if withReason then "ForcedSendFailure" else "ActorSendFailed",
 				},
 			})
+
 			local success: boolean, reason: string? = runtime:RequestReplacementBaseline(player, handle)
 			expect(success).toBe(false)
 			expect(reason).toBe("ActorStreamHalted")
+
 			fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
 				table.insert(fixture.deliveries, { player = recipient, payload = payload })
+
 				return true, nil
 			end
+
 			runtime:OnActorUnregistering(actor)
 			TestUtils.drain(fixture)
 			expect(TestUtils.records(fixture, player)).toEqual({ { kind = "ActorRemove", handle = handle } })
@@ -81,6 +91,7 @@ it("rejects invalid canonical truth before returning baseline bytes", function()
 	): ServerNetworkingTypes.PublicationBaseline?
 		return { sequence = 0, domains = { ["Game.Public"] = { value = 256 } } }
 	end
+
 	TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)
@@ -90,6 +101,7 @@ end)
 
 it("fails generation exhaustion without reusing an earlier completed generation", function()
 	fixture.options.maxGeneration = 1
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
 	TestUtils.drain(fixture)

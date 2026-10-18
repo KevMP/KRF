@@ -18,6 +18,7 @@ local MAX_SAFE_INTEGER: number = 9007199254740991
 type BoundsCase = { name: string, definition: SchemaDefinition }
 local oversizedString: SchemaDefinition = Schema.String(MAX_SAFE_INTEGER)
 local structFields: { [string]: SchemaDefinition } = { valid = Schema.U8, oversized = oversizedString }
+
 local invalidSchemas: { BoundsCase } = {
 	{ name = "String with no safe room for its length representation", definition = oversizedString },
 	{ name = "Optional containing an oversized child", definition = Schema.Optional(oversizedString) },

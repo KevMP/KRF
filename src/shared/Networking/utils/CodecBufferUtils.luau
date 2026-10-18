@@ -12,12 +12,15 @@ function CodecBufferUtils.Width(maximum: number): number
 	if maximum <= 255 then
 		return 1
 	end
+
 	if maximum <= 65535 then
 		return 2
 	end
+
 	if maximum < U32_BASE then
 		return 4
 	end
+
 	return 8
 end
 
@@ -32,6 +35,7 @@ function CodecBufferUtils.WriteUnsigned(destination: buffer, offset: number, val
 		buffer.writeu32(destination, offset, value % U32_BASE)
 		buffer.writeu32(destination, offset + 4, math.floor(value / U32_BASE))
 	end
+
 	return offset + width
 end
 
@@ -39,13 +43,17 @@ function CodecBufferUtils.ReadUnsigned(source: buffer, offset: number, width: nu
 	if width == 1 then
 		return buffer.readu8(source, offset)
 	end
+
 	if width == 2 then
 		return buffer.readu16(source, offset)
 	end
+
 	if width == 4 then
 		return buffer.readu32(source, offset)
 	end
+
 	local value: number = buffer.readu32(source, offset) + buffer.readu32(source, offset + 4) * U32_BASE
+
 	return if value <= MAX_SAFE_INTEGER then value else nil
 end
 

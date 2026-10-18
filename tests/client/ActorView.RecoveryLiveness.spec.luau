@@ -10,9 +10,11 @@ local PublicTypes = require(KRF.client.Actor.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -20,13 +22,17 @@ end)
 it("retries a transient send failure and cancels its timer after synchronous replacement", function()
 	TestUtils.destroy(fixture)
 	local sends: number = 0
+
 	fixture = TestUtils.new(function(_payload: buffer)
 		sends += 1
+
 		if sends == 1 then
 			error("TransientSendFailure", 0)
 		end
+
 		TestUtils.baseline(fixture, 1, nil, 20, TestUtils.truth(50), 2)
 	end)
+
 	TestUtils.baseline(fixture)
 	TestUtils.commit(fixture, 12)
 	expect(sends).toBe(1)
@@ -47,13 +53,16 @@ it("bounds silent rejection to five spaced requests then invalidates only the ex
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local domain: PublicTypes.DomainView = TestUtils.domain(fixture)
 	local unavailable: number = 0
+
 	table.insert(
 		fixture.connections,
 		view.OnUnavailable:Connect(function()
 			unavailable += 1
 		end)
 	)
+
 	TestUtils.commit(fixture, 12)
+
 	for _, seconds: number in { 1, 2, 4, 8 } do
 		local previous: number = #fixture.requests
 		TestUtils.advance(fixture, seconds - 0.01)
@@ -62,6 +71,7 @@ it("bounds silent rejection to five spaced requests then invalidates only the ex
 		expect(#fixture.requests).toBe(previous + 1)
 		expect(view:IsAvailable()).toBe(true)
 	end
+
 	expect(#fixture.requests).toBe(5)
 	TestUtils.advance(fixture, 16)
 	expect(view:IsAvailable()).toBe(false)
@@ -81,10 +91,12 @@ end)
 it("does not extend the recovery deadline when replacement state remains incompatible", function()
 	TestUtils.baseline(fixture)
 	TestUtils.commit(fixture, 12)
+
 	for _index: number = 1, 31 do
 		fixture.runtime.consumer.OnBaselineReady(TestUtils.actor(fixture), 20, { Unknown = { value = 1 } })
 		TestUtils.advance(fixture, 1)
 	end
+
 	expect(TestUtils.view(fixture):IsAvailable()).toBe(false)
 	expect(#fixture.requests).toBe(5)
 	expect(fixture.faults[#fixture.faults].reason).toBe("ActorRecoveryExhausted")
@@ -104,13 +116,16 @@ end)
 
 it("bounds persistent send failure and invalid initial state without publishing an incomplete view", function()
 	TestUtils.destroy(fixture)
+
 	fixture = TestUtils.new(function(_payload: buffer)
 		error("PersistentSendFailure", 0)
 	end)
+
 	TestUtils.send(
 		fixture,
 		{ { kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 1 } }
 	)
+
 	fixture.runtime.consumer.OnBaselineReady(TestUtils.actor(fixture), 10, { Unknown = { value = 1 } })
 	TestUtils.advance(fixture, 31)
 	expect(#fixture.requests).toBe(5)
@@ -128,6 +143,7 @@ for _, ending: string in { "replacement", "removal", "halt", "destroy" } do
 		TestUtils.commit(fixture, 12)
 		local stale: TestUtils.Timer = fixture.clock.timers[1]
 		assert(stale ~= nil, "Recovery must schedule a bounded retry")
+
 		if ending == "replacement" then
 			TestUtils.baseline(fixture, 1, nil, 20, TestUtils.truth(50), 2)
 		elseif ending == "removal" then
@@ -137,6 +153,7 @@ for _, ending: string in { "replacement", "removal", "halt", "destroy" } do
 		else
 			fixture.runtime:Destroy()
 		end
+
 		expect(stale.cancelled).toBe(true)
 		stale.callback()
 		TestUtils.advance(fixture, 100)
@@ -162,6 +179,7 @@ it("bounds connection-wide recovery traffic without retaining a request queue", 
 		TestUtils.baseline(fixture, handle, "Actor" .. tostring(handle), 10, {})
 		TestUtils.commit(fixture, 12, {}, {}, handle)
 	end
+
 	expect(#fixture.requests).toBe(32)
 	TestUtils.advance(fixture, 7)
 	expect(#fixture.requests).toBe(32)
@@ -169,6 +187,7 @@ it("bounds connection-wide recovery traffic without retaining a request queue", 
 	expect(#fixture.requests).toBe(64)
 	TestUtils.advance(fixture, 100)
 	expect(#fixture.requests).toBe(64)
+
 	for _, view: PublicTypes.ActorView in fixture.runtime.registry.GetAllActorViews() do
 		expect(view:IsAvailable()).toBe(false)
 	end
@@ -176,10 +195,12 @@ end)
 
 it("enforces per-Actor admission across rapidly succeeding recovery episodes", function()
 	TestUtils.baseline(fixture)
+
 	for generation: number = 2, 7 do
 		TestUtils.commit(fixture, 12)
 		TestUtils.baseline(fixture, 1, nil, 10, TestUtils.truth(), generation)
 	end
+
 	expect(#fixture.requests).toBe(4)
 	TestUtils.advance(fixture, 100)
 	expect(TestUtils.view(fixture):IsAvailable()).toBe(true)

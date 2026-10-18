@@ -13,6 +13,7 @@ local CodecTestUtils = require(script.Parent.Parent.Utils.Networking.CodecTestUt
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
 type CompatibilityCase = { name: string, definition: SharedNetworkingTypes.SchemaDefinition, value: any }
+
 local cases: { CompatibilityCase } = {
 	{ name = "Boolean", definition = Schema.Boolean, value = false },
 	{ name = "U8", definition = Schema.U8, value = 255 },
@@ -54,21 +55,25 @@ local cases: { CompatibilityCase } = {
 		value = { {}, {} },
 	},
 }
+
 for _, maximum: number in { 1, 255, 256, 65535, 65536, 4294967296 } do
 	table.insert(
 		cases,
 		{ name = "String bound " .. tostring(maximum), definition = Schema.String(maximum), value = "" }
 	)
+
 	table.insert(
 		cases,
 		{ name = "Array bound " .. tostring(maximum), definition = Schema.Array(Schema.U8, maximum), value = {} }
 	)
+
 	table.insert(cases, {
 		name = "Map bound " .. tostring(maximum),
 		definition = Schema.Map(Schema.U8, Schema.Boolean, maximum),
 		value = {},
 	})
 end
+
 for _, testCase: CompatibilityCase in cases do
 	it("keeps the " .. testCase.name .. " codec maximum within N1's compiled encoded-size bound", function()
 		local schema: SharedNetworkingTypes.CompiledSchema = SchemaTestUtils.compile(testCase.definition)
@@ -86,9 +91,11 @@ end
 for _, count: number in { 256, 257 } do
 	it("keeps " .. tostring(count) .. " Enum ordinals within the N1 maximum at a code-width boundary", function()
 		local values: { string } = {}
+
 		for index: number = 1, count do
 			table.insert(values, "Value" .. tostring(index))
 		end
+
 		local schema: SharedNetworkingTypes.CompiledSchema = SchemaTestUtils.compile(Schema.Enum(values))
 		local codec: SharedNetworkingTypes.CompiledCodec?, reason: string? = Compiler.Compile(schema)
 		expect(reason).toBeNil()

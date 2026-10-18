@@ -77,9 +77,11 @@ function Connection:Disconnect()
 		self._signal._handlerListHead = self._next
 	else
 		local prev = self._signal._handlerListHead
+
 		while prev and prev._next ~= self do
 			prev = prev._next
 		end
+
 		if prev then
 			prev._next = self._next
 		end
@@ -108,12 +110,14 @@ end
 
 function Signal:Connect(fn)
 	local connection = Connection.new(self, fn)
+
 	if self._handlerListHead then
 		connection._next = self._handlerListHead
 		self._handlerListHead = connection
 	else
 		self._handlerListHead = connection
 	end
+
 	return connection
 end
 
@@ -129,6 +133,7 @@ end
 -- over by Roblox scheduling, meaning we have to make a new coroutine runner.
 function Signal:Fire(...)
 	local item = self._handlerListHead
+
 	while item do
 		if item._connected then
 			if not freeRunnerThread then
@@ -136,8 +141,10 @@ function Signal:Fire(...)
 				-- Get the freeRunnerThread to the first yield
 				coroutine.resume(freeRunnerThread)
 			end
+
 			task.spawn(freeRunnerThread, item._fn, ...)
 		end
+
 		item = item._next
 	end
 end
@@ -148,16 +155,20 @@ function Signal:Wait()
 	local waitingCoroutine = coroutine.running()
 	local cn
 	local claimed = false
+
 	cn = self:Connect(function(...)
 		if claimed then
 			return
 		end
+
 		claimed = true
 		cn:Disconnect()
+
 		if coroutine.status(waitingCoroutine) == "suspended" then
 			task.defer(waitingCoroutine, ...)
 		end
 	end)
+
 	return coroutine.yield()
 end
 
@@ -165,12 +176,15 @@ end
 -- itself before running the handler.
 function Signal:Once(fn)
 	local cn
+
 	cn = self:Connect(function(...)
 		if cn._connected then
 			cn:Disconnect()
 		end
+
 		fn(...)
 	end)
+
 	return cn
 end
 

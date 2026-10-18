@@ -11,10 +11,12 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.ResyncTestUtils)
 
 local fixture: TestUtils.Fixture
 local player: Player
+
 beforeEach(function()
 	fixture = TestUtils.new()
 	player = TestUtils.player(fixture)
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -44,6 +46,7 @@ end)
 
 it("does not authorize a handle belonging only to another connection", function()
 	local other: Player = TestUtils.player(fixture)
+
 	fixture.known[player][1] = nil
 	local success: boolean, reason: string? = TestUtils.request(fixture, player, 1)
 	expect(success).toBe(false)
@@ -67,6 +70,7 @@ it("enforces the exact per-Actor window bound even when each baseline completes 
 		expect(TestUtils.request(fixture, player, 1)).toBe(true)
 		fixture.pending[player][1] = nil
 	end
+
 	local success: boolean, reason: string? = TestUtils.request(fixture, player, 1)
 	expect(success).toBe(false)
 	expect(reason).toBe("ResyncRateLimited")
@@ -78,6 +82,7 @@ it("enforces the per-client window bound across distinct Actors and isolates ano
 	for handle: number = 1, fixture.options.maxRequestsPerClient do
 		expect(TestUtils.request(fixture, player, handle)).toBe(true)
 	end
+
 	local success: boolean, reason: string? = TestUtils.request(fixture, player, 5)
 	expect(success).toBe(false)
 	expect(reason).toBe("ResyncRateLimited")
@@ -90,6 +95,7 @@ it("bounds repeated unknown-handle traffic before it can generate unbounded repl
 	for handle: number = 100, 355 do
 		TestUtils.request(fixture, player, handle)
 	end
+
 	expect(#fixture.calls <= fixture.options.maxRequestsPerClient).toBe(true)
 	expect(fixture.pending[player]).toEqual({})
 end)
@@ -99,6 +105,7 @@ it("does not spend the per-Actor allowance of a second Actor when the first is r
 		expect(TestUtils.request(fixture, player, 1)).toBe(true)
 		fixture.pending[player][1] = nil
 	end
+
 	TestUtils.request(fixture, player, 1)
 	expect(TestUtils.request(fixture, player, 2)).toBe(true)
 end)
@@ -108,6 +115,7 @@ it("restores admission at the window boundary without a frame driver or a timer"
 		expect(TestUtils.request(fixture, player, 1)).toBe(true)
 		fixture.pending[player][1] = nil
 	end
+
 	fixture.now = 109.999
 	local success: boolean, reason: string? = TestUtils.request(fixture, player, 1)
 	expect(success).toBe(false)
@@ -123,6 +131,7 @@ it("clears per-client recovery accounting on Closed and releases its observer on
 		expect(TestUtils.request(fixture, player, 1)).toBe(true)
 		fixture.pending[player][1] = nil
 	end
+
 	expect(#fixture.closed).toBe(1)
 	fixture.closed[1](player)
 	expect(TestUtils.request(fixture, player, 1)).toBe(true)

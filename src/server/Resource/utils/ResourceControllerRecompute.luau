@@ -19,6 +19,7 @@ export type ResourceRecord = {
 
 export type ResourceRecordsById = { [string]: ResourceRecord }
 export type ResourceIdsByPropertyName = { [string]: { [string]: boolean } }
+
 export type ResourceRecomputeChange = {
 	resourceId: string,
 	currentOldValue: number,
@@ -37,11 +38,13 @@ local function indexPropertySource(
 	source: ResourceNumericSource
 ): ()
 	local propertyName: string? = source.propertyName
+
 	if propertyName == nil then
 		return
 	end
 
 	local resourceIds: { [string]: boolean } = resourceIdsByPropertyName[propertyName] or {}
+
 	resourceIdsByPropertyName[propertyName] = resourceIds
 	resourceIds[resourceId] = true
 end
@@ -52,12 +55,14 @@ local function recomputeResource(
 	resourceId: string
 ): ResourceRecomputeChange?
 	local resourceRecord: ResourceRecord? = resourcesById[resourceId]
+
 	if resourceRecord == nil then
 		return nil
 	end
 
 	local resolvedMin: number?, resolvedMax: number?, resolvedRegenRate: number? =
 		ResourceStateResolver.Resolve(propertyController, resourceRecord.definition)
+
 	if resolvedMin == nil or resolvedMax == nil then
 		return nil
 	end
@@ -109,6 +114,7 @@ function ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperties
 	propertyNames: { string }
 ): { ResourceRecomputeChange }
 	local resourceIds: { [string]: boolean } = {}
+
 	for _, propertyName: string in propertyNames do
 		for resourceId: string in resourceIdsByPropertyName[propertyName] or {} do
 			resourceIds[resourceId] = true
@@ -116,14 +122,18 @@ function ResourceControllerRecomputeUtils.RecomputeResourcesAffectedByProperties
 	end
 
 	local orderedResourceIds: { string } = {}
+
 	for resourceId: string in resourceIds do
 		table.insert(orderedResourceIds, resourceId)
 	end
+
 	table.sort(orderedResourceIds)
 
 	local changes: { ResourceRecomputeChange } = {}
+
 	for _, resourceId: string in orderedResourceIds do
 		local change: ResourceRecomputeChange? = recomputeResource(resourcesById, propertyController, resourceId)
+
 		if change ~= nil then
 			table.insert(changes, change)
 		end

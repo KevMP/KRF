@@ -30,11 +30,15 @@ function ActionControllerModule.new(actor: Actor): ActionController
 	local startedSignal: SignalTypes.Signal<ActionLifecycleEvent> = SignalModule.new()
 	local endedSignal: SignalTypes.Signal<ActionLifecycleEvent> = SignalModule.new()
 	local interruptedSignal: SignalTypes.Signal<ActionInterruptedEvent> = SignalModule.new()
+
 	local ownedSignals: SignalTypes.OwnedSignals =
 		OwnedSignalsModule.new({ grantChangedSignal, startedSignal, endedSignal, interruptedSignal })
+
 	local controllerState: { destroyed: boolean } = { destroyed = false }
+
 	local grants: ActionControllerGrants =
 		ActionControllerGrantsModule.new(actor, catalog, ownedSignals, grantChangedSignal, controllerState)
+
 	local instances: ActionControllerInstances = ActionControllerInstancesModule.new(
 		actor,
 		ownedSignals,
@@ -43,6 +47,7 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		interruptedSignal,
 		controllerState
 	)
+
 	local controller: ActionController = {} :: ActionController
 
 	function controller:SetGrants(sourceId: string, actionIds: { string }): (boolean, string?)
@@ -61,54 +66,73 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		if controllerState.destroyed then
 			return { accepted = false, reason = "ActionControllerDestroyed" }
 		end
+
 		if not actor.enabled then
 			return { accepted = false, reason = "ActorDisabled" }
 		end
+
 		if type(actionId) ~= "string" then
 			return { accepted = false, reason = "ActionIdMustBeString" }
 		end
+
 		if actionId == "" then
 			return { accepted = false, reason = "ActionIdCannotBeEmpty" }
 		end
+
 		local definition: LoadedActionDefinition? = ActionRegistry.Get(actionId)
+
 		if definition == nil then
 			return { accepted = false, reason = "UnknownActionId:" .. actionId }
 		end
+
 		if not grants:IsGranted(actionId) then
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
+
 		local tagReason: string? = ActionControllerTagRequirements.Validate(actor, definition)
+
 		if tagReason ~= nil then
 			return { accepted = false, reason = tagReason }
 		end
+
 		local _preflightPlan: ActionControllerResources.ResourcePlan?, resourceReason: string? =
 			ActionControllerResources.Resolve(actor, definition)
+
 		if resourceReason ~= nil then
 			return { accepted = false, reason = resourceReason }
 		end
 
 		local implementation, factoryReason = ActionRegistry.CreateExecution(actionId)
+
 		if implementation == nil then
 			return { accepted = false, reason = factoryReason or "ActionFactoryInvalidResult" }
 		end
+
 		local callback = implementation.onCanStart
+
 		if callback ~= nil then
 			local startContext = table.freeze({ actor = actor, actionId = actionId, parameters = parameters })
+
 			local succeeded: boolean, allowed: any, customReason: any, failureKind: string?, failureDetail: any =
 				ActionControllerHooks.RunNonSuspending(callback, startContext)
+
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(actor, actionId, "onCanStart", failureDetail or failureKind)
+
 				return {
 					accepted = false,
 					reason = if failureKind == "Yielded" then "ActionCanStartYielded" else "ActionCanStartFailed",
 				}
 			end
+
 			if type(allowed) ~= "boolean" then
 				warn(
 					"[ActionController] onCanStart invalid result actorId=" .. actor:GetId() .. " actionId=" .. actionId
 				)
+
 				return { accepted = false, reason = "ActionCanStartInvalidResult" }
 			end
+
 			if not allowed then
 				return {
 					accepted = false,
@@ -122,9 +146,11 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		if controllerState.destroyed then
 			return { accepted = false, reason = "ActionControllerDestroyed" }
 		end
+
 		if not actor.enabled then
 			return { accepted = false, reason = "ActorDisabled" }
 		end
+
 		if not grants:IsGranted(actionId) then
 			return { accepted = false, reason = "ActionNotGranted" }
 		end
@@ -138,18 +164,23 @@ function ActionControllerModule.new(actor: Actor): ActionController
 				if controllerState.destroyed then
 					return "ActionControllerDestroyed"
 				end
+
 				if not actor.enabled then
 					return "ActorDisabled"
 				end
+
 				if not grants:IsGranted(actionId) then
 					return "ActionNotGranted"
 				end
+
 				return ActionControllerTagRequirements.Validate(actor, definition)
 			end
 		)
+
 		if sequenceId == nil then
 			return { accepted = false, reason = lockReason or "ActionLockConflict" }
 		end
+
 		return { accepted = true, sequenceId = sequenceId }
 	end
 
@@ -169,6 +200,7 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		if controllerState.destroyed then
 			return
 		end
+
 		controllerState.destroyed = true
 		instances:Destroy()
 		grants:Destroy()
@@ -179,6 +211,7 @@ function ActionControllerModule.new(actor: Actor): ActionController
 	controller.OnActionStarted = SignalModule.wrapEvent(startedSignal)
 	controller.OnActionEnded = SignalModule.wrapEvent(endedSignal)
 	controller.OnActionInterrupted = SignalModule.wrapEvent(interruptedSignal)
+
 	return controller
 end
 

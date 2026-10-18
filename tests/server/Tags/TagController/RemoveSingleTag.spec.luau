@@ -62,6 +62,7 @@ it("RemoveSingleTag removes exactly one instance of a stacked tag", function()
 
 	expect(removed).toBe(true)
 	expect(removeReason).toBeNil()
+
 	expect(controller:GetTagInstances("Buff.Sprint")).toEqual({
 		{
 			tagId = "Buff.Sprint",
@@ -94,6 +95,7 @@ it("RemoveSingleTag leaves remaining instances active when more than one instanc
 	expect(removed).toBe(true)
 	expect(removeReason).toBeNil()
 	expect(controller:HasTag("Buff.Sprint")).toBe(true)
+
 	expect(controller:GetTagInstances("Buff.Sprint")).toEqual({
 		{
 			tagId = "Buff.Sprint",
@@ -158,6 +160,7 @@ it("RemoveSingleTag fires removed then changed when removing one instance from a
 	expect(removed).toBe(true)
 	expect(removeReason).toBeNil()
 	expect(eventOrder).toEqual({ "removed", "changed" })
+
 	expect(controller:GetTagInstances("Buff.Sprint")).toEqual({
 		{
 			tagId = "Buff.Sprint",

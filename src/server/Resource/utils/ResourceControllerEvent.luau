@@ -3,6 +3,7 @@ local ResourceTypes = require(script.Parent.Parent.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 
 type ResourceChange = ResourceTypes.ResourceChange
+
 export type ResourceEventJournal = {
 	Queue: (self: ResourceEventJournal, change: ResourceChange) -> (),
 	BeginBatch: (self: ResourceEventJournal) -> (),
@@ -34,6 +35,7 @@ function ResourceControllerEvent.new(
 		then
 			return
 		end
+
 		tail += 1
 		pending[tail] = change
 	end
@@ -42,11 +44,15 @@ function ResourceControllerEvent.new(
 		if destroyed then
 			return
 		end
+
 		if batchDepth == 0 then
 			enqueue(change)
+
 			return
 		end
+
 		local previous: ResourceChange? = batched[change.resourceId]
+
 		if previous == nil then
 			batched[change.resourceId] = change
 		else
@@ -64,19 +70,25 @@ function ResourceControllerEvent.new(
 	function journal:FinishBatch(): ()
 		assert(batchDepth > 0, "ResourceMutationBatchNotOpen")
 		batchDepth -= 1
+
 		if batchDepth > 0 then
 			return
 		end
+
 		-- One transaction publishes net changes in Resource-id order, independent
 		-- of first-mutation order. Append behind every older pending transaction.
 		local ids: { string } = {}
+
 		for id: string in batched do
 			table.insert(ids, id)
 		end
+
 		table.sort(ids)
+
 		for _, id: string in ids do
 			enqueue(batched[id])
 		end
+
 		table.clear(batched)
 	end
 
@@ -84,17 +96,22 @@ function ResourceControllerEvent.new(
 		if destroyed or batchDepth > 0 or head > tail then
 			return
 		end
+
 		drainDepth += 1
+
 		ownedSignals:WithDeferredDestroy(function()
 			while not destroyed and head <= tail do
 				local change: ResourceChange = pending[head]
+
 				-- Remove before issuing the signal: recursive drains can never replay it.
 				pending[head] = nil
 				head += 1
 				changedSignal:Fire(change)
 			end
 		end)
+
 		drainDepth -= 1
+
 		if drainDepth == 0 then
 			table.clear(pending)
 			head = 1

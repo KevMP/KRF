@@ -46,6 +46,7 @@ local function createEventContext(): (
 	local baseSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local resolvedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local propertySignal: SignalTypes.Signal<PropertyChange> = SignalModule.new()
+
 	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
 		baseSignal,
 		resolvedSignal,
@@ -102,6 +103,7 @@ it("RecomputeProperty returns nil for missing properties and unchanged resolutio
 			resolvedValue = 0,
 		},
 	}
+
 	local fakeTagController = {
 		GetActiveTags = function()
 			return {
@@ -127,6 +129,7 @@ it("RecomputePropertiesAffectedByTags skips unstored properties and unchanged re
 			resolvedValue = 16,
 		},
 	}
+
 	local fakeTagController = {
 		GetActiveTags = function()
 			return {
@@ -153,6 +156,7 @@ it("RecomputePropertiesAffectedByTags skips unstored properties and unchanged re
 			resolvedValue = 0,
 		},
 	}
+
 	local stunnedTagController = {
 		GetActiveTags = function()
 			return {
@@ -176,18 +180,23 @@ end)
 it("discards later changes on destroy while finishing the change already being issued", function()
 	local eventContext: PropertyControllerEventContext, _baseSignal: SignalTypes.Signal<Actor, string, number?, number>, resolvedSignal: SignalTypes.Signal<Actor, string, number?, number>, propertySignal: SignalTypes.Signal<PropertyChange> =
 		createEventContext()
+
 	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
 	local resolvedEventCount: number = 0
 	local propertyEventCount: number = 0
+
 	resolvedSignal:Connect(function()
 		resolvedEventCount += 1
 		journal:Destroy()
 		eventContext.ownedSignals:Destroy()
 	end)
+
 	propertySignal:Connect(function()
 		propertyEventCount += 1
 	end)
+
 	journal:Drain()
+
 	for _, propertyName: string in { "WalkSpeed", "JumpPower" } do
 		journal:Queue({
 			actor = eventContext.actor,
@@ -198,6 +207,7 @@ it("discards later changes on destroy while finishing the change already being i
 			newResolvedValue = 20,
 		}, false, true)
 	end
+
 	journal:Drain()
 	expect(resolvedEventCount).toBe(1)
 	expect(propertyEventCount).toBe(1)
@@ -206,6 +216,7 @@ end)
 it("the journal skips the resolved signal when only the base value should report", function()
 	local eventContext: PropertyControllerEventContext, baseSignal: SignalTypes.Signal<Actor, string, number?, number>, resolvedSignal: SignalTypes.Signal<Actor, string, number?, number>, propertySignal: SignalTypes.Signal<PropertyChange> =
 		createEventContext()
+
 	local baseEvents: { { propertyName: string, oldValue: number?, newValue: number } } = {}
 	local resolvedEventCount: number = 0
 	local propertyChanges: { PropertyChange } = {}
@@ -217,14 +228,17 @@ it("the journal skips the resolved signal when only the base value should report
 			newValue = newValue,
 		})
 	end)
+
 	resolvedSignal:Connect(function()
 		resolvedEventCount += 1
 	end)
+
 	propertySignal:Connect(function(change: PropertyChange)
 		table.insert(propertyChanges, change)
 	end)
 
 	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
+
 	journal:Queue({
 		actor = eventContext.actor,
 		propertyName = "WalkSpeed",
@@ -233,6 +247,7 @@ it("the journal skips the resolved signal when only the base value should report
 		oldResolvedValue = 10,
 		newResolvedValue = 10,
 	}, true, false)
+
 	journal:Drain()
 
 	expect(baseEvents).toEqual({
@@ -242,7 +257,9 @@ it("the journal skips the resolved signal when only the base value should report
 			newValue = 16,
 		},
 	})
+
 	expect(resolvedEventCount).toBe(0)
+
 	expect(propertyChanges).toEqual({
 		{
 			actor = eventContext.actor,

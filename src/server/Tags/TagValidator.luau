@@ -11,12 +11,14 @@ local VALID_DUPLICATE_BEHAVIORS: { [string]: boolean } = {
 	Refresh = true,
 	Ignore = true,
 }
+
 table.freeze(VALID_DUPLICATE_BEHAVIORS :: any)
 
 local VALID_VISIBILITIES: { [string]: boolean } = {
 	ServerOnly = true,
 	ClientVisible = true,
 }
+
 table.freeze(VALID_VISIBILITIES :: any)
 
 local VALID_PROPERTY_MODIFIER_KEYS: { [string]: boolean } = {
@@ -26,6 +28,7 @@ local VALID_PROPERTY_MODIFIER_KEYS: { [string]: boolean } = {
 	min = true,
 	max = true,
 }
+
 table.freeze(VALID_PROPERTY_MODIFIER_KEYS :: any)
 
 local TagValidator = {}
@@ -224,43 +227,51 @@ function TagValidator.ValidateTagDefinition(
 	end
 
 	local isTagIdValid: boolean, tagIdFailReason: string? = ValidateTagId(tagDefinition, loadedTags)
+
 	if not isTagIdValid then
 		return false, tagIdFailReason
 	end
 
 	local isTagDefaultDurationValid: boolean, tagDefaultDurationFailReason: string? =
 		ValidateTagDefaultDuration(tagDefinition)
+
 	if not isTagDefaultDurationValid then
 		return false, tagDefaultDurationFailReason
 	end
 
 	local isTagTickIntervalValid: boolean, tagTickIntervalFailReason: string? = ValidateTagTickInterval(tagDefinition)
+
 	if not isTagTickIntervalValid then
 		return false, tagTickIntervalFailReason
 	end
 
 	local isTagDuplicateBehaviorValid: boolean, tagDuplicateBehaviorFailReason: string? =
 		ValidateTagDuplicateBehavior(tagDefinition)
+
 	if not isTagDuplicateBehaviorValid then
 		return false, tagDuplicateBehaviorFailReason
 	end
 
 	local isTagMaxStacksValid: boolean, tagMaxStacksFailReason: string? = ValidateTagMaxStacks(tagDefinition)
+
 	if not isTagMaxStacksValid then
 		return false, tagMaxStacksFailReason
 	end
 
 	local isTagVisibilityValid: boolean, tagVisibilityFailReason: string? = ValidateTagVisibility(tagDefinition)
+
 	if not isTagVisibilityValid then
 		return false, tagVisibilityFailReason
 	end
 
 	local isTagOnTickValid: boolean, tagOnTickFailReason: string? = ValidateTagOnTick(tagDefinition)
+
 	if not isTagOnTickValid then
 		return false, tagOnTickFailReason
 	end
 
 	local isTagPropertiesValid: boolean, tagPropertiesFailReason: string? = ValidateTagProperties(tagDefinition)
+
 	if not isTagPropertiesValid then
 		return false, tagPropertiesFailReason
 	end

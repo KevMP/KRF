@@ -29,9 +29,11 @@ local mana: ResourceTypes.ResourceDefinition = {
 for _, terminal: string in { "End", "Interrupt", "preemption", "stop", "onStart error", "onUpdate error", "destroy" } do
 	it("permanently consumes accepted costs after " .. terminal, function()
 		local now: number = 100
+
 		ActionControllerUpdates._setClockForTests(function(): number
 			return now
 		end)
+
 		local definition: ActionDefinition = {
 			id = "Cast",
 			visibility = "ServerOnly",
@@ -40,28 +42,35 @@ for _, terminal: string in { "End", "Interrupt", "preemption", "stop", "onStart 
 			interruptibleBy = { "Replacement" },
 			costs = { Mana = 20 },
 		}
+
 		if terminal == "onStart error" then
 			definition.onStart = function(_context: ActionTypes.ActionExecutionContext): ()
 				error("StartFailure")
 			end
 		end
+
 		if terminal == "onUpdate error" then
 			definition.onUpdate = function(_context: ActionTypes.ActionExecutionContext, _deltaTime: number): ()
 				error("UpdateFailure")
 			end
 		end
+
 		if terminal == "stop" then
 			definition.onStopRequested = function(context: ActionTypes.ActionExecutionContext)
 				context:End()
 			end
 		end
+
 		ResourceTestUtils.initialize(
 			{ definition, { id = "Replacement", visibility = "ServerOnly", autoGrant = true, locks = { "Hands" } } },
 			{ mana }
 		)
+
 		local _actor: Actor, actions: ActionController, resources: ResourceController =
 			ResourceTestUtils.registerActor()
+
 		expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
+
 		if terminal == "End" then
 			expect((actions:EndAction(1))).toBe(true)
 		elseif terminal == "Interrupt" then
@@ -76,6 +85,7 @@ for _, terminal: string in { "End", "Interrupt", "preemption", "stop", "onStart 
 		elseif terminal == "destroy" then
 			actions:Destroy()
 		end
+
 		expect(resources:GetCurrent("Mana")).toBe(80)
 		local ended: boolean, reason: string? = actions:EndAction(1)
 		expect(ended).toBe(false)
@@ -97,6 +107,7 @@ it("uses Resource cooldown regeneration and shared charges across independent Ac
 		},
 		{ id = "Charges", visibility = "ServerOnly", autoAssign = true, max = { value = 3 } },
 	})
+
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
 	ResourceTestUtils.expectRejected(actions:RequestAction("Other"))
@@ -119,6 +130,7 @@ it("allows several uses of shared charges without a separate Action charge runti
 		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Charges = 1 } },
 		{ id = "Other", visibility = "ServerOnly", autoGrant = true, costs = { Charges = 1 } },
 	}, { { id = "Charges", visibility = "ServerOnly", autoAssign = true, max = { value = 3 } } })
+
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(actions:RequestAction("Other")).toEqual({ accepted = true, sequenceId = 2 })
@@ -131,6 +143,7 @@ end)
 it("keeps outcome-dependent Resource mutation and explicit refunds available in lifecycle hooks", function()
 	local order: { { number } } = {}
 	local hookResults: { boolean } = {}
+
 	ResourceTestUtils.initialize({
 		{
 			id = "Cast",
@@ -140,21 +153,26 @@ it("keeps outcome-dependent Resource mutation and explicit refunds available in 
 			onStart = function(context: ActionTypes.ActionExecutionContext)
 				local resources: ResourceController =
 					context.actor:GetController("ResourceController") :: ResourceController
+
 				local spent: boolean, reason: string? = resources:Spend("Mana", 10)
 				table.insert(hookResults, spent and reason == nil)
 			end,
 			onEnd = function(context: ActionTypes.ActionExecutionContext)
 				local resources: ResourceController =
 					context.actor:GetController("ResourceController") :: ResourceController
+
 				local restored: boolean, reason: string? = resources:Restore("Mana", 5)
 				table.insert(hookResults, restored and reason == nil)
 			end,
 		},
 	}, { mana })
+
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
+
 	resources.OnResourceChanged:Connect(function(change: ResourceTypes.ResourceChange)
 		table.insert(order, { change.currentOldValue, change.currentNewValue })
 	end)
+
 	expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(resources:GetCurrent("Mana")).toBe(70)
 	expect((actions:EndAction(1))).toBe(true)

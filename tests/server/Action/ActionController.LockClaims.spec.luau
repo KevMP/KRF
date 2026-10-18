@@ -35,18 +35,22 @@ afterEach(function()
 	for _, controller: ActionController in controllers do
 		controller:Destroy()
 	end
+
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	ActionRegistry._resetForTests()
 end)
 
 local function loadDefinitions(definitions: { ActionDefinition }): ()
 	local factories: { ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local loaded: boolean, reason: string? = ActionRegistry.Load(factories, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -55,13 +59,16 @@ end
 local function createController(): (Actor, ActionController)
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: ActionController = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
 it("acquires a free scoped lock without creating another ActionInstance", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -73,6 +80,7 @@ it("acquires a free scoped lock without creating another ActionInstance", functi
 		},
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local owner: any = controller:RequestAction("Action.Channel")
 	local claim: LockClaim?, reason: string? = (context :: ActionExecutionContext):ClaimLocks({ "Movement" })
@@ -88,6 +96,7 @@ end)
 
 it("rejects a multi-lock scoped claim as a whole and keeps its owner active", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -100,6 +109,7 @@ it("rejects a multi-lock scoped claim as a whole and keeps its owner active", fu
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		{ id = "Action.Attack", visibility = "ServerOnly", autoGrant = true, locks = { "Combat" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -112,6 +122,7 @@ end)
 
 it("validates malformed scoped lock ids without changing the active Action", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -122,18 +133,22 @@ it("validates malformed scoped lock ids without changing the active Action", fun
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
+
 	for _, lockIds: any in { false, "Movement", { "" }, { 12 }, { "Movement", "Movement" }, { [2] = "Movement" } } do
 		local claim: LockClaim?, reason: string? = (context :: ActionExecutionContext):ClaimLocks(lockIds)
 		expect(claim).toBeNil()
 		expect(reason).toBe("ActionLockRequestInvalid")
 	end
+
 	expect((context :: ActionExecutionContext):IsActive()).toBe(true)
 end)
 
 it("rejects claims from an inactive Action without reacquiring locks", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -145,6 +160,7 @@ it("rejects claims from an inactive Action without reacquiring locks", function(
 		},
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local owner: any = controller:RequestAction("Action.Channel")
 	expect((controller:EndAction(owner.sequenceId))).toBe(true)
@@ -159,6 +175,7 @@ it("preempts a conflicting lifetime owner using the claiming Action identity and
 	local incoming: ActionInterruptionContext? = nil
 	local interruptedReason: string? = nil
 	local parameters: { [string]: number } = { speed = 2 }
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -176,6 +193,7 @@ it("preempts a conflicting lifetime owner using the claiming Action identity and
 			interruptibleBy = { "Action.Channel" },
 			canBeInterruptedBy = function(_context: ActionExecutionContext, value: ActionInterruptionContext): boolean
 				incoming = value
+
 				return true
 			end,
 			onInterrupt = function(_context: ActionExecutionContext, reason: string): ()
@@ -183,6 +201,7 @@ it("preempts a conflicting lifetime owner using the claiming Action identity and
 			end,
 		},
 	})
+
 	local actor: Actor, controller: ActionController = createController()
 	local claimant: any = controller:RequestAction("Action.Channel", parameters)
 	local owner: any = controller:RequestAction("Action.Sprint")
@@ -200,6 +219,7 @@ end)
 it("denied scoped preemption leaves both Actions and lock ownership intact", function()
 	local claimantContext: ActionExecutionContext? = nil
 	local ownerContext: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -219,6 +239,7 @@ it("denied scoped preemption leaves both Actions and lock ownership intact", fun
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -232,6 +253,7 @@ end)
 it("rejects a scoped claim if a reentrant decision terminates its claimant", function()
 	local claimantContext: ActionExecutionContext? = nil
 	local ownerContext: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -252,10 +274,12 @@ it("rejects a scoped claim if a reentrant decision terminates its claimant", fun
 			end,
 			canBeInterruptedBy = function(): boolean
 				(claimantContext :: ActionExecutionContext):End()
+
 				return true
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -270,6 +294,7 @@ it("abandons a multi-owner scoped claim when one owner denies preemption", funct
 	local claimantContext: ActionExecutionContext? = nil
 	local ownerContexts: { ActionExecutionContext } = {}
 	local interrupted: { string } = {}
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -312,14 +337,17 @@ it("abandons a multi-owner scoped claim when one owner denies preemption", funct
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Aim").accepted).toBe(true)
+
 	local claim: LockClaim?, reason: string? = (claimantContext :: ActionExecutionContext):ClaimLocks({
 		"Movement",
 		"Combat",
 	})
+
 	expect(claim).toBeNil()
 	expect(reason).toBe("ActionLockClaimDenied")
 	expect(interrupted).toEqual({})
@@ -333,6 +361,7 @@ it("commits a multi-owner scoped preemption before the first interruption hook",
 	local ownerContexts: { ActionExecutionContext } = {}
 	local interrupted: { string } = {}
 	local bothRetiredBeforeDispatch: boolean? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -355,6 +384,7 @@ it("commits a multi-owner scoped preemption before the first interruption hook",
 				if #interrupted == 0 then
 					bothRetiredBeforeDispatch = not ownerContexts[1]:IsActive() and not ownerContexts[2]:IsActive()
 				end
+
 				table.insert(interrupted, "Sprint:" .. reason)
 			end,
 		},
@@ -371,19 +401,23 @@ it("commits a multi-owner scoped preemption before the first interruption hook",
 				if #interrupted == 0 then
 					bothRetiredBeforeDispatch = not ownerContexts[1]:IsActive() and not ownerContexts[2]:IsActive()
 				end
+
 				table.insert(interrupted, "Aim:" .. reason)
 			end,
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Aim").accepted).toBe(true)
+
 	local claim: LockClaim?, reason: string? = (claimantContext :: ActionExecutionContext):ClaimLocks({
 		"Movement",
 		"Combat",
 	})
+
 	expect(reason).toBeNil()
 	expect(claim).never.toBeNil()
 	expect(bothRetiredBeforeDispatch).toBe(true)
@@ -398,6 +432,7 @@ it("issues all scoped preemption events before an owner hook starts another Acti
 	local counterRequest: ActionTypes.ActionRequestResult? = nil
 	local counterStarted: boolean = false
 	local counterStartedBeforeReturn: boolean? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -434,28 +469,34 @@ it("issues all scoped preemption events before an owner hook starts another Acti
 			end,
 		},
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local activeController: ActionController = controller :: ActionController
 	expect(activeController:RequestAction("Action.Channel")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(activeController:RequestAction("Action.Sprint")).toEqual({ accepted = true, sequenceId = 2 })
 	expect(activeController:RequestAction("Action.Aim")).toEqual({ accepted = true, sequenceId = 3 })
+
 	activeController.OnActionInterrupted:Connect(function(event: ActionTypes.ActionInterruptedEvent): ()
 		table.insert(events, "Interrupted " .. event.actionId)
 	end)
+
 	activeController.OnActionStarted:Connect(function(event: ActionTypes.ActionLifecycleEvent): ()
 		table.insert(events, "Started " .. event.actionId)
 	end)
+
 	local claim: LockClaim?, reason: string? = (claimantContext :: ActionExecutionContext):ClaimLocks({
 		"Movement",
 		"Combat",
 	})
+
 	expect(reason).toBeNil()
 	expect(claim).never.toBeNil()
 	expect(counterRequest).toEqual({ accepted = true, sequenceId = 4 })
 	expect(counterStartedBeforeReturn).toBe(true)
 	task.wait()
 	task.wait()
+
 	expect(events).toEqual({
 		"Interrupted Action.Sprint",
 		"Interrupted Action.Aim",
@@ -466,6 +507,7 @@ end)
 it("preempting a scoped lock interrupts the whole owner Action", function()
 	local ownerContext: ActionExecutionContext? = nil
 	local interruptedReason: string? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -481,6 +523,7 @@ it("preempting a scoped lock interrupts the whole owner Action", function()
 		},
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local owner: any = controller:RequestAction("Action.Channel")
 	local claim: LockClaim?, reason: string? = (ownerContext :: ActionExecutionContext):ClaimLocks({ "Movement" })
@@ -496,6 +539,7 @@ end)
 
 it("preserves a lifetime lock after releasing an overlapping scoped claim", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Sprint",
@@ -508,6 +552,7 @@ it("preserves a lifetime lock after releasing an overlapping scoped claim", func
 		},
 		{ id = "Action.Roll", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	local owner: any = controller:RequestAction("Action.Sprint")
 	local claim: LockClaim?, reason: string? = (context :: ActionExecutionContext):ClaimLocks({ "Movement" })
@@ -522,6 +567,7 @@ end)
 
 it("preserves a scoped lock until its last same-owner claim is released", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -533,6 +579,7 @@ it("preserves a scoped lock until its last same-owner claim is released", functi
 		},
 		{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	local first: LockClaim?, firstReason: string? = (context :: ActionExecutionContext):ClaimLocks({ "Movement" })
@@ -553,6 +600,7 @@ end)
 it("automatically releases every scoped claim on End and Interrupt", function()
 	for _, terminal: string in { "End", "Interrupt" } do
 		local context: ActionExecutionContext? = nil
+
 		loadDefinitions({
 			{
 				id = "Action.Channel",
@@ -564,16 +612,19 @@ it("automatically releases every scoped claim on End and Interrupt", function()
 			},
 			{ id = "Action.Sprint", visibility = "ServerOnly", autoGrant = true, locks = { "Movement" } },
 		})
+
 		local _actor: Actor, controller: ActionController = createController()
 		local owner: any = controller:RequestAction("Action.Channel")
 		local claim: LockClaim?, reason: string? = (context :: ActionExecutionContext):ClaimLocks({ "Movement" })
 		expect(reason).toBeNil()
 		expect(claim).never.toBeNil()
+
 		if terminal == "End" then
 			expect((controller:EndAction(owner.sequenceId))).toBe(true)
 		elseif terminal == "Interrupt" then
 			expect((controller:InterruptAction(owner.sequenceId, "Manual"))).toBe(true)
 		end
+
 		expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 		local acquiredClaim: LockClaim = claim :: LockClaim
 		acquiredClaim:Release()
@@ -585,6 +636,7 @@ end)
 
 it("makes outstanding claim handles harmless after controller destruction", function()
 	local context: ActionExecutionContext? = nil
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -595,6 +647,7 @@ it("makes outstanding claim handles harmless after controller destruction", func
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	local claim: LockClaim?, reason: string? = (context :: ActionExecutionContext):ClaimLocks({ "Movement" })
@@ -611,6 +664,7 @@ it("allows an update callback to acquire a claim and preempt another Action safe
 	local updated: number = 0
 	local claimReason: string? = nil
 	local interrupted: number = 0
+
 	loadDefinitions({
 		{
 			id = "Action.Channel",
@@ -633,6 +687,7 @@ it("allows an update callback to acquire a claim and preempt another Action safe
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: ActionController = createController()
 	expect(controller:RequestAction("Action.Channel").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)

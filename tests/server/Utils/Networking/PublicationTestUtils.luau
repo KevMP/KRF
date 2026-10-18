@@ -37,20 +37,25 @@ function PublicationTestUtils.createDomain(
 		disconnectCalls = 0,
 		callbacks = {},
 	}
+
 	fixture.definition.snapshot = function(_actor: ActorTypes.Actor): any
 		fixture.snapshotCalls += 1
+
 		return fixture.value
 	end
+
 	fixture.definition.observe = function(
 		actor: ActorTypes.Actor,
 		onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
 	): () -> ()
 		fixture.callbacks[actor] = onCommitted
+
 		return function(): ()
 			fixture.disconnectCalls += 1
 			-- Deliberately retain the producer callback to test stale-callback safety.
 		end
 	end
+
 	return fixture
 end
 

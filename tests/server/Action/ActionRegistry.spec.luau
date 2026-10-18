@@ -32,17 +32,21 @@ local function loadDefinitions(
 	resources: { [string]: boolean }
 ): (boolean, string?)
 	local factories: { ActionTypes.ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	return Registry.Load(factories, tags, resources)
 end
 
 it("loads minimal and fully populated Action definitions in declaration order", function()
 	local first: ActionDefinition = createAction("Action.Dodge")
+
 	local second: ActionDefinition = createAction("Action.Roll")
 	second.autoGrant = true
 	second.requiredTags = { "Tag.Grounded" }
@@ -67,8 +71,10 @@ end)
 it("does not publish partial Action state when a later definition is invalid", function()
 	local invalid: any = createAction("Action.Invalid")
 	invalid.visibility = "Everyone"
+
 	local loaded: boolean, reason: string? =
 		loadDefinitions({ createAction("Action.Dodge"), invalid }, preparedTagIds, preparedResourceIds)
+
 	expect(loaded).toBe(false)
 	expect(reason).toBe("ActionVisibilityInvalid")
 	expect(Registry.IsLoaded()).toBe(false)
@@ -80,8 +86,10 @@ end)
 it("validates Action-to-Action references against the complete catalog rather than declaration order", function()
 	local first: ActionDefinition = createAction("Action.First")
 	first.interruptibleBy = { "Action.Second" }
+
 	local loaded: boolean, reason: string? =
 		loadDefinitions({ first, createAction("Action.Second") }, preparedTagIds, preparedResourceIds)
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 end)
@@ -92,6 +100,7 @@ it("provides complete hit, miss, ordered, and keyed read surfaces", function()
 		preparedTagIds,
 		preparedResourceIds
 	)
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 	local dodge: LoadedActionDefinition = Registry.Get("Action.Dodge") :: LoadedActionDefinition
@@ -108,6 +117,7 @@ it("owns immutable normalized copies rather than consumer source or registry rea
 	definition.requiredTags = { "Tag.Grounded" }
 	definition.costs = { ["Resource.Stamina"] = 15 }
 	definition.locks = { "Locomotion" }
+
 	local sourceCatalog: { ActionDefinition } = { definition }
 	local loaded: boolean, reason: string? = loadDefinitions(sourceCatalog, preparedTagIds, preparedResourceIds)
 	expect(loaded).toBe(true)
@@ -122,21 +132,29 @@ it("owns immutable normalized copies rather than consumer source or registry rea
 	expect(loadedDefinition.costs).toEqual({ ["Resource.Stamina"] = 15 })
 	expect(loadedDefinition.locks).toEqual({ "Locomotion" })
 	expect(Registry.Get("Action.Mutated")).toBeNil()
+
 	local definitionMutable: boolean = pcall(function()
 		(loadedDefinition :: any).autoGrant = true
 	end)
+
 	expect(definitionMutable).toBe(false)
+
 	local tagsMutable: boolean = pcall(function()
 		(loadedDefinition.requiredTags :: { string })[1] = "Tag.Mutated"
 	end)
+
 	expect(tagsMutable).toBe(false)
+
 	local arrayMutable: boolean = pcall(function()
 		Registry.GetAll()[1] = loadedDefinition
 	end)
+
 	expect(arrayMutable).toBe(false)
+
 	local mapMutable: boolean = pcall(function()
 		Registry.GetAllById()["Action.Other"] = loadedDefinition
 	end)
+
 	expect(mapMutable).toBe(false)
 end)
 
@@ -150,18 +168,23 @@ end)
 
 it("keeps loaded definitions metadata-only and snapshots execution hooks", function()
 	local hookCalls: number = 0
+
 	local definition: any = createAction("Action.Dodge")
 	definition.autoGrant = false
 	definition.blockedTags = { "Tag.Grounded" }
 	definition.interruptibleBy = { "Action.Dodge" }
+
 	local hookFields: { string } =
 		{ "onCanStart", "onStart", "onStopRequested", "onUpdate", "onEnd", "onInterrupt", "canBeInterruptedBy" }
+
 	for _, field: string in hookFields do
 		definition[field] = function(): boolean
 			hookCalls += 1
+
 			return true
 		end
 	end
+
 	local loaded: boolean, reason: string? = loadDefinitions({ definition }, preparedTagIds, preparedResourceIds)
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -170,22 +193,27 @@ it("keeps loaded definitions metadata-only and snapshots execution hooks", funct
 	local implementation, executionReason = Registry.CreateExecution("Action.Dodge")
 	expect(executionReason).toBeNil()
 	expect(implementation).never.toBeNil()
+
 	for _, field: string in hookFields do
 		expect((loadedDefinition :: any)[field]).toBeNil()
 		expect((implementation :: any)[field]).toBe(definition[field])
 		definition[field] = nil
 		expect(type((implementation :: any)[field])).toBe("function")
 	end
+
 	definition.blockedTags[1] = "Tag.Mutated"
 	definition.interruptibleBy[1] = "Action.Mutated"
 	expect(loadedDefinition.blockedTags).toEqual({ "Tag.Grounded" })
 	expect(loadedDefinition.interruptibleBy).toEqual({ "Action.Dodge" })
+
 	for _, field: string in { "requiredTags", "blockedTags", "costs", "locks", "interruptibleBy" } do
 		local collectionMutable: boolean = pcall(function()
 			table.clear((loadedDefinition :: any)[field])
 		end)
+
 		expect(collectionMutable).toBe(false)
 	end
+
 	expect(hookCalls).toBe(0)
 end)
 
@@ -195,17 +223,21 @@ it("rejects duplicate ids without publishing and permits a corrected catalog to 
 		preparedTagIds,
 		preparedResourceIds
 	)
+
 	expect(loaded).toBe(false)
 	expect(reason).toBe("ActionIdAlreadyRegistered")
 	expect(Registry.IsLoaded()).toBe(false)
 	expect(Registry.GetAll()).toEqual({})
 	expect(Registry.GetAllById()).toEqual({})
+
 	local arrayMutable: boolean = pcall(function()
 		table.clear(Registry.GetAll())
 	end)
+
 	local mapMutable: boolean = pcall(function()
 		table.clear(Registry.GetAllById())
 	end)
+
 	expect(arrayMutable).toBe(false)
 	expect(mapMutable).toBe(false)
 	loaded, reason = loadDefinitions({ createAction("Action.Dodge") }, preparedTagIds, preparedResourceIds)
@@ -250,6 +282,7 @@ it("rejects malformed factory catalogs and factory failures before publication",
 			end,
 		}, "ActionDefinitionMustBeTable" },
 	}
+
 	for _, case in cases do
 		local loaded: boolean, reason: string? = Registry.Load(case[1], preparedTagIds, preparedResourceIds)
 		expect(loaded).toBe(false)
@@ -260,10 +293,13 @@ end)
 
 it("stages one startup result and publishes that result without calling factories twice", function()
 	local calls: number = 0
+
 	local factory = function(): ActionDefinition
 		calls += 1
+
 		return createAction("Action.Dodge")
 	end
+
 	local prepared, reason = Registry.Prepare({ factory }, preparedTagIds, preparedResourceIds)
 	expect(reason).toBeNil()
 	expect(calls).toBe(1)
@@ -279,14 +315,17 @@ end)
 
 it("rejects an unknown execution id and an invalid per-request factory result", function()
 	local mode: string = "valid"
+
 	local factory = function(): ActionDefinition
 		if mode == "valid" then
 			return createAction("Action.Dodge")
 		elseif mode == "unsupported" then
 			return { id = "Action.Dodge", visibility = "ServerOnly", new = function() end } :: any
 		end
+
 		return { id = "Action.Other", visibility = "ServerOnly" }
 	end
+
 	expect((Registry.Load({ factory }, preparedTagIds, preparedResourceIds))).toBe(true)
 	local missing, missingReason = Registry.CreateExecution("Action.Unknown")
 	expect(missing).toBeNil()

@@ -35,9 +35,11 @@ function ActionResourceTestUtils.cleanup(): ()
 			ActorRuntime.UnregisterActor(actor, "TestCleanup")
 		end
 	end
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	ActionControllerUpdates._setClockForTests(nil)
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
 	ResourceControllerModule._setAutomaticSteppingEnabledForTests(true)
@@ -51,12 +53,15 @@ function ActionResourceTestUtils.initialize(
 	tags: { TagTypes.TagDefinition }?
 ): ()
 	local factories: { ActionTypes.ActionFactory } = {}
+
 	for _, definition: ActionTypes.ActionDefinition in definitions do
 		local source: ActionTypes.ActionDefinition = definition
+
 		table.insert(factories, function(): ActionTypes.ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local started: boolean, failure = Server.Init({ actions = factories, resources = resources, tags = tags or {} })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
@@ -77,6 +82,7 @@ function ActionResourceTestUtils.registerActor(): (
 	expect(actor).never.toBeNil()
 	local registered: Actor = actor :: Actor
 	table.insert(actors, registered)
+
 	return registered,
 		registered:GetController("ActionController") :: ActionTypes.ActionController,
 		registered:GetController("ResourceController") :: ResourceTypes.ResourceController,
@@ -88,12 +94,15 @@ end
 -- cases pin the public AC7 reason strings exactly.
 function ActionResourceTestUtils.expectRejected(result: ActionTypes.ActionRequestResult): string
 	expect(result.accepted).toBe(false)
+
 	if result.accepted then
 		error("Expected Action Resource rejection")
 	end
+
 	expect(type(result.reason)).toBe("string")
 	expect(result.reason).never.toBe("")
 	expect(result.reason).never.toBe("ActionLockConflict")
+
 	for _, unrelatedReason: string in
 		{
 			"ActionFactoryFailed",
@@ -110,6 +119,7 @@ function ActionResourceTestUtils.expectRejected(result: ActionTypes.ActionReques
 	do
 		expect(result.reason).never.toBe(unrelatedReason)
 	end
+
 	return result.reason
 end
 

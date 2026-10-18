@@ -12,6 +12,7 @@ local rejectionCodes: { [Types.ProtocolRejectionReason]: number } = {
 	BootstrapTooLarge = 3,
 	ReadyRejected = 4,
 }
+
 table.freeze(rejectionCodes)
 
 return table.freeze({

@@ -16,12 +16,14 @@ local runtime: ServerNetworkingTypes.ActorAwarenessRuntime
 local owner: Player
 local other: Player
 local actor: ActorTypes.Actor
+
 beforeEach(function()
 	fixture = TestUtils.new()
 	owner = TestUtils.player(fixture)
 	other = TestUtils.player(fixture)
 	actor = TestUtils.actor(fixture, owner)
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -56,10 +58,12 @@ it("serializes Owner truth only to the associated Player while both recipients r
 	local ownerHandle: number? = runtime:GetHandle(owner, actor)
 	local otherHandle: number? = runtime:GetHandle(other, actor)
 	assert(ownerHandle ~= nil and otherHandle ~= nil, "Expected aware handles")
+
 	expect(TestUtils.baseline(fixture, owner, ownerHandle)).toEqual({
 		["Game.Public"] = { value = 10 },
 		["Game.Private"] = { value = 20 },
 	})
+
 	expect(TestUtils.baseline(fixture, other, otherHandle)).toEqual({ ["Game.Public"] = { value = 10 } })
 	expect(runtime:IsAware(other, actor)).toBe(true)
 end)
@@ -94,10 +98,12 @@ it("replaces old and new owner baselines without replacing an unrelated recipien
 	local newHandle: number? = runtime:GetHandle(other, actor)
 	assert(oldHandle ~= nil and newHandle ~= nil, "Expected unchanged awareness")
 	expect(TestUtils.baseline(fixture, owner, oldHandle)).toEqual({ ["Game.Public"] = { value = 10 } })
+
 	expect(TestUtils.baseline(fixture, other, newHandle)).toEqual({
 		["Game.Public"] = { value = 10 },
 		["Game.Private"] = { value = 20 },
 	})
+
 	expect(TestUtils.records(fixture, unrelated)).toEqual({})
 	expect(runtime:GetActorForPlayer(owner)).toBeNil()
 	expect(runtime:GetActorForPlayer(other)).toBe(actor)
@@ -108,9 +114,11 @@ for _, toNil: boolean in { true, false } do
 		"reconciles only the existing side when association changes " .. (if toNil then "to nil" else "from nil"),
 		function()
 			assert(actor.model ~= nil, "Expected Model")
+
 			if not toNil then
 				fixture.owners[actor.model] = nil
 			end
+
 			start()
 			fixture.deliveries = {}
 			TestUtils.associate(fixture, actor, if toNil then nil else owner)

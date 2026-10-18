@@ -14,10 +14,13 @@ local SharedTypes = require(KRF.shared.Networking.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Tags: TagTypes.TagRegistry = require(KRF.server.Tags.TagRegistry)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local Builder: ReplicationTypes.BuiltInReplicationDomainBuilder =
 	require(KRF.server.Replication.BuiltInReplicationDomains)
+
 local Networking: ServerTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ProtocolCodec: SharedTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
 local Transport = require(KRF.shared.Networking.Transport)
@@ -28,25 +31,32 @@ local originalPrepare: typeof(Networking.Prepare) = Networking.Prepare
 local originalBuild: typeof(Builder.Build) = Builder.Build
 local models: { Model } = {}
 local actors: { ActorTypes.Actor } = {}
+
 beforeEach(function()
 	Server._ResetForTests()
 	prepared = nil
+
 	Networking.Prepare = function(
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog
 	): (SharedTypes.PreparedProtocol?, string?)
 		local protocol: SharedTypes.PreparedProtocol?, reason: string? = originalPrepare(catalog)
 		prepared = protocol
+
 		return protocol, reason
 	end
 end)
+
 afterEach(function()
 	for _, actor: ActorTypes.Actor in actors do
 		Actors.UnregisterActor(actor)
 	end
+
 	actors = {}
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	models = {}
 	Networking.Prepare = originalPrepare
 	Builder.Build = originalBuild
@@ -59,6 +69,7 @@ end
 
 local function protocol(): SharedTypes.PreparedProtocol
 	assert(prepared ~= nil, "Successful startup must prepare the ordinary N2 protocol")
+
 	return prepared
 end
 
@@ -76,8 +87,10 @@ do
 			expect(started).toBe(true)
 			expect(Domains.GetAll()).toEqual({})
 			expect(protocol().manifest.domains).toEqual({})
+
 			local decoded: SharedTypes.ProtocolMessage?, reason: string? =
 				ProtocolCodec.Decode(protocol().bootstrapBuffer)
+
 			expect(reason).toBeNil()
 			expect(decoded).toEqual({ kind = "Bootstrap", manifest = protocol().manifest })
 		end
@@ -89,6 +102,7 @@ it("publishes the exact built-in id through the ordinary registry beside a game 
 		tags = { visible("Status.Stunned") },
 		replicationDomains = { DomainUtils.createDomain("Game.Custom") },
 	})
+
 	expect(failure).toBeNil()
 	expect(started).toBe(true)
 	expect(#Domains.GetAll()).toBe(2)
@@ -99,9 +113,11 @@ it("publishes the exact built-in id through the ordinary registry beside a game 
 	local root: Instance? = ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME)
 	assert(root ~= nil, "Expected normal framework transport")
 	local children: { string } = {}
+
 	for _, child: Instance in root:GetChildren() do
 		table.insert(children, child.Name .. ":" .. child.ClassName)
 	end
+
 	table.sort(children)
 	expect(children).toEqual({ "Reliable:RemoteEvent", "Unreliable:UnreliableRemoteEvent" })
 end)
@@ -116,6 +132,7 @@ it(
 				visible("Status.A"),
 			},
 		})).toBe(true)
+
 		local domain: ReplicationTypes.LoadedReplicationDomainDefinition? = Domains.Get("KRF.Tags")
 		assert(domain ~= nil and domain.state.kind == "Map", "Expected bounded Tags Map")
 		expect(domain.state.maxEntries).toBe(2)
@@ -131,11 +148,13 @@ it(
 		assert(expiry.kind == "Optional", "Expected optional timing anchor")
 		expect(expiry.inner.kind).toBe("F64")
 		local eventIds: { string } = {}
+
 		for _, event: ReplicationTypes.LoadedReplicationEventDefinition in domain.events do
 			table.insert(eventIds, event.id)
 			assert(event.payload.kind == "Enum", "Expected direct Tag-id event payload")
 			expect(event.payload.values).toEqual({ "Status.A", "Status.Z" })
 		end
+
 		table.sort(eventIds)
 		expect(eventIds).toEqual({ "Added", "Expired", "Refreshed", "Removed" })
 	end
@@ -148,6 +167,7 @@ it("produces identical bootstrap bytes when declaration order or ServerOnly defi
 	expect(Server.Init({ tags = { first, visible("Status.A") } })).toBe(true)
 	local previous: string = buffer.tostring(protocol().bootstrapBuffer)
 	Server._ResetForTests()
+
 	expect(Server.Init({
 		tags = {
 			visible("Status.A"),
@@ -160,6 +180,7 @@ it("produces identical bootstrap bytes when declaration order or ServerOnly defi
 			visible("Status.Z"),
 		},
 	})).toBe(true)
+
 	expect(buffer.tostring(protocol().bootstrapBuffer)).toBe(previous)
 	local decoded: SharedTypes.ProtocolMessage?, reason: string? = ProtocolCodec.Decode(protocol().bootstrapBuffer)
 	expect(reason).toBeNil()
@@ -172,6 +193,7 @@ it("rejects a game collision before catalogs and networking become available", f
 		tags = { visible("Status.Stunned") },
 		replicationDomains = { DomainUtils.createDomain("KRF.Tags") },
 	})
+
 	expect(started).toBe(false)
 	expect(failure).toEqual({ system = "ReplicationDomain", reason = "DuplicateReplicationDomainId" })
 	expect(Server._IsInitialized()).toBe(false)
@@ -185,6 +207,7 @@ it("keeps KRF.Tags reserved even when the built-in domain is omitted", function(
 	local started: boolean, failure: Server.StartupFailure? = Server.Init({
 		replicationDomains = { DomainUtils.createDomain("KRF.Tags") },
 	})
+
 	expect(started).toBe(false)
 	assert(failure ~= nil, "Reserved-id collision must report a startup failure")
 	expect(failure.system).toBe("ReplicationDomain")
@@ -196,17 +219,21 @@ end)
 
 it("builds the visible catalog once at startup while Actors attach and mutate independently", function()
 	local builds: number = 0
+
 	Builder.Build = function(
 		catalogs: ReplicationTypes.ReplicationDomainBuildCatalogs
 	): ({ ReplicationTypes.ReplicationDomainDefinition }?, string?)
 		builds += 1
 		expect(Tags.IsLoaded()).toBe(false)
 		expect(Domains.IsLoaded()).toBe(false)
+
 		return originalBuild(catalogs)
 	end
+
 	expect(Server.Init({ tags = { visible("Status.Stunned") } })).toBe(true)
 	local domain: ReplicationTypes.LoadedReplicationDomainDefinition? = Domains.Get("KRF.Tags")
 	assert(domain ~= nil, "Expected built-in domain")
+
 	for _ = 1, 3 do
 		local model: Model = Instance.new("Model")
 		model.Parent = workspace
@@ -219,5 +246,6 @@ it("builds the visible catalog once at startup while Actors attach and mutate in
 		expect(controller:AddTag("Status.Stunned")).toBe(true)
 		expect(Domains.Get("KRF.Tags")).toBe(domain)
 	end
+
 	expect(builds).toBe(1)
 end)

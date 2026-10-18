@@ -22,8 +22,10 @@ local fixture: TestUtils.Fixture
 local originalFire: any = GoodSignal.Fire
 local originalConnect: any = GoodSignal.Connect
 local originalTagsNew: typeof(TagsView.new) = TagsView.new
+
 beforeEach(function()
 	local tagId: SharedTypes.SchemaDefinition = Schema.Enum({ "Status.A", "Status.B", "Status.C" })
+
 	fixture = TestUtils.new(nil, {
 		version = Constants.PROTOCOL_VERSION,
 		domains = {
@@ -46,6 +48,7 @@ beforeEach(function()
 		},
 	})
 end)
+
 afterEach(function()
 	TagsView.new = originalTagsNew
 	GoodSignal.Fire = originalFire
@@ -59,18 +62,23 @@ end
 
 local function baseline(): Types.ActorView
 	TestUtils.baseline(fixture, nil, nil, nil, truth({ ["Status.A"] = { stackCount = 1 } }))
+
 	return TestUtils.view(fixture)
 end
 
 it("constructs a stable read-only TagsView from an ordinary encoded N4 baseline with no lifecycle replay", function()
 	local semanticFires: { any } = {}
+
 	GoodSignal.Fire = function(self: any, ...: any)
 		local first: any = ...
+
 		if type(first) == "string" then
 			table.insert(semanticFires, table.pack(...))
 		end
+
 		originalFire(self, ...)
 	end
+
 	local view: Types.ActorView = baseline()
 	local tags: Types.TagsView = view:GetTags()
 	expect(view:GetTags()).toBe(tags)
@@ -82,10 +90,13 @@ end)
 
 it("supplies each typed facade with its own current N5 domain and revokes that source on Actor teardown", function()
 	local sources: { () -> Types.DomainView? } = {}
+
 	TagsView.new = function(getDomain: () -> Types.DomainView?, serverTimeNow: (() -> number)?): Types.TagsViewOwner
 		table.insert(sources, getDomain)
+
 		return originalTagsNew(getDomain, serverTimeNow)
 	end
+
 	local first: Types.ActorView = baseline()
 	TestUtils.baseline(fixture, 2, "ActorB", 0, truth({ ["Status.B"] = { stackCount = 2 } }))
 	local second: Types.ActorView = TestUtils.view(fixture, "ActorB")
@@ -122,15 +133,19 @@ it("reconciles changed replacement truth without changing facade identity or inv
 	local tags: Types.TagsView = view:GetTags()
 	local sources: { Types.DomainChangeSource } = {}
 	local events: { string } = {}
+
 	tags.OnStateChanged:Connect(function(source: Types.DomainChangeSource)
 		table.insert(sources, source)
 	end)
+
 	for _, name: string in { "OnTagAdded", "OnTagRefreshed", "OnTagRemoved", "OnTagExpired" } do
 		local event: SignalTypes.Event<string> = (tags :: any)[name]
+
 		event:Connect(function(tagId: string)
 			table.insert(events, tagId)
 		end)
 	end
+
 	TestUtils.baseline(fixture, 1, nil, 50, truth({ ["Status.B"] = { stackCount = 3 } }), 2)
 	expect(TestUtils.view(fixture)).toBe(view)
 	expect(view:GetTags()).toBe(tags)
@@ -151,19 +166,25 @@ it(
 		local tags: Types.TagsView = view:GetTags()
 		local names: { [any]: string } = {}
 		local connecting: string? = nil
+
 		GoodSignal.Connect = function(self: any, callback: any): any
 			if connecting ~= nil then
 				names[self] = connecting
 			end
+
 			return originalConnect(self, callback)
 		end
+
 		for _, id: string in { "Added", "Removed", "Refreshed" } do
 			connecting = id
 			local event: SignalTypes.Event<string> = (tags :: any)["OnTag" .. id]
 			event:Connect(function() end)
 		end
+
 		GoodSignal.Connect = originalConnect
+
 		local fires: { any } = {}
+
 		GoodSignal.Fire = function(self: any, ...: any)
 			if names[self] ~= nil then
 				table.insert(fires, {
@@ -173,8 +194,10 @@ it(
 					counter = TestUtils.domain(fixture, "Game.Counter"):GetState(),
 				})
 			end
+
 			originalFire(self, ...)
 		end
+
 		TestUtils.send(fixture, {
 			{
 				kind = "Commit",
@@ -204,6 +227,7 @@ it(
 				events = { { domainId = "KRF.Tags", eventId = "Refreshed", payload = "Status.B" } },
 			},
 		})
+
 		expect(fires).toEqual({
 			{
 				event = "Removed",
@@ -231,9 +255,11 @@ it("keeps TagsView truth and subscriptions alive through Model stream-out and st
 	local view: Types.ActorView = baseline()
 	local tags: Types.TagsView = view:GetTags()
 	local refreshed: { string } = {}
+
 	tags.OnTagRefreshed:Connect(function(tagId: string)
 		table.insert(refreshed, tagId)
 	end)
+
 	local candidate: ClientTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
 	StreamUtils.add(fixture.stream, candidate)
 	expect(view:GetModel()).toBe(candidate.model)
@@ -250,17 +276,21 @@ it("retires TagsView state and subscriptions on Actor removal without rebinding 
 	local view: Types.ActorView = baseline()
 	local tags: Types.TagsView = view:GetTags()
 	local received: { string } = {}
+
 	tags.OnTagAdded:Connect(function(tagId: string)
 		table.insert(received, tagId)
 	end)
+
 	expect(tags:HasTag("Status.A")).toBe(true)
 	TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })
 	expect(fixture.runtime.registry.GetActorViewById("ActorA")).toBeNil()
 	expect(tags:GetActiveTags()).toEqual({})
 	expect(tags:GetTag("Status.A")).toBeNil()
+
 	local connected: boolean = pcall(function()
 		tags.OnTagAdded:Connect(function() end)
 	end)
+
 	expect(connected).toBe(false)
 	TestUtils.baseline(fixture, 2, "ActorRespawn", 0, truth({ ["Status.B"] = { stackCount = 2 } }))
 	local respawn: Types.ActorView = TestUtils.view(fixture, "ActorRespawn")
@@ -291,9 +321,11 @@ for _, invalidPart: string in { "state", "event" } do
 			local tags: Types.TagsView = view:GetTags()
 			local previous: any = TestUtils.domain(fixture, "KRF.Tags"):GetState()
 			local events: number = 0
+
 			tags.OnTagAdded:Connect(function()
 				events += 1
 			end)
+
 			fixture.runtime.consumer.OnCommitReady(TestUtils.actor(fixture), 11, {
 				{ domainId = "Game.Counter", patch = { kind = "Replace", value = 2 } },
 				{
@@ -313,6 +345,7 @@ for _, invalidPart: string in { "state", "event" } do
 					payload = if invalidPart == "event" then "Private.Secret" else "Status.B",
 				},
 			})
+
 			expect(TestUtils.domain(fixture, "KRF.Tags"):GetState()).toBe(previous)
 			expect(TestUtils.domain(fixture, "Game.Counter"):GetState()).toBe(1)
 			expect(tags:GetActiveTags()).toEqual({ { tagId = "Status.A", stackCount = 1 } })

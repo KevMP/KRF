@@ -16,6 +16,7 @@ function SchemaTestUtils.compile(
 	local compiled: SharedNetworkingTypes.CompiledSchema?, reason: string? = Compiler.Compile(definition)
 	expect(reason).toBeNil()
 	expect(compiled).never.toBeNil()
+
 	return compiled :: SharedNetworkingTypes.CompiledSchema
 end
 

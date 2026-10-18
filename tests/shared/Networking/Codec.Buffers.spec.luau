@@ -41,10 +41,13 @@ it("writes sequential codecs directly into one exact-sized buffer", function()
 	local bodyOffset: number?, bodyReason: string? = body.Write(value, destination, headerOffset :: number)
 	expect(bodyOffset).toBe(buffer.len(destination))
 	expect(bodyReason).toBeNil()
+
 	local decodedHeader: any, decodedHeaderOffset: number?, decodedHeaderReason: string? =
 		header.Read(destination, 0, buffer.len(destination))
+
 	local decodedBody: any, decodedBodyOffset: number?, decodedBodyReason: string? =
 		body.Read(destination, decodedHeaderOffset :: number, buffer.len(destination))
+
 	expect(decodedHeader).toBe(123)
 	expect(decodedHeaderReason).toBeNil()
 	expect(decodedBody).toEqual(value)
@@ -55,6 +58,7 @@ end)
 it("detects insufficient destination capacity before touching the buffer", function()
 	local codec: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ first = Schema.U32, last = Schema.String(8) }))
+
 	local value: any = { first = 42, last = "hello" }
 	local size: number?, measureReason: string? = codec.Measure(value)
 	expect(measureReason).toBeNil()
@@ -64,9 +68,11 @@ it("detects insufficient destination capacity before touching the buffer", funct
 	local original: string = buffer.tostring(destination)
 	local offset: number? = nil
 	local reason: string? = nil
+
 	local completed: boolean = pcall(function()
 		offset, reason = codec.Write(value, destination, 0)
 	end)
+
 	expect(completed).toBe(true)
 	expect(offset).toBeNil()
 	expect(reason).toBe("CodecBufferTooSmall")
@@ -78,6 +84,7 @@ it("rejects invalid write offsets without changing the destination", function()
 	local destination: buffer = buffer.create(4)
 	buffer.fill(destination, 0, 165)
 	local original: string = buffer.tostring(destination)
+
 	for _, invalidOffset: number in { -1, 0.5, 5, math.huge, 0 / 0 } do
 		local offset: number?, reason: string? = codec.Write(42, destination, invalidOffset)
 		expect(offset).toBeNil()
@@ -89,8 +96,10 @@ end)
 it("reports the sum of fixed Struct fields without treating Optional fields as fixed", function()
 	local fixed: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ active = Schema.Boolean, count = Schema.U16, amount = Schema.F64 }))
+
 	local variable: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Struct({ value = Schema.Optional(Schema.U16) }))
+
 	expect(fixed.fixedSizeBytes).toBe(11)
 	expect(fixed.maxSizeBytes).toBe(11)
 	expect(variable.fixedSizeBytes).toBeNil()
@@ -123,6 +132,7 @@ end)
 it("does not mutate consumer tables while measuring or encoding unordered Maps", function()
 	local codec: SharedNetworkingTypes.CompiledCodec =
 		TestUtils.compile(Schema.Map(Schema.String(8), Schema.Struct({ count = Schema.U8 }), 2))
+
 	local value: any = { alpha = { count = 0 }, beta = { count = 255 } }
 	TestUtils.expectRoundTrip(codec, value)
 	expect(value).toEqual({ alpha = { count = 0 }, beta = { count = 255 } })

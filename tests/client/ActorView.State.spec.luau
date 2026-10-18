@@ -12,9 +12,11 @@ local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -27,12 +29,15 @@ it("exposes stable domain ids, declared events and read-only event surfaces", fu
 	assert(event ~= nil, "Declared semantic event must be available before it ever fires")
 	expect(domain:GetEvent("Depleted")).toBe(event)
 	expect(domain:GetEvent("Undeclared")).toBeNil()
+
 	local replaced: boolean = pcall(function()
 		(domain :: any).GetState = function(): any
 			return {}
 		end
 	end)
+
 	expect(replaced).toBe(false)
+
 	for _, surface: any in
 		{
 			event,
@@ -46,6 +51,7 @@ it("exposes stable domain ids, declared events and read-only event surfaces", fu
 			local readable: boolean, value: any = pcall(function(): any
 				return surface[member]
 			end)
+
 			if readable then
 				expect(value).toBeNil()
 			end
@@ -57,20 +63,24 @@ it("keeps an Optional nil domain visible through present and absent state transi
 	TestUtils.baseline(fixture, nil, nil, nil, { ["Game.Owner"] = { value = nil } })
 	local domain: PublicTypes.DomainView = TestUtils.domain(fixture, "Game.Owner")
 	local changes: { PublicTypes.DomainChange } = {}
+
 	table.insert(
 		fixture.connections,
 		domain.OnChanged:Connect(function(change: PublicTypes.DomainChange)
 			table.insert(changes, change)
 		end)
 	)
+
 	TestUtils.commit(
 		fixture,
 		11,
 		{ { domainId = "Game.Owner", patch = { kind = "Replace", value = { secret = "visible" } } } }
 	)
+
 	TestUtils.commit(fixture, 12, { { domainId = "Game.Owner", patch = { kind = "Replace", value = nil } } })
 	expect(TestUtils.domain(fixture, "Game.Owner")).toBe(domain)
 	expect(domain:GetState()).toBeNil()
+
 	expect(changes).toEqual({
 		{ current = { secret = "visible" }, source = "Commit" },
 		{ previous = { secret = "visible" }, source = "Commit" },
@@ -89,18 +99,21 @@ do
 		local event: SignalTypes.Event<any>? = TestUtils.domain(fixture, "Game.Counter"):GetEvent(case.eventId)
 		assert(event ~= nil, "Expected declared semantic event")
 		local delivered: { any } = {}
+
 		table.insert(
 			fixture.connections,
 			event:Connect(function(...: any)
 				table.insert(delivered, table.pack(...))
 			end)
 		)
+
 		TestUtils.commit(
 			fixture,
 			11,
 			{},
 			{ { domainId = "Game.Counter", eventId = case.eventId, payload = case.payload } }
 		)
+
 		expect(#delivered).toBe(1)
 		expect(delivered[1].n).toBe(1)
 		expect(delivered[1][1]).toEqual(case.payload)
@@ -110,6 +123,7 @@ end
 it("keeps handles, revisions, mutation and future typed views out of the public ActorView", function()
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
+
 	for _, member: string in
 		{
 			"handle",
@@ -128,26 +142,32 @@ it("keeps handles, revisions, mutation and future typed views out of the public 
 		local readable: boolean, value: any = pcall(function(): any
 			return (view :: any)[member]
 		end)
+
 		if readable then
 			expect(value).toBeNil()
 		end
 	end
+
 	local readable: boolean, byHandle: any = pcall(function(): any
 		return (fixture.runtime.registry :: any).GetActorViewByHandle
 	end)
+
 	if readable then
 		expect(byHandle).toBeNil()
 	end
+
 	local replaced: boolean = pcall(function()
 		(view :: any).GetId = function(): string
 			return "corrupted"
 		end
 	end)
+
 	expect(replaced).toBe(false)
 	expect(view:GetId()).toBe("ActorA")
 end)
 
 type MutationCase = { name: string, mutate: (any) -> () }
+
 local mutations: { MutationCase } = {
 	{
 		name = "root Struct",
@@ -186,6 +206,7 @@ local mutations: { MutationCase } = {
 		end,
 	},
 }
+
 for _, case: MutationCase in mutations do
 	it("prevents consumer mutation of " .. case.name, function()
 		TestUtils.baseline(fixture)
@@ -218,19 +239,23 @@ it("delivers complete immutable previous/current change values with Commit sourc
 	local domain: PublicTypes.DomainView = TestUtils.domain(fixture)
 	local previous: any = domain:GetState()
 	local changes: { PublicTypes.DomainChange } = {}
+
 	table.insert(
 		fixture.connections,
 		domain.OnChanged:Connect(function(change: PublicTypes.DomainChange)
 			table.insert(changes, change)
 		end)
 	)
+
 	TestUtils.commit(fixture, 11, { TestUtils.patch(75) })
 	expect(#changes).toBe(1)
+
 	expect(changes[1]).toEqual({
 		previous = previous,
 		current = TestUtils.truth(75)["Game.Stamina"].value,
 		source = "Commit",
 	})
+
 	expect(table.isfrozen(changes[1])).toBe(true)
 	expect(table.isfrozen(changes[1].previous.effects.Burn)).toBe(true)
 	expect(table.isfrozen(changes[1].current.effects.Burn)).toBe(true)
@@ -244,41 +269,52 @@ it("owns and recursively freezes semantic payloads before any consumer can mutat
 	assert(event ~= nil, "Expected declared event")
 	local seen: { any } = {}
 	local mutationResults: { boolean } = {}
+
 	for _ = 1, 2 do
 		table.insert(
 			fixture.connections,
 			event:Connect(function(payload: any)
 				table.insert(seen, { amount = payload.amount, history = table.clone(payload.history) })
+
 				local mutated: boolean = pcall(function()
 					payload.history[1] = 999
 				end)
+
 				table.insert(mutationResults, mutated)
+
 				local rootMutated: boolean = pcall(function()
 					payload.amount = 999
 				end)
+
 				table.insert(mutationResults, rootMutated)
 			end)
 		)
 	end
+
 	local payload: any = { amount = 25, history = { 100, 75 } }
+
 	fixture.runtime.consumer.OnCommitReady(
 		TestUtils.actor(fixture),
 		11,
 		{},
 		{ { domainId = "Game.Stamina", eventId = "Changed", payload = payload } }
 	)
+
 	expect(seen).toEqual({ { amount = 25, history = { 100, 75 } }, { amount = 25, history = { 100, 75 } } })
 	expect(mutationResults).toEqual({ false, false, false, false })
+
 	-- Either copy or take immutable ownership of freshly decoded input. Mutable
 	-- scratch aliases must never change an already-dispatched payload.
 	pcall(function()
 		payload.history[1] = 1
 	end)
+
 	expect(seen[1].history).toEqual({ 100, 75 })
 end)
 
 it("applies a mixed schema patch to the exact complete authoritative state", function()
 	TestUtils.baseline(fixture)
+
 	local patches: { SharedNetworkingTypes.ActorDomainPatch } = {
 		{
 			domainId = "Game.Stamina",
@@ -298,7 +334,9 @@ it("applies a mixed schema patch to the exact complete authoritative state", fun
 			},
 		},
 	}
+
 	TestUtils.commit(fixture, 11, patches)
+
 	expect(TestUtils.domain(fixture):GetState()).toEqual({
 		current = 40,
 		max = 100,
@@ -307,11 +345,13 @@ it("applies a mixed schema patch to the exact complete authoritative state", fun
 		slots = { { name = "Ether" } },
 		target = { id = 12 },
 	})
+
 	TestUtils.commit(fixture, 12, {
 		{
 			domainId = "Game.Stamina",
 			patch = { kind = "Struct", fields = { target = { kind = "Replace", value = nil } } },
 		},
 	})
+
 	expect(TestUtils.domain(fixture):GetState().target).toBeNil()
 end)

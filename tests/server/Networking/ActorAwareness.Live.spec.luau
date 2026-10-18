@@ -15,12 +15,14 @@ local fixture: TestUtils.Fixture
 local actor: ActorTypes.Actor
 local owner: Player
 local other: Player
+
 beforeEach(function()
 	fixture = TestUtils.new()
 	owner = TestUtils.player(fixture)
 	other = TestUtils.player(fixture)
 	actor = TestUtils.actor(fixture, owner)
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -35,10 +37,12 @@ end
 it("delivers public state and events to both aware recipients at the next baseline revision", function()
 	start()
 	local revision: number = TestUtils.kind(fixture, other, "BaselineEnd")[1].revision
+
 	fixture.deliveries = {}
 	fixture.publicDomain.value = 11
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 11 } })
 	TestUtils.drain(fixture)
+
 	for _, player: Player in { owner, other } do
 		local commits: { any } = TestUtils.kind(fixture, player, "Commit")
 		expect(#commits).toBe(1)
@@ -51,6 +55,7 @@ end)
 it("filters hidden Owner state and events before allocating a non-owner revision", function()
 	start()
 	local revision: number = TestUtils.kind(fixture, other, "BaselineEnd")[1].revision
+
 	fixture.deliveries = {}
 	fixture.ownerDomain.value = 21
 	fixture.ownerDomain.callbacks[actor]({ { id = "Changed", payload = 21 } })
@@ -70,12 +75,14 @@ end)
 it("preserves one mixed logical commit for owner and a public-only projection for non-owner", function()
 	start()
 	fixture.deliveries = {}
+
 	fixture.publication:WithActorCommit(actor, function(): ()
 		fixture.publicDomain.value = 11
 		fixture.ownerDomain.value = 21
 		fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 11 } })
 		fixture.ownerDomain.callbacks[actor]({ { id = "Changed", payload = 21 } })
 	end)
+
 	TestUtils.drain(fixture)
 	local ownerRecords: { any } = TestUtils.kind(fixture, owner, "Commit")
 	local publicRecords: { any } = TestUtils.kind(fixture, other, "Commit")
@@ -90,11 +97,14 @@ end)
 it("assigns one revision after coalescing a burst of state-only source commits", function()
 	start()
 	local revision: number = TestUtils.kind(fixture, owner, "BaselineEnd")[1].revision
+
 	fixture.deliveries = {}
+
 	for value: number = 11, 100 do
 		fixture.publicDomain.value = value
 		fixture.publicDomain.callbacks[actor]()
 	end
+
 	TestUtils.drain(fixture)
 	local records: { any } = TestUtils.kind(fixture, owner, "Commit")
 	expect(#records).toBe(1)
@@ -105,12 +115,14 @@ end)
 it("keeps required event barriers as distinct consecutive revisions", function()
 	start()
 	local revision: number = TestUtils.kind(fixture, owner, "BaselineEnd")[1].revision
+
 	fixture.deliveries = {}
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 1 } })
 	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 2 } })
 	TestUtils.drain(fixture)
 	local records: { any } = TestUtils.kind(fixture, owner, "Commit")
 	expect(#records).toBe(2)
+
 	for index: number, record: any in records do
 		expect(record.revision).toBe(revision + index)
 		expect(record.events).toEqual({ { domainId = "Game.Public", eventId = "Changed", payload = index } })
@@ -120,11 +132,13 @@ end)
 it("permits public state coalescing when the only event barrier is hidden from that recipient", function()
 	start()
 	fixture.deliveries = {}
+
 	fixture.publication:WithActorCommit(actor, function(): ()
 		fixture.publicDomain.value = 11
 		fixture.publicDomain.callbacks[actor]()
 		fixture.ownerDomain.callbacks[actor]({ { id = "Changed", payload = 21 } })
 	end)
+
 	fixture.publicDomain.value = 12
 	fixture.publicDomain.callbacks[actor]()
 	TestUtils.drain(fixture)
@@ -149,16 +163,20 @@ end)
 it("never silently wraps a wire revision when its configured counter is exhausted", function()
 	fixture.options.maxRevision = 2
 	start()
+
 	local previous: { [Player]: number } = {
 		[owner] = TestUtils.kind(fixture, owner, "BaselineEnd")[1].revision,
 		[other] = TestUtils.kind(fixture, other, "BaselineEnd")[1].revision,
 	}
+
 	fixture.deliveries = {}
+
 	for value: number = 11, 15 do
 		fixture.publicDomain.value = value
 		fixture.publicDomain.callbacks[actor]()
 		TestUtils.drain(fixture)
 	end
+
 	for _, player: Player in { owner, other } do
 		for _, record: any in TestUtils.kind(fixture, player, "Commit") do
 			expect(record.revision).toBe(previous[player] + 1)
@@ -166,7 +184,9 @@ it("never silently wraps a wire revision when its configured counter is exhauste
 			previous[player] = record.revision
 		end
 	end
+
 	expect(#fixture.faults >= 2).toBe(true)
+
 	for _, fault: ServerNetworkingTypes.ActorAwarenessFault in fixture.faults do
 		expect(fault.actorId).toBe(actor:GetId())
 		expect(fault.reason).toBe("ActorRevisionExhausted")
@@ -176,15 +196,18 @@ end)
 it("does not mutate immutable N3 source patches or events while projecting recipients", function()
 	start()
 	local source: ServerNetworkingTypes.PublicationCommit? = nil
+
 	fixture.publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		source = commit
 	end)
+
 	fixture.publication:WithActorCommit(actor, function(): ()
 		fixture.publicDomain.value = 11
 		fixture.ownerDomain.value = 21
 		fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 11 } })
 		fixture.ownerDomain.callbacks[actor]({ { id = "Changed", payload = 21 } })
 	end)
+
 	assert(source ~= nil, "Expected immutable authoritative commit")
 	local patches: { ServerNetworkingTypes.PublicationDomainPatch } = source.patches
 	local events: { ServerNetworkingTypes.PublicationEvent } = source.events

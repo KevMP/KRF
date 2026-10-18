@@ -22,12 +22,14 @@ end
 
 it("loads a complete catalog and resolves dependencies with catalog order as the tie breaker", function()
 	ControllerRegistry._ResetForTests()
+
 	local definitions: { ControllerDef } = {
 		{ key = "Dependent", factory = FactoryNoop, dependsOn = { "Root" } },
 		{ key = "Other", factory = FactoryNoop },
 		{ key = "Root", factory = FactoryNoop },
 		{ key = "Final", factory = FactoryNoop, dependsOn = { "Dependent", "Other" } },
 	}
+
 	local loaded: boolean, reason: string? = ControllerRegistry.Load(definitions)
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -36,10 +38,13 @@ it("loads a complete catalog and resolves dependencies with catalog order as the
 
 	local ordered: { string }?, orderReason: string? =
 		ControllerRegistry.ResolveOrder({ "Final", "Root", "Other", "Dependent", "Root" })
+
 	expect(orderReason).toBeNil()
 	expect(ordered).toEqual({ "Other", "Root", "Dependent", "Final" })
+
 	local reordered: { string }?, reorderedReason: string? =
 		ControllerRegistry.ResolveOrder({ "Dependent", "Other", "Final", "Root" })
+
 	expect(reorderedReason).toBeNil()
 	expect(reordered).toEqual({ "Other", "Root", "Dependent", "Final" })
 	ControllerRegistry._ResetForTests()
@@ -117,6 +122,7 @@ it("rejects malformed catalog entries without publishing a partial catalog", fun
 		expect(ControllerRegistry.IsLoaded()).toBe(false)
 		expect(ControllerRegistry.GetKeys()).toEqual({})
 	end
+
 	ControllerRegistry._ResetForTests()
 end)
 
@@ -132,11 +138,13 @@ it("rejects missing dependencies and cycles during load", function()
 	local second: ControllerDef = { key = "Second", factory = FactoryNoop, dependsOn = { "Third" } }
 	local third: ControllerDef = { key = "Third", factory = FactoryNoop, dependsOn = { "First" } }
 	local unrelated: ControllerDef = { key = "Unrelated", factory = FactoryNoop }
+
 	local unrelatedDependent: ControllerDef = {
 		key = "UnrelatedDependent",
 		factory = FactoryNoop,
 		dependsOn = { "Unrelated" },
 	}
+
 	loaded, reason = ControllerRegistry.Load({ first, unrelated, third, unrelatedDependent, second })
 	expect(loaded).toBe(false)
 	expect(reason).toBe("CyclicDependency")
@@ -151,8 +159,10 @@ it("ControllerRegistry.GetAutoAttachKeys respects default and explicit attachmen
 	local defaultDefinition: ControllerDef = { key = "Default", factory = FactoryNoop }
 	local explicitDefinition: ControllerDef = { key = "ExplicitTrue", factory = FactoryNoop, autoAttach = true }
 	local disabledDefinition: ControllerDef = { key = "False", factory = FactoryNoop, autoAttach = false }
+
 	local loaded: boolean, reason: string? =
 		ControllerRegistry.Load({ defaultDefinition, explicitDefinition, disabledDefinition })
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
 	expect(ControllerRegistry.GetAutoAttachKeys()).toEqual({ "Default", "ExplicitTrue" })

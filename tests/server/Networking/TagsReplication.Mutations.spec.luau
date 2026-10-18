@@ -14,9 +14,11 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.TagsReplicationT
 
 local fixture: TestUtils.Fixture
 local originalFire: any = GoodSignal.Fire
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	GoodSignal.Fire = originalFire
 	TestUtils.destroy(fixture)
@@ -25,6 +27,7 @@ end)
 it("publishes Added synchronously with only the newly active visible aggregate", function()
 	TestUtils.observe(fixture)
 	TestUtils.add(fixture, "Status.Burning")
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Status.Burning" } },
@@ -38,6 +41,7 @@ it("refreshes finite timing from current synchronized time and emits Refreshed r
 	TestUtils.observe(fixture)
 	TestUtils.step(fixture, 2)
 	TestUtils.add(fixture, "Status.Burning", 12)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Refreshed", payload = "Status.Burning" } },
@@ -50,6 +54,7 @@ it("increments aggregate stackCount and publishes Added for each new stack witho
 	TestUtils.add(fixture, "Buff.Stack", 3)
 	TestUtils.observe(fixture)
 	TestUtils.add(fixture, "Buff.Stack", 8)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Buff.Stack" } },
@@ -64,6 +69,7 @@ it("retains a real Refreshed occurrence at stack cap even when aggregate state s
 	TestUtils.add(fixture, "Buff.Stack", 8)
 	TestUtils.observe(fixture)
 	TestUtils.add(fixture, "Buff.Stack", 5)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Refreshed", payload = "Buff.Stack" } },
@@ -77,6 +83,7 @@ it("does not commit an Ignore duplicate after a real visible Add", function()
 	TestUtils.add(fixture, "Status.Permanent")
 	expect(#fixture.commits).toBe(1)
 	TestUtils.add(fixture, "Status.Permanent")
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Status.Permanent" } },
@@ -105,6 +112,7 @@ it("decrements stacks on RemoveSingleTag and removes the final entry with distin
 	TestUtils.observe(fixture)
 	expect(fixture.tags:RemoveSingleTag("Buff.Stack")).toBe(true)
 	expect(fixture.tags:RemoveSingleTag("Buff.Stack")).toBe(true)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Removed", payload = "Buff.Stack" } },
@@ -120,6 +128,7 @@ it("uses Expired for authoritative partial and final stack expiry without fabric
 	TestUtils.observe(fixture)
 	TestUtils.step(fixture, 2)
 	TestUtils.step(fixture, 3)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Expired", payload = "Buff.Stack" } },
@@ -143,6 +152,7 @@ it(
 		expect(fixture.tags:RemoveSingleTag("Private.Stack")).toBe(true)
 		expect(fixture.commits).toEqual({})
 		TestUtils.add(fixture, "Status.Permanent")
+
 		expect(fixture.commits).toEqual({
 			{
 				events = { { id = "Added", payload = "Status.Permanent" } },
@@ -164,20 +174,25 @@ it("subscribes to the private Commit seam without connecting to any public async
 			error("ReplicationMustNotWaitForPublicTagSignals")
 		end,
 	}
+
 	fixture.tags.OnTagAdded = publicEvent
 	fixture.tags.OnTagRefreshed = publicEvent
 	fixture.tags.OnTagRemoved = publicEvent
 	fixture.tags.OnTagExpired = publicEvent
 	fixture.tags.OnTagChanged = publicEvent
+
 	local observations: number = 0
 	local originalObserve = fixture.tags._observeMutations
+
 	fixture.tags._observeMutations = function(
 		self: TagTypes.InternalTagController,
 		observer: TagTypes.TagMutationObserver
 	): () -> ()
 		observations += 1
+
 		return originalObserve(self, observer)
 	end
+
 	TestUtils.observe(fixture)
 	expect(observations).toBe(1)
 	TestUtils.add(fixture, "Status.Permanent")
@@ -187,22 +202,29 @@ end)
 it("captures committed Add truth before public Fire can reenter and remove the same Tag", function()
 	TestUtils.observe(fixture)
 	local reentered: boolean = false
+
 	GoodSignal.Fire = function(self: any, ...: any)
 		local actor: any, tagId: any = ...
+
 		if actor == fixture.actor and tagId == "Status.Permanent" and not reentered then
 			reentered = true
+
 			expect(fixture.commits).toEqual({
 				{
 					events = { { id = "Added", payload = "Status.Permanent" } },
 					state = { ["Status.Permanent"] = { stackCount = 1 } },
 				},
 			})
+
 			expect(fixture.tags:RemoveTag("Status.Permanent")).toBe(true)
 		end
+
 		originalFire(self, ...)
 	end
+
 	TestUtils.add(fixture, "Status.Permanent")
 	expect(reentered).toBe(true)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Status.Permanent" } },

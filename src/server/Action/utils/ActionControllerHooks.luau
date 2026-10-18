@@ -9,6 +9,7 @@ function ActionControllerHooks.CancelSuspendedThread(threadToCancel: thread): ()
 	if coroutine.status(threadToCancel) ~= "suspended" then
 		return
 	end
+
 	pcall(task.cancel, threadToCancel)
 	pcall(coroutine.close, threadToCancel)
 end
@@ -19,13 +20,17 @@ function ActionControllerHooks.RunNonSuspending(
 ): (boolean, any, any, string?, any)
 	local callbackThread: thread = coroutine.create(callback)
 	local resumed: boolean, first: any, second: any = coroutine.resume(callbackThread, ...)
+
 	if not resumed then
 		return false, nil, nil, "Error", first
 	end
+
 	if coroutine.status(callbackThread) ~= "dead" then
 		ActionControllerHooks.CancelSuspendedThread(callbackThread)
+
 		return false, nil, nil, "Yielded", nil
 	end
+
 	return true, first, second, nil, nil
 end
 

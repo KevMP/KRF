@@ -7,6 +7,7 @@ export type DomainChangeSource = "Commit" | "Baseline"
 export type DomainChange = { read previous: any, read current: any, read source: DomainChangeSource }
 export type DomainMembershipChange = { read added: { string }, read removed: { string } }
 export type ActiveTagSnapshot = { read tagId: string, read stackCount: number, read remainingDuration: number? }
+
 export type TagsView = {
 	read HasTag: (self: TagsView, tagId: string) -> boolean,
 	read GetTag: (self: TagsView, tagId: string) -> ActiveTagSnapshot?,
@@ -17,16 +18,20 @@ export type TagsView = {
 	read OnTagExpired: SignalTypes.Event<string>,
 	read OnStateChanged: SignalTypes.Event<DomainChangeSource>,
 }
+
 export type TagsViewOwner = { read view: TagsView, Destroy: (self: TagsViewOwner) -> () }
+
 export type TagsViewModule = {
 	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> TagsViewOwner,
 }
+
 export type DomainView = {
 	read GetId: (self: any) -> string,
 	read GetState: (self: any) -> any,
 	read GetEvent: (self: any, eventId: string) -> SignalTypes.Event<any>?,
 	read OnChanged: SignalTypes.Event<DomainChange>,
 }
+
 export type ActorView = {
 	read GetTags: (self: ActorView) -> TagsView,
 	read GetId: (self: any) -> string,
@@ -38,6 +43,7 @@ export type ActorView = {
 	read OnDomainsChanged: SignalTypes.Event<DomainMembershipChange>,
 	read OnUnavailable: SignalTypes.Event<>,
 }
+
 export type ActorViewRegistry = {
 	read GetActorViewById: (actorId: string) -> ActorView?,
 	read GetActorViewByModel: (model: Model) -> ActorView?,
@@ -56,9 +62,11 @@ export type DomainViewOwner = {
 	FireEvent: (self: DomainViewOwner, eventId: string, payload: any) -> (),
 	Destroy: (self: DomainViewOwner) -> (),
 }
+
 export type DomainViewModule = {
 	new: (domainId: string, immutableState: any, eventIds: { string }) -> (DomainViewOwner?, string?),
 }
+
 export type ActorViewOwner = {
 	read view: ActorView,
 	InstallModel: (self: ActorViewOwner, model: Model?) -> (),
@@ -69,9 +77,11 @@ export type ActorViewOwner = {
 	NotifyUnavailable: (self: ActorViewOwner) -> (),
 	Destroy: (self: ActorViewOwner) -> (),
 }
+
 export type ActorViewModule = {
 	new: (actorId: string, model: Model?, domains: { [string]: DomainViewOwner }) -> (ActorViewOwner?, string?),
 }
+
 export type ActorViewRegistryOwner = {
 	GetActorViewById: (actorId: string) -> ActorView?,
 	GetActorViewByModel: (model: Model) -> ActorView?,

@@ -19,8 +19,10 @@ local Controllers: ControllerTypes.ControllerRegistry = require(KRF.server.Contr
 local Tags: TagTypes.TagRegistry = require(KRF.server.Tags.TagRegistry)
 local Resources: ResourceTypes.ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
 local Actions: ActionTypes.InternalActionRegistry = require(KRF.server.Action.ActionRegistry)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local Networking = require(KRF.server.Networking.ServerNetworking)
 local Transport = require(KRF.shared.Networking.Transport)
 
@@ -34,6 +36,7 @@ local originalNetworking: typeof(Networking.Publish) = Networking.Publish
 beforeEach(function()
 	Server._ResetForTests()
 end)
+
 afterEach(function()
 	Controllers.Load = originalControllers
 	Tags.Load = originalTags
@@ -45,6 +48,7 @@ afterEach(function()
 end)
 
 type FailureCase = { system: string, inject: () -> () }
+
 local cases: { FailureCase } = {
 	{
 		system = "Controller",
@@ -87,6 +91,7 @@ local cases: { FailureCase } = {
 		end,
 	},
 }
+
 local function expectUnpublished(): ()
 	expect(Server._IsInitialized()).toBe(false)
 	expect(Networking._IsInitialized()).toBe(false)
@@ -115,6 +120,7 @@ it("keeps unexpected Networking activation failure observable after rolling back
 	Networking.Publish = function(_protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		error("ActivationFailure")
 	end
+
 	local success: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})
 	expect(success).toBe(false)
 	assert(failure ~= nil, "Expected a structured activation failure")

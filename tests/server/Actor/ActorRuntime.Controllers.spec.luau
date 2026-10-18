@@ -14,6 +14,7 @@ type ControllerRegistryT = ControllerTypes.ControllerRegistry
 
 local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 local ActorRuntime = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
+
 local ControllerRegistry: ControllerRegistryT =
 	require(ReplicatedStorage.Packages.KRF.server.Controller.ControllerRegistry)
 
@@ -23,6 +24,7 @@ it("ActorRuntime.AttachControllers fails when the controller key is already occu
 	local actor: Actor = ActorEntity.new()
 
 	local existingDestroyCount: number = 0
+
 	local existingController: Controller = {
 		Destroy = function()
 			existingDestroyCount += 1
@@ -33,6 +35,7 @@ it("ActorRuntime.AttachControllers fails when the controller key is already occu
 	expect(setOk).toBe(true)
 
 	local newDestroyCount: number = 0
+
 	local controllerDefA: ControllerDef = {
 		key = "A",
 		autoAttach = true,
@@ -42,6 +45,7 @@ it("ActorRuntime.AttachControllers fails when the controller key is already occu
 					newDestroyCount += 1
 				end,
 			}
+
 			return newController
 		end,
 	}
@@ -79,6 +83,7 @@ it("ActorRuntime.AttachControllers rolls back controllers attached in the curren
 					aDestroyCount += 1
 				end,
 			}
+
 			return controllerA
 		end,
 	}
@@ -260,6 +265,7 @@ it("ActorRuntime.DetachAllControllers is idempotent", function()
 	local actor: Actor = ActorEntity.new()
 
 	local destroyCount: number = 0
+
 	local controllerA: Controller = {
 		Destroy = function()
 			destroyCount += 1

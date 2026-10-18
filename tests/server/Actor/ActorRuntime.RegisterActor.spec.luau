@@ -26,11 +26,13 @@ beforeEach(function()
 	local started: boolean, failure = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+
 	return nil
 end)
 
 afterEach(function()
 	Server._ResetForTests()
+
 	return nil
 end)
 
@@ -44,6 +46,7 @@ it("RegisterActor succeeds: bind -> attach -> enable -> event", function()
 
 	local attachMock: any = jest.fn(function(a: Actor): (boolean, string?)
 		attachSawEnabledFalse = (a.enabled == false)
+
 		return true, nil
 	end)
 
@@ -51,6 +54,7 @@ it("RegisterActor succeeds: bind -> attach -> enable -> event", function()
 
 	local registedActorEventCount: number = 0
 	local lastRegisteredActor: Actor? = nil
+
 	local eventFiredConnection: SignalTypes.Connection<> = ActorRuntime.OnActorRegistered:Connect(
 		function(registeredActor: Actor)
 			registedActorEventCount += 1
@@ -137,6 +141,7 @@ it("OnActorRegistered fires once on success", function()
 		if firedCount == 1 then
 			break
 		end
+
 		task.wait()
 	end
 
@@ -156,6 +161,7 @@ it("OnActorRegistered never fires on BindModel failure", function()
 	model.Parent = workspace
 
 	local firedCount: number = 0
+
 	local connection: SignalTypes.Connection = ActorRuntime.OnActorRegistered:Connect(function(_a: Actor)
 		firedCount += 1
 	end)
@@ -169,8 +175,10 @@ it("OnActorRegistered never fires on BindModel failure", function()
 		if firedCount == 1 then
 			break
 		end
+
 		task.wait()
 	end
+
 	expect(firedCount).toBe(1)
 
 	-- Reset counter to observe the failing attempt
@@ -195,6 +203,7 @@ it("AttachControllers failure triggers full rollback (no residue)", function()
 	model.Parent = workspace
 
 	local firedCount: number = 0
+
 	local connection: SignalTypes.Connection = ActorRuntime.OnActorRegistered:Connect(function(_a: Actor)
 		firedCount += 1
 	end)
@@ -225,6 +234,7 @@ it("AttachControllers failure triggers full rollback (no residue)", function()
 			attachSawEnabledFalse = (a.enabled == false)
 			capturedActor = a
 			capturedActorId = a:GetId()
+
 			return false, "AttachFailed"
 		end
 
@@ -232,6 +242,7 @@ it("AttachControllers failure triggers full rollback (no residue)", function()
 		ActorRuntime.DetachAllControllers = function(a: Actor): ()
 			detachCalls += 1
 			detachedActor = a
+
 			return
 		end
 
