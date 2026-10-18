@@ -6,6 +6,21 @@ local types = {}
 export type DomainChangeSource = "Commit" | "Baseline"
 export type DomainChange = { read previous: any, read current: any, read source: DomainChangeSource }
 export type DomainMembershipChange = { read added: { string }, read removed: { string } }
+export type ActiveTagSnapshot = { read tagId: string, read stackCount: number, read remainingDuration: number? }
+export type TagsView = {
+	read HasTag: (self: TagsView, tagId: string) -> boolean,
+	read GetTag: (self: TagsView, tagId: string) -> ActiveTagSnapshot?,
+	read GetActiveTags: (self: TagsView) -> { ActiveTagSnapshot },
+	read OnTagAdded: SignalTypes.Event<string>,
+	read OnTagRefreshed: SignalTypes.Event<string>,
+	read OnTagRemoved: SignalTypes.Event<string>,
+	read OnTagExpired: SignalTypes.Event<string>,
+	read OnStateChanged: SignalTypes.Event<DomainChangeSource>,
+}
+export type TagsViewOwner = { read view: TagsView, Destroy: (self: TagsViewOwner) -> () }
+export type TagsViewModule = {
+	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> TagsViewOwner,
+}
 export type DomainView = {
 	read GetId: (self: any) -> string,
 	read GetState: (self: any) -> any,
@@ -13,6 +28,7 @@ export type DomainView = {
 	read OnChanged: SignalTypes.Event<DomainChange>,
 }
 export type ActorView = {
+	read GetTags: (self: ActorView) -> TagsView,
 	read GetId: (self: any) -> string,
 	read GetModel: (self: any) -> Model?,
 	read GetDomain: (self: any, domainId: string) -> DomainView?,

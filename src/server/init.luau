@@ -162,7 +162,12 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		table.insert(domains, rawget(builtInDomains, index) :: ReplicationDomainDefinition)
 	end
 	for index: number = 1, domainCount do
-		table.insert(domains, rawget(gameDomains, index) :: ReplicationDomainDefinition)
+		local definition: any = rawget(gameDomains, index)
+		-- Framework ids remain reserved when their visible catalogs are empty.
+		if type(definition) == "table" and rawget(definition, "id") == "KRF.Tags" then
+			return false, { system = "ReplicationDomain", reason = "DuplicateReplicationDomainId" }
+		end
+		table.insert(domains, definition :: ReplicationDomainDefinition)
 	end
 	local preparedDomains: PreparedReplicationDomainCatalog?, domainReason: string? =
 		ReplicationDomainRegistry.Prepare(domains)

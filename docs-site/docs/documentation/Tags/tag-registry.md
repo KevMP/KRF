@@ -10,7 +10,7 @@
 | Reapplication | `duplicateBehavior`, optional `maxStacks` |
 | Lifetime | optional `defaultDuration` |
 | Periodic work | optional `tickInterval` and `onTick` |
-| Visibility classification | `visibility` |
+| Client replication visibility | `visibility` |
 | Numeric effects | optional `properties` |
 
 Load the full catalog once during startup. Validation is atomic, registration order is preserved, and a successful load cannot be replaced during that server lifetime.
@@ -34,6 +34,12 @@ At the stack cap, KRF refreshes an existing instance instead of adding another. 
 - A callback failure is warned and isolated from later tag advancement.
 
 Definitions describe timing. `TagController` owns countdown, refresh, expiry, and live instances.
+
+## Client visibility
+
+`visibility = "ClientVisible"` publishes aggregate active state and Tag lifecycle occurrences through [TagsView](./tag-views). `"ServerOnly"` excludes the id, state, and events from the client protocol, including bootstrap metadata and generic DomainView state. Full definitions, callbacks, property modifiers, and individual instances stay on the server for both visibility choices.
+
+When no definitions are ClientVisible, startup omits the Tags domain entirely and `ActorView:GetTags()` returns an empty view. Visibility does not change authoritative server Tag behavior.
 
 ## Property modifiers
 
@@ -63,7 +69,7 @@ local definitions: { TagTypes.TagDefinition } = {
 		id = "Status.Stunned",
 		defaultDuration = 1.5,
 		duplicateBehavior = "Refresh",
-		visibility = "ServerOnly",
+		visibility = "ClientVisible",
 		properties = {
 			WalkSpeed = { set = 0 },
 			JumpPower = { set = 0 },

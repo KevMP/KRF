@@ -2,6 +2,8 @@
 
 `TagController` owns the active tags for one Actor. Each Actor has independent instances, stack counts, remaining durations, and events even when several Actors use the same definition id.
 
+Client UI and presentation observe ClientVisible Tags through [TagsView](./tag-views); acquire the authoritative controller only on the server.
+
 ## Applying tags
 
 `AddTag(tagId, options?)` resolves duration from the explicit option first, then the definition default. With neither, the new instance is indefinite.

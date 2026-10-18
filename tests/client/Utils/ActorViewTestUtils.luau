@@ -90,9 +90,9 @@ function TestUtils.truth(current: number?): { [string]: SharedNetworkingTypes.Ac
 	}
 end
 
-function TestUtils.new(onSend: ((buffer) -> ())?): Fixture
+function TestUtils.new(onSend: ((buffer) -> ())?, manifestOverride: SharedNetworkingTypes.ProtocolManifest?): Fixture
 	local stream: StreamUtils.Fixture = StreamUtils.new()
-	local manifest: SharedNetworkingTypes.ProtocolManifest = TestUtils.manifest()
+	local manifest: SharedNetworkingTypes.ProtocolManifest = manifestOverride or TestUtils.manifest()
 	local protocol: SharedNetworkingTypes.ClientProtocol?, reason: string? = Manifest.Reconstruct(manifest)
 	assert(protocol ~= nil, reason)
 	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}

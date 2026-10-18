@@ -1,0 +1,19 @@
+{
+  "name": "KRF-Tags-Native-Load",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "TagsLoadScenario": { "$path": "tests/integration/TagsLoad/Utils/Scenario.luau" },
+      "TagsLoadControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": {
+      "TagsLoadServer": { "$path": "tests/integration/TagsLoad/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "TagsLoadClient": { "$path": "tests/integration/TagsLoad/Client.client.luau" }
+      }
+    }
+  }
+}

@@ -9,6 +9,9 @@
       }
     },
     "ReplicatedStorage": {
+      "TagsLoadScenario": {
+        "$path": "tests/integration/TagsLoad/Utils/Scenario.luau"
+      },
       "Packages": {
         "$className": "Folder",
         "KRF": {
