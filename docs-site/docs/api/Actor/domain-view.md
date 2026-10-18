@@ -12,7 +12,7 @@ local ViewTypes = require(KRF.client.Actor.types)
 
 local model: Model? = Players.LocalPlayer.Character
 local view: ViewTypes.ActorView? = if model ~= nil then Registry.GetActorViewByModel(model) else nil
-local domain: ViewTypes.DomainView? = if view ~= nil then view:GetDomain("Game.Stamina") else nil
+local domain: ViewTypes.DomainView? = if view ~= nil then view:GetDomain("Game.Titles") else nil
 if domain == nil then
 	return -- The view or this game's domain is not currently available.
 end

@@ -1,252 +1,115 @@
 ---
 name: krf-docs-writer
-description: Write, revise, review, or plan documentation for Kevin's Roblox Framework (KRF), including product guides, University lessons, manual API reference, examples, docs-site navigation, and documentation PRs. Use for any change under docs-site/docs or when translating KRF source and runtime contracts into consumer-facing documentation. Enforces source-grounded accuracy, concise information design, useful API semantics, KRF system boundaries, and clear separation between guides, lessons, reference, and contributor material.
+description: Write, revise, review, or plan KRF consumer documentation, examples, manual API reference, and docs-site navigation. Use for changes under docs-site/docs or when translating KRF contracts into guidance. Enforces source-grounded accuracy, framework-aware examples, and concise consumer-first writing.
 ---
 
 # KRF Docs Writer
 
-Write for Roblox developers building games with KRF. The docs must answer, without requiring source inspection:
+Write for Roblox developers building games with KRF. Help them find the owning system, use its supported entrypoint, and understand the guarantees that affect their code.
 
-1. Which KRF system owns this state or behavior?
-2. What is the supported way to use it?
-3. What does the runtime guarantee on success, failure, change, and teardown?
+## Ground examples in the whole framework
 
-## Ground every claim in the repository
+- Read `Charter.docx.md` for ownership and product direction. It includes planned systems and superseded descriptions; it does not prove an API ships.
+- Read current public types and implementation, then relevant tests for validation, failures, ordering, and teardown.
+- Audit each example against adjacent systems, not only the page's system. Trace ownership of state, validation, payment, lifetime, replication, and cleanup.
+- Read nearby guides and API pages for contradictions and duplication. Inspect config, routes, and sidebars when changing navigation.
+- Describe the current branch. If source, tests, and docs disagree, identify the mismatch rather than silently choosing one.
 
-Before writing:
+Never invent an accessor, registration helper, bootstrap API, failure reason, payload, or lifecycle guarantee. Never present planned systems as available to make an example complete.
 
-1. Read the public types and implementation.
-2. Read tests for validation, failure behavior, event order, and lifecycle edges.
-3. Read adjacent guide and API pages for contradictions and duplication.
-4. Inspect Docusaurus config, sidebars, and routes when navigation changes.
-5. Describe the current branch, not proposed or ticketed behavior.
+## Teach idiomatic KRF
 
-Source defines the current public contract. Tests clarify observable behavior. If source, tests, and docs disagree, identify the mismatch instead of silently choosing one.
+An example must teach the pattern a game should adopt, not merely code that could run.
 
-Never invent an accessor, bootstrap API, registration helper, error reason, payload, or lifecycle guarantee. Do not describe planned systems as available.
+| Concern | Canonical owner or pattern |
+| --- | --- |
+| Actor creation and teardown | `ActorRuntime`; registry lookup is not lifecycle ownership |
+| Static definitions | Game catalogs loaded by startup; registries provide lookup |
+| Actor state | The owning controller, acquired through `actor:GetController(...)` |
+| Stamina, Mana, Guard, other meters | Resources; never a custom meter controller or numeric Property |
+| Action eligibility and payment | Grants, Tag/Resource requirements, and declarative `costs` |
+| Action-owned status | `activeTags` for owned lifetime, `appliedTags` for effects with their own lifetime |
+| Numeric modifiers | Tags contribute modifiers; Property Runtime resolves values |
+| Framework replication | Networking and client views; no parallel remotes or copied framework systems |
+| Game-specific extensions | Custom controllers/domains for state not already owned by a framework system |
 
-## Classify the page before editing
+For ordinary Action costs, use `costs`. Do not teach manual `CanSpend`/`Spend` checks before a request or inside hooks. `resourceRequirements` checks conditions beyond affordability and does not spend. Costs are paid once on acceptance, not per update. If discussing ongoing or outcome-dependent policies, state that boundary without inventing recurring-cost metadata or making manual spending the default recipe.
 
-| Page type | Job | Default shape |
-| --- | --- | --- |
-| Guide | Explain ownership, decisions, and a canonical workflow. | Short summary, ownership map, flow, focused example, pitfalls, API links. |
-| University | Teach one outcome progressively. | Outcome, prerequisite, guided work, exercise, checkpoint, next lesson. |
-| API reference | List the exact callable and observable surface. | Acquisition/import, members, properties or methods, events, related links. |
-| Contributor docs | Explain repository work. | Commands, source layout, testing, release, and contribution workflows. |
+Direct Resource methods remain valid for other game-driven changes. Choose examples whose intent does not suggest bypassing Actions. Do not compensate for a missing built-in replication surface with a custom Stamina controller/domain or claim `ClientVisible` alone publishes state; inspect the actual domain builder and client contracts.
 
-Do not turn a guide into a member inventory, an API page into a tutorial, or public docs into repository notes.
+Preserve the charter's other boundaries: KRF is Actor-centric; registries hold definitions and controllers hold live state; current resource values are not properties; movement application and combat/health have their own ownership. When a system is absent, say so instead of implementing it in an example.
 
-## Write for scanning first
+## Keep ordinary usage first
 
-KRF docs should be compact without being vague.
+The intended consumer experience is template-first, with initialization already handled. Do not claim a starter template exists without verifying it on the current branch.
 
-- Open with one or two sentences that identify the surface and its role.
-- Put the most useful contract before background or rationale.
-- Prefer tables for exact mappings, options, ownership boundaries, and payload fields.
-- Prefer numbered lists for lifecycle and event order.
-- Keep paragraphs to one idea; split after three sentences unless continuity clearly helps.
-- Use examples only when they demonstrate a supported pattern that prose cannot show as clearly.
-- Link to exact API details instead of repeating full signatures in guides.
-- Delete generic setup, motivational copy, obvious Roblox advice, and repeated summaries.
+- System guides assume an initialized game and focus on definitions, controller access, or view consumption.
+- Keep manual `Server.Init`/`Client.Init` integration on the initialization page. Link there instead of repeating startup scripts, failure reporting, transport discovery, or consumer installers.
+- Show catalog modules returning definitions, or clearly labeled definition fragments. Direct registry `Load` calls are not the normal guide workflow.
+- Include imports/acquisition where needed; identify assumed inputs such as an already registered Actor.
+- Use `--!strict` for complete files, useful types, current ids, and ordinary failure handling. Omit unrelated setup.
+- Never copy test fixtures, injected dependencies, private observer seams, or framework bootstrap wiring into ordinary consumer examples.
+- Prefer removing a misleading walkthrough to building a replacement tutorial outside the request's scope.
 
-Do not apply a rigid word limit. A page is done when a consumer can make the relevant decision or call the surface safely. Extra prose after that point is a defect.
+For focused pre-M0 cleanup, correct misleading patterns, trim duplication, and improve task discovery within existing pages. Preserve guarantees and accurate references. Defer the full documentation overhaul and tutorial track until after M0 unless the user changes scope; do not redesign the site or add APIs to support documentation.
 
-## Keep product docs free of repository history
+## Choose the page's job
 
-Public KRF docs may describe runtime behavior and durable design rationale. They must not expose:
+| Page | Purpose |
+| --- | --- |
+| Guide | Ownership, canonical workflow, decisions, and consequential guarantees |
+| University lesson | One progressive outcome, with prerequisites, exercise, checkpoint, and next lesson |
+| API reference | Exact supported callable and observable surface |
+| Contributor docs | Repository layout, tooling, tests, and contribution workflows |
 
-- story ids, milestones, acceptance criteria, or ticket history
-- test names or statements such as "the tests prove"
-- internal helper modules or file-by-file implementation tours
-- temporary migration details or design churn
-- test-only hooks and bootstrap plumbing
-- speculative future members or systems
+Do not turn guides into member inventories, API pages into tutorials, or consumer pages into implementation tours. Do not publish placeholder lessons; state that the track is unavailable or omit it from navigation when supported setup is missing.
 
-Translate implementation history into an observable contract. For example: "Destroying the controller from an event listener prevents later events in the same operation."
+## Write compact consumer guidance
 
-## Guides
+- Open with one or two sentences identifying the surface and its role. Put the common task or supported entrypoint early.
+- Explain consequences that change consumer code: authority, assignment, validation, failures, atomicity, events, and teardown.
+- Use tables for choices, ownership, payload fields, and exact mappings; numbered lists for meaningful lifecycle order.
+- Keep one idea per paragraph. Link to the canonical explanation instead of repeating it on every page.
+- Use code to show supported usage, not source declarations. Do not paste `export type` blocks, alias inventories, or complete interface definitions into guides or references. Explain supplied fields, defaults, callback inputs/results, and payloads in concise prose or field tables; retain useful method and callback signatures. Avoid full controllers or listener managers to demonstrate a small concept.
+- Remove generic setup, motivational copy, repeated summaries, and repeated “what it owns / does not own” sections.
+- Preserve consequential guarantees: no partial payment, no automatic refunds, immutable views, installation before notification, recovery, privacy, and cleanup.
+- Put uncommon ordering or protocol detail after common usage or on the existing advanced page. Complexity alone is not a reason to delete a contract.
 
-A guide should establish only what a consumer needs to design code correctly:
+No rigid word limit applies. Stop when the reader can make the decision or use the surface safely.
 
-- the problem and owning system
-- adjacent system boundaries
-- the normal lifecycle or workflow
-- design-relevant guarantees and constraints
-- one focused pattern when code is useful
-- realistic mistakes
-- links to exact reference pages
-
-Use a compact ownership table when several systems interact. Use a comparison table for concepts such as definition versus instance, base versus resolved, static versus property-backed, or `Spend` versus `Drain`.
-
-Explain consequences, not names.
-
-Weak: "Resources may have property-backed maximums."
-
-Useful: "A property-backed maximum resolves through the actor's `PropertyController`. Assignment seeds the property only when missing, preserves an existing base value, and clamps current value when the resolved bound falls."
-
-Prioritize behavior that changes consumer code:
-
-- ownership and authority
-- construction and teardown
-- registration or assignment timing
-- validation, mutation, and clamping
-- atomicity and rollback
-- event timing and ordering
-- static versus live state
-- base versus resolved state
-- actionable failure behavior
-
-### Guide examples
-
-Examples must:
-
-- use APIs present on the current branch
-- show how consumers obtain the module, actor, or controller
-- include `--!strict` for complete files
-- use typed locals where they improve clarity
-- handle ordinary failure paths
-- omit unrelated setup
-- use realistic KRF names
-- keep the relevant behavior visually obvious
-
-Never copy test arrangement into consumer docs.
+Public docs must not expose story ids, milestones, test names, internal helper tours, design churn, test hooks, or speculative members. Translate implementation details into observable contracts: “Destroying the controller from an event listener prevents later events in the same operation.”
 
 ## Manual API reference
 
-An API page is a lookup surface. A developer landing on one member must be able to use it safely without reading source or a guide.
+Include surfaces game code is expected to call, observe, or type against. Exclude private helpers and accidentally exposed members. Label supported but rarely appropriate low-level surfaces **Infrastructure API** and point to the preferred entrypoint.
 
-### Select supported surfaces deliberately
+Open with one sentence and a compact import or acquisition block. Obtain Actor-owned controllers through `actor:GetController(...)`; do not require their implementation for normal game use.
 
-Include a module or member only when game code is expected to call, observe, or type against it. Omit private helpers, test hooks, framework-only wiring, and accidentally exposed table members.
+Reference pages act as symbol browsers:
 
-If a low-level surface is supported but rarely appropriate, label it **Infrastructure API** near the top and point to the preferred entrypoint.
+- Begin with a **Members** index, grouped by member kind where useful.
+- Show complete linked signatures, with stable explicit anchors on detailed headings.
+- Give each member its full typed signature, one purpose sentence, and stable failure returns when callers branch on them.
+- Give each event its complete signature and triggering condition.
+- Keep defaults, units, payloads, and failure names exact. Do not omit information needed to call a member safely.
+- Keep workflows, definition-field guidance, formulas, timing/ordering analysis, and examples in the matching guide. Signatures and typed usage examples may reference public type names without reproducing their source declarations.
+- End with relevant guide and adjacent-reference links.
 
-### Open with acquisition, not an essay
+Do not add generic API landing/conventions pages, standalone type sections, or “at a glance” tables that paraphrase member names instead of showing signatures. Preserve existing accurate reference surfaces during editorial cleanup.
 
-Use two short blocks:
+## Voice
 
-1. one sentence defining the surface
-2. an import block for directly required modules or an acquisition block for actor-owned controllers
+Use direct, concrete language and established names: Actor, base value, resolved value, definition, instance, runtime state, and controller names in code formatting. Explain what happens rather than praising the framework. Avoid generic marketing adjectives, repeated “This allows,” and bold text used only for emphasis.
 
-Do not give actor-owned controllers an import example when normal game code gets them from `actor:GetController(...)`.
+## Validate before finishing
 
-### Member contract
+- Recheck changed examples across all systems they touch: real APIs, ownership, catalogs, assignment/grants, payment, lifetime, and cleanup.
+- Distinguish supported behavior from template intent and unavailable systems; do not invent availability to fill a gap.
+- Confirm signatures, failure returns, event order, and guarantees against source and tests.
+- Search the docs for removed ids, examples, anchors, and paths; repair affected links and consumers.
+- Check neighboring pages for contradictory recommendations, needless repetition, and copied type declarations. Do not preserve a source dump merely because its fields are accurate.
+- Run the production docs build and applicable repository checks. Report failures without weakening checks.
+- Validate skill changes with the skill-creator validator when available.
+- Report what was corrected and what remains deliberately deferred, without adding roadmap promises to consumer pages.
 
-API entries are intentionally compact:
-
-1. Show the complete typed signature.
-2. State the member's purpose in one direct sentence.
-3. List stable failure returns only when callers branch on them.
-
-Move workflows, examples, lifecycle explanation, timing, ordering, formulas, authored type shapes, and design guidance to the matching guide.
-
-### API page navigation
-
-API navigation should resemble a technical symbol browser, not a guide summary.
-
-- Do not add a generic API landing or conventions page when the sidebar already exposes the available surfaces.
-- Open the API section on the first real reference surface.
-- Begin each surface with a compact **Members** index.
-- Group the index by member kind when applicable: properties, methods, and events.
-- Types are not API pages or API sections. Signatures may reference public type names, but the API reference does not reproduce or explain their shapes.
-- Show the complete linked signature in each row. Add at most one short contract phrase when it materially distinguishes similar members.
-- Use stable explicit anchors on detailed member headings so index links and the right-side table of contents remain durable.
-- Keep detailed member contracts below the index and let the generated table of contents act as the page's symbol rail.
-
-Do not use an "At a glance" purpose table that paraphrases member names without showing their signatures.
-
-### Events
-
-For every public event, specify:
-
-- the complete event signature
-- one sentence stating what causes it to fire
-
-Do not add event timing or ordering analysis to API pages. Put those contracts in the corresponding guide.
-
-### API page ending
-
-End with only relevant guide and adjacent-reference links. API pages do not include examples, standalone type sections, concept sections, lifecycle walkthroughs, formulas, or timing sections.
-
-## University lessons
-
-Every lesson needs:
-
-- one explicit learning outcome
-- prerequisite knowledge
-- progressive guided work
-- a small exercise or modification
-- a checkpoint with an observable result
-- a next lesson
-
-Do not publish placeholder lessons. If the product lacks the supported setup needed for a lesson, state that the track is not yet available or omit it from navigation.
-
-## KRF voice
-
-Use concise, direct, concrete language. KRF should sound cohesive, opinionated, and safe.
-
-Prefer:
-
-- "KRF registers an Actor before enabling its controllers."
-- "`Spend` is atomic; failure leaves current value unchanged."
-- "The registry freezes normalized definitions after a successful load."
-
-Avoid:
-
-- powerful, robust, seamless, flexible
-- unlock the potential
-- whether you are a beginner or an expert
-- generic claims that describe any framework
-- repeatedly beginning sentences with "This allows"
-- bold text used only for emphasis
-- repeated "What this is / owns / does not own" templates when a table is clearer
-
-Use established terms: Actor, controller names in code formatting, server-authoritative, actor-scoped, base value, resolved value, definition, instance, and runtime state.
-
-## KRF positions to preserve
-
-- KRF is actor-centric, not ECS-first.
-- KRF owns hard runtime lifecycle decisions.
-- Registries own static definitions; controllers own live actor state.
-- Current resource values are not properties.
-- Tags modify properties; Property Runtime resolves final numeric values.
-- Examples show canonical patterns, not every possible pattern.
-- Guides and API reference complement rather than duplicate one another.
-
-## Validation
-
-Before finalizing:
-
-### Accuracy
-
-- Every member exists on the current branch.
-- Signatures, payloads, defaults, units, failure behavior, and event order match source and tests.
-- No internal or test-only surface is presented as supported API.
-- Planned behavior is absent, not promised in future tense.
-
-### Usefulness
-
-- A consumer can identify the owning system and supported entrypoint.
-- Guides make lifecycle and ownership decisions explicit.
-- API entries expose complete signatures and concise member purposes.
-- API pages contain no standalone type documentation or examples.
-- Events expose complete signatures and concise triggers.
-
-### Information architecture
-
-- Guides teach decisions and flows; API pages support exact lookup.
-- Links use real site routes.
-- Sidebars include pages in the intended order.
-- Nearby pages do not contradict or needlessly duplicate the change.
-- Titles, sidebars, guides, source, and API pages use consistent terms.
-
-### Presentation
-
-- Openings are short and content starts quickly.
-- Tables and lists replace repetitive prose where they improve scanning.
-- Import or acquisition blocks are valid Luau and use current APIs.
-- The production docs build succeeds.
-
-## Review mode
-
-Report findings in priority order with page locations. Separate factual defects from editorial improvements. Look especially for stale runtime statements, undocumented public surfaces, missing validation and event semantics, non-canonical examples, concept pages that inventory types, API pages that require source reading, repeated template headings, bad links, and inconsistent terminology.
+In review mode, report factual defects before editorial improvements, with page locations. Prioritize non-idiomatic examples, wrong ownership, unsupported APIs, missing guarantees, setup presented as ordinary usage, and broken links.

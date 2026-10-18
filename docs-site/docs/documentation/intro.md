@@ -8,37 +8,26 @@ displayed_sidebar: docsSidebar
 
 # Kevin's Roblox Framework
 
-**A server-authoritative gameplay framework for anime-inspired Roblox games.**
+KRF is a server-authoritative gameplay framework for anime-inspired Roblox games. It owns Actor lifecycle, Tags, numeric properties, Resources, Actions, and schema-defined replication. Your game supplies definitions, gameplay behavior, and presentation.
 
-KRF owns Actor lifecycle, controller attachment, Tags, numeric properties, Resources, Actions, and schema-defined replication. Client ActorViews expose the authoritative state visible to each player. Your game supplies gameplay behavior and presentation around these runtime contracts.
+## Find the owning system
 
-[Initialize KRF](./initializing-krf) · [Explore Actor Runtime](./Actor/actor-runtime) · [Browse the API](/api/Server/) · [View on GitHub](https://github.com/KevMP/KRF)
+| I want to… | Use |
+| --- | --- |
+| Register a player character, NPC, or boss | [Actor Runtime](./Actor/actor-runtime) |
+| Define an ability's requirements, costs, and lifetime | [Actions](./Action/actions-overview) |
+| Apply statuses, buffs, or debuffs | [Tags](./Tags/tag-runtime) |
+| Read numeric values after modifiers | [Properties](./Property/property-runtime) |
+| Define Stamina, Mana, or another meter | [Resources](./Resource/resource-registry) |
+| Read visible replicated state for UI or effects | [Client ActorViews](./Networking/actor-views) |
+| Replicate additional game-owned state | [Replication domains](./Networking/replication-domains) |
+| Integrate KRF into a place manually | [Initializing KRF](./initializing-krf) |
+| Look up a method or event | [API reference](/api/Actor/actor-runtime) |
 
-## One gameplay model
+Players and NPCs use the same Actor and controller model. Registries hold static definitions; Actor-owned controllers manage live state. Actions declare payment through Resources, Tags modify properties, and client views expose immutable replicated state.
 
-Players, NPCs, bosses, summons, and training dummies use the same Actor lifecycle and controller model. Server code uses the Action runtime to validate requests, spend Resources, claim locks, and manage active behavior.
+## Current scope
 
-**Actor → Controllers → Authoritative state → Replication domains → Client ActorViews**
+The available runtime does not include complete input, combat, movement, inventory, quest, AI, or presentation systems. Generic ActorViews expose registered replication domains; built-in Tags, Resources, and Actions domains are not available yet. `ClientVisible` metadata alone does not publish that state.
 
-Tags contribute modifiers, properties resolve numeric values, and Resources own current meters. Replication domains project approved state and semantic events to their intended audience.
-
-## Build on the runtime
-
-Registries validate static definitions at startup. Actor-owned controllers manage live gameplay state; client views provide immutable snapshots and read-only events for UI and effects.
-
-The available runtime does not include a complete input, combat, movement, inventory, quest, AI, or presentation system. Implement game behavior through controllers and Actions, and consume replicated state through [ActorViews](./Networking/actor-views).
-
-## Built to become your game
-
-KRF defines runtime rules, not fiction. It does not prescribe a universe, power source, class system, progression model, combat style, or visual identity.
-
-Your game owns its world, characters, abilities, items, quests, balance, assets, interface, and presentation. Persistence, matchmaking, monetization, analytics, and final UI theming also remain outside KRF.
-
-## Start with the runtime
-
-- [Initializing KRF](./initializing-krf)
-- [Actor Runtime](./Actor/actor-runtime)
-- [Actions](./Action/actions-overview)
-- [Tags](./Tags/tag-runtime) and [properties](./Property/property-runtime)
-- [Resources](./Resource/resource-runtime)
-- [API Reference](/api/Actor/actor-runtime)
+KRF does not prescribe your game's world, abilities, progression, or visual identity. Persistence, matchmaking, monetization, analytics, and final UI theming remain outside its scope.

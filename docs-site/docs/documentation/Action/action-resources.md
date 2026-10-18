@@ -69,10 +69,8 @@ A cooldown is a readiness meter: require full value, spend its capacity, and reg
 
 Neither meter controls Action lifetime. An instant Action can End while its cooldown recharges. A channel can remain active after its startup charge is spent. See the small [cooldown](./action-patterns#cooldown) and [charge](./action-patterns#charges) recipes.
 
-## Ongoing or outcome-dependent behavior
+## Payment timing
 
-Use the Actor's [ResourceController](/api/Resource/resource-controller) directly for channel drains, per-tick sprint payment, rewards, hit-dependent spending, or explicit refunds. Static `costs` are paid once, not each update.
-
-Choose `Spend` for a full payment that must succeed before work; choose `Drain` for forced loss that may clamp at the minimum. Check failures and, after a call that can invoke listeners, recheck Action activity before continuing. The [sprint recipe](./action-patterns#sprint) shows this boundary.
+`costs` are paid once on acceptance. They do not express ongoing drains or outcome-dependent payment. Those policies require explicit game logic through Resources; they are not additional declarative Action fields. Keep ordinary Action payment in `costs` and use `resourceRequirements` only for conditions beyond affordability.
 
 Next: [Locks & Preemption](./action-locks). Related: [Resource Runtime](../Resource/resource-runtime), [Property Runtime](../Property/property-runtime), [request rejection reasons](/api/Action/action-controller#request-action).

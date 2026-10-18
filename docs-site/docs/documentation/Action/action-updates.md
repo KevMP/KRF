@@ -10,7 +10,7 @@ Define `onUpdate(ctx, deltaTime)` for recurring server work while an Action is a
 
 KRF checks Heartbeat and dispatches at most one update pass per `0.05` seconds (20 Hz). It does not run catch-up passes after a stall. `deltaTime` is finite positive elapsed seconds from activation to the first update, then from the beginning of the previous invocation to the next.
 
-Use the supplied delta for charge progress, channel timing, or ongoing payment. It may exceed `0.05`; this is not a render or physics callback.
+Use the supplied delta for charge progress or channel timing. It may exceed `0.05`; this is not a render or physics callback.
 
 ```lua
 --!strict
@@ -34,13 +34,13 @@ local function createChannel(): ActionTypes.ActionDefinition
 end
 ```
 
-Register `createChannel` with `Server.Init({ actions = { createChannel } })`, as in the [overview](./actions-overview). KRF invokes its update callback while the activation is active. Returning from an update leaves it active unless it explicitly Ends or Interrupts.
+Add `createChannel` to the `actions` catalog, as in the [overview](./actions-overview). KRF invokes its update callback while the activation is active. Returning from an update leaves it active unless it explicitly Ends or Interrupts.
 
 ## Keep updates synchronous
 
 `onUpdate` must not yield, including through `task.wait` or `Event:Wait`. KRF contains errors/yields, cancels a yielded invocation, and Interrupts the still-active activation once with `ActionUpdateFailed`. Other Actions keep updating. An update that already terminated itself does not cause a second terminal transition.
 
-Keep work bounded. After calling another operation that can invoke listeners, check `ctx:IsActive()` before continuing. Direct Resource payment belongs here when it is ongoing; static `costs` are charged only on acceptance. See [channel and sprint recipes](./action-patterns#channel).
+Keep work bounded. After calling another operation that can invoke listeners, check `ctx:IsActive()` before continuing. Declare acceptance-time payment in `costs`; updates do not repeat that payment. See the [channel recipe](./action-patterns#channel).
 
 ## Membership changes
 

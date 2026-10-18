@@ -6,11 +6,18 @@ sidebar_position: 4
 
 An ActorView is one Actor's current server-authoritative state visible to this client. Use it for UI and presentation; gameplay mutations stay in server controllers.
 
-`Client.Init()` installs the view runtime automatically. A view appears only after its complete initial baseline validates. Subscribe to `ActorViewRegistry.OnActorViewAdded` for future Actors and inspect `GetAllActorViews()` for Actors already available when your system starts.
+Client initialization installs the view runtime automatically; consumer modules use the registry without initializing KRF themselves. A view appears only after its complete initial baseline validates. Subscribe to `ActorViewRegistry.OnActorViewAdded` for future Actors and inspect `GetAllActorViews()` for Actors already available when your system starts.
 
 ## Find and retain a view
 
-Import `KRF.client.Actor.ActorViewRegistry`. Lookup by public actorId or by its currently bound Roblox Model returns the same ActorView. Unknown, not-yet-published, or removed identities return `nil`; terminally halted views remain registered until removal. The registry and its lookup methods are immutable; `GetAllActorViews()` returns an independent collection.
+Import `KRF.client.Actor.ActorViewRegistry`:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Registry = require(ReplicatedStorage.Packages.KRF.client.Actor.ActorViewRegistry)
+```
+
+Lookup by public actorId or by its currently bound Roblox Model returns the same ActorView. Unknown, not-yet-published, or removed identities return `nil`; terminally halted views remain registered until removal. The registry and its lookup methods are immutable; `GetAllActorViews()` returns an independent collection.
 
 | Lifetime change | Observable behavior |
 | --- | --- |
@@ -26,7 +33,7 @@ Use the supplied view as the identity in removal callbacks. Signal handlers may 
 
 ## Read domains and observe changes
 
-`view:GetDomain("Game.Stamina")` returns a generic DomainView when that domain is visible. Unknown or invisible domains return `nil`; a visible Optional domain may legitimately have `GetState() == nil`. `GetDomainIds()` returns the visible ids in deterministic order. To check a retained domain, use `view:GetDomain(domain:GetId()) == domain`; state being `nil` does not distinguish an Optional value from retirement.
+`view:GetDomain(domainId)` returns a generic DomainView for a visible server-registered domain. Use the id declared by your game, such as `Game.Titles`; this is not a built-in domain. Unknown or invisible domains return `nil`; a visible Optional domain may legitimately have `GetState() == nil`. `GetDomainIds()` returns the visible ids in deterministic order. To check a retained domain, use `view:GetDomain(domain:GetId()) == domain`; state being `nil` does not distinguish an Optional value from retirement.
 
 `domain:GetState()` returns complete, recursively immutable truth. Nested Structs, Maps and Arrays are protected, and retained snapshots remain historical values after later changes. Do not modify them or attach client prediction to them; keep cosmetic local state separately.
 
@@ -61,77 +68,6 @@ Removing a view from a notification callback retires its signals and suppresses 
 Malformed physical framing is reported and the entire packet is discarded, without guessing which Actor caused it. No partial record is applied. Once records decode, an Actor-local assembly fault requests recovery for that Actor while unrelated records continue. A later revision gap also enters normal recovery; a malformed packet alone does not declare every Actor unavailable.
 
 Connection handles, revisions, baseline generations, transport and recovery controls are private Networking details.
-
-## Complete custom-domain client example
-
-This ModuleScript consumes `Game.Stamina` from the [server controller/domain example](./replication-domains#committed-observation-callback-contract). That example declares state `{ current: number }` and no semantic events. Call `Start()` from your sole client startup owner after `Client.Init()` succeeds. The consumer never initializes KRF itself.
-
-```lua title="Stamina.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ViewTypes = require(KRF.client.Actor.types)
-local SignalTypes = require(KRF.shared.Signal.types)
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-
-local Stamina = {}
-function Stamina.Start(): () -> ()
-	type Binding = { domain: ViewTypes.DomainView?, state: SignalTypes.Connection?, membership: SignalTypes.Connection? }
-	local bindings: { [ViewTypes.ActorView]: Binding } = {}
-	local function detach(view: ViewTypes.ActorView): ()
-		local binding: Binding? = bindings[view]
-		if binding == nil then
-			return
-		end
-		if binding.state ~= nil then binding.state:Disconnect() end
-		if binding.membership ~= nil then binding.membership:Disconnect() end
-		bindings[view] = nil
-	end
-	local function attach(view: ViewTypes.ActorView): ()
-		if bindings[view] ~= nil or not view:IsAvailable() then
-			return
-		end
-		local binding: Binding = {}
-		bindings[view] = binding
-		local function reconcile(): ()
-			local domain: ViewTypes.DomainView? = view:GetDomain("Game.Stamina")
-			if domain == binding.domain then return end
-			if binding.state ~= nil then binding.state:Disconnect() end
-			binding.domain = domain
-			binding.state = nil
-			if domain == nil then
-				print(view:GetId(), "stamina unavailable")
-				return
-			end
-			print(view:GetId(), "stamina", domain:GetState().current)
-			binding.state = domain.OnChanged:Connect(function(change: ViewTypes.DomainChange)
-				print(view:GetId(), "stamina", change.current.current, change.source)
-			end)
-		end
-		binding.membership = view.OnDomainsChanged:Connect(reconcile)
-		reconcile()
-	end
-	local added: SignalTypes.Connection = Registry.OnActorViewAdded:Connect(attach)
-	local removing: SignalTypes.Connection = Registry.OnActorViewRemoving:Connect(detach)
-	for _, view: ViewTypes.ActorView in Registry.GetAllActorViews() do attach(view) end
-	return function(): ()
-		added:Disconnect()
-		removing:Disconnect()
-		for view: ViewTypes.ActorView in bindings do detach(view) end
-	end
-end
-return Stamina
-```
-
-In `Startup.client.luau`, after the successful initialization shown in [Initializing KRF](../initializing-krf), require the sibling ModuleScript and retain its cleanup:
-
-```lua
-local Stamina = require(script.Parent.Stamina)
-local stopStamina: () -> () = Stamina.Start()
-script.Destroying:Connect(stopStamina)
-```
-
-Generic domains are the extension surface for game-defined state. Client code uses the domain and event ids registered by the server.
 
 ## Related
 

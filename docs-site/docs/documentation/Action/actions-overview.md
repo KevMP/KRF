@@ -8,7 +8,7 @@ An Action is a server-authoritative activity performed by one Actor. Game code s
 
 Attacks, holds, channels, sprinting, modes, and transformations all use this model. Their differences come from callbacks and metadata, not separate Action classes or kinds.
 
-## A complete Action
+## Define an Action
 
 This Dodge spends Stamina, holds `Movement`, and exposes `Status.Dodging` until it Ends. The example establishes a gameplay window; your movement and presentation code supplies the actual dodge motion and visuals.
 
@@ -16,7 +16,6 @@ This Dodge spends Stamina, holds `Movement`, and exposes `Status.Dodging` until 
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
-local Server = require(KRF.server)
 local ActionTypes = require(KRF.server.Action.types)
 
 local function createDodge(): ActionTypes.ActionDefinition
@@ -34,20 +33,19 @@ local function createDodge(): ActionTypes.ActionDefinition
 	}
 end
 
-local started, failure = Server.Init({
-	actions = { createDodge },
-	tags = {
-		{ id = "Status.Dodging", visibility = "ServerOnly", duplicateBehavior = "Stack" },
-	},
-	resources = {
-		{ id = "Resource.Stamina", visibility = "ServerOnly", max = { value = 100 }, autoAssign = true },
-	},
-})
-if not started then
-	assert(failure ~= nil)
-	error(`KRF startup failed: {failure.system}: {failure.reason}`)
-end
+return createDodge
 ```
+
+Add the returned factory to your `actions` catalog. Its referenced definitions are:
+
+```lua
+-- tags catalog entry
+{ id = "Status.Dodging", visibility = "ServerOnly", duplicateBehavior = "Stack" }
+-- resources catalog entry
+{ id = "Resource.Stamina", visibility = "ServerOnly", max = { value = 100 }, autoAssign = true }
+```
+
+Catalogs are supplied once by [game initialization](../initializing-krf); the Action module does not initialize KRF.
 
 `onStart` supports yielding, including `task.wait`. KRF tracks its suspended invocation and retires it if the Action is externally Ended, Interrupted, or destroyed. Other Action hooks must finish without yielding; see [hook contracts](./action-lifecycle#hook-contracts).
 
@@ -81,7 +79,7 @@ Use the declarative primitive when it expresses the requirement. Reserve callbac
 | Prevent two Actions from using the same exclusive capability at once | [Locks](./action-locks): `locks` | Actions claiming the same lock cannot remain active together. |
 | Allow a new Action to interrupt the current lock owner | [Preemption](./action-locks): `interruptibleBy` / `canBeInterruptedBy` | The owner lists permitted incoming Action ids; its optional hook can deny interruption. |
 | Exclusive work during one phase | [Locks](./action-locks): `ctx:ClaimLocks` | Scoped, releasable ownership within an activation. |
-| Charge progress, periodic channel work, ongoing drain | [Updates](./action-updates): `onUpdate` | Non-yielding elapsed-time work, at most 20 Hz. Use direct Resources for ongoing payment. |
+| Charge progress or periodic channel work | [Updates](./action-updates): `onUpdate` | Non-yielding elapsed-time work, at most 20 Hz; `costs` are paid only on acceptance. |
 | Player releases a held button | [Lifecycle](./action-lifecycle): `RequestStop` / `onStopRequested` | Delivers intent; the Action chooses release, continuation, or termination. |
 | Activity completes normally | [Lifecycle](./action-lifecycle): `End` | Terminal completion and cleanup. |
 | Activity is cancelled or disrupted | [Lifecycle](./action-lifecycle): `Interrupt` | Terminal interruption with a reason; explicit interruption bypasses lock preemption policy. |
