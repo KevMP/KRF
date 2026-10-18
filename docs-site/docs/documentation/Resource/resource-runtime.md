@@ -2,6 +2,12 @@
 
 `ResourceController` owns live resource state for one Actor: assignment, current values, resolved bounds, costs, and regeneration. The registry supplies definitions; the controller turns them into Actor-specific state.
 
+## Use the owning system
+
+Define Stamina, Mana, Guard, and similar meters in the [Resource catalog](./resource-registry). Use an Action's declarative [`costs`](../Action/action-resources) for payment on acceptance; KRF checks and pays all declared costs atomically. Do not spend Stamina manually before starting a dash or inside its decision callback.
+
+For game-driven changes outside Action acceptance, obtain the Actor's `ResourceController` and use the methods below.
+
 ## Assignment
 
 Adding a resource resolves its state in this order:
@@ -15,7 +21,7 @@ Adding a resource resolves its state in this order:
 
 Definitions marked `autoAssign` run this flow when the controller is constructed. Assignment fails without partial resource state when the id, override, property source, or bounds are invalid.
 
-## Mutation choices
+## Direct Resource changes
 
 | Intent | Method | Behavior at a bound |
 | --- | --- | --- |
@@ -26,22 +32,6 @@ Definitions marked `autoAssign` run this flow when the controller is constructed
 | Remove up to an amount | `Drain` | Clamps at min; partial drain succeeds. |
 
 `Spend` measures available value above the resolved minimum, not above zero.
-
-```lua
-local resources = actor:GetController("ResourceController")
-
-local paid, reason = resources:Spend("Resource.Stamina", 20)
-if not paid then
-	if reason == "InsufficientResourceValue" then
-		return
-	end
-
-	warn(("Stamina spend failed: %s"):format(reason or "Unknown"))
-	return
-end
-
-performDash(actor)
-```
 
 ## Live property-backed state
 
@@ -68,9 +58,8 @@ Regeneration is measured in units per second and advances automatically in fixed
 
 ## Design rules
 
-- Use `Spend` for all-or-nothing gameplay costs and `Drain` for forced loss.
+- Declare Action costs in the Action definition. Use direct `Spend` for other all-or-nothing payments and `Drain` for forced loss.
 - Read resource current values from `ResourceController`, never `PropertyController`.
-- Attach `ResourceController` after `PropertyController` when using live sources.
 - Subscribe to `OnResourceChanged` when another runtime system needs current value or bound changes.
 
 ## API reference

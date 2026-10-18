@@ -4,7 +4,7 @@ sidebar_position: 9
 
 # Action Patterns / Recipes
 
-These factories show the Action lifecycle for common gameplay intents. Register factories and their referenced Tags/Resources with `Server.Init`, as shown in the [overview](./actions-overview). The recipes focus on authored behavior; input integration is outside this guide.
+These factories show the Action lifecycle for common gameplay intents. Add factories and their referenced Tags/Resources to the [game catalogs](../initializing-krf). The recipes focus on authored behavior; input integration is outside this guide.
 
 Use these imports for the factory snippets below:
 
@@ -13,7 +13,6 @@ Use these imports for the factory snippets below:
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 local ActionTypes = require(KRF.server.Action.types)
-local ResourceTypes = require(KRF.server.Resource.types)
 ```
 
 Comments mark where game combat, movement, or presentation code belongs. They are not additional KRF APIs. Each recipe is independent.
@@ -66,7 +65,7 @@ end
 
 ## Channel {#channel}
 
-A channel does ongoing work and completes when its local timer reaches an outcome. Add declarative `costs` for any startup payment; use direct Resource methods for ongoing or hit-dependent payment.
+A channel does ongoing work and completes when its local timer reaches an outcome. Declare acceptance-time payment in `costs`; it is charged once, not each update.
 
 ```lua
 local function createChannel(): ActionTypes.ActionDefinition
@@ -91,55 +90,6 @@ end
 ```
 
 Put completion-only outcomes in `onEnd` and cancellation cleanup in `onInterrupt`. Both must be non-yielding. Connect any game-owned listeners in `onStart` and disconnect them in both terminal hooks.
-
-## Sprint {#sprint}
-
-Sprint publishes a temporary speed modifier, holds Movement, and pays Stamina per elapsed second. This example uses full `Spend`: if an entire update's payment is unavailable, sprint Ends without partial payment.
-
-```lua
-local function createSprint(): ActionTypes.ActionDefinition
-	return {
-		id = "Action.Sprint",
-		visibility = "ServerOnly",
-		autoGrant = true,
-		locks = { "Movement" },
-		activeTags = { "Buff.Sprint" },
-		resourceRequirements = { ["Resource.Stamina"] = { min = 1 } },
-		onUpdate = function(ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
-			local resources = ctx.actor:GetController("ResourceController") :: ResourceTypes.ResourceController
-			local paid, reason = resources:Spend("Resource.Stamina", 10 * deltaTime)
-			if not ctx:IsActive() then
-				return
-			end
-			if not paid then
-				if reason ~= "InsufficientResourceValue" then
-					warn(`Sprint payment failed: {reason}`)
-				end
-				ctx:End()
-				return
-			end
-		end,
-		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
-			ctx:End()
-		end,
-	}
-end
-```
-
-Include these definitions in the startup `tags` and `resources` arrays:
-
-```lua
--- Tag definition
-{ id = "Buff.Sprint", visibility = "ServerOnly", duplicateBehavior = "Stack",
-	properties = { WalkSpeed = { multiply = 1.5 } } }
--- Resource definition
-{ id = "Resource.Stamina", visibility = "ServerOnly", autoAssign = true,
-	max = { value = 100 } }
-```
-
-Game movement code consumes resolved `WalkSpeed`; KRF's numeric Property alone does not move a Humanoid. KRF removes Sprint's remaining active Tag contribution on termination. If exhaustion should consume the final partial amount, use `Drain` and check current value against the minimum instead. Keep regeneration policy in the Resource definition/game logic.
-
-To permit Dodge preemption, add `interruptibleBy = { "Action.Dodge" }` to Sprint and register a Dodge holding Movement.
 
 ## Mode / transformation {#mode-transformation}
 
@@ -190,8 +140,6 @@ end
 
 The default minimum is `0` and initial value is maximum. Acceptance empties the meter; regeneration replenishes one unit over approximately five seconds of enabled-Actor stepping. Read current/max through `ResourceController` for UI. Sharing this Resource shares cooldown readiness. Interruption does not refund it.
 
-This begins cooldown at acceptance. For an outcome-dependent cooldown or one beginning only on completion, implement that policy with direct Resource operations; it is a different payment time from declarative `costs`.
-
 ## Charges {#charges}
 
 A charge Resource can use capacity `3` and regeneration of one charge per ten seconds:
@@ -208,7 +156,6 @@ local function createBlink(): ActionTypes.ActionDefinition
 		id = "Action.Blink",
 		visibility = "ServerOnly",
 		autoGrant = true,
-		resourceRequirements = { ["Charges.Blink"] = { min = 1 } },
 		costs = { ["Charges.Blink"] = 1 },
 		onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
 			-- Perform the validated blink here.

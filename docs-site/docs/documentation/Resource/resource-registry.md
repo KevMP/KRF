@@ -35,23 +35,22 @@ The registry can validate only default source values. Runtime assignment resolve
 
 ## Catalog example
 
-For normal KRF startup, pass this catalog as `resources` to [`Server.Init`](../initializing-krf). The direct `Load` call below is for using `ResourceRegistry` on its own.
+This ModuleScript returns definitions for the `resources` field of your [game configuration](../initializing-krf). Game startup loads the catalog; the module does not call `ResourceRegistry.Load`.
 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
-local ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
 local ResourceTypes = require(KRF.server.Resource.types)
 
-local definitions: {ResourceTypes.ResourceDefinition} = {
+local definitions: { ResourceTypes.ResourceDefinition } = {
 	{
 		id = "Resource.Stamina",
 		max = {
 			propertyName = "MaxStamina",
 			defaultBaseValue = 100,
 		},
-		visibility = "ClientVisible",
+		visibility = "ServerOnly",
 		autoAssign = true,
 		regen = {
 			rate = {
@@ -67,10 +66,7 @@ local definitions: {ResourceTypes.ResourceDefinition} = {
 	},
 }
 
-local loaded, reason = ResourceRegistry.Load(definitions)
-if not loaded then
-	error(reason)
-end
+return definitions
 ```
 
 ## Design rules

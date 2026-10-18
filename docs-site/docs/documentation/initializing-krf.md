@@ -4,65 +4,39 @@ sidebar_position: 2
 
 # Initializing KRF
 
-KRF has separate server and client setup. Initialize the server once with your game's definitions, then initialize each client before continuing client startup.
+Initialize KRF once on the server and once on each client. Ordinary gameplay modules supply definitions or use controllers and views after initialization; they do not repeat setup.
 
-Server startup is the boundary between configuration and live Actor state. Your game supplies controller, Tag, Resource, Action, and replication domain definitions once. KRF validates those catalogs together, then uses the loaded controller factories to attach the same eligible controller set to every new Actor.
+A starter template with initialization already wired is not available yet. Use this page for manual integration. The system guides assume initialization is handled by your game's startup code.
 
-| Catalog | What it determines |
+## Game configuration
+
+| Field | Supply |
 | --- | --- |
-| Controllers | Which controller factories are available to Actors, and their attachment order |
-| Tags | Which statuses an Actor's `TagController` can apply |
-| Resources | Which meters an Actor's `ResourceController` can assign |
-| Actions | Static Action metadata, including Tag preconditions, Resource costs, and interruption permissions |
-| Replication domains | Approved state projections, semantic event schemas, observation adapters, and audiences |
+| `controllers` | Game-specific controller factories and dependencies; KRF supplies its built-in controllers |
+| `tags` | Status definitions and numeric modifiers |
+| `resources` | Meter definitions, bounds, and regeneration |
+| `actions` | Action factories with declarative requirements, costs, and behavior |
+| `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
+
+Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 
 ## Server initialization
 
-Pass your game's controller definitions to `Server.Init`. KRF adds its own controllers before validating the combined catalog. Dependencies decide attachment order; catalog order breaks ties between unrelated controllers.
+This minimal Script starts KRF with no game definitions. Add your catalogs to the configuration table.
 
-```lua
+```lua title="Startup.server.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
+local Server = require(ReplicatedStorage.Packages.KRF.server)
 
-local Server = require(KRF.server)
-local ControllerTypes = require(KRF.server.Controller.types)
-local GameCombatController = require(script.Parent.GameCombatController)
-
-local controllers: { ControllerTypes.ControllerDef } = {
-	{
-		key = "Game.CombatController",
-		dependsOn = { "TagController", "ResourceController" },
-		factory = GameCombatController.new,
-	},
-}
-
-local started, failure = Server.Init({
-	controllers = controllers,
-	tags = {
-		{
-			id = "Status.Rooted",
-			duplicateBehavior = "Refresh",
-			visibility = "ServerOnly",
-			defaultDuration = 2,
-		},
-	},
-	resources = {
-		{
-			id = "Resource.Stamina",
-			max = { value = 100 },
-			visibility = "ServerOnly",
-			autoAssign = true,
-		},
-	},
-})
+local started, failure = Server.Init({})
 if not started then
-	local detail = if failure then ("%s: %s"):format(failure.system, failure.reason) else "Unknown startup failure"
+	local detail = if failure then failure.system .. ": " .. failure.reason else "Unknown startup failure"
 	error("KRF startup failed: " .. detail)
 end
 ```
 
-The example assumes `GameCombatController` is a controller module beside your startup script. Replace it, the tag, and the resource with your game's definitions. Omitted game catalogs load as empty; KRF's built-in controllers still load.
+After success, [register Actors](./Actor/actor-runtime). KRF attaches its built-in controllers and eligible game controllers in dependency order; catalog order breaks ties. Game controllers declare `dependsOn` for the controllers they use. See [Controller Registry](/api/Controllers/controller-registry) for the definition contract.
 
 ## Client initialization
 
@@ -88,15 +62,13 @@ A successful return means the client has installed the server's protocol catalog
 
 `Client.Init` accepts one attempt per client lifetime, including a failed attempt. Discovery and the handshake share a bounded deadline; handle a failure at your startup boundary rather than retrying initialization in a loop.
 
-## Server startup result
+## Server startup guarantees
 
-`Server.Init` does not yield. It prepares the catalogs and protocol, then publishes the registries and framework transport as one startup operation. An invalid definition, missing reference or dependency, or controller cycle leaves the registries unpublished. If publication fails after it begins, KRF rolls back the catalogs and transport it created. The failure identifies the responsible system in `system` and the error in `reason`.
+`Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, and event size bounds before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
 
-Supply the optional `actions` array to load the [Action Registry](./Action/action-registry). Its Tag, Resource, and Action references resolve against the complete prepared registries. Omitting `actions` publishes an empty Action registry. Each registered Actor receives an [`ActionController`](./Action/action-grants); `autoGrant` definitions form its initial grant baseline without starting Actions.
+A domain validation failure uses `system = "ReplicationDomain"`; protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
 
-Supply the optional `replicationDomains` array to register [replication domains](./Networking/replication-domains). This catalog is independent from controller definitions. Startup compiles its state and event schemas, defaults audiences to `All`, and prepares a shared protocol catalog without invoking `snapshot` or `observe`. A domain validation failure uses `system = "ReplicationDomain"`; a protocol preparation or transport failure uses `system = "Networking"`. An empty domain catalog still starts the framework transport.
-
-`Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix startup configuration and restart the server after a failure. After a successful call, [Actor Runtime](./Actor/actor-runtime) can register Actors against the loaded controller catalog.
+`Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix configuration and restart after failure. An empty domain catalog still starts transport. Action registration does not start Actions; `autoGrant` only establishes their initial availability on each Actor.
 
 ## Related
 

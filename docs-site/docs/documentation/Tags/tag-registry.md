@@ -50,21 +50,20 @@ Tags may name built-in or custom properties. They modify only properties already
 
 ## Catalog example
 
-For normal KRF startup, pass this catalog as `tags` to [`Server.Init`](../initializing-krf). The direct `Load` call below is for using `TagRegistry` on its own.
+This ModuleScript returns definitions for the `tags` field of your [game configuration](../initializing-krf). Game startup loads the catalog; the module does not call `TagRegistry.Load`.
 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
-local TagRegistry = require(KRF.server.Tags.TagRegistry)
 local TagTypes = require(KRF.server.Tags.types)
 
-local definitions: {TagTypes.TagDefinition} = {
+local definitions: { TagTypes.TagDefinition } = {
 	{
 		id = "Status.Stunned",
 		defaultDuration = 1.5,
 		duplicateBehavior = "Refresh",
-		visibility = "ClientVisible",
+		visibility = "ServerOnly",
 		properties = {
 			WalkSpeed = { set = 0 },
 			JumpPower = { set = 0 },
@@ -73,17 +72,14 @@ local definitions: {TagTypes.TagDefinition} = {
 	{
 		id = "Buff.Sprint",
 		duplicateBehavior = "Refresh",
-		visibility = "ClientVisible",
+		visibility = "ServerOnly",
 		properties = {
 			WalkSpeed = { add = 6, multiply = 1.15, max = 32 },
 		},
 	},
 }
 
-local loaded, reason = TagRegistry.Load(definitions)
-if not loaded then
-	error(reason)
-end
+return definitions
 ```
 
 ## Design rules

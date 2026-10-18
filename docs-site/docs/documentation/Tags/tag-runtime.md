@@ -51,21 +51,23 @@ Tag callbacks run inside the shared advancement pass. Do not yield or perform sl
 
 ## Example
 
-```lua
-local tags = actor:GetController("TagController")
+Given an already registered Actor named `actor`:
 
-local added, reason = tags:AddTag("Buff.Sprint", {
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TagTypes = require(ReplicatedStorage.Packages.KRF.server.Tags.types)
+local tags = actor:GetController("TagController") :: TagTypes.TagController
+
+local added, reason = tags:AddTag("Status.Stunned", {
 	duration = 6,
 })
 
 if not added then
-	warn(("Could not apply sprint: %s"):format(reason or "Unknown"))
+	warn(("Could not apply stun: %s"):format(reason or "Unknown"))
 end
-
-local consumed = tags:RemoveSingleTag("Buff.Sprint")
 ```
 
-Use typed controller acquisition in shared modules where static checking matters; see the API page for the canonical type import.
+For Action-owned status, use [`activeTags` or `appliedTags`](../Action/action-tags) instead of manually applying and cleaning up the Tag.
 
 ## Design rules
 

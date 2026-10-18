@@ -6,29 +6,15 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
+Use custom domains for game-owned state. Stamina, Mana, and similar meters belong to [Resources](../Resource/resource-runtime). Built-in Tags, Resources, and Actions domains are not available yet; `ClientVisible` metadata alone does not publish their state.
+
 Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run.
 
 [Actor replication](./actor-replication) filters and sends the resulting records to ready clients. [ActorViews](./actor-views) expose each visible domain's immutable current state and declared semantic events automatically after a complete baseline.
 
 ## Domain definition {#domain-definition}
 
-Import authored types from `KRF.server.Replication.types`. In the shapes below, `Actor` is `KRF.server.Actor.types.Actor` and `SchemaDefinition` is a definition constructed with [Schema](./schemas).
-
-```lua
-export type ReplicationDomainDefinition = {
-	id: string,
-	state: SchemaDefinition,
-	events: { ReplicationEventDefinition }?,
-	audience: ReplicationAudience?,
-	snapshot: (actor: Actor) -> any,
-	observe: ((actor: Actor, onCommitted: ReplicationDomainOnCommitted) -> (() -> ())?)?,
-}
-
-export type ReplicationEventDefinition = { id: string, payload: SchemaDefinition }
-export type ReplicationAudience = "All" | "Owner"
-export type ReplicationDomainEvent = { id: string, payload: any }
-export type ReplicationDomainOnCommitted = (events: { ReplicationDomainEvent }?) -> ()
-```
+Supply these fields in a domain definition. Construct `state` and event payload schemas with [Schema](./schemas).
 
 | Field | Authoring contract |
 | --- | --- |
@@ -36,25 +22,25 @@ export type ReplicationDomainOnCommitted = (events: { ReplicationDomainEvent }?)
 | `state` | Required bounded schema for complete recoverable state |
 | `events` | Dense array of `{ id, payload }` definitions; ids are unique within the domain, and payloads have bounded schemas; defaults to empty |
 | `audience` | `All` or `Owner` eligibility metadata; defaults to `All` |
-| `snapshot` | Required synchronous, non-yielding projection whose result must match `state` |
-| `observe` | Optional synchronous adapter accepting the Actor and a committed callback; may return a disconnect function |
+| `snapshot(actor)` | Required synchronous, non-yielding function returning complete state matching `state` |
+| `observe(actor, onCommitted)` | Optional synchronous subscription adapter; may return a disconnect function. Call `onCommitted()` for state alone or `onCommitted(events)` for ordered occurrences |
 
-Unknown domain and event fields reject startup. Startup validates schemas, callback types, and the maximum encoded size of each event payload without invoking callbacks. Actor registration then calls each `snapshot` and optional `observe`; a thrown, yielding, or invalid result rejects that registration and releases earlier domain subscriptions. The `any` boundaries above erase Luau payload typing; they do not permit values outside the declared schemas.
+Unknown domain and event fields reject startup. Startup validates schemas, callback types, and the maximum encoded size of each event payload without invoking callbacks. Actor registration then calls each `snapshot` and optional `observe`; a thrown, yielding, or invalid result rejects that registration and releases earlier domain subscriptions. Returned state and event payloads must match their declared schemas.
 
 ## State vs semantic events
 
 | Concept | Meaning | Example |
 | --- | --- | --- |
-| State | What is true now | `health = 50`, `blocking = false` |
-| Semantic event | Something happened | `GuardBroken`, with `{ previousGuard = 20 }` |
+| State | What is true now | `title = "Champion"` |
+| Semantic event | Something happened | `TitleAwarded`, with `{ title = "Champion" }` |
 
-`snapshot(actor)` returns the complete current state. A snapshot can recover `health = 50`; it cannot tell you which hits happened earlier. Snapshots do not replay events, and recovery must never require their history.
+`snapshot(actor)` returns the complete current state. A snapshot can recover the equipped title; it cannot tell you when titles were awarded. Snapshots do not replay events, and recovery must never require their history.
 
 Declare occurrences separately, with an id and a bounded payload schema:
 
 ```lua
 events = {
-	{ id = "GuardBroken", payload = Schema.Struct({ previousGuard = Schema.F32 }) },
+	{ id = "TitleAwarded", payload = Schema.Struct({ title = Schema.String(64) }) },
 },
 ```
 
@@ -62,7 +48,7 @@ The committed callback contract represents an occurrence alongside the state not
 
 ```lua
 onCommitted({
-	{ id = "GuardBroken", payload = { previousGuard = 20 } },
+	{ id = "TitleAwarded", payload = { title = "Champion" } },
 })
 ```
 
@@ -70,158 +56,19 @@ Under this contract, `onCommitted()` reports a mutation with no semantic events.
 
 ## Committed-observation callback contract
 
-The example below shows how to author the callbacks used when an Actor is registered:
+KRF captures each domain after controllers attach and subscribes through `observe(actor, onCommitted)`. The adapter may return a disconnect function, which KRF calls before destroying the Actor's controllers.
 
-1. After controllers attach, KRF calls `snapshot(actor)` once per domain to capture the initial authoritative state.
-2. KRF calls `observe(actor, onCommitted)`. The example adapter subscribes to the controller's private committed observers and returns a disconnect function.
-3. After fully committing a mutation, the example controller synchronously calls its registered observers.
-4. The adapter calls `onCommitted()` to report that boundary. KRF captures the complete state and any supplied event payloads before the call returns. State patches and events from that boundary share one Actor sequence.
+For a changing domain:
 
-An unchanged snapshot with no events produces no new sequence. Invalid events or snapshots reject the publication without changing the last captured state; a later valid notification can reconcile it. Removing an Actor disconnects its domain observers before its controllers are destroyed.
+1. Commit all gameplay state included in the projection.
+2. Notify committed observers synchronously, before public gameplay callbacks can perform reentrant mutations.
+3. Call `onCommitted()` for state alone, or `onCommitted(events)` with the ordered occurrences from that boundary.
 
-The controller never calls Networking. Its observer method belongs to your game; `_observeCommitted` is the name used in this example, not a required KRF controller API. The domain adapts that method to the declared callback signature.
+KRF captures the complete state and event payloads before `onCommitted` returns. State changes and events from that boundary share one Actor sequence. An unchanged snapshot with no events produces no new sequence. Invalid events or snapshots reject the publication without changing the last captured state; a later valid notification can reconcile it.
 
-### Controller: own and commit gameplay state
+`snapshot`, `observe`, observer delivery, and `onCommitted` must be synchronous and non-yielding. Do not use Heartbeat, `task.spawn`, `task.defer`, or an asynchronous Signal to deliver committed notifications. Later gameplay mutations must not alter captured event payloads.
 
-Place both modules below in your server-side `Game` folder. This small controller owns a stamina value, rejects invalid spends, and notifies observers only after a successful spend commits.
-
-```lua title="Game/StaminaController.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ActorTypes = require(ReplicatedStorage.Packages.KRF.server.Actor.types)
-
-export type StaminaController = {
-	GetCurrent: (self: StaminaController) -> number,
-	Spend: (self: StaminaController, amount: number) -> (boolean, string?),
-	_observeCommitted: (self: StaminaController, callback: () -> ()) -> (() -> ()),
-	Destroy: (self: StaminaController) -> (),
-}
-
-local StaminaController = {}
-
-function StaminaController.new(_actor: ActorTypes.Actor): StaminaController
-	local controller: StaminaController = {} :: StaminaController
-	local current: number = 100
-	local destroyed: boolean = false
-	local nextObserverId: number = 0
-	local observers: { [number]: () -> () } = {}
-
-	function controller:GetCurrent(): number
-		return current
-	end
-
-	function controller:_observeCommitted(callback: () -> ()): () -> ()
-		assert(not destroyed, "StaminaControllerDestroyed")
-		nextObserverId += 1
-		local observerId: number = nextObserverId
-		observers[observerId] = callback
-		return function(): ()
-			observers[observerId] = nil
-		end
-	end
-
-	function controller:Spend(amount: number): (boolean, string?)
-		if destroyed then
-			return false, "StaminaControllerDestroyed"
-		end
-		if amount ~= amount or amount <= 0 or amount == math.huge then
-			return false, "StaminaAmountInvalid"
-		end
-		if amount > current then
-			return false, "StaminaInsufficient"
-		end
-
-		current -= amount -- Authoritative mutation is complete before notification.
-		for observerId: number, callback: () -> () in table.clone(observers) do
-			if observers[observerId] == callback then
-				callback() -- Synchronous; do not task.spawn or defer this call.
-			end
-		end
-		-- Dispatch any public gameplay notifications after committed observers.
-		return true, nil
-	end
-
-	function controller:Destroy(): ()
-		destroyed = true
-		table.clear(observers)
-	end
-
-	return controller
-end
-
-return StaminaController
-```
-
-### Domain: project state and adapt observation
-
-When invoked, `snapshot` reads the controller without changing it, and `observe` subscribes to that same controller. The returned disconnect function releases the subscription.
-
-```lua title="Game/StaminaReplicationDomain.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Schema = require(KRF.shared.Networking.Schema)
-local ActorTypes = require(KRF.server.Actor.types)
-local ReplicationTypes = require(KRF.server.Replication.types)
-local StaminaController = require(script.Parent.StaminaController)
-
-local domain: ReplicationTypes.ReplicationDomainDefinition = {
-	id = "Game.Stamina",
-	state = Schema.Struct({ current = Schema.F32 }),
-	snapshot = function(actor: ActorTypes.Actor): any
-		local controller: StaminaController.StaminaController? =
-			actor:GetController("Game.StaminaController") :: StaminaController.StaminaController?
-		assert(controller ~= nil, "Game.StaminaController missing")
-		return { current = controller:GetCurrent() }
-	end,
-	observe = function(
-		actor: ActorTypes.Actor,
-		onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
-	): (() -> ())?
-		local controller: StaminaController.StaminaController? =
-			actor:GetController("Game.StaminaController") :: StaminaController.StaminaController?
-		assert(controller ~= nil, "Game.StaminaController missing")
-		return controller:_observeCommitted(function(): ()
-			onCommitted()
-		end)
-	end,
-}
-
-return domain
-```
-
-### Startup: register the controller and domain
-
-Place this script beside the two modules. A domain id does not need to match a controller key; the callbacks explicitly choose which controller to read.
-
-```lua title="Game/Startup.server.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Server = require(KRF.server)
-local ServerTypes = require(KRF.server.types)
-local StaminaController = require(script.Parent.StaminaController)
-local StaminaDomain = require(script.Parent.StaminaReplicationDomain)
-
-local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({
-	controllers = { { key = "Game.StaminaController", factory = StaminaController.new } },
-	replicationDomains = { StaminaDomain },
-})
-if not started then
-	local detail: string = if failure then failure.system .. ": " .. failure.reason else "Unknown startup failure"
-	error(detail)
-end
-```
-
-This registers the contracts. The observer attaches when [Actor Runtime](/api/Actor/actor-runtime) registers an Actor with its controllers. See [Initializing KRF](../initializing-krf) for startup.
-
-## Rules for authoring callbacks
-
-Commit all state participating in the projection before notifying observers. Call committed observers before public gameplay callbacks can perform reentrant mutations and obscure that boundary.
-
-`snapshot`, `observe`, observer delivery, and `onCommitted` must be synchronous and non-yielding. Do not defer them to Heartbeat, `task.spawn`, or `task.defer`. An asynchronous Signal cannot preserve this boundary. Capture semantic event payloads from the committed occurrence and pass them before returning; later changes to gameplay tables must not alter that occurrence.
-
-Omit `observe` only for state that remains static for the Actor's lifetime. A changing domain needs an adapter that reports every meaningful committed mutation.
+The committed-observer method belongs to your game; KRF prescribes no controller method name. The domain adapts that method to `onCommitted`. Omit `observe` only for state that remains static for the Actor's lifetime.
 
 ## Audience and ownership
 

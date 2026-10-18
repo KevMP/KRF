@@ -34,36 +34,9 @@ local ActionTypes = require(ReplicatedStorage.Packages.KRF.server.Action.types)
 
 ## ActionFactory {#action-factory}
 
-```lua
-export type ActionFactory = () -> ActionDefinition
-```
-
 Called once at startup for metadata, then for requests passing initial Actor/identity/grant/Tag/Resource checks to obtain fresh callbacks. Must not yield. See [factory authoring](/Action/action-registry).
 
 ## ActionDefinition {#action-definition}
-
-```lua
-export type ActionDefinition = {
-	id: string,
-	visibility: ActionVisibility,
-	autoGrant: boolean?,
-	requiredTags: { string }?,
-	blockedTags: { string }?,
-	activeTags: { ActionTagApplication }?,
-	appliedTags: { ActionTagApplication }?,
-	resourceRequirements: { [string]: ActionResourceRequirement }?,
-	costs: { [string]: number | ActionResourceCost }?,
-	locks: { string }?,
-	interruptibleBy: { string }?,
-	onCanStart: OnCanStart?,
-	onStart: OnStart?,
-	onStopRequested: OnStopRequested?,
-	onUpdate: OnUpdate?,
-	onEnd: OnEnd?,
-	onInterrupt: OnInterrupt?,
-	canBeInterruptedBy: CanBeInterruptedBy?,
-}
-```
 
 | Field | Constraint/default |
 | --- | --- |
@@ -75,37 +48,25 @@ export type ActionDefinition = {
 | `resourceRequirements`, `costs` | Maps keyed by non-empty registered Resource ids; default empty. Entries use the constraints below. |
 | `locks` | Dense array of unique, non-empty opaque lock ids. Default empty. |
 | `interruptibleBy` | Dense array of unique, non-empty registered Action ids; forward/self references allowed. Default empty. |
-| Callbacks | Functions when supplied; default absent. |
+| `onCanStart`, `onStart`, `onStopRequested`, `onUpdate`, `onEnd`, `onInterrupt`, `canBeInterruptedBy` | Optional functions; see [callback signatures](#callbacks). |
 
 Unsupported fields are rejected. Static metadata is validated and copied at startup. Per-request validation checks the result table, matching id, supported visibility, supported field names, and callback types; it does not replace loaded metadata with request-result fields.
 
 ## ActionVisibility {#action-visibility}
 
-```lua
-export type ActionVisibility = "ServerOnly" | "ClientVisible"
-```
+`"ServerOnly"` or `"ClientVisible"`.
 
 Static visibility metadata.
 
 ## ActionTagApplication / ActionTagApplicationOptions {#action-tag-application}
 
-```lua
-export type ActionTagApplicationOptions = { id: string, duration: number? }
-export type ActionTagApplication = string | ActionTagApplicationOptions
-```
+Supply a registered Tag id string or a table with `id` and optional `duration`.
 
 `id` must be a non-empty registered Tag id. Explicit `duration` is finite positive seconds; omission uses the Tag definition's default, or indefinite lifetime if neither supplies duration. Options permit only `id` and `duration`.
 
 ## ActionResourceRequirement {#action-resource-requirement}
 
-```lua
-export type ActionResourceRequirement = {
-	min: number?,
-	max: number?,
-	minPercent: number?,
-	maxPercent: number?,
-}
-```
+Supported fields are numeric `min`, `max`, `minPercent`, and `maxPercent`; each is optional.
 
 At least one threshold is required; all supplied thresholds must be finite and all comparisons are inclusive. Percent thresholds are in `[0, 1]`. Authored `min <= max` and `minPercent <= maxPercent` when each pair is supplied. Unsupported fields reject.
 
@@ -113,13 +74,7 @@ Percent thresholds compare `(current - resolvedMin) / (resolvedMax - resolvedMin
 
 ## ActionResourceCost {#action-resource-cost}
 
-```lua
-export type ActionResourceCost = {
-	amount: number?,
-	percent: number?,
-	multiplierProperty: string?,
-}
-```
+Supply numeric `amount` or `percent`, with an optional string `multiplierProperty`.
 
 Exactly one of `amount` or `percent` must be supplied, finite and strictly positive. Cost percentages may exceed `1`; percentage base cost is `(resolvedMax - resolvedMin) * percent`. A zero range is valid for costs. A positive numeric entry in `ActionDefinition.costs` is equivalent to `{ amount = value }`.
 
@@ -127,46 +82,33 @@ Exactly one of `amount` or `percent` must be supplied, finite and strictly posit
 
 ## Callback aliases {#callbacks}
 
-```lua
-export type OnCanStart = (ActionStartContext) -> (boolean, string?)
-export type OnStart = (ActionExecutionContext) -> ()
-export type OnStopRequested = (ActionExecutionContext, ActionStopRequest) -> ()
-export type OnUpdate = (ActionExecutionContext, number) -> ()
-export type OnEnd = (ActionExecutionContext) -> ()
-export type OnInterrupt = (ActionExecutionContext, string) -> ()
-export type CanBeInterruptedBy = (ActionExecutionContext, ActionInterruptionContext) -> boolean
-```
+| Callback field | Signature |
+| --- | --- |
+| `onCanStart` | `(ctx: ActionStartContext) -> (boolean, string?)` |
+| `onStart` | `(ctx: ActionExecutionContext) -> ()` |
+| `onStopRequested` | `(ctx: ActionExecutionContext, request: ActionStopRequest) -> ()` |
+| `onUpdate` | `(ctx: ActionExecutionContext, deltaTime: number) -> ()` |
+| `onEnd` | `(ctx: ActionExecutionContext) -> ()` |
+| `onInterrupt` | `(ctx: ActionExecutionContext, reason: string) -> ()` |
+| `canBeInterruptedBy` | `(ctx: ActionExecutionContext, incoming: ActionInterruptionContext) -> boolean` |
 
-The `OnUpdate` number is finite positive elapsed seconds. `OnInterrupt` receives the interruption reason. `OnCanStart` can reject with a non-empty game-defined reason; `CanBeInterruptedBy` returns only a boolean and cannot expand the static allowlist.
+`deltaTime` is finite positive elapsed seconds. `OnInterrupt` receives the interruption reason. `OnCanStart` can reject with a non-empty game-defined reason; `CanBeInterruptedBy` returns only a boolean and cannot expand the static allowlist.
 
 Only `OnStart` may yield. Other hooks are non-yielding; stop/terminal failures are contained, update failure Interrupts with `ActionUpdateFailed`, and active start failure Interrupts with `ActionStartFailed`. See [hook behavior](/Action/action-lifecycle#hook-contracts) for lifetime and cancellation rules.
 
 ## ActionStartContext {#action-start-context}
 
-```lua
-export type ActionStartContext = {
-	read actor: Actor,
-	read actionId: string,
-	read parameters: any?,
-}
-```
+| Field | Value |
+| --- | --- |
+| `actor` | The Actor performing the Action |
+| `actionId` | The requested Action id string |
+| `parameters` | Optional caller-supplied request data |
 
 Frozen context passed to `onCanStart` before an activation exists. `parameters` is the original request value; there is no sequence id or lifecycle capability.
 
 ## ActionExecutionContext {#action-execution-context}
 
-```lua
-export type ActionExecutionContext = {
-	read actor: Actor,
-	read actionId: string,
-	read sequenceId: number,
-	read parameters: any?,
-	read IsActive: (self: ActionExecutionContext) -> boolean,
-	read End: (self: ActionExecutionContext) -> (boolean, string?),
-	read Interrupt: (self: ActionExecutionContext, reason: string) -> (boolean, string?),
-	read ClaimLocks: (self: ActionExecutionContext, lockIds: { string }) -> (LockClaim?, string?),
-}
-```
+Includes the [start-context fields](#action-start-context), a numeric `sequenceId`, and the [`IsActive`, `End`, `Interrupt`, and `ClaimLocks` methods](./action-execution-context).
 
 One frozen context per accepted activation, shared by its lifecycle/update callbacks and its owner-side interruption decision. Sequence id is a positive integer scoped to the Actor's controller. Original parameters are passed without copying; nested parameter data is not frozen by freezing the context.
 
@@ -174,52 +116,30 @@ Exact capability failures: [ActionExecutionContext API](./action-execution-conte
 
 ## ActionInterruptionContext {#action-interruption-context}
 
-```lua
-export type ActionInterruptionContext = {
-	read actor: Actor,
-	read actionId: string,
-	read parameters: any?,
-}
-```
+Contains `actor`, `actionId`, and optional `parameters`, describing the incoming Action.
 
 Frozen incoming identity passed to an owner's `canBeInterruptedBy`. For a start it carries the incoming request parameters; for a scoped claim it carries the claimant's original start parameters. It has no sequence id or execution methods.
 
 ## ActionStopRequest {#action-stop-request}
 
-```lua
-export type ActionStopRequest = { parameters: any? }
-```
-
-Passed to `onStopRequested`; parameters are the original Stop-request value, distinct from `ctx.parameters`. KRF creates a new wrapper per delivery; this wrapper is not frozen.
+Contains optional `parameters` of any type. Passed to `onStopRequested`; parameters are the original Stop-request value, distinct from `ctx.parameters`. KRF creates a new wrapper per delivery; this wrapper is not frozen.
 
 ## LockClaim {#lock-claim}
-
-```lua
-export type LockClaim = { Release: (self: LockClaim) -> () }
-```
 
 Frozen scoped-claim handle. [`Release`](./action-execution-context#release) is idempotent and safe after termination.
 
 ## ActionRequestResult {#action-request-result}
 
-```lua
-export type ActionRequestAccepted = { accepted: true, sequenceId: number }
-export type ActionRequestRejected = { accepted: false, reason: string }
-export type ActionRequestResult = ActionRequestAccepted | ActionRequestRejected
-```
+| `accepted` | Additional fields |
+| --- | --- |
+| `true` | `sequenceId`: the accepted activation's numeric id |
+| `false` | `reason`: the rejection reason string |
 
 Branch on `accepted` before reading the variant's fields. Acceptance identifies a committed activation, which may already be inactive when the request returns. Rejection creates no activation and consumes no sequence id. Exact rejection strings: [`RequestAction`](./action-controller#request-action).
 
 ## Lifecycle event payloads {#lifecycle-events}
 
-```lua
-export type ActionLifecycleEvent = {
-	actor: Actor,
-	actionId: string,
-	sequenceId: number,
-}
-export type ActionInterruptedEvent = ActionLifecycleEvent & { reason: string }
-```
+Both payloads contain `actor` (Actor), `actionId` (string), and `sequenceId` (number). `ActionInterruptedEvent` also contains `reason` (string).
 
 `OnActionStarted` and `OnActionEnded` carry `ActionLifecycleEvent`. `OnActionInterrupted` carries `ActionInterruptedEvent`. `reason` is a non-empty game-defined interruption reason or a runtime reason:
 
