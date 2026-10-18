@@ -1,15 +1,14 @@
 --!strict
 local ReplicationTypes = require(script.Parent.types)
+local TagsReplication = require(script.Parent.Parent.Networking.utils.TagsReplication)
 
 local BuiltInReplicationDomains = {} :: ReplicationTypes.BuiltInReplicationDomainBuilder
 
 function BuiltInReplicationDomains.Build(
-	_catalogs: ReplicationTypes.ReplicationDomainBuildCatalogs
+	catalogs: ReplicationTypes.ReplicationDomainBuildCatalogs
 ): ({ ReplicationTypes.ReplicationDomainDefinition }?, string?)
-	-- N6-N8 select ClientVisible entries from these staged catalogs and construct
-	-- KRF.Tags/Resources/Actions definitions here. No registry reads or publication.
-	-- All generated definitions join game domains before one validation transaction.
-	return {}, nil
+	local tags: ReplicationTypes.ReplicationDomainDefinition? = TagsReplication.Build(catalogs.tags)
+	return if tags ~= nil then { tags } else {}, nil
 end
 
 return BuiltInReplicationDomains

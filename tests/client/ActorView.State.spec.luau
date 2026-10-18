@@ -118,7 +118,6 @@ it("keeps handles, revisions, mutation and future typed views out of the public 
 			"consumer",
 			"GetHandle",
 			"GetRevision",
-			"GetTags",
 			"GetResources",
 			"GetActions",
 			"Apply",
