@@ -192,7 +192,7 @@ local function measure(count: number, mode: Mode): any
 		{ activeVisibleIds = count, mode = mode, latency = summarize(samples), trialMedianUs = trialMedians }
 
 	if mode == "Publication" then
-		-- Separate untimed diagnostic pass. Wrappers delegate to the real N3
+		-- Separate untimed diagnostic pass. Wrappers delegate to the real publication
 		-- validator/codec and are never installed during the latency samples.
 		assert(activeRuntime ~= nil, "Expected the timed publication runtime")
 		activeRuntime:Destroy()

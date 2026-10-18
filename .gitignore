@@ -9,6 +9,13 @@
 /*.rbxl
 /build/
 
+# Generated benchmark observations, diagnostics and reports belong under build/.
+/tests/benchmarks/results/
+/tests/benchmarks/**/*.json
+/tests/benchmarks/**/*.json.gz
+/tests/benchmarks/**/*.log
+/tests/benchmarks/**/coverage/
+
 sourcemap.json
 .typecheck/
 
