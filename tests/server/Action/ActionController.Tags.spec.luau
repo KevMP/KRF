@@ -33,9 +33,11 @@ beforeEach(function()
 	TagControllerModule._setAutomaticSteppingEnabledForTests(false)
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(false)
 	now = 100
+
 	ActionControllerUpdates._setClockForTests(function(): number
 		return now
 	end)
+
 	actors = {}
 	models = {}
 end)
@@ -46,9 +48,11 @@ afterEach(function()
 			ActorRuntime.UnregisterActor(actor, "TestCleanup")
 		end
 	end
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	TagControllerModule._setAutomaticSteppingEnabledForTests(true)
 	ActionControllerUpdates._setClockForTests(nil)
 	ActionControllerUpdates._setAutomaticSteppingEnabledForTests(true)
@@ -57,12 +61,15 @@ end)
 
 local function initialize(definitions: { ActionDefinition }, tags: { TagDefinition }): ()
 	local factories: { ActionTypes.ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local started: boolean, failure = Server.Init({ actions = factories, tags = tags })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
@@ -80,6 +87,7 @@ local function registerActor(): (Actor, ActionController, TagController)
 	local tags: TagController = registered:GetController("TagController") :: TagController
 	expect(actions).never.toBeNil()
 	expect(tags).never.toBeNil()
+
 	return registered, actions, tags
 end
 
@@ -89,6 +97,7 @@ end
 
 it("checks every required and blocked Tag before onCanStart and consumes no id on rejection", function()
 	local decisionCalls: number = 0
+
 	initialize({
 		{
 			id = "Action.Dodge",
@@ -98,6 +107,7 @@ it("checks every required and blocked Tag before onCanStart and consumes no id o
 			blockedTags = { "Tag.Stunned", "Tag.Rooted" },
 			onCanStart = function(): (boolean, string?)
 				decisionCalls += 1
+
 				return true, nil
 			end,
 		},
@@ -107,6 +117,7 @@ it("checks every required and blocked Tag before onCanStart and consumes no id o
 		tag("Tag.Stunned", "Ignore"),
 		tag("Tag.Rooted", "Ignore"),
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local missing: any = actions:RequestAction("Action.Dodge")
 	expect(missing.accepted).toBe(false)
@@ -128,6 +139,7 @@ end)
 
 it("revalidates Tag requirements after onCanStart mutates authoritative state", function()
 	local tags: TagController? = nil
+
 	initialize({
 		{
 			id = "Action.Dodge",
@@ -137,10 +149,12 @@ it("revalidates Tag requirements after onCanStart mutates authoritative state", 
 			blockedTags = { "Tag.Stunned" },
 			onCanStart = function(): (boolean, string?)
 				(tags :: TagController):RemoveTag("Tag.Grounded")
+
 				return true, nil
 			end,
 		},
 	}, { tag("Tag.Grounded", "Ignore"), tag("Tag.Stunned", "Ignore") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	expect((registeredTags:AddTag("Tag.Grounded"))).toBe(true)
@@ -153,6 +167,7 @@ end)
 
 it("keeps a running Action active when required or blocked Tags change later", function()
 	local context: ActionTypes.ActionExecutionContext? = nil
+
 	initialize({
 		{
 			id = "Action.Dodge",
@@ -165,6 +180,7 @@ it("keeps a running Action active when required or blocked Tags change later", f
 			end,
 		},
 	}, { tag("Tag.Grounded", "Ignore"), tag("Tag.Stunned", "Ignore") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect((tags:AddTag("Tag.Grounded"))).toBe(true)
 	local started: any = actions:RequestAction("Action.Dodge")
@@ -178,6 +194,7 @@ end)
 it("commits active and applied Tags before start callbacks and cleans only active Tags before end callbacks", function()
 	local observations: { string } = {}
 	local tags: TagController? = nil
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -203,6 +220,7 @@ it("commits active and applied Tags before start callbacks and cleans only activ
 			end,
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	local started: any = actions:RequestAction("Action.Block")
@@ -218,6 +236,7 @@ it("removes only the terminating Action's active stack contribution", function()
 		{ { id = "Action.Block", visibility = "ServerOnly", autoGrant = true, activeTags = { "Tag.Blocking" } } :: any },
 		{ tag("Tag.Blocking", "Stack") }
 	)
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect((tags:AddTag("Tag.Blocking"))).toBe(true)
 	local first: any = actions:RequestAction("Action.Block")
@@ -249,6 +268,7 @@ it("does not preempt an Action while its active Tag blocks the incoming request"
 			blockedTags = { "Tag.Blocking" },
 		},
 	}, { tag("Tag.Blocking", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local block: any = actions:RequestAction("Action.Block")
 	expect(block.accepted).toBe(true)
@@ -269,6 +289,7 @@ it("keeps applied Tags after interruption and controller destruction", function(
 			appliedTags = { { id = "Tag.Bleeding", duration = 6 } },
 		} :: any,
 	}, { tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local first: any = actions:RequestAction("Action.Attack")
 	expect(first.accepted).toBe(true)
@@ -292,24 +313,29 @@ it("dispatches Tag events only after all declarative Tags and the Action are act
 			appliedTags = { "Tag.Bleeding" },
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local observed: { string } = {}
+
 	tags.OnTagAdded:Connect(function()
 		if tags:HasTag("Tag.Blocking") and tags:HasTag("Tag.Bleeding") then
 			table.insert(observed, "all tags visible")
 		end
 	end)
+
 	actions.OnActionStarted:Connect(function()
 		if tags:HasTag("Tag.Blocking") and tags:HasTag("Tag.Bleeding") then
 			table.insert(observed, "started with tags")
 		end
 	end)
+
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
 	expect(observed).toEqual({ "started with tags", "all tags visible", "all tags visible" })
 end)
 
 it("rejects when onCanStart adds a blocked Tag before final validation", function()
 	local tags: TagController? = nil
+
 	initialize({
 		{
 			id = "Action.Dodge",
@@ -318,10 +344,12 @@ it("rejects when onCanStart adds a blocked Tag before final validation", functio
 			blockedTags = { "Tag.Stunned" },
 			onCanStart = function(): (boolean, string?)
 				(tags :: TagController):AddTag("Tag.Stunned")
+
 				return true, nil
 			end,
 		},
 	}, { tag("Tag.Stunned", "Ignore") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	local rejected: any = actions:RequestAction("Action.Dodge")
@@ -334,6 +362,7 @@ end)
 it("revalidates Tag requirements after a preemption decision changes them", function()
 	local tags: TagController? = nil
 	local ownerContext: ActionTypes.ActionExecutionContext? = nil
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -346,6 +375,7 @@ it("revalidates Tag requirements after a preemption decision changes them", func
 			end,
 			canBeInterruptedBy = function(): boolean
 				(tags :: TagController):RemoveTag("Tag.Grounded")
+
 				return true
 			end,
 		},
@@ -357,6 +387,7 @@ it("revalidates Tag requirements after a preemption decision changes them", func
 			requiredTags = { "Tag.Grounded" },
 		},
 	}, { tag("Tag.Grounded", "Ignore") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	expect((registeredTags:AddTag("Tag.Grounded"))).toBe(true)
@@ -370,6 +401,7 @@ end)
 it("cleans active Tags before interruption callbacks during preemption", function()
 	local tags: TagController? = nil
 	local observed: { string } = {}
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -395,6 +427,7 @@ it("cleans active Tags before interruption callbacks during preemption", functio
 			activeTags = { "Tag.Dodging" },
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Dodging", "Stack") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	expect(actions:RequestAction("Action.Block").accepted).toBe(true)
@@ -405,6 +438,7 @@ end)
 it("cleans active Tags before controller destruction callbacks", function()
 	local tags: TagController? = nil
 	local observedClean: boolean = false
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -416,6 +450,7 @@ it("cleans active Tags before controller destruction callbacks", function()
 			end,
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	expect(actions:RequestAction("Action.Block").accepted).toBe(true)
@@ -437,6 +472,7 @@ it("cleans active Tags after onStart fails while preserving applied Tags", funct
 			end,
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local result: any = actions:RequestAction("Action.Block")
 	expect(result.accepted).toBe(true)
@@ -450,6 +486,7 @@ it("leaves an existing Ignore Tag in place when active application was ignored",
 		{ { id = "Action.Block", visibility = "ServerOnly", autoGrant = true, activeTags = { "Tag.Blocking" } } :: any },
 		{ tag("Tag.Blocking", "Ignore") }
 	)
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect((tags:AddTag("Tag.Blocking"))).toBe(true)
 	local result: any = actions:RequestAction("Action.Block")
@@ -460,6 +497,7 @@ end)
 
 it("rejects the whole activation when a later declarative Tag cannot be applied", function()
 	local invalidateCatalog: boolean = true
+
 	initialize({
 		{
 			id = "Action.Attack",
@@ -473,10 +511,12 @@ it("rejects the whole activation when a later declarative Tag cannot be applied"
 					TagRegistry._resetForTests()
 					expect((TagRegistry.Load({ tag("Tag.Blocking", "Stack") }))).toBe(true)
 				end
+
 				return true, nil
 			end,
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local rejected: any = actions:RequestAction("Action.Attack")
 	expect(rejected.accepted).toBe(false)
@@ -491,6 +531,7 @@ end)
 it("does not preempt a conflict owner when incoming Tag activation fails", function()
 	local ownerContext: ActionTypes.ActionExecutionContext? = nil
 	local decisionCalls: number = 0
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -506,6 +547,7 @@ it("does not preempt a conflict owner when incoming Tag activation fails", funct
 				decisionCalls += 1
 				TagRegistry._resetForTests()
 				expect((TagRegistry.Load({ tag("Tag.Blocking", "Stack") }))).toBe(true)
+
 				return true
 			end,
 		} :: any,
@@ -518,6 +560,7 @@ it("does not preempt a conflict owner when incoming Tag activation fails", funct
 		} :: any,
 		{ id = "Action.Idle", visibility = "ServerOnly", autoGrant = true },
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Block")).toEqual({ accepted = true, sequenceId = 1 })
 	local rejected: any = actions:RequestAction("Action.Dodge")
@@ -546,13 +589,16 @@ it("allows a Tag event to request another Action against the fully committed Tag
 			requiredTags = { "Tag.Blocking", "Tag.Ready" },
 		},
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Ready", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local nested: any = nil
+
 	tags.OnTagAdded:Connect(function()
 		if nested == nil then
 			nested = actions:RequestAction("Action.Followup")
 		end
 	end)
+
 	expect(actions:RequestAction("Action.Block")).toEqual({ accepted = true, sequenceId = 1 })
 	expect(nested).toEqual({ accepted = true, sequenceId = 2 })
 	local activeTags: { TagTypes.ActiveTagSnapshot } = tags:GetActiveTags()
@@ -572,6 +618,7 @@ it("preserves applied Tags when their Action is preempted", function()
 		} :: any,
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true, locks = { "Hands" } },
 	}, { tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect(actions:RequestAction("Action.Attack").accepted).toBe(true)
 	expect(actions:RequestAction("Action.Dodge").accepted).toBe(true)
@@ -589,6 +636,7 @@ it("preserves a later external Refresh application after active Tag cleanup", fu
 	}, {
 		{ id = "Tag.Blocking", visibility = "ServerOnly", duplicateBehavior = "Refresh" },
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
@@ -602,6 +650,7 @@ it("preserves a later external stack after an active Tag was consumed", function
 		{ { id = "Action.Block", visibility = "ServerOnly", autoGrant = true, activeTags = { "Tag.Blocking" } } :: any },
 		{ tag("Tag.Blocking", "Stack") }
 	)
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
@@ -614,6 +663,7 @@ end)
 it("dispatches terminal events after all active Tag cleanup commits", function()
 	local context: ActionTypes.ActionExecutionContext? = nil
 	local observations: { string } = {}
+
 	initialize({
 		{
 			id = "Action.Block",
@@ -625,7 +675,9 @@ it("dispatches terminal events after all active Tag cleanup commits", function()
 			end,
 		} :: any,
 	}, { tag("Tag.Blocking", "Stack"), tag("Tag.Ready", "Stack") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
+
 	tags.OnTagRemoved:Connect(function()
 		if
 			not tags:HasTag("Tag.Blocking")
@@ -635,11 +687,13 @@ it("dispatches terminal events after all active Tag cleanup commits", function()
 			table.insert(observations, "tag removed after commit")
 		end
 	end)
+
 	actions.OnActionEnded:Connect(function()
 		if not tags:HasTag("Tag.Blocking") and not tags:HasTag("Tag.Ready") then
 			table.insert(observations, "ended after commit")
 		end
 	end)
+
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
 	expect((actions:EndAction(started.sequenceId))).toBe(true)
@@ -648,6 +702,7 @@ end)
 
 it("lets Action code choose a later Tag reaction through normal lifecycle methods", function()
 	local context: ActionTypes.ActionExecutionContext? = nil
+
 	initialize({
 		{
 			id = "Action.Dodge",
@@ -659,6 +714,7 @@ it("lets Action code choose a later Tag reaction through normal lifecycle method
 			end,
 		},
 	}, { tag("Tag.Grounded", "Ignore") })
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	expect((tags:AddTag("Tag.Grounded"))).toBe(true)
 	expect(actions:RequestAction("Action.Dodge").accepted).toBe(true)
@@ -671,6 +727,7 @@ end)
 it("cleans active Tags when an update failure interrupts the Action", function()
 	local tags: TagController? = nil
 	local observedClean: boolean = false
+
 	initialize({
 		{
 			id = "Action.Channel",
@@ -687,6 +744,7 @@ it("cleans active Tags when an update failure interrupts the Action", function()
 			end,
 		} :: any,
 	}, { tag("Tag.Channeling", "Stack"), tag("Tag.Bleeding", "Stack") })
+
 	local _actor: Actor, actions: ActionController, registeredTags: TagController = registerActor()
 	tags = registeredTags
 	local started: any = actions:RequestAction("Action.Channel")
@@ -710,11 +768,14 @@ it("dispatches Interrupted after active Tag cleanup and preserves applied Tags",
 		tag("Tag.Blocking", "Stack"),
 		tag("Tag.Bleeding", "Stack"),
 	})
+
 	local _actor: Actor, actions: ActionController, tags: TagController = registerActor()
 	local observed: boolean = false
+
 	actions.OnActionInterrupted:Connect(function()
 		observed = not tags:HasTag("Tag.Blocking") and tags:HasTag("Tag.Bleeding")
 	end)
+
 	local started: any = actions:RequestAction("Action.Block")
 	expect(started.accepted).toBe(true)
 	expect((actions:InterruptAction(started.sequenceId, "Test"))).toBe(true)

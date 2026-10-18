@@ -24,6 +24,7 @@ local SignalModule: { new: New, wrapEvent: WrapEvent } =
 
 local function pump(steps: number?): ()
 	local n: number = steps or 1
+
 	for _ = 1, n do
 		task.wait()
 	end
@@ -31,12 +32,15 @@ end
 
 local function waitUntil(predicate: () -> boolean, maxSteps: number?): boolean
 	local limit: number = maxSteps or 30
+
 	for _ = 1, limit do
 		if predicate() then
 			return true
 		end
+
 		task.wait()
 	end
+
 	return predicate()
 end
 
@@ -125,6 +129,7 @@ it("Fire() does not wait for handlers to complete (non-blocking)", function()
 	local event: Event<> = SignalModule.wrapEvent(signal)
 
 	local called: boolean = false
+
 	local _connection: Connection = event:Connect(function()
 		task.wait()
 		called = true
@@ -147,6 +152,7 @@ it("Connect() returns a Connection with Disconnect(), and Disconnect() prevents 
 	local evemt: Event<> = SignalModule.wrapEvent(signal)
 
 	local count: number = 0
+
 	local connection: Connection = evemt:Connect(function()
 		count += 1
 	end)
@@ -188,6 +194,7 @@ it("Once() handler runs exactly once across multiple fires", function()
 	local event: Event<> = SignalModule.wrapEvent(signal)
 
 	local count: number = 0
+
 	local _connection: Connection = event:Once(function()
 		count += 1
 	end)
@@ -205,6 +212,7 @@ it("Once() does not run if its connection was disconnected before the first fire
 	local event: Event<> = SignalModule.wrapEvent(signal)
 
 	local count: number = 0
+
 	local connection: Connection = event:Once(function()
 		count += 1
 	end)
@@ -244,9 +252,11 @@ it("DisconnectAll() drops all handlers (no further calls)", function()
 	local event: Event<> = SignalModule.wrapEvent(signal)
 
 	local count: number = 0
+
 	local _connectionA: Connection = event:Connect(function()
 		count += 1
 	end)
+
 	local _connectionB: Connection = event:Connect(function()
 		count += 1
 	end)
@@ -325,6 +335,7 @@ it("one Wait() consumes only the first of several fires queued before its contin
 		local second: string = event:Wait()
 		table.insert(received, second)
 	end)
+
 	pump(1)
 
 	signal:Fire("first")
@@ -341,10 +352,12 @@ end)
 it("a queued Wait callback cannot resume the same waiter twice", function()
 	local signal: any = GoodSignal.new()
 	local received: { string } = {}
+
 	task.spawn(function()
 		local value: string = signal:Wait()
 		table.insert(received, value)
 	end)
+
 	pump(1)
 
 	-- Exercise two callbacks already queued for the same connection before its continuation runs.
@@ -359,18 +372,22 @@ it("a queued Wait callback ignores a waiter cancelled before delivery", function
 	local signal: any = GoodSignal.new()
 	local waitingThread: thread? = nil
 	local resumed: boolean = false
+
 	task.spawn(function()
 		waitingThread = coroutine.running()
 		signal:Wait()
 		resumed = true
 	end)
+
 	pump(1)
 
 	local queuedCallback: any = signal._handlerListHead._fn
 	task.cancel(waitingThread :: thread)
+
 	expect(function()
 		queuedCallback("late")
 	end).never.toThrow()
+
 	pump(2)
 	expect(resumed).toBe(false)
 end)
@@ -386,6 +403,7 @@ it("independent waiters each consume one value from the same fire", function()
 			table.insert(received, value)
 		end)
 	end
+
 	pump(1)
 	signal:Fire("first")
 	signal:Fire("second")
@@ -416,12 +434,14 @@ it("Yield-safe: a yielding handler does not prevent other handlers from running"
 	local okFast: boolean = waitUntil(function(): boolean
 		return fastRan
 	end, 30)
+
 	expect(okFast).toBe(true)
 
 	-- and the slow handler should finish shortly after
 	local okSlow: boolean = waitUntil(function(): boolean
 		return slowRan
 	end, 60)
+
 	expect(okSlow).toBe(true)
 end)
 
@@ -430,6 +450,7 @@ it("Disconnect during Fire: a handler can disconnect a later handler before it r
 	local event: Event<> = SignalModule.wrapEvent(signal)
 
 	local bRan: boolean = false
+
 	local cnB: Connection = event:Connect(function()
 		bRan = true
 	end)
@@ -516,9 +537,11 @@ it("Connect during Fire: new connections should not run until the next Fire", fu
 	expect(cRan).toBe(false)
 
 	signal:Fire()
+
 	local ok: boolean = waitUntil(function(): boolean
 		return cRan
 	end, 30)
+
 	expect(ok).toBe(true)
 end)
 
@@ -529,6 +552,7 @@ it(
 		local event: Event<> = SignalModule.wrapEvent(signal)
 
 		local count: number = 0
+
 		local connection: Connection = event:Once(function()
 			count += 1
 		end)

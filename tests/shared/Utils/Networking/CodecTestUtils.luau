@@ -15,6 +15,7 @@ function CodecTestUtils.compile(definition: SharedNetworkingTypes.SchemaDefiniti
 	local codec: SharedNetworkingTypes.CompiledCodec?, reason: string? = Compiler.Compile(schema)
 	expect(reason).toBeNil()
 	assert(codec ~= nil, "Expected compiled codec")
+
 	return codec
 end
 
@@ -26,6 +27,7 @@ function CodecTestUtils.encode(codec: SharedNetworkingTypes.CompiledCodec, value
 	local offset: number?, writeReason: string? = codec.Write(value, destination, 0)
 	expect(writeReason).toBeNil()
 	expect(offset).toBe(size)
+
 	return destination
 end
 
@@ -48,9 +50,11 @@ function CodecTestUtils.expectReadFailure(
 	local decoded: any = nil
 	local nextOffset: number? = nil
 	local reason: string? = nil
+
 	local completed: boolean = pcall(function()
 		decoded, nextOffset, reason = codec.Read(source, offset, limit)
 	end)
+
 	expect(completed).toBe(true)
 	expect(decoded).toBeNil()
 	expect(nextOffset).toBeNil()
@@ -66,11 +70,14 @@ function CodecTestUtils.collectionPrefix(
 	local empty: buffer = CodecTestUtils.encode(codec, emptyValue)
 	local source: buffer = buffer.create(buffer.len(empty))
 	local remaining: number = count
+
 	for index: number = 0, buffer.len(source) - 1 do
 		buffer.writeu8(source, index, remaining % 256)
 		remaining = math.floor(remaining / 256)
 	end
+
 	assert(remaining == 0, "Test count must fit the codec's prefix")
+
 	return source
 end
 

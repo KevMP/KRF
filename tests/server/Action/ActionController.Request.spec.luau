@@ -28,17 +28,21 @@ afterEach(function()
 	for _, controller: any in controllers do
 		controller:Destroy()
 	end
+
 	ActionRegistry._resetForTests()
 end)
 
 local function loadActions(definitions: { ActionDefinition }): ()
 	local factories: { ActionTypes.ActionFactory } = {}
+
 	for _, definition: ActionDefinition in definitions do
 		local source: ActionDefinition = definition
+
 		table.insert(factories, function(): ActionDefinition
 			return table.clone(source)
 		end)
 	end
+
 	local loaded: boolean, reason: string? = ActionRegistry.Load(factories, {}, {})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -47,8 +51,10 @@ end
 local function createController(): (Actor, any)
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
@@ -64,6 +70,7 @@ end)
 
 it("rejects request factory errors, yields, and invalid results without consuming ids", function()
 	local mode: string = "startup"
+
 	local factory = function(): ActionDefinition
 		if mode == "error" then
 			error("factory boom")
@@ -72,10 +79,13 @@ it("rejects request factory errors, yields, and invalid results without consumin
 		elseif mode == "invalid" then
 			return { id = "Action.Other", visibility = "ServerOnly" }
 		end
+
 		return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
 	end
+
 	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
 	local _actor: Actor, controller: any = createController()
+
 	for _, case in
 		{
 			{ "error", "ActionFactoryFailed" },
@@ -86,6 +96,7 @@ it("rejects request factory errors, yields, and invalid results without consumin
 		mode = case[1]
 		expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = false, reason = case[2] })
 	end
+
 	mode = "valid"
 	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = true, sequenceId = 1 })
 end)
@@ -93,10 +104,12 @@ end)
 it("uses startup metadata even if a later factory result changes grant fields", function()
 	local startup: boolean = true
 	local started: number = 0
+
 	local factory = function(): ActionDefinition
 		if startup then
 			return { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true }
 		end
+
 		return {
 			id = "Action.Dodge",
 			visibility = "ClientVisible",
@@ -107,6 +120,7 @@ it("uses startup metadata even if a later factory result changes grant fields", 
 			end,
 		}
 	end
+
 	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
 	startup = false
 	local _actor: Actor, controller: any = createController()
@@ -119,15 +133,18 @@ end)
 it("shares one request's lexical state between onCanStart and onStart", function()
 	local observed: { number } = {}
 	local nextValue: number = 0
+
 	local factory = function(): ActionDefinition
 		nextValue += 1
 		local value: number = nextValue
+
 		return {
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			autoGrant = true,
 			onCanStart = function(): (boolean, string?)
 				value *= 10
+
 				return true, nil
 			end,
 			onStart = function()
@@ -135,6 +152,7 @@ it("shares one request's lexical state between onCanStart and onStart", function
 			end,
 		}
 	end
+
 	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
 	local _actor: Actor, controller: any = createController()
 	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
@@ -145,6 +163,7 @@ end)
 it("snapshots callbacks before onCanStart can mutate the factory result", function()
 	local calls: { string } = {}
 	local current: ActionDefinition? = nil
+
 	local factory = function(): ActionDefinition
 		local definition: ActionDefinition = {
 			id = "Action.Dodge",
@@ -152,18 +171,23 @@ it("snapshots callbacks before onCanStart can mutate the factory result", functi
 			autoGrant = true,
 			onCanStart = function(): (boolean, string?)
 				local mutable: ActionDefinition = current :: ActionDefinition
+
 				mutable.onStart = function()
 					table.insert(calls, "mutated start")
 				end
+
 				return true, nil
 			end,
 			onStart = function()
 				table.insert(calls, "original start")
 			end,
 		}
+
 		current = definition
+
 		return definition
 	end
+
 	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
 	local _actor: Actor, controller: any = createController()
 	expect(controller:RequestAction("Action.Dodge").accepted).toBe(true)
@@ -175,7 +199,9 @@ it("rejects invalid, unknown, and ungranted ids without consuming a sequence id"
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
 		{ id = "Action.Roll", visibility = "ServerOnly" },
 	})
+
 	local _actor: Actor, controller: any = createController()
+
 	for _, actionId: any in { 12, {}, "", "Action.Unknown", "Action.Roll" } :: { any } do
 		local result: any = controller:RequestAction(actionId)
 		expect(result.accepted).toBe(false)
@@ -183,6 +209,7 @@ it("rejects invalid, unknown, and ungranted ids without consuming a sequence id"
 		expect(result.reason).never.toBe("")
 		expect(result.sequenceId).toBeNil()
 	end
+
 	local accepted: any = controller:RequestAction("Action.Dodge")
 	expect(accepted).toEqual({ accepted = true, sequenceId = 1 })
 end)
@@ -192,6 +219,7 @@ it("returns distinct stable reasons for invalid, unknown, and ungranted Action i
 		{ id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true },
 		{ id = "Action.Roll", visibility = "ServerOnly" },
 	})
+
 	local _actor: Actor, controller: any = createController()
 	expect(controller:RequestAction(12).reason).toBe("ActionIdMustBeString")
 	expect(controller:RequestAction("").reason).toBe("ActionIdCannotBeEmpty")
@@ -204,6 +232,7 @@ it("rejects requests while the Actor is disabled or the controller is destroyed"
 	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly", autoGrant = true } })
 	local actor: Actor, controller: any = createController()
 	actor.enabled = false
+
 	local disabled: any = controller:RequestAction("Action.Dodge")
 	expect(disabled.accepted).toBe(false)
 	expect(type(disabled.reason)).toBe("string")
@@ -238,8 +267,10 @@ end)
 it("passes a read-only pre-accept context with the original opaque parameters", function()
 	local parameters: { [any]: any } = {}
 	parameters.self = parameters
+
 	local actor: Actor? = nil
 	local observed: any = nil
+
 	loadActions({
 		{
 			id = "Action.Dodge",
@@ -247,10 +278,12 @@ it("passes a read-only pre-accept context with the original opaque parameters", 
 			autoGrant = true,
 			onCanStart = function(context: any): (boolean, string?)
 				observed = context
+
 				return true, nil
 			end,
 		},
 	})
+
 	local controller: any
 	actor, controller = createController()
 	expect(controller:RequestAction("Action.Dodge", parameters).accepted).toBe(true)
@@ -259,6 +292,7 @@ it("passes a read-only pre-accept context with the original opaque parameters", 
 	expect(observed.parameters).toBe(parameters)
 	expect(table.isfrozen(observed)).toBe(true)
 	expect(rawget(observed, "sequenceId")).toBeNil()
+
 	expect(function()
 		observed.actionId = "Action.Other"
 	end).toThrow()
@@ -266,6 +300,7 @@ end)
 
 it("preserves a custom onCanStart rejection and consumes no id", function()
 	local allow: boolean = false
+
 	loadActions({
 		{
 			id = "Action.Dodge",
@@ -275,10 +310,12 @@ it("preserves a custom onCanStart rejection and consumes no id", function()
 				if not allow then
 					return false, "GameCooldown"
 				end
+
 				return true, nil
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: any = createController()
 	expect(controller:RequestAction("Action.Dodge")).toEqual({ accepted = false, reason = "GameCooldown" })
 	allow = true
@@ -296,6 +333,7 @@ it("maps onCanStart false without a usable reason to one stable framework reason
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: any = createController()
 	local first: any = controller:RequestAction("Action.Dodge")
 	local second: any = controller:RequestAction("Action.Dodge")
@@ -309,6 +347,7 @@ it("rejects an onCanStart error or invalid result without activating an instance
 	local invalidResult: any = function(): string
 		return "yes"
 	end
+
 	for _, callback: any in
 		{
 			function(): boolean
@@ -336,10 +375,12 @@ it("rejects a yielding onCanStart without accepting or allocating an instance", 
 			autoGrant = true,
 			onCanStart = function(): (boolean, string?)
 				task.wait()
+
 				return true, nil
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: any = createController()
 	local rejected: any = controller:RequestAction("Action.Dodge")
 	expect(rejected.accepted).toBe(false)
@@ -350,16 +391,19 @@ end)
 it("revalidates a grant revoked by onCanStart before committing", function()
 	local controller: any = nil
 	local revoked: boolean = false
+
 	loadActions({
 		{
 			id = "Action.Dodge",
 			visibility = "ServerOnly",
 			onCanStart = function(): (boolean, string?)
 				revoked = controller:SetGrants("Learned", {})
+
 				return true, nil
 			end,
 		},
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	expect(controller:SetGrants("Learned", { "Action.Dodge" })).toBe(true)
@@ -375,6 +419,7 @@ it("revalidates Actor and controller availability after onCanStart", function()
 	for _, invalidate: string in { "disable", "destroy" } do
 		local actor: Actor? = nil
 		local controller: any = nil
+
 		loadActions({
 			{
 				id = "Action.Dodge",
@@ -386,10 +431,12 @@ it("revalidates Actor and controller availability after onCanStart", function()
 					else
 						controller:Destroy()
 					end
+
 					return true, nil
 				end,
 			},
 		})
+
 		actor, controller = createController()
 		local rejected: any = controller:RequestAction("Action.Dodge")
 		expect(rejected.accepted).toBe(false)
@@ -402,6 +449,7 @@ it("assigns nested requests ids in actual commit order", function()
 	local controller: any = nil
 	local nested: any = nil
 	local entering: boolean = false
+
 	loadActions({
 		{
 			id = "Action.Dodge",
@@ -412,10 +460,12 @@ it("assigns nested requests ids in actual commit order", function()
 					entering = true
 					nested = controller:RequestAction("Action.Dodge")
 				end
+
 				return true, nil
 			end,
 		},
 	})
+
 	local _actor: Actor
 	_actor, controller = createController()
 	local outer: any = controller:RequestAction("Action.Dodge")
@@ -427,9 +477,11 @@ it("does not emit Started for a rejected request", function()
 	loadActions({ { id = "Action.Dodge", visibility = "ServerOnly" } })
 	local _actor: Actor, controller: any = createController()
 	local startedCount: number = 0
+
 	controller.OnActionStarted:Connect(function()
 		startedCount += 1
 	end)
+
 	expect(controller:RequestAction("Action.Dodge").accepted).toBe(false)
 	task.wait()
 	task.wait()
@@ -438,6 +490,7 @@ end)
 
 it("keeps an accepted instance active after its grant is revoked", function()
 	local context: any = nil
+
 	loadActions({
 		{
 			id = "Action.Dodge",
@@ -447,6 +500,7 @@ it("keeps an accepted instance active after its grant is revoked", function()
 			end,
 		},
 	})
+
 	local _actor: Actor, controller: any = createController()
 	expect((controller:SetGrants("Learned", { "Action.Dodge" }))).toBe(true)
 	local result: any = controller:RequestAction("Action.Dodge")

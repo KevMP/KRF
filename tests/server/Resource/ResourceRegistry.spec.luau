@@ -177,21 +177,25 @@ it("ResourceRegistry.Get, GetAll, and GetAllById expose stable loaded definition
 	local mutateLoadedDefinitionSucceeded: boolean = pcall(function()
 		staminaDefinition.initialValue = 50
 	end)
+
 	expect(mutateLoadedDefinitionSucceeded).toBe(false)
 
 	local mutateLoadedDefinitionMinSucceeded: boolean = pcall(function()
 		(staminaDefinition.min :: any).value = 10
 	end)
+
 	expect(mutateLoadedDefinitionMinSucceeded).toBe(false)
 
 	local mutateAllDefinitionsSucceeded: boolean = pcall(function()
 		table.insert(allDefinitions, staminaDefinition)
 	end)
+
 	expect(mutateAllDefinitionsSucceeded).toBe(false)
 
 	local mutateAllDefinitionsByIdSucceeded: boolean = pcall(function()
 		allDefinitionsById["Resource.New"] = staminaDefinition
 	end)
+
 	expect(mutateAllDefinitionsByIdSucceeded).toBe(false)
 end)
 
@@ -201,6 +205,7 @@ it("ResourceRegistry rejects a second load after a successful startup load", fun
 	local firstLoaded: boolean, firstReason: string? = Registry.Load({
 		createMinimalResourceDefinition(),
 	})
+
 	expect(firstLoaded).toBe(true)
 	expect(firstReason).toBeNil()
 
@@ -213,6 +218,7 @@ it("ResourceRegistry rejects a second load after a successful startup load", fun
 			visibility = "ServerOnly",
 		},
 	})
+
 	expect(secondLoaded).toBe(false)
 	expect(secondReason).toBe("ResourceDefinitionsAlreadyLoaded")
 end)

@@ -17,6 +17,7 @@ local messages: { SharedNetworkingTypes.ProtocolMessage } = {
 	{ kind = "Reject", reason = "ProtocolMismatch" },
 	{ kind = "Bootstrap", manifest = TestUtils.manifest() },
 }
+
 for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 	it("multiplexes " .. message.kind .. " through a single buffer payload", function()
 		local encoded: buffer = TestUtils.encode(message)
@@ -40,14 +41,17 @@ end)
 it("rejects truncated framing at every byte boundary without throwing", function()
 	for _, message: SharedNetworkingTypes.ProtocolMessage in messages do
 		local encoded: buffer = TestUtils.encode(message)
+
 		for length: number = 0, buffer.len(encoded) - 1 do
 			local source: buffer = buffer.create(length)
 			buffer.copy(source, 0, encoded, 0, length)
 			local decoded: SharedNetworkingTypes.ProtocolMessage? = nil
 			local reason: string? = nil
+
 			local completed: boolean = pcall(function()
 				decoded, reason = Codec.Decode(source)
 			end)
+
 			expect(completed).toBe(true)
 			expect(decoded).toBeNil()
 			expect(reason).toBe("MalformedPacket")
@@ -57,11 +61,13 @@ end)
 
 it("rejects tables, strings, numbers and Instances at the protocol boundary", function()
 	local instance: Folder = Instance.new("Folder")
+
 	for _, payload: any in { {}, "hello", 1, false, instance } do
 		local decoded: SharedNetworkingTypes.ProtocolMessage?, reason: string? = Codec.Decode(payload)
 		expect(decoded).toBeNil()
 		expect(reason).toBe("ProtocolPayloadMustBeBuffer")
 	end
+
 	instance:Destroy()
 	local decoded: SharedNetworkingTypes.ProtocolMessage?, reason: string? = Codec.Decode(nil)
 	expect(decoded).toBeNil()

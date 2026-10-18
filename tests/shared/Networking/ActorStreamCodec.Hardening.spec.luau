@@ -12,6 +12,7 @@ local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.N
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ActorStreamCodecTestUtils)
 
 local codec: SharedNetworkingTypes.ActorStreamCodec
+
 beforeEach(function()
 	codec = TestUtils.codec()
 end)
@@ -28,6 +29,7 @@ it("rejects nil and all single-byte packets without throwing or exposing partial
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(nil)
 	expect(records).toBeNil()
 	expect(reason).toBe("MalformedActorPacket")
+
 	for byte: number = 0, 255 do
 		local payload: buffer = buffer.create(1)
 		buffer.writeu8(payload, 0, byte)
@@ -50,6 +52,7 @@ it("rejects every truncated prefix of a mixed Actor packet without returning a v
 			events = { { domainId = "Game.State", eventId = "Changed", payload = { count = 1 } } },
 		},
 	})
+
 	for length: number = 0, buffer.len(payload) - 1 do
 		local prefix: buffer = buffer.create(length)
 		buffer.copy(prefix, 0, payload, 0, length)
@@ -71,6 +74,7 @@ end)
 
 it("rejects a domain code absent from the receiving compiled catalog", function()
 	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(7, nil))
+
 	local payload: buffer = TestUtils.encode(foreign, {
 		{
 			kind = "Commit",
@@ -85,6 +89,7 @@ it("rejects a domain code absent from the receiving compiled catalog", function(
 			events = {},
 		},
 	})
+
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("UnknownDomainCode")
@@ -92,6 +97,7 @@ end)
 
 it("rejects an event code absent from the receiving domain without dispatching game code", function()
 	local foreign: SharedNetworkingTypes.ActorStreamCodec = Codec.Compile(TestUtils.protocol(nil, 7))
+
 	local payload: buffer = TestUtils.encode(foreign, {
 		{
 			kind = "Commit",
@@ -101,6 +107,7 @@ it("rejects an event code absent from the receiving domain without dispatching g
 			events = { { domainId = "Game.State", eventId = "Changed", payload = { count = 1 } } },
 		},
 	})
+
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("UnknownEventCode")
@@ -131,6 +138,7 @@ local invalidPatches: { { name: string, patch: SharedNetworkingTypes.ActorPatch 
 		patch = { kind = "Struct", fields = { target = { kind = "Replace", value = "TooLongTarget" } } },
 	},
 }
+
 for _, case: { name: string, patch: SharedNetworkingTypes.ActorPatch } in invalidPatches do
 	it("rejects " .. case.name .. " before returning packet bytes", function()
 		local payload: buffer?, reason: string? = codec.Encode({
@@ -142,6 +150,7 @@ for _, case: { name: string, patch: SharedNetworkingTypes.ActorPatch } in invali
 				events = {},
 			},
 		})
+
 		expect(payload).toBeNil()
 		expect(reason).toBe("InvalidActorPatch")
 	end)
@@ -158,6 +167,7 @@ it("enforces receiving Array bounds during patch decode even when a foreign send
 			order = Schema.Array(Schema.U8, 4),
 		})
 	))
+
 	local payload: buffer = TestUtils.encode(foreign, {
 		{
 			kind = "Commit",
@@ -177,6 +187,7 @@ it("enforces receiving Array bounds during patch decode even when a foreign send
 			events = {},
 		},
 	})
+
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(records).toBeNil()
 	expect(reason).toBe("InvalidActorPatch")
@@ -193,6 +204,7 @@ it("enforces receiving baseline bounds before handing current truth to the clien
 			order = Schema.Array(Schema.U8, 3),
 		})
 	))
+
 	local payload: buffer?, reason: string? = foreign.EncodeBaseline({
 		["Game.State"] = { value = {
 			current = 100,
@@ -201,10 +213,13 @@ it("enforces receiving baseline bounds before handing current truth to the clien
 			order = {},
 		} },
 	})
+
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected foreign baseline bytes")
+
 	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, decodeReason: string? =
 		codec.DecodeBaseline(payload)
+
 	expect(domains).toBeNil()
 	expect(decodeReason).toBe("InvalidActorBaseline")
 end)
@@ -219,14 +234,17 @@ it("rejects event payloads outside their compiled schema bounds", function()
 			events = { { domainId = "Game.State", eventId = "Changed", payload = { count = 256 } } },
 		},
 	})
+
 	expect(payload).toBeNil()
 	expect(reason).toBe("InvalidActorEvent")
 end)
 
 it("never serializes a Model Instance as Actor state or identity", function()
 	local model: Model = Instance.new("Model")
+
 	local success: boolean, payload: buffer?, reason: string? =
 		pcall(codec.EncodeBaseline, { ["Game.Optional"] = { value = model } })
+
 	model:Destroy()
 	expect(success).toBe(true)
 	expect(payload).toBeNil()

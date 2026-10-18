@@ -35,6 +35,7 @@ function TestUtils.protocol(
 			{ id = "Game.Optional", code = 1, state = Schema.Optional(Schema.U8), events = {} },
 		},
 	}
+
 	-- N2 admits dense codebooks. Foreign catalogs add filler entries so they
 	-- remain valid while emitting codes unknown to the smaller receiving catalog.
 	for code: number = 0, (domainCode or 0) - 1 do
@@ -45,22 +46,27 @@ function TestUtils.protocol(
 				state = Schema.Struct({}),
 				events = {},
 			}
+
 			table.insert(manifest.domains, filler)
 		end
 	end
+
 	for code: number = 0, (eventCode or 0) - 1 do
 		table.insert(
 			manifest.domains[1].events,
 			{ id = "Filler" .. tostring(code), code = code, payload = Schema.Struct({}) }
 		)
 	end
+
 	local protocol: SharedNetworkingTypes.ClientProtocol?, reason: string? = Compiler.Reconstruct(manifest)
 	expect(reason).toBeNil()
 	assert(protocol ~= nil, "Expected compiled stream catalog")
 	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+
 	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		schemas[domain.id] = SchemaUtils.compile(domain.state)
 	end
+
 	return protocol, schemas
 end
 
@@ -75,6 +81,7 @@ function TestUtils.encode(
 	local payload: buffer?, reason: string? = codec.Encode(records)
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected encoded Actor packet")
+
 	return payload
 end
 
@@ -85,6 +92,7 @@ function TestUtils.decode(
 	local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 	expect(reason).toBeNil()
 	assert(records ~= nil, "Expected decoded Actor packet")
+
 	return records
 end
 

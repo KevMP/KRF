@@ -29,6 +29,7 @@ end)
 afterEach(function()
 	Networking.Publish = originalPublish
 	Server._ResetForTests()
+
 	if model ~= nil then
 		model:Destroy()
 		model = nil
@@ -38,16 +39,20 @@ end)
 it("loads the real domain before RegisterActor returns and publishes its immediate mutation", function()
 	local domain: TestUtils.DomainFixture =
 		TestUtils.createDomain("Game.Stamina", Schema.Struct({ current = Schema.U8 }), { current = 100 })
+
 	local started: boolean, failure: ServerTypes.StartupFailure? =
 		Server.Init({ replicationDomains = { domain.definition } })
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	local publication: ServerNetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Server.Init must install the real N3 runtime from its loaded catalog")
 	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+
 	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
+
 	model = Instance.new("Model")
 	model.Parent = workspace
 	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
@@ -55,21 +60,25 @@ it("loads the real domain before RegisterActor returns and publishes its immedia
 	assert(actor ~= nil, "Expected registered Actor")
 	expect(domain.snapshotCalls).toBe(1)
 	expect(domain.callbacks[actor]).never.toBeNil()
+
 	expect(publication:CaptureBaseline(actor)).toEqual({
 		sequence = 0,
 		domains = { ["Game.Stamina"] = { value = { current = 100 } } },
 	})
+
 	domain.value.current = 80
 	domain.callbacks[actor]()
 	expect(#commits).toBe(1)
 	expect(commits[1].actor).toBe(actor)
 	expect(commits[1].sequence).toBe(1)
+
 	expect(commits[1].patches).toEqual({
 		{
 			domainId = "Game.Stamina",
 			patch = { kind = "Struct", fields = { current = { kind = "Replace", value = 80 } } },
 		},
 	})
+
 	expect(publication:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
 		domains = { ["Game.Stamina"] = { value = { current = 80 } } },
@@ -87,9 +96,11 @@ it("server reset destroys its installed runtime and disconnects a live domain", 
 	expect(reason).toBeNil()
 	assert(actor ~= nil, "Expected registered Actor")
 	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+
 	publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
+
 	Server._ResetForTests()
 	expect(Networking._GetPublicationRuntimeForTests()).toBeNil()
 	expect(domain.disconnectCalls).toBe(1)
@@ -104,23 +115,31 @@ it("rolls back an installed runtime and its observers when startup fails after p
 	local attached: ActorTypes.Actor = ActorEntity.new()
 	local publishedRuntime: ServerNetworkingTypes.PublicationRuntime? = nil
 	local commits: { ServerNetworkingTypes.PublicationCommit } = {}
+
 	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		local success: boolean, reason: string? = originalPublish(protocol)
+
 		if not success then
 			return false, reason
 		end
+
 		publishedRuntime = Networking._GetPublicationRuntimeForTests()
 		assert(publishedRuntime ~= nil, "Publication runtime must be installed during Networking startup")
+
 		publishedRuntime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 			table.insert(commits, commit)
 		end)
+
 		local attachedSuccessfully: boolean, attachReason: string? = publishedRuntime:AttachActor(attached)
 		expect(attachedSuccessfully).toBe(true)
 		expect(attachReason).toBeNil()
+
 		return false, "ForcedPublicationRollback"
 	end
+
 	local started: boolean, failure: ServerTypes.StartupFailure? =
 		Server.Init({ replicationDomains = { domain.definition } })
+
 	expect(started).toBe(false)
 	expect(failure).toEqual({ system = "Networking", reason = "ForcedPublicationRollback" })
 	expect(Networking._GetPublicationRuntimeForTests()).toBeNil()
@@ -141,6 +160,7 @@ it("rejects an impossible semantic event size through the real startup path", fu
 			return {}
 		end,
 	}
+
 	local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({ replicationDomains = { impossible } })
 	expect(started).toBe(false)
 	expect(failure).toEqual({ system = "Networking", reason = "PublicationEventTooLarge:Game.HugeEvent:TooLarge" })

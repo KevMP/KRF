@@ -10,6 +10,7 @@ local Client: ClientTypes.Client = require(KRF.client)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 
 export type InitResult = { success: boolean, failure: ClientTypes.StartupFailure? }
+
 export type Fixture = {
 	dependencies: ClientTypes.Dependencies,
 	transport: ClientTypes.ClientTransport,
@@ -40,11 +41,13 @@ function ClientTestUtils.new(): Fixture
 		sent = {},
 		order = {},
 	}
+
 	fixture.transport = {
 		ConnectReliable = function(callback: (any, ...any) -> ()): () -> ()
 			fixture.listening = true
 			fixture.inbound = callback
 			table.insert(fixture.order, "Listen")
+
 			return function(): ()
 				fixture.disconnectCalls += 1
 				fixture.listening = false
@@ -55,51 +58,61 @@ function ClientTestUtils.new(): Fixture
 			expect(typeof(payload)).toBe("buffer")
 			table.insert(fixture.sent, payload)
 			table.insert(fixture.order, ProtocolTestUtils.decode(payload).kind)
+
 			if fixture.onSend ~= nil then
 				fixture.onSend(payload)
 			end
 		end,
 	}
+
 	fixture.dependencies = {
 		Now = function(): number
 			return 100
 		end,
 		Resume = function(waitingThread: thread): ()
 			local completed: boolean, reason: any = coroutine.resume(waitingThread)
+
 			if not completed then
 				error(tostring(reason), 2)
 			end
 		end,
 		DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransport?, string?)
 			expect(deadline > 100 and deadline < math.huge).toBe(true)
+
 			return fixture.transport, nil
 		end,
 		ScheduleTimeout = function(seconds: number, callback: () -> ()): () -> ()
 			fixture.timeoutSeconds = seconds
 			fixture.timeoutCallback = callback
+
 			return function(): ()
 				fixture.timeoutCancelled = true
 			end
 		end,
 		InstallConsumers = function(_protocol: SharedNetworkingTypes.ClientProtocol): (boolean, string?, (() -> ())?)
 			table.insert(fixture.order, "Consumers")
+
 			return true, nil, function(): ()
 				fixture.consumerCleanupCalls += 1
 			end
 		end,
 	}
+
 	return fixture
 end
 
 function ClientTestUtils.start(fixture: Fixture): ()
 	Client._SetDependenciesForTests(fixture.dependencies)
+
 	local initThread: thread = coroutine.create(function()
 		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
 		fixture.result = { success = success, failure = failure }
 	end)
+
 	fixture.initThread = initThread
 	local completed: boolean, reason: any = coroutine.resume(initThread)
 	expect(completed).toBe(true)
+
 	if not completed then
 		error(tostring(reason), 2)
 	end

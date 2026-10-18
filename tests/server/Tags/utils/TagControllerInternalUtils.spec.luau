@@ -30,6 +30,7 @@ it("SelectStackRefreshTarget breaks equal remaining-duration ties by oldest appl
 		remainingDuration = 2,
 		appliedOrder = 4,
 	}
+
 	local secondInstance: TagInstanceRecord = {
 		tagId = "Buff.Sprint",
 		duration = 5,
@@ -75,6 +76,7 @@ it("CreateTagInstance seeds tick countdown from registered metadata", function()
 
 	local firstInstance: TagInstanceRecord =
 		TagControllerInstanceUtils.CreateTagInstance(factoryContext, "Status.OnFire", 5)
+
 	local secondInstance: TagInstanceRecord =
 		TagControllerInstanceUtils.CreateTagInstance(factoryContext, "Status.Rooted", nil)
 
@@ -109,6 +111,7 @@ it("StepTagInstance reports a due tick and resets the countdown when the interva
 			return
 		end,
 	}
+
 	local tagRecord: TagInstanceRecord = {
 		tagId = "Status.OnFire",
 		duration = 5,
@@ -144,6 +147,7 @@ end)
 
 it("FireProtectedOnTick returns early when no hook is defined", function()
 	local actor: Actor = ActorEntity.new()
+
 	local tagDefinition: TagDefinition = {
 		id = "Status.Passive",
 		duplicateBehavior = "Refresh",
@@ -162,6 +166,7 @@ it("FireProtectedOnTick passes the actor and delta time to the consumer hook", f
 	local actor: Actor = ActorEntity.new()
 	local capturedActor: Actor? = nil
 	local capturedDeltaTime: number? = nil
+
 	local tagDefinition: TagDefinition = {
 		id = "Status.OnFire",
 		tickInterval = 1,

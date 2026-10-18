@@ -42,6 +42,7 @@ it("rejects missing, non-table, and unsupported arbitrary-table schema definitio
 end)
 
 type InvalidEnumCase = { name: string, definition: any, reason: string }
+
 local invalidEnums: { InvalidEnumCase } = {
 	{ name = "missing membership", definition = { kind = "Enum" }, reason = "SchemaEnumValuesMustBeArray" },
 	{
@@ -76,6 +77,7 @@ local invalidEnums: { InvalidEnumCase } = {
 		reason = "SchemaEnumValuesMustBeArray",
 	},
 }
+
 for _, enumCase: InvalidEnumCase in invalidEnums do
 	it("Enum compilation rejects " .. enumCase.name .. " with a stable reason", function()
 		expectRejected(enumCase.definition, enumCase.reason)
@@ -97,10 +99,12 @@ it("normalizes Struct fields independently of insertion order without losing nes
 	firstFields.zeta = Schema.Struct({ remaining = Schema.F32 })
 	firstFields.alpha = Schema.Boolean
 	firstFields.middle = Schema.U16
+
 	local secondFields: { [string]: SchemaDefinition } = {}
 	secondFields.middle = Schema.U16
 	secondFields.alpha = Schema.Boolean
 	secondFields.zeta = Schema.Struct({ remaining = Schema.F32 })
+
 	local first: CompiledSchema = TestUtils.compile(Schema.Struct(firstFields))
 	local second: CompiledSchema = TestUtils.compile(Schema.Struct(secondFields))
 	assert(first.kind == "Struct" and second.kind == "Struct", "Expected compiled Struct schemas")
@@ -132,14 +136,17 @@ end)
 
 it("fully validates structural bounds even when definitions bypass friendly constructors", function()
 	local invalidBounds: { any } = { 0, -1, 1.5, "2", false, 0 / 0, math.huge, -math.huge }
+
 	for _, bound: any in invalidBounds do
 		expectRejected({ kind = "String", maxBytes = bound }, "SchemaStringMaxBytesInvalid")
 		expectRejected({ kind = "Array", element = Schema.U8, maxLength = bound }, "SchemaArrayMaxLengthInvalid")
+
 		expectRejected(
 			{ kind = "Map", key = Schema.U8, value = Schema.U8, maxEntries = bound },
 			"SchemaMapMaxEntriesInvalid"
 		)
 	end
+
 	expectRejected({ kind = "String" }, "SchemaStringMaxBytesInvalid")
 	expectRejected({ kind = "Array", element = Schema.U8 }, "SchemaArrayMaxLengthInvalid")
 	expectRejected({ kind = "Map", key = Schema.U8, value = Schema.U8 }, "SchemaMapMaxEntriesInvalid")
@@ -152,9 +159,11 @@ it("rejects complex and Optional Map keys while allowing deterministic string, e
 		Schema.Map(Schema.U8, Schema.U8, 2),
 		Schema.Optional(Schema.U8),
 	}
+
 	for _, key: SchemaDefinition in unsupportedKeys do
 		expectRejected({ kind = "Map", key = key, value = Schema.U8, maxEntries = 2 }, "SchemaMapKeyUnsupported")
 	end
+
 	local supportedKeys: { SchemaDefinition } = {
 		Schema.String(8),
 		Schema.Enum({ "Idle" }),
@@ -165,6 +174,7 @@ it("rejects complex and Optional Map keys while allowing deterministic string, e
 		Schema.I16,
 		Schema.I32,
 	}
+
 	for _, key: SchemaDefinition in supportedKeys do
 		local compiled: CompiledSchema = TestUtils.compile(Schema.Map(key, Schema.Boolean, 2))
 		expectFiniteBound(compiled)
@@ -172,6 +182,7 @@ it("rejects complex and Optional Map keys while allowing deterministic string, e
 end)
 
 local unsupportedScalarKeys: { SchemaDefinition } = { Schema.Boolean, Schema.F32, Schema.F64 }
+
 for _, key: SchemaDefinition in unsupportedScalarKeys do
 	it("rejects " .. key.kind .. " Map keys with the stable unsupported-key reason", function()
 		expectRejected({ kind = "Map", key = key, value = Schema.U8, maxEntries = 2 }, "SchemaMapKeyUnsupported")
@@ -184,6 +195,7 @@ it("rejects direct and indirect recursive definitions without hanging or publish
 	expectRejected(recursive, "SchemaRecursiveDefinition")
 	local parent: any = { kind = "Struct", fields = {} }
 	local child: any = { kind = "Array", element = parent, maxLength = 2 }
+
 	parent.fields.child = child
 	expectRejected(parent, "SchemaRecursiveDefinition")
 end)
@@ -201,6 +213,7 @@ it("owns compiled Enum and Struct metadata without freezing or retaining mutable
 	local sourceFields: any = { mode = sourceEnum, guard = { kind = "U8" } }
 	local source: any = { kind = "Struct", fields = sourceFields }
 	local compiled: CompiledSchema = TestUtils.compile(source)
+
 	sourceValues[1] = "Flying"
 	sourceEnum.kind = "Boolean"
 	sourceFields.guard.kind = "Boolean"
@@ -215,9 +228,11 @@ it("owns compiled Enum and Struct metadata without freezing or retaining mutable
 	assert(compiled.kind == "Struct", "Expected compiled Struct metadata")
 	expect(table.isfrozen(compiled)).toBe(true)
 	expect(table.isfrozen(compiled.fields)).toBe(true)
+
 	for _, field: SharedNetworkingTypes.CompiledField in compiled.fields do
 		expect(table.isfrozen(field)).toBe(true)
 		expect(table.isfrozen(field.schema)).toBe(true)
+
 		if field.schema.kind == "Enum" then
 			expect(table.isfrozen(field.schema.values)).toBe(true)
 		end
@@ -231,7 +246,9 @@ it("owns and freezes nested collection contracts including all child schemas", f
 		maxEntries = 2,
 		value = { kind = "Array", maxLength = 3, element = { kind = "Optional", inner = { kind = "U8" } } },
 	}
+
 	local compiled: CompiledSchema = TestUtils.compile(source)
+
 	source.key.maxBytes = 100
 	source.maxEntries = 100
 	source.value.maxLength = 100
@@ -269,12 +286,15 @@ it("derives fixed numeric widths and a finite Boolean maximum", function()
 		Schema.F32,
 		Schema.F64,
 	}
+
 	local widths: { number } = { 1, 2, 4, 1, 2, 4, 4, 8 }
+
 	for index: number, definition: SchemaDefinition in definitions do
 		local compiled: CompiledSchema = TestUtils.compile(definition)
 		expectFiniteBound(compiled)
 		expect(compiled.maxEncodedBytes).toBe(widths[index])
 	end
+
 	expectFiniteBound(TestUtils.compile(Schema.Boolean))
 end)
 
@@ -291,9 +311,11 @@ it("derives Struct, Optional, Array, and Map maxima recursively", function()
 	local optional: CompiledSchema = TestUtils.compile(Schema.Optional(Schema.U16))
 	local array: CompiledSchema = TestUtils.compile(Schema.Array(Schema.U16, 32))
 	local map: CompiledSchema = TestUtils.compile(Schema.Map(Schema.U16, Schema.F32, 16))
+
 	for _, compiled: CompiledSchema in { record, optional, array, map } do
 		expectFiniteBound(compiled)
 	end
+
 	expect(record.maxEncodedBytes >= 2 * child.maxEncodedBytes).toBe(true)
 	expect(optional.maxEncodedBytes > child.maxEncodedBytes).toBe(true)
 	expect(array.maxEncodedBytes >= 32 * child.maxEncodedBytes).toBe(true)
@@ -314,9 +336,11 @@ end)
 
 it("deeply nested bounded schemas retain finite introspectable maxima", function()
 	local definition: SchemaDefinition = Schema.U8
+
 	for _ = 1, 32 do
 		definition = Schema.Struct({ child = Schema.Optional(Schema.Array(definition, 1)) })
 	end
+
 	local compiled: CompiledSchema = TestUtils.compile(definition)
 	expectFiniteBound(compiled)
 	expect(compiled.kind).toBe("Struct")
@@ -324,10 +348,12 @@ end)
 
 it("rejects nested bounds whose maximum encoded size cannot remain finite", function()
 	local definition: any = { kind = "U8" }
+
 	-- Keep structural depth modest so a private depth guard cannot mask size rejection.
 	for _ = 1, 20 do
 		definition = { kind = "Array", element = definition, maxLength = 2 ^ 52 }
 	end
+
 	expectRejected(definition, "SchemaEncodedSizeInvalid")
 end)
 
@@ -345,6 +371,7 @@ it("rejects finite Map multiplication that exceeds exact safe integer byte accou
 		value = Schema.F64,
 		maxEntries = 2 ^ 50,
 	}
+
 	expectRejected(definition, "SchemaEncodedSizeInvalid")
 end)
 
@@ -361,14 +388,18 @@ it("rejects 10000 non-recursive Optional levels cleanly without exposing the pri
 	-- Build raw descriptors iteratively to exercise compiler admission rather than
 	-- constructor recursion or the test fixture's own call stack.
 	local definition: SchemaDefinition = { kind = "U8" }
+
 	for _ = 1, 10000 do
 		definition = { kind = "Optional", inner = definition }
 	end
+
 	local compiled: CompiledSchema? = nil
 	local reason: string? = nil
+
 	local completed: boolean = pcall(function()
 		compiled, reason = Compiler.Compile(definition)
 	end)
+
 	expect(completed).toBe(true)
 	expect(compiled).toBeNil()
 	expect(reason).toBe("SchemaDepthExceeded")
@@ -377,6 +408,7 @@ end)
 
 it("rejects excessive mixed structural depth even when every collection has a bound of one", function()
 	local definition: SchemaDefinition = { kind = "U8" }
+
 	for _ = 1, 2500 do
 		local optionalChild: SchemaDefinition = { kind = "Optional", inner = definition }
 		local arrayChild: SchemaDefinition = { kind = "Array", element = optionalChild, maxLength = 1 }
@@ -384,11 +416,14 @@ it("rejects excessive mixed structural depth even when every collection has a bo
 		local fields: { [string]: SchemaDefinition } = { child = mapChild }
 		definition = { kind = "Struct", fields = fields }
 	end
+
 	local compiled: CompiledSchema? = nil
 	local reason: string? = nil
+
 	local completed: boolean = pcall(function()
 		compiled, reason = Compiler.Compile(definition)
 	end)
+
 	expect(completed).toBe(true)
 	expect(compiled).toBeNil()
 	expect(reason).toBe("SchemaDepthExceeded")

@@ -13,6 +13,7 @@ function ActorPublicationLifecycle.AttachActor(actor: ActorTypes.Actor): (boolea
 	if installed == nil then
 		return true, nil
 	end
+
 	return installed:AttachActor(actor)
 end
 

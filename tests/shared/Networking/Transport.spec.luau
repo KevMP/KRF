@@ -15,6 +15,7 @@ local parent: Folder
 beforeEach(function()
 	parent = Instance.new("Folder")
 end)
+
 afterEach(function()
 	parent:Destroy()
 end)
@@ -30,9 +31,11 @@ it("owns exactly one Reliable RemoteEvent and one reserved UnreliableRemoteEvent
 	expect(owned.unreliable.ClassName).toBe("UnreliableRemoteEvent")
 	expect(#owned.root:GetDescendants()).toBe(2)
 	expect(#parent:GetChildren()).toBe(1)
+
 	for _, descendant: Instance in parent:GetDescendants() do
 		expect(descendant:IsA("RemoteFunction")).toBe(false)
 	end
+
 	local located: SharedNetworkingTypes.OwnedTransport?, locateReason: string? = Transport.Locate(parent)
 	expect(locateReason).toBeNil()
 	assert(located ~= nil, "Expected located transport")
@@ -73,6 +76,7 @@ it("reports unavailable transport immediately at the non-yielding discovery prim
 end)
 
 type HierarchyCase = { name: string, reliableClass: string?, unreliableClass: string?, duplicateReliable: boolean? }
+
 local hierarchyCases: { HierarchyCase } = {
 	{ name = "missing Reliable", unreliableClass = "UnreliableRemoteEvent" },
 	{ name = "missing Unreliable", reliableClass = "RemoteEvent" },
@@ -86,26 +90,31 @@ local hierarchyCases: { HierarchyCase } = {
 		duplicateReliable = true,
 	},
 }
+
 for _, testCase: HierarchyCase in hierarchyCases do
 	it("rejects a hierarchy with " .. testCase.name .. " without repairing it from the client", function()
 		local root: Folder = Instance.new("Folder")
 		root.Name = Transport.ROOT_NAME
 		root.Parent = parent
+
 		if testCase.reliableClass ~= nil then
 			local reliable: Instance = Instance.new(testCase.reliableClass)
 			reliable.Name = Transport.RELIABLE_NAME
 			reliable.Parent = root
 		end
+
 		if testCase.unreliableClass ~= nil then
 			local unreliable: Instance = Instance.new(testCase.unreliableClass)
 			unreliable.Name = Transport.UNRELIABLE_NAME
 			unreliable.Parent = root
 		end
+
 		if testCase.duplicateReliable then
 			local duplicate: RemoteEvent = Instance.new("RemoteEvent")
 			duplicate.Name = Transport.RELIABLE_NAME
 			duplicate.Parent = root
 		end
+
 		local originalCount: number = #root:GetChildren()
 		local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 		expect(owned).toBeNil()
@@ -120,6 +129,7 @@ it("rejects duplicate root names instead of choosing an ambiguous transport", fu
 		root.Name = Transport.ROOT_NAME
 		root.Parent = parent
 	end
+
 	local owned: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Locate(parent)
 	expect(owned).toBeNil()
 	expect(reason).toBe("InvalidTransport")
@@ -171,8 +181,10 @@ it("surfaces a failed hierarchy publication instead of returning a partially own
 			return {}
 		end,
 	}
+
 	local completed: boolean = pcall(function()
 		Transport.Create(invalidParent)
 	end)
+
 	expect(completed).toBe(false)
 end)

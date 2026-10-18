@@ -5,6 +5,7 @@ local SchemaProjection = {}
 
 function SchemaProjection.Definition(schema: Types.CompiledSchema): Types.SchemaDefinition
 	local definition: Types.SchemaDefinition
+
 	if schema.kind == "String" then
 		definition = { kind = "String", maxBytes = schema.maxBytes }
 	elseif schema.kind == "Enum" then
@@ -23,15 +24,19 @@ function SchemaProjection.Definition(schema: Types.CompiledSchema): Types.Schema
 		}
 	elseif schema.kind == "Struct" then
 		local fields: { [string]: Types.SchemaDefinition } = {}
+
 		for _, field: Types.CompiledField in schema.fields do
 			fields[field.name] = SchemaProjection.Definition(field.schema)
 		end
+
 		table.freeze(fields)
 		definition = { kind = "Struct", fields = fields }
 	else
 		definition = { kind = schema.kind }
 	end
+
 	table.freeze(definition)
+
 	return definition
 end
 

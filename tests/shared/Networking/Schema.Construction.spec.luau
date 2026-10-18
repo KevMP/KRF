@@ -24,11 +24,14 @@ it("exposes explicit numeric representations and no unrestricted schema vocabula
 		Schema.F32,
 		Schema.F64,
 	}
+
 	local kinds: { string } = { "Boolean", "U8", "U16", "U32", "I8", "I16", "I32", "F32", "F64" }
+
 	for index: number, definition: SchemaDefinition in primitives do
 		expect(definition.kind).toBe(kinds[index])
 		expect(table.isfrozen(definition)).toBe(true)
 	end
+
 	expect((Schema :: any).Any).toBeNil()
 	expect((Schema :: any).Table).toBeNil()
 	expect((Schema :: any).Dictionary).toBeNil()
@@ -36,6 +39,7 @@ it("exposes explicit numeric representations and no unrestricted schema vocabula
 end)
 
 type BoundCase = { name: string, value: any }
+
 local invalidBounds: { BoundCase } = {
 	{ name = "missing", value = nil },
 	{ name = "zero", value = 0 },
@@ -54,11 +58,13 @@ for _, boundCase: BoundCase in invalidBounds do
 			Schema.String(boundCase.value)
 		end).toThrow("SchemaStringMaxBytesInvalid")
 	end)
+
 	it("Array rejects a " .. boundCase.name .. " length bound at construction", function()
 		expect(function()
 			Schema.Array(Schema.U8, boundCase.value)
 		end).toThrow("SchemaArrayMaxLengthInvalid")
 	end)
+
 	it("Map rejects a " .. boundCase.name .. " entry bound at construction", function()
 		expect(function()
 			Schema.Map(Schema.U8, Schema.Boolean, boundCase.value)
@@ -69,6 +75,7 @@ end
 it("copies enum source membership before the caller changes its array", function()
 	local sourceValues: { string } = { "Idle", "Blocking" }
 	local definition: SchemaDefinition = Schema.Enum(sourceValues)
+
 	sourceValues[1] = "Flying"
 	table.insert(sourceValues, "Stunned")
 	local compiled: CompiledSchema = TestUtils.compile(definition)
@@ -82,8 +89,10 @@ end)
 it("copies Struct source fields before the caller replaces or adds fields", function()
 	local sourceFields: { [string]: SchemaDefinition } = { guard = Schema.F32 }
 	local definition: SchemaDefinition = Schema.Struct(sourceFields)
+
 	sourceFields.guard = Schema.Boolean
 	sourceFields.injected = Schema.U8
+
 	local compiled: CompiledSchema = TestUtils.compile(definition)
 	TestUtils.expectValid(compiled, { guard = 20 })
 	TestUtils.expectInvalid(compiled, { guard = false }, "SchemaValueTypeInvalid")
@@ -100,8 +109,10 @@ it("constructs immutable descriptors for every bounded composite form", function
 		Schema.Array(Schema.U8, 4),
 		Schema.Map(Schema.String(8), Schema.F32, 4),
 	}
+
 	for _, definition: SchemaDefinition in definitions do
 		expect(table.isfrozen(definition)).toBe(true)
+
 		if definition.kind == "Enum" then
 			expect(table.isfrozen(definition.values)).toBe(true)
 		elseif definition.kind == "Struct" then

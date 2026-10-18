@@ -131,6 +131,7 @@ it("WithDeferredDestroy unwinds depth and flushes pending destroy before rethrow
 			error("DeferredDestroyFailure")
 		end)
 	end)
+
 	local errorIndex: number? = string.find(tostring(errorMessage), "DeferredDestroyFailure", 1, true)
 
 	expect(success).toBe(false)
@@ -151,6 +152,7 @@ it("WithDeferredDestroy errors after signals have already been destroyed", funct
 	local success: boolean, errorMessage: any = pcall(function()
 		ownedSignals:WithDeferredDestroy(function() end)
 	end)
+
 	local errorIndex: number? = string.find(
 		tostring(errorMessage),
 		"OwnedSignals:WithDeferredDestroy called after signals were destroyed",

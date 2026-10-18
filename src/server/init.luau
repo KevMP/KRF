@@ -50,13 +50,17 @@ end
 
 local function copyTagDefinition(definition: TagDefinition): TagDefinition
 	local owned: TagDefinition = table.clone(definition)
+
 	if definition.properties ~= nil then
 		local properties: { [string]: TagTypes.PropertyModifier } = {}
+
 		for propertyName: string, modifier: TagTypes.PropertyModifier in next, definition.properties do
 			properties[propertyName] = table.freeze(table.clone(modifier)) :: TagTypes.PropertyModifier
 		end
+
 		owned.properties = table.freeze(properties)
 	end
+
 	return table.freeze(owned) :: TagDefinition
 end
 
@@ -68,6 +72,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	if initAttempted then
 		return false, { system = "Server", reason = "ServerInitAlreadyAttempted" }
 	end
+
 	initAttempted = true
 
 	if
@@ -86,10 +91,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		{ key = "ResourceController", factory = ResourceController.new, dependsOn = { "PropertyController" } },
 		{ key = "ActionController", factory = ActionController.new },
 	}
+
 	local gameControllers: { ControllerDef } = config.controllers or {}
+
 	for _, definition: ControllerDef in gameControllers do
 		table.insert(controllers, definition)
 	end
+
 	local tags: { TagDefinition } = config.tags or {}
 	local resources: { ResourceDefinition } = config.resources or {}
 	local actions: { ActionFactory } = if config.actions ~= nil then config.actions else {}
@@ -99,11 +107,14 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local stagedTags: { [string]: TagDefinition } = {}
 	local preparedTagIds: { [string]: boolean } = {}
 	local preparedTags: { TagDefinition } = {}
+
 	for _, definition: TagDefinition in tags do
 		local valid: boolean, reason: string? = TagValidator.ValidateTagDefinition(definition, stagedTags)
+
 		if not valid then
 			return false, { system = "Tag", reason = reason :: string }
 		end
+
 		stagedTags[definition.id] = definition
 		preparedTagIds[definition.id] = true
 		table.insert(preparedTags, copyTagDefinition(definition))
@@ -112,12 +123,15 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local stagedResources: { [string]: ResourceDefinition } = {}
 	local preparedResourceIds: { [string]: boolean } = {}
 	local preparedResources: { ResourceTypes.LoadedResourceDefinition } = {}
+
 	for _, definition: ResourceDefinition in resources do
 		local valid: boolean, reason: string? =
 			ResourceValidator.ValidateResourceDefinition(definition, stagedResources)
+
 		if not valid then
 			return false, { system = "Resource", reason = reason :: string }
 		end
+
 		stagedResources[definition.id] = definition
 		preparedResourceIds[definition.id] = true
 		table.insert(preparedResources, ResourceDefinitionNormalizer.NormalizeResourceDefinition(definition))
@@ -125,6 +139,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	local preparedActions: PreparedActionCatalog?, actionReason: string? =
 		ActionRegistry.Prepare(actions, preparedTagIds, preparedResourceIds)
+
 	if preparedActions == nil then
 		return false, { system = "Action", reason = actionReason :: string }
 	end
@@ -132,93 +147,128 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local gameDomains: { ReplicationDomainDefinition } = if config.replicationDomains ~= nil
 		then config.replicationDomains
 		else {}
+
 	if type(gameDomains) ~= "table" then
 		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeTable" }
 	end
+
 	local domainCount: number? = SchemaCollectionUtils.GetArrayLength(gameDomains)
+
 	if domainCount == nil then
 		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeArray" }
 	end
+
 	local buildCatalogs: ReplicationTypes.ReplicationDomainBuildCatalogs = {
 		tags = table.freeze(preparedTags),
 		resources = table.freeze(preparedResources),
 		actions = preparedActions.orderedDefinitions,
 	}
+
 	table.freeze(buildCatalogs)
+
 	local builtInDomains: { ReplicationDomainDefinition }?, buildReason: string? =
 		BuiltInReplicationDomains.Build(buildCatalogs)
+
 	if builtInDomains == nil then
 		return false, { system = "ReplicationDomain", reason = buildReason or "ReplicationDomainBuildFailed" }
 	end
+
 	if type(builtInDomains) ~= "table" then
 		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeTable" }
 	end
+
 	local builtInCount: number? = SchemaCollectionUtils.GetArrayLength(builtInDomains)
+
 	if builtInCount == nil then
 		return false, { system = "ReplicationDomain", reason = "ReplicationDomainDefinitionsMustBeArray" }
 	end
+
 	local domains: { ReplicationDomainDefinition } = {}
+
 	for index: number = 1, builtInCount do
 		table.insert(domains, rawget(builtInDomains, index) :: ReplicationDomainDefinition)
 	end
+
 	for index: number = 1, domainCount do
 		local definition: any = rawget(gameDomains, index)
+
 		-- Framework ids remain reserved when their visible catalogs are empty.
 		if type(definition) == "table" and rawget(definition, "id") == "KRF.Tags" then
 			return false, { system = "ReplicationDomain", reason = "DuplicateReplicationDomainId" }
 		end
+
 		table.insert(domains, definition :: ReplicationDomainDefinition)
 	end
+
 	local preparedDomains: PreparedReplicationDomainCatalog?, domainReason: string? =
 		ReplicationDomainRegistry.Prepare(domains)
+
 	if preparedDomains == nil then
 		return false, { system = "ReplicationDomain", reason = domainReason :: string }
 	end
+
 	local eventsValid: boolean, eventReason: string? = PublicationRuntime.ValidateEventBounds(preparedDomains, 65536)
+
 	if not eventsValid then
 		return false, { system = "Networking", reason = eventReason :: string }
 	end
 
 	local prepared: boolean, protocol: SharedNetworkingTypes.PreparedProtocol?, networkingReason: string? =
 		pcall(ServerNetworking.Prepare, preparedDomains)
+
 	if not prepared then
 		return false, { system = "Networking", reason = "StartupInternalFailure:" .. tostring(protocol) }
 	end
+
 	if protocol == nil then
 		return false, { system = "Networking", reason = networkingReason :: string }
 	end
 
 	local publicationSystem: string = "Controller"
+
 	local published: boolean, loaded: boolean, reason: string? = pcall(function(): (boolean, string?)
 		local success: boolean, failure: string? = ControllerRegistry.Load(controllers)
+
 		if not success then
 			return false, failure
 		end
+
 		publicationSystem = "Tag"
 		success, failure = TagRegistry.Load(preparedTags)
+
 		if not success then
 			return false, failure
 		end
+
 		publicationSystem = "Resource"
 		success, failure = ResourceRegistry.Load(preparedResources :: { ResourceDefinition })
+
 		if not success then
 			return false, failure
 		end
+
 		publicationSystem = "Action"
 		success, failure = ActionRegistry.Publish(preparedActions :: PreparedActionCatalog)
+
 		if not success then
 			return false, failure
 		end
+
 		publicationSystem = "ReplicationDomain"
 		success, failure = ReplicationDomainRegistry.Publish(preparedDomains :: PreparedReplicationDomainCatalog)
+
 		if not success then
 			return false, failure
 		end
+
 		publicationSystem = "Networking"
+
 		return ServerNetworking.Publish(protocol :: SharedNetworkingTypes.PreparedProtocol)
 	end)
+
 	if not published or not loaded then
 		rollbackStartup()
+
 		return false,
 			{
 				system = publicationSystem,
@@ -227,6 +277,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 
 	initialized = true
+
 	return true, nil
 end
 

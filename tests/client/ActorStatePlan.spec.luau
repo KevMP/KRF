@@ -16,6 +16,7 @@ type Case = {
 	patch: SharedNetworkingTypes.ActorPatch,
 	expected: any,
 }
+
 local cases: { Case } = {
 	{
 		name = "signed scalar replacement",
@@ -149,6 +150,7 @@ for _, case: Case in cases do
 		assert(result ~= nil, "Expected successful patch result including Optional nil")
 		expect(result.value).toEqual(case.expected)
 		expect(snapshot.value).toEqual(case.previous)
+
 		if type(result.value) == "table" then
 			expect(table.isfrozen(result.value)).toBe(true)
 		end
@@ -158,15 +160,18 @@ end
 it("owns recursively immutable snapshots without retaining mutable aliases", function()
 	local schema: SharedNetworkingTypes.SchemaDefinition =
 		Schema.Struct({ items = Schema.Array(Schema.Struct({ value = Schema.U8 }), 2) })
+
 	local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(schema))
 	local input: any = { items = { { value = 1 } } }
 	local result: StatePlan.Result?, reason: string? = plan.Snapshot(input)
 	expect(reason).toBeNil()
 	assert(result ~= nil, "Expected owned snapshot")
 	expect(table.isfrozen(result.value.items[1])).toBe(true)
+
 	pcall(function()
 		input.items[1].value = 9
 	end)
+
 	expect(result.value).toEqual({ items = { { value = 1 } } })
 end)
 
@@ -175,15 +180,20 @@ it("copies only the changed Struct path and Map container while sharing untouche
 		left = Schema.Struct({ count = Schema.U8 }),
 		right = Schema.Map(Schema.String(4), Schema.Struct({ count = Schema.U8 }), 2),
 	})
+
 	local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(schema))
+
 	local snapshot: StatePlan.Result?, reason: string? =
 		plan.Snapshot({ left = { count = 1 }, right = { A = { count = 2 }, B = { count = 3 } } })
+
 	assert(snapshot ~= nil, reason)
 	local result: StatePlan.Result?
+
 	result, reason = plan.Apply(
 		snapshot.value,
 		{ kind = "Struct", fields = { right = { kind = "Map", entries = { B = { count = 4 } }, removed = {} } } }
 	)
+
 	assert(result ~= nil, reason)
 	expect(rawequal(result.value, snapshot.value)).toBe(false)
 	expect(rawequal(result.value.right, snapshot.value.right)).toBe(false)
@@ -194,6 +204,7 @@ it("copies only the changed Struct path and Map container while sharing untouche
 end)
 
 type InvalidCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, previous: any, patch: any }
+
 local invalidCases: { InvalidCase } = {
 	{
 		name = "unknown Struct field",
@@ -284,6 +295,7 @@ local invalidCases: { InvalidCase } = {
 	{ name = "missing patch body", schema = Schema.U8, previous = 1, patch = {} },
 	{ name = "unknown patch kind", schema = Schema.U8, previous = 1, patch = { kind = "Increment", value = 1 } },
 }
+
 for _, case: InvalidCase in invalidCases do
 	it("rejects " .. case.name .. " without modifying the previous snapshot", function()
 		local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(case.schema))
@@ -306,8 +318,10 @@ end)
 
 it("rejects a Map operation against invalid local structure without leaking a raw indexing error", function()
 	local plan: StatePlan.Plan = StatePlan.Compile(SchemaUtils.compile(Schema.Map(Schema.U8, Schema.U8, 2)))
+
 	local result: StatePlan.Result?, reason: string? =
 		plan.Apply("broken", { kind = "Map", entries = { [1] = 2 }, removed = {} })
+
 	expect(result).toBeNil()
 	expect(reason).toBe("InvalidActorPatch")
 end)
@@ -315,6 +329,7 @@ end)
 it("owns composite replacement values without leaving mutable patch aliases into current truth", function()
 	local plan: StatePlan.Plan =
 		StatePlan.Compile(SchemaUtils.compile(Schema.Array(Schema.Struct({ count = Schema.U8 }), 2)))
+
 	local replacement: any = { { count = 2 } }
 	local previous: StatePlan.Result?, reason: string? = plan.Snapshot({ { count = 1 } })
 	assert(previous ~= nil, reason)
@@ -323,9 +338,11 @@ it("owns composite replacement values without leaving mutable patch aliases into
 	assert(result ~= nil, reason)
 	expect(table.isfrozen(result.value)).toBe(true)
 	expect(table.isfrozen(result.value[1])).toBe(true)
+
 	pcall(function()
 		replacement[1].count = 9
 	end)
+
 	expect(result.value).toEqual({ { count = 2 } })
 	expect(previous.value).toEqual({ { count = 1 } })
 end)
@@ -349,6 +366,7 @@ end)
 it("treats equal Map entries and removal of an absent key as unchanged truth", function()
 	local plan: StatePlan.Plan =
 		StatePlan.Compile(SchemaUtils.compile(Schema.Map(Schema.U8, Schema.Struct({ count = Schema.U8 }), 3)))
+
 	local previous: StatePlan.Result?, reason: string? = plan.Snapshot({ [1] = { count = 2 } })
 	assert(previous ~= nil, reason)
 	local result: StatePlan.Result?

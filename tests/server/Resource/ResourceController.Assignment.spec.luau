@@ -189,10 +189,13 @@ it("returns nil before add and rejects unknown, duplicate, and invalid resource 
 	expect(resourceController:GetMax("Resource.Guard")).toBeNil()
 
 	local missingOk: boolean, missingReason: string? = resourceController:AddResource("Resource.Unknown")
+
 	local invalidOverrideOk: boolean, invalidOverrideReason: string? =
 		resourceController:AddResource("Resource.Guard", "boom" :: any)
+
 	local invalidOverrideNanOk: boolean, invalidOverrideNanReason: string? =
 		resourceController:AddResource("Resource.Guard", 0 / 0)
+
 	local addOk: boolean, addReason: string? = resourceController:AddResource("Resource.Guard")
 	local duplicateOk: boolean, duplicateReason: string? = resourceController:AddResource("Resource.Guard")
 
@@ -283,6 +286,7 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			return nil
 		end,
 	})
+
 	local failingSeedController: ResourceController = ResourceControllerModule.new(failingSeedActor)
 	local seedOk: boolean, seedReason: string? = failingSeedController:AddResource("Resource.Heat")
 
@@ -305,6 +309,7 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			return 20
 		end,
 	})
+
 	local unresolvedController: ResourceController = ResourceControllerModule.new(unresolvedActor)
 	local unresolvedOk: boolean, unresolvedReason: string? = unresolvedController:AddResource("Resource.Willpower")
 
@@ -335,6 +340,7 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			return nil
 		end,
 	})
+
 	local resourceController: ResourceController = ResourceControllerModule.new(autoAssignActor)
 
 	expect(resourceController:HasResource("Resource.Breath")).toBe(false)

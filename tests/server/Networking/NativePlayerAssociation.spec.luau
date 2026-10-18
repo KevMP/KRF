@@ -7,8 +7,10 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
+
 local Association: ServerNetworkingTypes.PlayerAssociationModule =
 	require(KRF.server.Networking.utils.NativePlayerAssociation)
+
 local SignalTypes = require(KRF.shared.Signal.types)
 local SignalModule = require(KRF.shared.Signal.SignalModule)
 
@@ -25,9 +27,11 @@ local function injectedPlayer(): Player
 	local character: Model? = nil
 	local changed: BindableEvent = Instance.new("BindableEvent")
 	table.insert(propertySignals, changed)
+
 	return setmetatable({
 		GetPropertyChangedSignal = function(_self: any, property: string)
 			assert(property == "Character", "Expected production Character property observer")
+
 			return changed.Event
 		end,
 	}, {
@@ -36,6 +40,7 @@ local function injectedPlayer(): Player
 		end,
 		__newindex = function(_self: any, key: string, value: Model?)
 			assert(key == "Character", "Unexpected Player mutation")
+
 			if character ~= value then
 				character = value
 				changed:Fire()
@@ -50,6 +55,7 @@ beforeEach(function()
 	newCharacter = Instance.new("Model")
 	added = SignalModule.new()
 	removed = SignalModule.new()
+
 	service = {
 		PlayerAdded = added,
 		PlayerRemoving = removed,
@@ -57,15 +63,19 @@ beforeEach(function()
 			return { player }
 		end,
 	} :: any
+
 	source = nil
 end)
+
 afterEach(function()
 	if source ~= nil then
 		source.Destroy()
 	end
+
 	for _, signal: BindableEvent in propertySignals do
 		signal:Destroy()
 	end
+
 	propertySignals = {}
 	oldCharacter:Destroy()
 	newCharacter:Destroy()
@@ -75,14 +85,17 @@ end)
 
 it("observes the Character property and notifies both Models through old-to-new-to-nil transitions", function()
 	player.Character = oldCharacter
+
 	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	expect(native.GetPlayerFromCharacter(oldCharacter)).toBe(player)
 	expect(native.GetPlayerFromCharacter(newCharacter)).toBeNil()
 	local changed: { Model } = {}
+
 	local unsubscribe: () -> () = native.ObserveAssociationChanged(function(model: Model)
 		table.insert(changed, model)
 	end)
+
 	player.Character = newCharacter
 	task.wait()
 	expect(changed).toEqual({ oldCharacter, newCharacter })
@@ -108,10 +121,13 @@ it("tracks a later Player and clears its Character association when that session
 	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	later.Character = newCharacter
+
 	local changed: { Model } = {}
+
 	native.ObserveAssociationChanged(function(model: Model)
 		table.insert(changed, model)
 	end)
+
 	added:Fire(later)
 	task.wait()
 	expect(native.GetPlayerFromCharacter(newCharacter)).toBe(later)
@@ -128,12 +144,15 @@ end)
 
 it("releases native listeners and observers on repeated teardown", function()
 	player.Character = oldCharacter
+
 	local native: ServerNetworkingTypes.PlayerAssociationSource = Association.new(service)
 	source = native
 	local calls: number = 0
+
 	local unsubscribe: () -> () = native.ObserveAssociationChanged(function(_model: Model)
 		calls += 1
 	end)
+
 	native.Destroy()
 	native.Destroy()
 	player.Character = newCharacter
@@ -145,8 +164,10 @@ it("releases native listeners and observers on repeated teardown", function()
 	expect(native.GetPlayerFromCharacter(newCharacter)).toBeNil()
 	unsubscribe()
 	unsubscribe()
+
 	local afterDestroy: () -> () = native.ObserveAssociationChanged(function(_model: Model)
 		calls += 1
 	end)
+
 	afterDestroy()
 end)

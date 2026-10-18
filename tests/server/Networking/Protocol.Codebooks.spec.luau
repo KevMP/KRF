@@ -14,8 +14,10 @@ local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schem
 local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local DomainTestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ServerProtocolTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -41,9 +43,11 @@ it("assigns unique compact domain codes independently of consumer declaration or
 	expect(second.manifest).toEqual(first.manifest)
 	expect(buffer.tostring(second.bootstrapBuffer)).toBe(buffer.tostring(first.bootstrapBuffer))
 	local codes: { number } = {}
+
 	for _, domain: SharedNetworkingTypes.ManifestDomain in first.manifest.domains do
 		table.insert(codes, domain.code)
 	end
+
 	table.sort(codes)
 	expect(codes).toEqual({ 0, 1 })
 	-- Numeric values remain private and are absent from consumer domain definitions.
@@ -54,10 +58,14 @@ end)
 it("assigns event codes within each domain independently of event declaration order", function()
 	local firstDomain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.Actions")
 	firstDomain.events = { { id = "Started", payload = Schema.U8 }, { id = "Ended", payload = Schema.Boolean } }
+
 	local secondDomain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.Inventory")
 	secondDomain.events = { { id = "Started", payload = Schema.U16 } }
+
 	local first: SharedNetworkingTypes.PreparedProtocol = TestUtils.prepare({ firstDomain, secondDomain })
+
 	firstDomain.events = { { id = "Ended", payload = Schema.Boolean }, { id = "Started", payload = Schema.U8 } }
+
 	local second: SharedNetworkingTypes.PreparedProtocol = TestUtils.prepare({ secondDomain, firstDomain })
 	expect(second.manifest).toEqual(first.manifest)
 	local actionDomain: SharedNetworkingTypes.ClientDomain = first.runtime.domainsById["Game.Actions"]
@@ -67,20 +75,25 @@ end)
 
 it("includes state, event and Enum descriptions while omitting all server implementation details", function()
 	local callbackCalls: number = 0
+
 	local domain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.State")
 	domain.state = Schema.Struct({ mode = Schema.Enum({ "Idle", "Blocking" }) })
 	domain.events = { { id = "Changed", payload = Schema.Struct({ value = Schema.U8 }) } }
 	domain.audience = "Owner"
+
 	domain.snapshot = function(): any
 		callbackCalls += 1
 		error("Snapshot must not run during bootstrap")
 	end
+
 	domain.observe = function(): (() -> ())?
 		callbackCalls += 1
 		error("Observe must not run during bootstrap")
 	end
+
 	local protocol: SharedNetworkingTypes.PreparedProtocol = TestUtils.prepare({ domain })
 	expect(callbackCalls).toBe(0)
+
 	expect(protocol.manifest).toEqual({
 		version = Constants.PROTOCOL_VERSION,
 		domains = {
@@ -98,6 +111,7 @@ it("includes state, event and Enum descriptions while omitting all server implem
 			},
 		},
 	})
+
 	local decoded: SharedNetworkingTypes.ProtocolMessage = ProtocolTestUtils.decode(protocol.bootstrapBuffer)
 	assert(decoded.kind == "Bootstrap", "Expected Bootstrap")
 	expect(decoded.manifest).toEqual(protocol.manifest)
@@ -109,6 +123,7 @@ end)
 it("owns immutable protocol metadata without publishing the server registry during preparation", function()
 	local domain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.Original")
 	local protocol: SharedNetworkingTypes.PreparedProtocol = TestUtils.prepare({ domain })
+
 	domain.id = "Game.Mutated"
 	domain.state = Schema.F64
 	expect(protocol.manifest.domains[1].id).toBe("Game.Original")
@@ -128,6 +143,7 @@ end)
 it("fails preparation when the encoded manifest exceeds the private bootstrap budget", function()
 	local domain: ReplicationTypes.ReplicationDomainDefinition =
 		DomainTestUtils.createDomain(string.rep("x", Constants.MAX_BOOTSTRAP_BYTES + 1))
+
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog = DomainTestUtils.prepare({ domain })
 	local protocol: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
 	expect(protocol).toBeNil()
@@ -138,15 +154,19 @@ end)
 
 it("surfaces codec compilation failure without retaining a partially usable protocol", function()
 	local calls: number = 0
+
 	Compiler.Compile = function(
 		schema: SharedNetworkingTypes.CompiledSchema
 	): (SharedNetworkingTypes.CompiledCodec?, string?)
 		calls += 1
+
 		if calls == 2 then
 			return nil, "UnsupportedCodecFeature"
 		end
+
 		return originalCompile(schema)
 	end
+
 	local first: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.First")
 	local second: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.Second")
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog = DomainTestUtils.prepare({ first, second })

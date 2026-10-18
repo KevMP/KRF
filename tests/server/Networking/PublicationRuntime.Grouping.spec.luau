@@ -38,6 +38,7 @@ local function attach(): ()
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
+
 	local success: boolean, reason: string? = runtime:AttachActor(actor)
 	expect(success).toBe(true)
 	expect(reason).toBeNil()
@@ -45,6 +46,7 @@ end
 
 it("seals two domains as one coherent commit and captures each only once at close", function()
 	attach()
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 80
 		resource.callbacks[actor]()
@@ -56,18 +58,22 @@ it("seals two domains as one coherent commit and captures each only once at clos
 		expect(action.snapshotCalls).toBe(1)
 		expect(#commits).toBe(0)
 	end)
+
 	expect(resource.snapshotCalls).toBe(2)
 	expect(action.snapshotCalls).toBe(2)
 	expect(#commits).toBe(1)
 	expect(commits[1].sequence).toBe(1)
 	local patchesByDomain: { [string]: ServerNetworkingTypes.PublicationPatch } = {}
+
 	for _, patch: ServerNetworkingTypes.PublicationDomainPatch in commits[1].patches do
 		patchesByDomain[patch.domainId] = patch.patch
 	end
+
 	expect(patchesByDomain).toEqual({
 		["Game.Resource"] = { kind = "Replace", value = 60 },
 		["Game.Action"] = { kind = "Replace", value = true },
 	})
+
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
 		domains = { ["Game.Resource"] = { value = 60 }, ["Game.Action"] = { value = true } },
@@ -77,6 +83,7 @@ end)
 it("captures grouped event payloads at report time and preserves cross-domain report order", function()
 	attach()
 	local payload: any = { amount = 20 }
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 80
 		resource.callbacks[actor]({ { id = "Spent", payload = payload } })
@@ -86,26 +93,32 @@ it("captures grouped event payloads at report time and preserves cross-domain re
 		resource.value = 60
 		resource.callbacks[actor]({ { id = "Spent", payload = { amount = 20 } } })
 	end)
+
 	expect(commits[1].events).toEqual({
 		{ domainId = "Game.Resource", eventId = "Spent", payload = { amount = 20 } },
 		{ domainId = "Game.Action", eventId = "Started", payload = {} },
 		{ domainId = "Game.Resource", eventId = "Spent", payload = { amount = 20 } },
 	})
+
 	expect(resource.snapshotCalls).toBe(2)
 end)
 
 it("joins nested same-Actor groups and leaves untouched domains uncaptured", function()
 	attach()
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 90
 		resource.callbacks[actor]()
+
 		runtime:WithActorCommit(actor, function(): ()
 			resource.value = 80
 			resource.callbacks[actor]()
 		end)
+
 		expect(#commits).toBe(0)
 		expect(resource.snapshotCalls).toBe(1)
 	end)
+
 	expect(#commits).toBe(1)
 	expect(resource.snapshotCalls).toBe(2)
 	expect(action.snapshotCalls).toBe(1)
@@ -115,16 +128,20 @@ it("does not merge independent Actor groups into cross-Actor atomicity", functio
 	attach()
 	local otherActor: ActorTypes.Actor = ActorEntity.new()
 	expect(runtime:AttachActor(otherActor)).toBe(true)
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 90
 		resource.callbacks[actor]()
+
 		runtime:WithActorCommit(otherActor, function(): ()
 			resource.value = 80
 			resource.callbacks[otherActor]()
 		end)
+
 		expect(#commits).toBe(1)
 		expect(commits[1].actor).toBe(otherActor)
 	end)
+
 	expect(#commits).toBe(2)
 	expect(commits[2].actor).toBe(actor)
 	expect(commits[1].sequence).toBe(1)
@@ -134,12 +151,14 @@ end)
 it("does not allocate a sequence for an empty group or a group returning to its original truth", function()
 	attach()
 	runtime:WithActorCommit(actor, function(): () end)
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 90
 		resource.callbacks[actor]()
 		resource.value = 100
 		resource.callbacks[actor]()
 	end)
+
 	expect(commits).toEqual({})
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 end)
@@ -147,19 +166,23 @@ end)
 it("dispatches a group only after all canonical domains and its sequence are committed", function()
 	attach()
 	local observed: ServerNetworkingTypes.PublicationBaseline? = nil
+
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		observed = runtime:CaptureBaseline(actor)
+
 		expect(observed).toEqual({
 			sequence = commit.sequence,
 			domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = true } },
 		})
 	end)
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.value = 80
 		resource.callbacks[actor]()
 		action.value = true
 		action.callbacks[actor]({ { id = "Started", payload = {} } })
 	end)
+
 	expect(observed).toEqual({
 		sequence = 1,
 		domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = true } },
@@ -169,6 +192,7 @@ end)
 it("unwinds an errored group, reconciles reported mutations and preserves the original error", function()
 	attach()
 	local originalFailure: any = { message = "AuthoritativeMutationFailed" }
+
 	local success: boolean, failure: any = pcall(function(): ()
 		runtime:WithActorCommit(actor, function(): ()
 			resource.value = 80
@@ -176,13 +200,16 @@ it("unwinds an errored group, reconciles reported mutations and preserves the or
 			error(originalFailure, 0)
 		end)
 	end)
+
 	expect(success).toBe(false)
 	expect(failure).toBe(originalFailure)
 	expect(#commits).toBe(1)
+
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 1,
 		domains = { ["Game.Resource"] = { value = 80 }, ["Game.Action"] = { value = false } },
 	})
+
 	resource.value = 60
 	resource.callbacks[actor]()
 	expect(#commits).toBe(2)
@@ -191,6 +218,7 @@ end)
 
 it("rejects the whole grouped publication when one final snapshot is invalid", function()
 	attach()
+
 	local success: boolean = pcall(function(): ()
 		runtime:WithActorCommit(actor, function(): ()
 			resource.value = 80
@@ -199,17 +227,22 @@ it("rejects the whole grouped publication when one final snapshot is invalid", f
 			action.callbacks[actor]()
 		end)
 	end)
+
 	expect(success).toBe(false)
 	expect(commits).toEqual({})
+
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = 0,
 		domains = { ["Game.Resource"] = { value = 100 }, ["Game.Action"] = { value = false } },
 	})
+
 	action.value = true
+
 	runtime:WithActorCommit(actor, function(): ()
 		resource.callbacks[actor]()
 		action.callbacks[actor]()
 	end)
+
 	expect(commits[1].sequence).toBe(1)
 	expect(#commits[1].patches).toBe(2)
 end)
@@ -227,6 +260,7 @@ do
 		-- Issue #73 decisions 15 and 40 now give producer contract violations
 		-- precedence over ordinary authoritative callback error reconciliation.
 		attach()
+
 		local success: boolean = pcall(function(): ()
 			runtime:WithActorCommit(actor, function(): ()
 				resource.value = 80
@@ -234,6 +268,7 @@ do
 				action.callbacks[actor](invalidReport.events)
 			end)
 		end)
+
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
@@ -247,16 +282,19 @@ end
 
 it("treats reentrant authoritative work from a commit observer as the next standalone commit", function()
 	attach()
+
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		if commit.sequence == 1 then
 			action.value = false
 			action.callbacks[actor]()
 		end
 	end)
+
 	runtime:WithActorCommit(actor, function(): ()
 		action.value = true
 		action.callbacks[actor]()
 	end)
+
 	expect(#commits).toBe(2)
 	expect(commits[1].patches).toEqual({ { domainId = "Game.Action", patch = { kind = "Replace", value = true } } })
 	expect(commits[2].patches).toEqual({ { domainId = "Game.Action", patch = { kind = "Replace", value = false } } })
@@ -266,15 +304,18 @@ end)
 it("delivers reentrant commits in Actor sequence order to every observer", function()
 	attach()
 	local laterObserverSequences: { number } = {}
+
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		if commit.sequence == 1 then
 			action.value = false
 			action.callbacks[actor]()
 		end
 	end)
+
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(laterObserverSequences, commit.sequence)
 	end)
+
 	action.value = true
 	action.callbacks[actor]()
 	expect(laterObserverSequences).toEqual({ 1, 2 })
@@ -284,12 +325,14 @@ end)
 it("closes a yielding callback so scheduled work cannot resume after rejection", function()
 	attach()
 	local resumedAfterYield: boolean = false
+
 	local accepted: boolean = pcall(function(): ()
 		runtime:WithActorCommit(actor, function(): ()
 			task.wait(0.01)
 			resumedAfterYield = true
 		end)
 	end)
+
 	expect(accepted).toBe(false)
 	task.wait(0.05)
 	expect(resumedAfterYield).toBe(false)
@@ -300,12 +343,14 @@ end)
 
 it("returns from valid grouped capture without yielding", function()
 	attach()
+
 	local thread: thread = coroutine.create(function(): ()
 		runtime:WithActorCommit(actor, function(): ()
 			resource.value = 80
 			resource.callbacks[actor]()
 		end)
 	end)
+
 	expect(coroutine.resume(thread)).toBe(true)
 	expect(coroutine.status(thread)).toBe("dead")
 	expect(#commits).toBe(1)
@@ -315,6 +360,7 @@ it("rejects a yielding grouped callback synchronously and leaves later publicati
 	attach()
 	local completed: boolean? = nil
 	local failure: any = nil
+
 	local thread: thread = coroutine.create(function(): ()
 		completed, failure = pcall(function(): ()
 			runtime:WithActorCommit(actor, function(): ()
@@ -324,17 +370,21 @@ it("rejects a yielding grouped callback synchronously and leaves later publicati
 			end)
 		end)
 	end)
+
 	expect(coroutine.resume(thread)).toBe(true)
 	expect(coroutine.status(thread)).toBe("dead")
 	expect(completed).toBe(false)
 	expect(string.find(tostring(failure), "Yield", 1, true) ~= nil).toBe(true)
 	local priorCommits: number = #commits
+
 	resource.value = 60
 	resource.callbacks[actor]()
 	expect(#commits).toBe(priorCommits + 1)
+
 	expect(commits[#commits].patches).toEqual({
 		{ domainId = "Game.Resource", patch = { kind = "Replace", value = 60 } },
 	})
+
 	expect(runtime:CaptureBaseline(actor)).toEqual({
 		sequence = #commits,
 		domains = { ["Game.Resource"] = { value = 60 }, ["Game.Action"] = { value = false } },
@@ -347,6 +397,7 @@ it("enforces the non-yield contract before an Actor is attached", function()
 			coroutine.yield()
 		end)
 	end)
+
 	expect(completed).toBe(false)
 	expect(string.find(tostring(failure), "Yield", 1, true) ~= nil).toBe(true)
 	attach()

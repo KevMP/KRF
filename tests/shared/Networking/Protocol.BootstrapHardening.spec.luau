@@ -28,9 +28,11 @@ end
 local function expectDecodeFailure(payload: buffer, expectedReason: string): ()
 	local decoded: SharedNetworkingTypes.ProtocolMessage? = nil
 	local reason: string? = nil
+
 	local completed: boolean = pcall(function()
 		decoded, reason = Codec.Decode(payload)
 	end)
+
 	expect(completed).toBe(true)
 	expect(decoded).toBeNil()
 	expect(reason).toBe(expectedReason)
@@ -58,6 +60,7 @@ end)
 it("rejects oversized domain codes rather than narrowing them into valid identities", function()
 	local packet: SharedNetworkingTypes.ProtocolMessage = message(Schema.U8)
 	assert(packet.kind == "Bootstrap", "Expected Bootstrap")
+
 	local source: any = packet.manifest.domains[1]
 	source.code = 65536
 	local encoded: buffer?, reason: string? = Codec.Encode(packet)
@@ -67,9 +70,11 @@ end)
 
 it("rejects excessive schema depth before encode or decode can exhaust the call stack", function()
 	local definition: SharedNetworkingTypes.SchemaDefinition = Schema.U8
+
 	for _ = 1, 129 do
 		definition = { kind = "Optional", inner = definition }
 	end
+
 	local encoded: buffer?, reason: string? = Codec.Encode(message(definition))
 	expect(encoded).toBeNil()
 	expect(reason).toBe("InvalidProtocolManifest")

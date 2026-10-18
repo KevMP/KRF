@@ -29,6 +29,7 @@ beforeEach(function()
 	domain.definition.events = { { id = "Changed", payload = Schema.Struct({ count = Schema.U8 }) } }
 	commits = {}
 	faults = {}
+
 	runtime = TestUtils.createRuntime({ domain.definition }, {
 		ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
 			table.insert(faults, fault)
@@ -44,6 +45,7 @@ local function attach(): ()
 	runtime:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit): ()
 		table.insert(commits, commit)
 	end)
+
 	local success: boolean, reason: string? = runtime:AttachActor(actor)
 	expect(success).toBe(true)
 	expect(reason).toBeNil()
@@ -52,6 +54,7 @@ end
 local function baseline(): ServerNetworkingTypes.PublicationBaseline
 	local captured: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
 	assert(captured ~= nil, "Expected attached Actor baseline")
+
 	return captured
 end
 
@@ -88,23 +91,28 @@ it("captures an ordinary notification before returning and preserves two immedia
 	domain.callbacks[actor]({ { id = "Changed", payload = { count = 1 } } })
 	expect(domain.snapshotCalls).toBe(2)
 	expect(commits[1].sequence).toBe(1)
+
 	expect(commits[1].patches).toEqual({
 		{
 			domainId = "Game.State",
 			patch = { kind = "Struct", fields = { active = { kind = "Replace", value = true } } },
 		},
 	})
+
 	domain.value.active = false
 	domain.callbacks[actor]({ { id = "Changed", payload = { count = 2 } } })
 	expect(#commits).toBe(2)
+
 	expect(commits[1].patches[1].patch).toEqual({
 		kind = "Struct",
 		fields = { active = { kind = "Replace", value = true } },
 	})
+
 	expect(commits[2].patches[1].patch).toEqual({
 		kind = "Struct",
 		fields = { active = { kind = "Replace", value = false } },
 	})
+
 	expect(commits[2].sequence).toBe(2)
 end)
 
@@ -127,23 +135,28 @@ it("publishes event-only commits in supplied order and captures consumer-owned p
 	payload.count = 9
 	expect(#commits).toBe(1)
 	expect(commits[1].patches).toEqual({})
+
 	expect(commits[1].events).toEqual({
 		{ domainId = "Game.State", eventId = "Changed", payload = { count = 1 } },
 		{ domainId = "Game.State", eventId = "Changed", payload = { count = 2 } },
 	})
+
 	expect(commits[1].sequence).toBe(1)
 end)
 
 it("retains stable baseline truth and its matching sequence while later source state changes", function()
 	attach()
 	local before: ServerNetworkingTypes.PublicationBaseline = baseline()
+
 	domain.value.active = true
 	domain.callbacks[actor]()
 	expect(before).toEqual({ sequence = 0, domains = { ["Game.State"] = { value = { active = false } } } })
 	expect(baseline()).toEqual({ sequence = 1, domains = { ["Game.State"] = { value = { active = true } } } })
+
 	local thread: thread = coroutine.create(function(): ()
 		runtime:CaptureBaseline(actor)
 	end)
+
 	expect(coroutine.resume(thread)).toBe(true)
 	expect(coroutine.status(thread)).toBe("dead")
 end)
@@ -151,9 +164,11 @@ end)
 it("does not expose canonical tables as mutable baseline truth", function()
 	attach()
 	local exposed: ServerNetworkingTypes.PublicationBaseline = baseline()
+
 	local _mutated: boolean = pcall(function(): ()
 		exposed.domains["Game.State"].value.active = true
 	end)
+
 	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 end)
@@ -187,18 +202,22 @@ do
 	it("rejects " .. invalidEvents[#invalidEvents].id .. " or malformed events atomically with state", function()
 		attach()
 		domain.value.active = true
+
 		local success: boolean = pcall(function(): ()
 			domain.callbacks[actor](invalidEvents)
 		end)
+
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
 		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
+
 		expect(faults[#faults]).toEqual({
 			actorId = actor:GetId(),
 			domainId = "Game.State",
 			reason = "InvalidPublicationEvent",
 		})
+
 		domain.callbacks[actor]()
 		expect(commits[1].sequence).toBe(1)
 		expect(baseline().domains["Game.State"].value).toEqual({ active = true })
@@ -219,40 +238,49 @@ for _, invalidReport: { name: string, events: any } in
 do
 	it("publishes a valid group after rejecting an ordinary " .. invalidReport.name, function()
 		attach()
+
 		local accepted: boolean, failure: any = pcall(function(): ()
 			domain.callbacks[actor](invalidReport.events)
 		end)
+
 		expect(accepted).toBe(false)
 		expect(failure).toBe("InvalidPublicationEvent:Game.State")
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
+
 		runtime:WithActorCommit(actor, function(): ()
 			domain.value.active = true
 			domain.callbacks[actor]()
 		end)
+
 		expect(#commits).toBe(1)
 		expect(commits[1].sequence).toBe(1)
+
 		expect(commits[1].patches).toEqual({
 			{
 				domainId = "Game.State",
 				patch = { kind = "Struct", fields = { active = { kind = "Replace", value = true } } },
 			},
 		})
+
 		expect(baseline().domains["Game.State"].value).toEqual({ active = true })
 	end)
 end
 
 it("does not replay a valid event prefix from a rejected report on the next notification", function()
 	attach()
+
 	local accepted: boolean = pcall(function(): ()
 		domain.callbacks[actor]({
 			{ id = "Changed", payload = { count = 1 } },
 			{ id = "Unknown", payload = {} },
 		})
 	end)
+
 	expect(accepted).toBe(false)
 	domain.callbacks[actor]({ { id = "Changed", payload = { count = 2 } } })
 	expect(#commits).toBe(1)
+
 	expect(commits[1].events).toEqual({
 		{ domainId = "Game.State", eventId = "Changed", payload = { count = 2 } },
 	})
@@ -263,18 +291,22 @@ it(
 	function()
 		attach()
 		domain.value = { active = "invalid" }
+
 		local success: boolean = pcall(function(): ()
 			domain.callbacks[actor]()
 		end)
+
 		expect(success).toBe(false)
 		expect(commits).toEqual({})
 		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 		expect(runtime:GetActorSequence(actor)).toBe(0)
+
 		expect(faults[#faults]).toEqual({
 			actorId = actor:GetId(),
 			domainId = "Game.State",
 			reason = "InvalidPublicationSnapshot",
 		})
+
 		domain.value = { active = true }
 		domain.callbacks[actor]()
 		expect(commits[1].sequence).toBe(1)
@@ -286,30 +318,39 @@ it("isolates a throwing snapshot from other Actors and domains", function()
 	local otherActor: ActorTypes.Actor = ActorEntity.new()
 	local shouldThrow: boolean = false
 	local originalSnapshot: typeof(domain.definition.snapshot) = domain.definition.snapshot
+
 	domain.definition.snapshot = function(snapshotActor: ActorTypes.Actor): any
 		if snapshotActor == actor and shouldThrow then
 			error("ProjectionFailure")
 		end
+
 		return originalSnapshot(snapshotActor)
 	end
+
 	runtime:Destroy()
+
 	runtime = TestUtils.createRuntime({ domain.definition, other.definition }, {
 		ReportFault = function(fault: ServerNetworkingTypes.PublicationFault): ()
 			table.insert(faults, fault)
 		end,
 	})
+
 	attach()
 	expect(runtime:AttachActor(otherActor)).toBe(true)
 	shouldThrow = true
+
 	local success: boolean = pcall(function(): ()
 		domain.callbacks[actor]()
 	end)
+
 	expect(success).toBe(false)
+
 	expect(faults[#faults]).toEqual({
 		actorId = actor:GetId(),
 		domainId = "Game.State",
 		reason = "PublicationSnapshotError",
 	})
+
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
 	other.value = 2
@@ -322,9 +363,11 @@ end)
 
 it("unsubscribes commit observers idempotently without affecting other observers", function()
 	local firstCalls: number = 0
+
 	local unsubscribe: () -> () = runtime:ObserveCommits(function(): ()
 		firstCalls += 1
 	end)
+
 	attach()
 	unsubscribe()
 	unsubscribe()
@@ -354,13 +397,16 @@ end)
 it("rejects a non-array event report without publishing changed state", function()
 	attach()
 	domain.value.active = true
+
 	local accepted: boolean = pcall(function(): ()
 		(domain.callbacks[actor] :: any)("invalid")
 	end)
+
 	expect(accepted).toBe(false)
 	expect(commits).toEqual({})
 	expect(runtime:GetActorSequence(actor)).toBe(0)
 	expect(baseline().domains["Game.State"].value).toEqual({ active = false })
+
 	expect(faults[#faults]).toEqual({
 		actorId = actor:GetId(),
 		domainId = "Game.State",
@@ -386,19 +432,23 @@ do
 	it("rejects a " .. invalidReport.name .. " event collection atomically", function()
 		attach()
 		domain.value.active = true
+
 		local accepted: boolean, failure: any = pcall(function(): ()
 			(domain.callbacks[actor] :: any)(invalidReport.events)
 		end)
+
 		expect(accepted).toBe(false)
 		expect(failure).toBe("InvalidPublicationEvent:Game.State")
 		expect(commits).toEqual({})
 		expect(runtime:GetActorSequence(actor)).toBe(0)
 		expect(baseline().domains["Game.State"].value).toEqual({ active = false })
+
 		expect(faults[#faults]).toEqual({
 			actorId = actor:GetId(),
 			domainId = "Game.State",
 			reason = "InvalidPublicationEvent",
 		})
+
 		domain.callbacks[actor]()
 		expect(#commits).toBe(1)
 		expect(commits[1].events).toEqual({})

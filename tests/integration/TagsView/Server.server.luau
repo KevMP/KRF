@@ -18,6 +18,7 @@ local Transport = require(KRF.shared.Networking.Transport)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("TagsViewTestControl") :: RemoteEvent
 
 Players.CharacterAutoLoads = false
+
 local originalAwareness: typeof(Awareness.new) = Awareness.new
 local awareness: NetworkingTypes.ActorAwarenessRuntime? = nil
 local actor: ActorTypes.Actor? = nil
@@ -31,16 +32,19 @@ local finished: boolean = false
 
 local function captureRemotes(): { [Instance]: boolean }
 	local remotes: { [Instance]: boolean } = {}
+
 	for _, instance: Instance in ReplicatedStorage:GetDescendants() do
 		if instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent") or instance:IsA("RemoteFunction") then
 			remotes[instance] = true
 		end
 	end
+
 	return remotes
 end
 
 local function assertFrameworkRemotes(before: { [Instance]: boolean }): ()
 	local root: Instance? = ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME)
+
 	for instance: Instance in captureRemotes() do
 		if not before[instance] then
 			assert(
@@ -66,7 +70,9 @@ Awareness.new = function(
 ): NetworkingTypes.ActorAwarenessRuntime
 	local created: NetworkingTypes.ActorAwarenessRuntime =
 		originalAwareness(publication, catalog, protocol, dependencies, options)
+
 	awareness = created
+
 	return created
 end
 
@@ -74,17 +80,23 @@ local function finish(success: boolean, reason: string?): ()
 	if finished then
 		return
 	end
+
 	finished = true
+
 	local cleaned: boolean, cleanupReason: any = pcall(function()
 		if actor ~= nil then
 			Actors.UnregisterActor(actor)
 		end
+
 		Networking.Destroy()
+
 		for _, model: Model in models do
 			model:Destroy()
 		end
 	end)
+
 	Awareness.new = originalAwareness
+
 	StudioTestService:EndTest({
 		success = success and cleaned,
 		reason = reason or (if cleaned then nil else tostring(cleanupReason)),
@@ -96,9 +108,12 @@ end
 
 local function tags(): TagTypes.InternalTagController
 	assert(actor ~= nil, "Expected registered native Actor")
+
 	local controller: TagTypes.InternalTagController? =
 		actor:GetController("TagController") :: TagTypes.InternalTagController?
+
 	assert(controller ~= nil, "Native startup did not automatically install TagController")
+
 	return controller
 end
 
@@ -106,6 +121,7 @@ local function sendPhase(nextPhase: string): ()
 	assert(actor ~= nil, "Expected native Actor identity")
 	phase = nextPhase
 	reports = {}
+
 	for player: Player in ready do
 		control:FireClient(
 			player,
@@ -117,6 +133,7 @@ end
 local function registerActor(): ()
 	local model: Model = Instance.new("Model")
 	model.Name = "NativeTagsSubject"
+
 	local root: Part = Instance.new("Part")
 	root.Name = "HumanoidRootPart"
 	root.Anchored = true
@@ -131,6 +148,7 @@ end
 
 local function advance(): ()
 	assert(actor ~= nil, "Expected native Actor")
+
 	if phase == "Initial" then
 		local publication: NetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 		assert(publication ~= nil, "Expected ordinary N3 publication runtime")
@@ -146,13 +164,17 @@ local function advance(): ()
 		sendPhase("LiveBatch")
 	elseif phase == "LiveBatch" then
 		assert(awareness ~= nil, "Expected normal native awareness installation")
+
 		for player: Player in ready do
 			local handle: number? = awareness:GetHandle(player, actor)
 			assert(handle ~= nil, "Expected native recipient handle")
+
 			local replaced: boolean, reason: string? =
 				Networking.RequestReplacementBaseline(player, handle, "N6NativeTest")
+
 			assert(replaced, reason)
 		end
+
 		sendPhase("Replacement")
 	elseif phase == "Replacement" then
 		assert(tags():RemoveTag("Buff.NativeStack"))
@@ -181,6 +203,7 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 	if finished then
 		return
 	end
+
 	local completed: boolean, reason: any = pcall(function()
 		-- Framework operations below are synchronous. Compare around each phase so
 		-- engine-owned Remotes (such as default chat) do not enter this assertion.
@@ -190,19 +213,25 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 		assert(report.failure == nil, "Client " .. player.Name .. ": " .. tostring(report.failure))
 		assert(report.phase == phase, "Client reported an unexpected native phase")
 		assert(not reports[player], "Duplicate native client report")
+
 		if phase == "Ready" then
 			assert(Networking.IsClientReady(player), "Native Client.Init returned before readiness")
 			ready[player] = true
 		else
 			assert(ready[player], "Unknown native client")
 		end
+
 		reports[player] = true
+
 		local count: number = 0
+
 		for _ in reports do
 			count += 1
 		end
+
 		if count == 2 then
 			table.insert(completedPhases, phase)
+
 			if phase == "Ready" then
 				assert(#Players:GetPlayers() == 2, "Expected two native clients")
 				registerActor()
@@ -211,8 +240,10 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 				advance()
 			end
 		end
+
 		assertFrameworkRemotes(remotesBefore)
 	end)
+
 	if not completed then
 		finish(false, tostring(reason))
 	end
@@ -221,7 +252,9 @@ end)
 task.delay(90, function()
 	finish(false, "Native N6 fixture timeout in " .. phase)
 end)
+
 local startupRemotes: { [Instance]: boolean } = captureRemotes()
+
 local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 	tags = {
 		{ id = "Buff.NativeStack", visibility = "ClientVisible", duplicateBehavior = "Stack", maxStacks = 3 },
@@ -254,20 +287,24 @@ local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 			factory = function(subject: ActorTypes.Actor): ActorTypes.Controller
 				local controller: TagTypes.TagController? =
 					subject:GetController("TagController") :: TagTypes.TagController?
+
 				assert(controller ~= nil, "Expected TagController before game setup")
 				assert(controller:AddTag("Status.NativeTimed"))
 				assert(controller:AddTag("Buff.NativeStack", { duration = 20 }))
 				assert(controller:AddTag("Buff.NativeStack", { duration = 40 }))
 				assert(controller:AddTag("Private.Native"))
+
 				return { Destroy = function() end }
 			end,
 		},
 	},
 })
+
 if not initialized then
 	finish(false, if failure ~= nil then failure.reason else "Native Server.Init failed")
 else
 	local valid: boolean, reason: any = pcall(assertFrameworkRemotes, startupRemotes)
+
 	if not valid then
 		finish(false, tostring(reason))
 	end

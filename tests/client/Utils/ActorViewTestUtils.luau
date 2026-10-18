@@ -18,6 +18,7 @@ local StreamUtils = require(script.Parent.ActorStreamTestUtils)
 
 export type Timer = { due: number, callback: () -> (), cancelled: boolean, fired: boolean }
 export type Clock = { now: number, timers: { Timer } }
+
 export type Fixture = {
 	clock: Clock,
 	runtime: ClientNetworkingTypes.ActorViewRuntime,
@@ -28,6 +29,7 @@ export type Fixture = {
 	faults: { ClientNetworkingTypes.ActorViewFault },
 	connections: { SignalTypes.Connection },
 }
+
 local TestUtils = {}
 
 function TestUtils.manifest(): SharedNetworkingTypes.ProtocolManifest
@@ -96,12 +98,15 @@ function TestUtils.new(onSend: ((buffer) -> ())?, manifestOverride: SharedNetwor
 	local protocol: SharedNetworkingTypes.ClientProtocol?, reason: string? = Manifest.Reconstruct(manifest)
 	assert(protocol ~= nil, reason)
 	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+
 	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		schemas[domain.id] = SchemaUtils.compile(domain.state)
 	end
+
 	local requests: { buffer } = {}
 	local faults: { ClientNetworkingTypes.ActorViewFault } = {}
 	local clock: Clock = { now = 0, timers = {} }
+
 	local runtime: ClientNetworkingTypes.ActorViewRuntime = Runtime.new(protocol, schemas, {
 		Now = function(): number
 			return clock.now
@@ -109,12 +114,14 @@ function TestUtils.new(onSend: ((buffer) -> ())?, manifestOverride: SharedNetwor
 		ScheduleTimeout = function(seconds: number, callback: () -> ()): () -> ()
 			local timer: Timer = { due = clock.now + seconds, callback = callback, cancelled = false, fired = false }
 			table.insert(clock.timers, timer)
+
 			return function()
 				timer.cancelled = true
 			end
 		end,
 		SendReliable = function(payload: buffer)
 			table.insert(requests, payload)
+
 			if onSend ~= nil then
 				onSend(payload)
 			end
@@ -123,10 +130,12 @@ function TestUtils.new(onSend: ((buffer) -> ())?, manifestOverride: SharedNetwor
 			table.insert(faults, fault)
 		end,
 	})
+
 	stream.protocol = protocol
 	stream.codec = Codec.Compile(protocol, schemas)
 	stream.consumer = runtime.consumer
 	stream.runtime = Stream.new(stream.codec, runtime.consumer, stream.discovery, stream.options)
+
 	return {
 		clock = clock,
 		runtime = runtime,
@@ -141,8 +150,10 @@ end
 
 function TestUtils.advance(fixture: Fixture, seconds: number): ()
 	local target: number = fixture.clock.now + seconds
+
 	while true do
 		local nextTimer: Timer? = nil
+
 		for _, timer: Timer in fixture.clock.timers do
 			if not timer.cancelled and not timer.fired and timer.due <= target then
 				if nextTimer == nil or timer.due < nextTimer.due then
@@ -150,13 +161,16 @@ function TestUtils.advance(fixture: Fixture, seconds: number): ()
 				end
 			end
 		end
+
 		if nextTimer == nil then
 			break
 		end
+
 		fixture.clock.now = nextTimer.due
 		nextTimer.fired = true
 		nextTimer.callback()
 	end
+
 	fixture.clock.now = target
 end
 
@@ -177,6 +191,7 @@ function TestUtils.baseline(
 	local body: buffer?, reason: string? = fixture.stream.codec.EncodeBaseline(truth or TestUtils.truth())
 	assert(body ~= nil, reason)
 	local identity: string? = if generation == nil then actorId or "ActorA" else nil
+
 	TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -194,6 +209,7 @@ function TestUtils.view(fixture: Fixture, actorId: string?): PublicTypes.ActorVi
 	local view: PublicTypes.ActorView? = fixture.runtime.registry.GetActorViewById(actorId or "ActorA")
 	expect(view).never.toBeNil()
 	assert(view ~= nil, "A complete valid baseline must publish an ActorView")
+
 	return view
 end
 
@@ -201,6 +217,7 @@ function TestUtils.domain(fixture: Fixture, domainId: string?, actorId: string?)
 	local domain: PublicTypes.DomainView? = TestUtils.view(fixture, actorId):GetDomain(domainId or "Game.Stamina")
 	expect(domain).never.toBeNil()
 	assert(domain ~= nil, "Expected recipient-visible DomainView")
+
 	return domain
 end
 
@@ -208,6 +225,7 @@ function TestUtils.actor(fixture: Fixture, handle: number?): ClientNetworkingTyp
 	assert(fixture.stream.runtime ~= nil, "Expected N4 runtime")
 	local actor: ClientNetworkingTypes.ActorStreamRecord? = fixture.stream.runtime:GetByHandle(handle or 1)
 	assert(actor ~= nil, "Expected N4 identity")
+
 	return actor
 end
 
@@ -240,6 +258,7 @@ function TestUtils.destroy(fixture: Fixture): ()
 	for _, connection: SignalTypes.Connection in fixture.connections do
 		connection:Disconnect()
 	end
+
 	StreamUtils.destroy(fixture.stream)
 	fixture.runtime:Destroy()
 end

@@ -17,6 +17,7 @@ local resourceIds: { [string]: boolean } = { Mana = true, Chakra = true, Stamina
 beforeEach(function()
 	ActionRegistry._resetForTests()
 end)
+
 afterEach(function()
 	ActionRegistry._resetForTests()
 end)
@@ -56,6 +57,7 @@ local validRequirements: { { name: string, value: ActionResourceRequirement } } 
 		value = { min = 20, max = 100, minPercent = 0.25, maxPercent = 0.75 },
 	},
 }
+
 for _, case in validRequirements do
 	it("accepts " .. case.name, function()
 		local loaded: boolean, reason: string? = load({
@@ -63,6 +65,7 @@ for _, case in validRequirements do
 			visibility = "ServerOnly",
 			resourceRequirements = { Mana = case.value },
 		})
+
 		expect(loaded).toBe(true)
 		expect(reason).toBeNil()
 	end)
@@ -94,6 +97,7 @@ local invalidRequirements: { { name: string, value: any } } = {
 	{ name = "unknown requirement fields", value = { min = 20, unsupported = true } },
 	{ name = "numeric requirement fields", value = { min = 20, [1] = 10 } },
 }
+
 for _, case in invalidRequirements do
 	it("rejects " .. case.name .. " before publication", function()
 		expectInvalid({ id = "Cast", visibility = "ServerOnly", resourceRequirements = { Mana = case.value } })
@@ -109,10 +113,12 @@ local validCosts: { { name: string, value: number | ActionResourceCost } } = {
 	{ name = "a fixed amount multiplier", value = { amount = 20, multiplierProperty = "ManaCostMultiplier" } },
 	{ name = "a percentage multiplier", value = { percent = 0.25, multiplierProperty = "ManaCostMultiplier" } },
 }
+
 for _, case in validCosts do
 	it("accepts " .. case.name .. " without requiring Actor Properties at startup", function()
 		local loaded: boolean, reason: string? =
 			load({ id = "Cast", visibility = "ServerOnly", costs = { Mana = case.value } })
+
 		expect(loaded).toBe(true)
 		expect(reason).toBeNil()
 	end)
@@ -147,6 +153,7 @@ local invalidCosts: { { name: string, value: any } } = {
 	{ name = "unknown cost fields", value = { amount = 20, refund = true } },
 	{ name = "numeric cost fields", value = { percent = 0.25, [1] = 10 } },
 }
+
 for _, case in invalidCosts do
 	it("rejects " .. case.name .. " before publication", function()
 		expectInvalid({ id = "Cast", visibility = "ServerOnly", costs = { Mana = case.value } })
@@ -161,6 +168,7 @@ for _, field: string in { "resourceRequirements", "costs" } do
 			expectInvalid(definition)
 		end)
 	end
+
 	for index: number, resourceId: any in { "", 1, "Unknown" } do
 		it("rejects invalid or unknown Resource ids in " .. field .. " " .. index, function()
 			local definition: any = { id = "Cast", visibility = "ServerOnly" }
@@ -174,12 +182,14 @@ it("copies and freezes Resource metadata without freezing consumer source tables
 	local requirement: ActionResourceRequirement = { min = 20, minPercent = 0.25 }
 	local cost: ActionResourceCost = { amount = 10, multiplierProperty = "Multiplier" }
 	local percentageCost: ActionResourceCost = { percent = 0.25 }
+
 	local definition: ActionDefinition = {
 		id = "Cast",
 		visibility = "ServerOnly",
 		resourceRequirements = { Mana = requirement },
 		costs = { Mana = cost, Chakra = percentageCost, Stamina = 5 },
 	}
+
 	local loaded: boolean, reason: string? = load(definition)
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -190,13 +200,16 @@ it("copies and freezes Resource metadata without freezing consumer source tables
 	percentageCost.percent = 0.75
 	(definition.resourceRequirements :: { [string]: ActionResourceRequirement }).Chakra = { max = 0 }
 	(definition.costs :: { [string]: number | ActionResourceCost }).Stamina = 50
+
 	local catalog: ActionTypes.LoadedActionDefinition = ActionRegistry.Get("Cast") :: ActionTypes.LoadedActionDefinition
 	expect(catalog.resourceRequirements).toEqual({ Mana = { min = 20, minPercent = 0.25 } })
+
 	expect(catalog.costs).toEqual({
 		Mana = { amount = 10, multiplierProperty = "Multiplier" },
 		Chakra = { percent = 0.25 },
 		Stamina = 5,
 	})
+
 	expect(table.isfrozen(requirement)).toBe(false)
 	expect(table.isfrozen(cost)).toBe(false)
 	expect(table.isfrozen(percentageCost)).toBe(false)
@@ -219,6 +232,7 @@ it("does not publish a partial catalog when a later definition has invalid Resou
 			return { id = "Invalid", visibility = "ServerOnly", costs = { Chakra = { amount = 0 } } }
 		end,
 	}, {}, resourceIds)
+
 	expect(prepared).toBeNil()
 	expect(type(reason)).toBe("string")
 	expect(ActionRegistry.IsLoaded()).toBe(false)

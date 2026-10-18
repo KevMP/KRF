@@ -14,6 +14,7 @@ local PropertyRecompute = require(utilsFolder.PropertyRecompute)
 local PropertyControllerEventUtils = require(utilsFolder.PropertyControllerEvent)
 
 export type PropertyController = PropertyTypes.PropertyController
+
 type InternalPropertyController = PropertyTypes.InternalPropertyController
 type Actor = ActorTypes.Actor
 type TagController = TagTypes.InternalTagController
@@ -28,6 +29,7 @@ local PropertyController = {}
 function PropertyController.new(actor: Actor): PropertyController
 	local controller: InternalPropertyController = {} :: InternalPropertyController
 	local destroyed: boolean = false
+
 	local propertiesById: PropertyRecordsById = {
 		WalkSpeed = {
 			baseValue = 16,
@@ -43,11 +45,13 @@ function PropertyController.new(actor: Actor): PropertyController
 	local OnBasePropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local OnResolvedPropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local OnPropertyChangedSignal: SignalTypes.Signal<PropertyTypes.PropertyChange> = SignalModule.new()
+
 	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignalsModule.new({
 		OnBasePropertyChangedSignal,
 		OnResolvedPropertyChangedSignal,
 		OnPropertyChangedSignal,
 	})
+
 	local eventContext: PropertyControllerEventContext = {
 		actor = actor,
 		ownedSignals = ownedSignals,
@@ -63,6 +67,7 @@ function PropertyController.new(actor: Actor): PropertyController
 
 	function controller:_observeResolvedMutations(observer: PropertyTypes.PropertyMutationObserver): () -> ()
 		mutationObservers[observer] = true
+
 		return function(): ()
 			mutationObservers[observer] = nil
 		end
@@ -76,6 +81,7 @@ function PropertyController.new(actor: Actor): PropertyController
 
 	local function dispatchChanges(): ()
 		journal:Drain()
+
 		for observer: PropertyTypes.PropertyMutationObserver in mutationObservers do
 			observer.Dispatch()
 		end
@@ -84,6 +90,7 @@ function PropertyController.new(actor: Actor): PropertyController
 	local function commitTagChanges(events: { TagTypes.TagMutationEvent }): ()
 		local changes: { ResolvedChange } =
 			PropertyRecompute.RecomputePropertiesAffectedByTags(propertiesById, tagController, events)
+
 		for _, change: ResolvedChange in changes do
 			journal:Queue({
 				actor = actor,
@@ -94,10 +101,13 @@ function PropertyController.new(actor: Actor): PropertyController
 				newResolvedValue = change.newResolvedValue,
 			}, false, true)
 		end
+
 		local names: { string } = {}
+
 		for _, change: ResolvedChange in changes do
 			table.insert(names, change.propertyName)
 		end
+
 		commitDerivedState(names)
 	end
 
@@ -129,8 +139,10 @@ function PropertyController.new(actor: Actor): PropertyController
 				oldResolvedValue = nil,
 				newResolvedValue = newResolvedValue,
 			}, true, true)
+
 			commitDerivedState({ propertyName })
 			dispatchChanges()
+
 			return true, nil
 		end
 
@@ -153,15 +165,19 @@ function PropertyController.new(actor: Actor): PropertyController
 			oldResolvedValue = previousResolvedValue,
 			newResolvedValue = newResolvedValue,
 		}, true, previousResolvedValue ~= newResolvedValue)
+
 		if previousResolvedValue ~= newResolvedValue then
 			commitDerivedState({ propertyName })
 		end
+
 		dispatchChanges()
+
 		return true, nil
 	end
 
 	function controller:GetBaseProperty(propertyName: string): number?
 		local propertyRecord: PropertyRecord? = propertiesById[propertyName]
+
 		if propertyRecord then
 			return propertyRecord.baseValue
 		end
@@ -171,6 +187,7 @@ function PropertyController.new(actor: Actor): PropertyController
 
 	function controller:GetResolvedProperty(propertyName: string): number?
 		local propertyRecord: PropertyRecord? = propertiesById[propertyName]
+
 		if propertyRecord then
 			return propertyRecord.resolvedValue
 		end
@@ -180,6 +197,7 @@ function PropertyController.new(actor: Actor): PropertyController
 
 	function controller:GetResolvedProperties(): { [string]: number }
 		local resolvedProperties: { [string]: number } = {}
+
 		for propId: string, propertyRecord: PropertyRecord in propertiesById do
 			resolvedProperties[propId] = propertyRecord.resolvedValue
 		end
@@ -200,9 +218,11 @@ function PropertyController.new(actor: Actor): PropertyController
 
 		local disconnect: (() -> ())? = disconnectTagMutations
 		disconnectTagMutations = nil
+
 		if disconnect ~= nil then
 			disconnect()
 		end
+
 		journal:Destroy()
 		table.clear(mutationObservers)
 

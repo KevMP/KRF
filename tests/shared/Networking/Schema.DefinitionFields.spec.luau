@@ -36,15 +36,19 @@ local definitions: { SchemaDefinition } = {
 	Schema.Array(Schema.U8, 2),
 	Schema.Map(Schema.U8, Schema.U8, 2),
 }
+
 for _, definition: SchemaDefinition in definitions do
 	it(definition.kind .. " accepts declared fields and rejects unknown, foreign-kind, and numeric fields", function()
 		TestUtils.compile(definition)
+
 		local unknown: any = table.clone(definition)
 		unknown.somethingKRFDoesNotUnderstand = false
 		expectUnknownField(unknown)
+
 		local foreign: any = table.clone(definition)
 		foreign[if definition.kind == "Map" then "element" else "value"] = Schema.U8
 		expectUnknownField(foreign)
+
 		local numeric: any = table.clone(definition)
 		numeric[1] = true
 		expectUnknownField(numeric)
@@ -53,7 +57,9 @@ end
 
 local invalidChild: SchemaDefinition = { kind = "U8" }
 (invalidChild :: any).futureSemantics = true
+
 local nestedFields: { [string]: SchemaDefinition } = { child = invalidChild }
+
 local nestedDefinitions: { SchemaDefinition } = {
 	{ kind = "Optional", inner = invalidChild },
 	{ kind = "Struct", fields = nestedFields },
@@ -61,6 +67,7 @@ local nestedDefinitions: { SchemaDefinition } = {
 	{ kind = "Map", key = invalidChild, value = Schema.U8, maxEntries = 2 },
 	{ kind = "Map", key = Schema.U8, value = invalidChild, maxEntries = 2 },
 }
+
 for index: number, definition: SchemaDefinition in nestedDefinitions do
 	it("rejects unknown nested schema fields in " .. definition.kind .. " case " .. tostring(index), function()
 		expectUnknownField(definition)
@@ -71,15 +78,19 @@ it("friendly constructors reject unknown fields in supplied child schemas rather
 	expect(function()
 		Schema.Optional(invalidChild)
 	end).toThrow("SchemaFieldUnknown")
+
 	expect(function()
 		Schema.Struct({ child = invalidChild })
 	end).toThrow("SchemaFieldUnknown")
+
 	expect(function()
 		Schema.Array(invalidChild, 2)
 	end).toThrow("SchemaFieldUnknown")
+
 	expect(function()
 		Schema.Map(invalidChild, Schema.U8, 2)
 	end).toThrow("SchemaFieldUnknown")
+
 	expect(function()
 		Schema.Map(Schema.U8, invalidChild, 2)
 	end).toThrow("SchemaFieldUnknown")

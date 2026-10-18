@@ -40,10 +40,12 @@ function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventC
 
 	function journal:Queue(change: PropertyTypes.PropertyChange, baseChanged: boolean, resolvedChanged: boolean): ()
 		local group: NotificationGroup = { started = false, allowed = false }
+
 		local function enqueue(fire: () -> ()): ()
 			tail += 1
 			pending[tail] = { group = group, fire = fire }
 		end
+
 		if baseChanged then
 			enqueue(function()
 				eventContext.basePropertyChangedSignal:Fire(
@@ -54,6 +56,7 @@ function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventC
 				)
 			end)
 		end
+
 		if resolvedChanged then
 			enqueue(function()
 				eventContext.resolvedPropertyChangedSignal:Fire(
@@ -64,6 +67,7 @@ function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventC
 				)
 			end)
 		end
+
 		enqueue(function()
 			eventContext.propertyChangedSignal:Fire(change)
 		end)
@@ -73,23 +77,30 @@ function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventC
 		if head > tail then
 			return
 		end
+
 		drainDepth += 1
+
 		eventContext.ownedSignals:WithDeferredDestroy(function()
 			while head <= tail do
 				local emission: Emission = pending[head]
+
 				pending[head] = nil
 				head += 1
 				local group: NotificationGroup = emission.group
+
 				if not group.started then
 					group.started = true
 					group.allowed = not destroyed
 				end
+
 				if group.allowed then
 					emission.fire()
 				end
 			end
 		end)
+
 		drainDepth -= 1
+
 		if drainDepth == 0 then
 			head = 1
 			tail = 0
@@ -98,6 +109,7 @@ function PropertyControllerEventUtils.new(eventContext: PropertyControllerEventC
 
 	function journal:Destroy(): ()
 		destroyed = true
+
 		if drainDepth == 0 then
 			table.clear(pending)
 			head = 1

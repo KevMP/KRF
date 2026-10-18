@@ -3,6 +3,7 @@ local Types = require(script.Parent.types)
 
 export type ActorRegistry = Types.ActorRegistry
 export type Actor = Types.Actor
+
 type ActorBindingRecord = {
 	actor: Actor,
 	model: Model,
@@ -43,10 +44,12 @@ local function handleModelGone(bindingRecord: ActorBindingRecord)
 	if bindingRecord.modelGoneFired then
 		return
 	end
+
 	bindingRecord.modelGoneFired = true
 
 	if modelGoneHandler then
 		local ok: boolean, err: any = pcall(modelGoneHandler, bindingRecord.actor, "ModelGone")
+
 		if not ok then
 			warn("ModelGone handler failed: ", err)
 			cleanUpActorBindingRecord(bindingRecord) --fallback guarantee
@@ -62,6 +65,7 @@ end
 
 function ActorRegistry.GetActorById(actorId: string): Actor?
 	local actorRecord: ActorBindingRecord? = byId[actorId]
+
 	if actorRecord then
 		return actorRecord.actor
 	else
@@ -71,6 +75,7 @@ end
 
 function ActorRegistry.GetActorByModel(actorModel: Model): Actor?
 	local actorRecord: ActorBindingRecord? = byModel[actorModel]
+
 	if actorRecord then
 		return actorRecord.actor
 	else
@@ -81,6 +86,7 @@ end
 function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 	local existing: Actor? = ActorRegistry.GetActorByModel(model)
 	local actorId: string = actor:GetId()
+
 	if existing then
 		warn(
 			("[ActorRegistry] BindModel failed: reason=ModelAlreadyRegistered model=%s boundActorId=%s attemptedActorId=%s"):format(
@@ -89,6 +95,7 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 				actorId
 			)
 		)
+
 		return false, "ModelAlreadyRegistered"
 	end
 
@@ -100,6 +107,7 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 				model:GetFullName()
 			)
 		)
+
 		return false, "ActorHasDifferentModelBinded"
 	end
 
@@ -128,6 +136,7 @@ function ActorRegistry.BindModel(actor: Actor, model: Model): (boolean, string?)
 			modelGoneFired = false,
 			connections = {},
 		}
+
 		bindingRecord = newRecord
 	end
 
@@ -154,11 +163,13 @@ end
 
 function ActorRegistry.UnbindModel(actor: Actor): boolean
 	local record: ActorBindingRecord? = byId[actor:GetId()]
+
 	if not record then
 		return false
 	end
 
 	cleanUpActorBindingRecord(record)
+
 	return true
 end
 

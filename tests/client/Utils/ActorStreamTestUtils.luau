@@ -17,14 +17,17 @@ export type BaselineDelivery = {
 	revision: number,
 	domains: { [string]: SharedNetworkingTypes.ActorDomainTruth },
 }
+
 export type CommitDelivery = {
 	actor: ClientNetworkingTypes.ActorStreamRecord,
 	revision: number,
 	patches: { SharedNetworkingTypes.ActorDomainPatch },
 	events: { SharedNetworkingTypes.ActorEvent },
 }
+
 export type Binding = { actor: ClientNetworkingTypes.ActorStreamRecord, model: Model }
 export type ActorFault = { actor: ClientNetworkingTypes.ActorStreamRecord, reason: string }
+
 export type Fixture = {
 	runtime: ClientNetworkingTypes.ActorStreamRuntime?,
 	protocol: SharedNetworkingTypes.ClientProtocol,
@@ -55,9 +58,11 @@ function TestUtils.new(): Fixture
 	expect(reason).toBeNil()
 	assert(protocol ~= nil, "Expected compiled N2 client protocol")
 	local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
+
 	for _, domain: SharedNetworkingTypes.ManifestDomain in manifest.domains do
 		schemas[domain.id] = SchemaUtils.compile(domain.state)
 	end
+
 	local fixture: Fixture = {
 		runtime = nil,
 		protocol = protocol,
@@ -79,6 +84,7 @@ function TestUtils.new(): Fixture
 		instances = {},
 		scans = 0,
 	}
+
 	fixture.options = {
 		maxBaselineBytes = 512,
 		maxPendingBaselines = 4,
@@ -86,6 +92,7 @@ function TestUtils.new(): Fixture
 			table.insert(fixture.faults, fault)
 		end,
 	}
+
 	fixture.consumer = {
 		OnBaselineReady = function(
 			actor: ClientNetworkingTypes.ActorStreamRecord,
@@ -118,15 +125,19 @@ function TestUtils.new(): Fixture
 			table.insert(fixture.unbound, { actor = actor, model = model })
 		end,
 	}
+
 	fixture.discovery = {
 		GetCandidates = function(): { ClientNetworkingTypes.ActorModelCandidate }
 			fixture.scans += 1
+
 			return table.clone(fixture.candidates)
 		end,
 		ObserveAdded = function(callback: (ClientNetworkingTypes.ActorModelCandidate) -> ()): () -> ()
 			table.insert(fixture.added, callback)
+
 			return function(): ()
 				local index: number? = table.find(fixture.added, callback)
+
 				if index ~= nil then
 					table.remove(fixture.added, index)
 				end
@@ -134,14 +145,17 @@ function TestUtils.new(): Fixture
 		end,
 		ObserveRemoved = function(callback: (Instance) -> ()): () -> ()
 			table.insert(fixture.gone, callback)
+
 			return function(): ()
 				local index: number? = table.find(fixture.gone, callback)
+
 				if index ~= nil then
 					table.remove(fixture.gone, index)
 				end
 			end
 		end,
 	}
+
 	return fixture
 end
 
@@ -152,7 +166,9 @@ function TestUtils.start(fixture: Fixture, withoutConsumer: boolean?): ClientNet
 		fixture.discovery,
 		fixture.options
 	)
+
 	fixture.runtime = runtime
+
 	return runtime
 end
 
@@ -161,6 +177,7 @@ function TestUtils.send(fixture: Fixture, records: { SharedNetworkingTypes.Actor
 	local payload: buffer?, reason: string? = fixture.codec.Encode(records)
 	expect(reason).toBeNil()
 	assert(payload ~= nil, "Expected Actor packet")
+
 	return fixture.runtime:Handle(payload)
 end
 
@@ -169,8 +186,10 @@ function TestUtils.body(fixture: Fixture): buffer
 		["Game.Actions"] = { value = { active = false, mode = "Idle" } },
 		["Game.Inventory"] = { value = { "Potion" } },
 	})
+
 	expect(reason).toBeNil()
 	assert(body ~= nil, "Expected baseline body")
+
 	return body
 end
 
@@ -182,6 +201,7 @@ local function deliverBaseline(
 	revision: number
 ): ()
 	local body: buffer = TestUtils.body(fixture)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -193,6 +213,7 @@ local function deliverBaseline(
 		{ kind = "BaselineChunk", handle = handle, generation = generation, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = handle, generation = generation, revision = revision },
 	})
+
 	expect(success).toBe(true)
 	expect(reason).toBeNil()
 end
@@ -217,18 +238,22 @@ function TestUtils.candidate(
 	existingModel: Model?
 ): ClientNetworkingTypes.ActorModelCandidate
 	local model: Model = existingModel or Instance.new("Model")
+
 	if existingModel == nil then
 		table.insert(fixture.instances, model)
 	end
+
 	local marker: StringValue = Instance.new("StringValue")
 	marker.Value = actorId
 	marker.Parent = model
+
 	-- Candidate adapters keep the marker's actual class/name/tag an implementation detail.
 	return { marker = marker, model = model, actorId = actorId }
 end
 
 function TestUtils.add(fixture: Fixture, candidate: ClientNetworkingTypes.ActorModelCandidate): ()
 	table.insert(fixture.candidates, candidate)
+
 	for _, callback: (ClientNetworkingTypes.ActorModelCandidate) -> () in table.clone(fixture.added) do
 		callback(candidate)
 	end
@@ -236,9 +261,11 @@ end
 
 function TestUtils.remove(fixture: Fixture, candidate: ClientNetworkingTypes.ActorModelCandidate): ()
 	local index: number? = table.find(fixture.candidates, candidate)
+
 	if index ~= nil then
 		table.remove(fixture.candidates, index)
 	end
+
 	for _, callback: (Instance) -> () in table.clone(fixture.gone) do
 		callback(candidate.marker)
 	end
@@ -248,6 +275,7 @@ function TestUtils.destroy(fixture: Fixture): ()
 	if fixture.runtime ~= nil then
 		fixture.runtime:Destroy()
 	end
+
 	for _, instance: Instance in fixture.instances do
 		instance:Destroy()
 	end

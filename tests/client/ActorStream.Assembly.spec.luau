@@ -11,9 +11,11 @@ local ClientNetworkingTypes = require(KRF.client.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -25,6 +27,7 @@ it("hands a baseline to N5 once only after all bytes and matching End arrive", f
 	local remaining: buffer = buffer.create(buffer.len(body) - 1)
 	buffer.copy(first, 0, body, 0, 1)
 	buffer.copy(remaining, 0, body, 1)
+
 	expect(TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -34,28 +37,36 @@ it("hands a baseline to N5 once only after all bytes and matching End arrive", f
 			totalBytes = buffer.len(body),
 		},
 	})).toBe(true)
+
 	expect(
 		TestUtils.send(fixture, { { kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = first } })
 	).toBe(true)
+
 	expect(fixture.baselines).toEqual({})
+
 	expect(
 		TestUtils.send(
 			fixture,
 			{ { kind = "BaselineChunk", handle = 1, generation = 1, offset = 1, bytes = remaining } }
 		)
 	).toBe(true)
+
 	expect(fixture.baselines).toEqual({})
 	expect(TestUtils.send(fixture, { { kind = "BaselineEnd", handle = 1, generation = 1, revision = 7 } })).toBe(true)
 	expect(#fixture.baselines).toBe(1)
 	expect(fixture.baselines[1].revision).toBe(7)
+
 	expect(fixture.baselines[1].domains).toEqual({
 		["Game.Actions"] = { value = { active = false, mode = "Idle" } },
 		["Game.Inventory"] = { value = { "Potion" } },
 	})
+
 	expect(fixture.baselines[1].actor).toBe(runtime:GetByActorId("ActorA"))
 	expect(runtime:GetByHandle(1)).toBe(runtime:GetByActorId("ActorA"))
+
 	local success: boolean, reason: string? =
 		TestUtils.send(fixture, { { kind = "BaselineEnd", handle = 1, generation = 1, revision = 7 } })
+
 	expect(success).toBe(false)
 	expect(reason).toBe("BaselineNotPending")
 	expect(#fixture.baselines).toBe(1)
@@ -64,19 +75,24 @@ end)
 it("discards an incomplete older generation and cannot mix its chunks into a replacement", function()
 	TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
+
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 		{ kind = "BaselineBegin", handle = 1, generation = 2, totalBytes = buffer.len(body) },
 	})).toBe(true)
+
 	local success: boolean, reason: string? =
 		TestUtils.send(fixture, { { kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body } })
+
 	expect(success).toBe(false)
 	expect(reason).toBe("StaleBaselineGeneration")
 	expect(fixture.baselines).toEqual({})
+
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineChunk", handle = 1, generation = 2, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = 1, generation = 2, revision = 9 },
 	})).toBe(true)
+
 	expect(#fixture.baselines).toBe(1)
 	expect(fixture.baselines[1].revision).toBe(9)
 end)
@@ -96,9 +112,11 @@ end)
 it("rejects a handle-only Begin for an unknown handle without inventing identity", function()
 	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 99, generation = 1, totalBytes = buffer.len(body) },
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("UnknownActorHandle")
 	expect(runtime:GetByHandle(99)).toBeNil()
@@ -107,6 +125,7 @@ end)
 
 it("rejects an oversized Begin before creating awareness or consuming later work", function()
 	local runtime: ClientNetworkingTypes.ActorStreamRuntime = TestUtils.start(fixture)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -116,6 +135,7 @@ it("rejects an oversized Begin before creating awareness or consuming later work
 			totalBytes = fixture.options.maxBaselineBytes + 1,
 		},
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("ActorBaselineTooLarge")
 	expect(runtime:GetByHandle(1)).toBeNil()
@@ -129,6 +149,7 @@ for _, offset: number in { 0, 1 } do
 		function()
 			TestUtils.start(fixture)
 			local body: buffer = TestUtils.body(fixture)
+
 			expect(TestUtils.send(fixture, {
 				{
 					kind = "BaselineBegin",
@@ -139,14 +160,18 @@ for _, offset: number in { 0, 1 } do
 				},
 				{ kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body },
 			})).toBe(true)
+
 			local success: boolean, reason: string? = TestUtils.send(fixture, {
 				{ kind = "BaselineChunk", handle = 1, generation = 1, offset = offset, bytes = buffer.fromstring("x") },
 			})
+
 			expect(success).toBe(false)
 			expect(reason).toBe("BaselineChunkOverlap")
+
 			expect(TestUtils.send(fixture, { { kind = "BaselineEnd", handle = 1, generation = 1, revision = 1 } })).toBe(
 				true
 			)
+
 			expect(#fixture.baselines).toBe(1)
 			expect(fixture.baselines[1].domains["Game.Actions"].value).toEqual({ active = false, mode = "Idle" })
 		end
@@ -156,6 +181,7 @@ end
 it("rejects an out-of-bounds chunk and premature End without delivering a partial baseline", function()
 	TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
+
 	expect(TestUtils.send(fixture, {
 		{
 			kind = "BaselineBegin",
@@ -165,6 +191,7 @@ it("rejects an out-of-bounds chunk and premature End without delivering a partia
 			totalBytes = buffer.len(body),
 		},
 	})).toBe(true)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{
 			kind = "BaselineChunk",
@@ -174,6 +201,7 @@ it("rejects an out-of-bounds chunk and premature End without delivering a partia
 			bytes = buffer.fromstring("x"),
 		},
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("BaselineChunkOutOfBounds")
 	success, reason = TestUtils.send(fixture, { { kind = "BaselineEnd", handle = 1, generation = 1, revision = 1 } })
@@ -185,18 +213,22 @@ end)
 it("isolates incomplete assembly for several Actors in the same physical packet", function()
 	TestUtils.start(fixture)
 	local body: buffer = TestUtils.body(fixture)
+
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 		{ kind = "BaselineBegin", handle = 2, actorId = "ActorB", generation = 1, totalBytes = buffer.len(body) },
 		{ kind = "BaselineChunk", handle = 2, generation = 1, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = 2, generation = 1, revision = 1 },
 	})).toBe(true)
+
 	expect(#fixture.baselines).toBe(1)
 	expect(fixture.baselines[1].actor.actorId).toBe("ActorB")
+
 	expect(TestUtils.send(fixture, {
 		{ kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = 1, generation = 1, revision = 1 },
 	})).toBe(true)
+
 	expect(fixture.baselines[2].actor.actorId).toBe("ActorA")
 end)
 
@@ -214,9 +246,11 @@ it("rejects a conflicting actorId on an established handle while preserving the 
 	TestUtils.establish(fixture)
 	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	local body: buffer = TestUtils.body(fixture)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorB", generation = 2, totalBytes = buffer.len(body) },
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("ActorHandleConflict")
 	expect(runtime:GetByHandle(1)).toBe(original)
@@ -230,9 +264,11 @@ it("rejects a second handle for an actorId already known to the connection", fun
 	TestUtils.establish(fixture)
 	local original: ClientNetworkingTypes.ActorStreamRecord? = runtime:GetByHandle(1)
 	local body: buffer = TestUtils.body(fixture)
+
 	local success: boolean, reason: string? = TestUtils.send(fixture, {
 		{ kind = "BaselineBegin", handle = 2, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 	})
+
 	expect(success).toBe(false)
 	expect(reason).toBe("ActorIdConflict")
 	expect(runtime:GetByHandle(2)).toBeNil()

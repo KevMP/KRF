@@ -17,6 +17,7 @@ type LoadedActionDefinition = ActionTypes.LoadedActionDefinition
 type LockClaim = ActionTypes.LockClaim
 type InternalTagController = TagTypes.InternalTagController
 type TagMutationReceipt = TagTypes.TagMutationReceipt
+
 type InternalActionInstance = {
 	sequenceId: number,
 	identity: {},
@@ -76,9 +77,11 @@ function ActionControllerInstancesModule.new(
 
 	local function retireStart(instance: InternalActionInstance): ()
 		local startThread: thread? = instance.onStartThread
+
 		if startThread == nil then
 			return
 		end
+
 		if coroutine.running() ~= startThread then
 			ActionControllerHooks.CancelSuspendedThread(startThread)
 			instance.onStartThread = nil
@@ -89,26 +92,36 @@ function ActionControllerInstancesModule.new(
 		if not isActive(instance) then
 			return false
 		end
+
 		activeBySequenceId[instance.sequenceId] = nil
+
 		for lockId: string in instance.ownedLockReasons do
 			if lockOwners[lockId] == instance then
 				lockOwners[lockId] = nil
 			end
 		end
+
 		table.clear(instance.ownedLockReasons)
+
 		if instance.implementation.onUpdate ~= nil then
 			ActionControllerUpdates.Remove(instances, instance.sequenceId)
 		end
+
 		retireStart(instance)
 		local tags: InternalTagController? = instance.tagController
+
 		if tags ~= nil and #instance.ownedTagReceipts > 0 then
 			tags:_beginMutationBatch()
+
 			for _, handle: TagMutationReceipt in instance.ownedTagReceipts do
 				tags:_removeByReceipt(handle)
 			end
+
 			instance.terminalTagEvents = tags:_finishMutationBatch()
 		end
+
 		table.clear(instance.ownedTagReceipts)
+
 		return true
 	end
 
@@ -119,13 +132,16 @@ function ActionControllerInstancesModule.new(
 
 	local function removeLockReason(instance: InternalActionInstance, lockId: string): ()
 		local reasons: number? = instance.ownedLockReasons[lockId]
+
 		if reasons == nil then
 			return
 		end
+
 		if reasons > 1 then
 			instance.ownedLockReasons[lockId] = reasons - 1
 		else
 			instance.ownedLockReasons[lockId] = nil
+
 			if lockOwners[lockId] == instance then
 				lockOwners[lockId] = nil
 			end
@@ -144,6 +160,7 @@ function ActionControllerInstancesModule.new(
 		if instance.startedIssued then
 			return
 		end
+
 		-- A prior owner's signal listener can terminate this accepted instance
 		-- before the enclosing activation reaches its Started signal.
 		instance.startedIssued = true
@@ -152,8 +169,10 @@ function ActionControllerInstancesModule.new(
 
 	local function dispatchTerminalTags(instance: InternalActionInstance): ()
 		local tags: InternalTagController? = instance.tagController
+
 		if tags ~= nil then
 			local events: { TagTypes.TagMutationEvent } = instance.terminalTagEvents
+
 			instance.terminalTagEvents = {}
 			tags:_dispatchMutationEvents(events)
 		end
@@ -165,9 +184,11 @@ function ActionControllerInstancesModule.new(
 			endedSignal:Fire(lifecycleEvent(instance))
 			dispatchTerminalTags(instance)
 			local callback = instance.implementation.onEnd
+
 			if callback ~= nil then
 				local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 					ActionControllerHooks.RunNonSuspending(callback, instance.context)
+
 				if not succeeded then
 					ActionControllerHooks.WarnFailure(actor, instance.actionId, "onEnd", failureDetail or failureKind)
 				end
@@ -177,6 +198,7 @@ function ActionControllerInstancesModule.new(
 
 	local function issueInterrupted(instance: InternalActionInstance, reason: string): ()
 		issueStarted(instance)
+
 		interruptedSignal:Fire({
 			actor = actor,
 			actionId = instance.actionId,
@@ -187,9 +209,11 @@ function ActionControllerInstancesModule.new(
 
 	local function invokeInterrupt(instance: InternalActionInstance, reason: string): ()
 		local callback = instance.implementation.onInterrupt
+
 		if callback ~= nil then
 			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 				ActionControllerHooks.RunNonSuspending(callback, instance.context, reason)
+
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onInterrupt", failureDetail or failureKind)
 			end
@@ -208,23 +232,31 @@ function ActionControllerInstancesModule.new(
 		if type(lockIds) ~= "table" then
 			return nil
 		end
+
 		local count: number = 0
+
 		for key in lockIds do
 			if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
 				return nil
 			end
+
 			count += 1
 		end
+
 		local normalized: { string } = {}
 		local seen: { [string]: boolean } = {}
+
 		for index: number = 1, count do
 			local lockId: any = lockIds[index]
+
 			if type(lockId) ~= "string" or lockId == "" or seen[lockId] then
 				return nil
 			end
+
 			seen[lockId] = true
 			table.insert(normalized, lockId)
 		end
+
 		return normalized
 	end
 
@@ -234,16 +266,20 @@ function ActionControllerInstancesModule.new(
 	): { InternalActionInstance }
 		local conflicts: { InternalActionInstance } = {}
 		local seen: { [number]: boolean } = {}
+
 		for _, lockId: string in lockIds do
 			local owner: InternalActionInstance? = lockOwners[lockId]
+
 			if owner ~= nil and owner ~= incomingInstance and not seen[owner.sequenceId] then
 				seen[owner.sequenceId] = true
 				table.insert(conflicts, owner)
 			end
 		end
+
 		table.sort(conflicts, function(left: InternalActionInstance, right: InternalActionInstance): boolean
 			return left.sequenceId < right.sequenceId
 		end)
+
 		return conflicts
 	end
 
@@ -251,11 +287,13 @@ function ActionControllerInstancesModule.new(
 		if #left ~= #right then
 			return false
 		end
+
 		for index: number, owner: InternalActionInstance in left do
 			if right[index] ~= owner then
 				return false
 			end
 		end
+
 		return true
 	end
 
@@ -264,21 +302,27 @@ function ActionControllerInstancesModule.new(
 		incomingContext: ActionTypes.ActionInterruptionContext
 	): (boolean, string?)
 		local allowlisted: boolean = false
+
 		for _, allowedId: string in owner.definition.interruptibleBy do
 			if allowedId == incomingContext.actionId then
 				allowlisted = true
 				break
 			end
 		end
+
 		if not allowlisted then
 			return false, "ActionLockConflict"
 		end
+
 		local callback = owner.implementation.canBeInterruptedBy
+
 		if callback == nil then
 			return true, nil
 		end
+
 		local succeeded: boolean, allowed: any, _second: any, failureKind: string?, failureDetail: any =
 			ActionControllerHooks.RunNonSuspending(callback, owner.context, incomingContext)
+
 		if not succeeded then
 			warn(
 				"[ActionController] canBeInterruptedBy failed actorId="
@@ -290,9 +334,11 @@ function ActionControllerInstancesModule.new(
 					.. " reason="
 					.. tostring(failureDetail or failureKind)
 			)
+
 			return false,
 				if failureKind == "Yielded" then "ActionInterruptDecisionYielded" else "ActionInterruptDecisionFailed"
 		end
+
 		if type(allowed) ~= "boolean" then
 			warn(
 				"[ActionController] canBeInterruptedBy invalid result actorId="
@@ -302,8 +348,10 @@ function ActionControllerInstancesModule.new(
 					.. " sequenceId="
 					.. tostring(owner.sequenceId)
 			)
+
 			return false, "ActionInterruptDecisionInvalidResult"
 		end
+
 		return allowed, if allowed then nil else "ActionLockConflict"
 	end
 
@@ -316,25 +364,32 @@ function ActionControllerInstancesModule.new(
 			if incomingInstance ~= nil and not isActive(incomingInstance) then
 				return nil, "ActionInstanceNotActive"
 			end
+
 			local conflicts: { InternalActionInstance } = collectConflicts(lockIds, incomingInstance)
 			local stale: boolean = false
+
 			for _, owner: InternalActionInstance in conflicts do
 				local allowed: boolean, reason: string? = decideInterruption(owner, incomingContext)
+
 				if incomingInstance ~= nil and not isActive(incomingInstance) then
 					return nil, "ActionInstanceNotActive"
 				end
+
 				if not sameConflicts(conflicts, collectConflicts(lockIds, incomingInstance)) then
 					stale = true
 					break
 				end
+
 				if not allowed then
 					return nil, reason
 				end
 			end
+
 			if not stale then
 				return conflicts, nil
 			end
 		end
+
 		return nil, "ActionLockConflict"
 	end
 
@@ -342,64 +397,85 @@ function ActionControllerInstancesModule.new(
 		if not isActive(instance) then
 			return nil, "ActionInstanceNotActive"
 		end
+
 		local normalized: { string }? = normalizeLockIds(lockIds)
+
 		if normalized == nil then
 			return nil, "ActionLockRequestInvalid"
 		end
+
 		local incomingContext: ActionTypes.ActionInterruptionContext = table.freeze({
 			actor = actor,
 			actionId = instance.actionId,
 			parameters = instance.context.parameters,
 		})
+
 		local conflicts: { InternalActionInstance }?, reason: string? =
 			resolveConflicts(normalized, instance, incomingContext)
+
 		if conflicts == nil then
 			return nil, if reason == "ActionLockConflict" then "ActionLockClaimDenied" else reason
 		end
+
 		if controllerState.destroyed or not isActive(instance) then
 			return nil, "ActionInstanceNotActive"
 		end
+
 		local tags: InternalTagController? = getTagController()
+
 		if tags ~= nil then
 			tags:_beginMutationBatch()
 		end
+
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
 		end
+
 		for _, lockId: string in normalized do
 			addLockReason(instance, lockId)
 		end
+
 		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
 		local released: boolean = false
+
 		local claim: LockClaim = {
 			Release = function(_self: LockClaim): ()
 				if released then
 					return
 				end
+
 				released = true
+
 				if not isActive(instance) then
 					return
 				end
+
 				for _, lockId: string in normalized do
 					removeLockReason(instance, lockId)
 				end
 			end,
 		}
+
 		table.freeze(claim)
+
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
 			end
+
 			if tags ~= nil then
 				tags:_dispatchMutationEvents(tagEvents)
 			end
+
 			for _, owner: InternalActionInstance in conflicts do
 				dispatchTerminalTags(owner)
 			end
+
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")
 			end
 		end)
+
 		return claim :: LockClaim?, nil
 	end
 
@@ -407,15 +483,20 @@ function ActionControllerInstancesModule.new(
 		if controllerState.destroyed then
 			return false, "ActionControllerDestroyed"
 		end
+
 		if not validSequenceId(sequenceId) then
 			return false, "ActionSequenceIdInvalid"
 		end
+
 		local instance: InternalActionInstance? = activeBySequenceId[sequenceId]
+
 		if instance == nil then
 			return false, "ActionInstanceNotActive"
 		end
+
 		commitTerminal(instance)
 		dispatchEnd(instance)
+
 		return true, nil
 	end
 
@@ -423,18 +504,24 @@ function ActionControllerInstancesModule.new(
 		if controllerState.destroyed then
 			return false, "ActionControllerDestroyed"
 		end
+
 		if not validSequenceId(sequenceId) then
 			return false, "ActionSequenceIdInvalid"
 		end
+
 		if type(reason) ~= "string" or reason == "" then
 			return false, "ActionInterruptReasonInvalid"
 		end
+
 		local instance: InternalActionInstance? = activeBySequenceId[sequenceId]
+
 		if instance == nil then
 			return false, "ActionInstanceNotActive"
 		end
+
 		commitTerminal(instance)
 		dispatchInterrupt(instance, reason)
+
 		return true, nil
 	end
 
@@ -450,6 +537,7 @@ function ActionControllerInstancesModule.new(
 		nextSequenceId += 1
 		local identity: {} = {}
 		local instance: InternalActionInstance = {} :: InternalActionInstance
+
 		local context: ActionExecutionContext = {
 			actor = actor,
 			actionId = actionId,
@@ -457,6 +545,7 @@ function ActionControllerInstancesModule.new(
 			parameters = parameters,
 			IsActive = function(_self: ActionExecutionContext): boolean
 				local active: InternalActionInstance? = activeBySequenceId[sequenceId]
+
 				return active ~= nil and active.identity == identity
 			end,
 			End = function(_self: ActionExecutionContext): (boolean, string?)
@@ -469,6 +558,7 @@ function ActionControllerInstancesModule.new(
 				return claimLocks(instance, lockIds)
 			end,
 		}
+
 		table.freeze(context)
 		instance.sequenceId = sequenceId
 		instance.identity = identity
@@ -483,10 +573,13 @@ function ActionControllerInstancesModule.new(
 		instance.terminalTagEvents = {}
 		instance.startedIssued = false
 		activeBySequenceId[sequenceId] = instance
+
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
 		end
+
 		local updateCallback = implementation.onUpdate
+
 		if updateCallback ~= nil then
 			ActionControllerUpdates.Register(
 				instances,
@@ -498,29 +591,37 @@ function ActionControllerInstancesModule.new(
 				interruptById
 			)
 		end
+
 		return instance
 	end
 
 	local function beginStart(instance: InternalActionInstance): ()
 		local callback = instance.implementation.onStart
+
 		if callback == nil or not isActive(instance) then
 			return
 		end
+
 		local startThread: thread = coroutine.create(function()
 			local succeeded: boolean, failure: any = pcall(callback, instance.context)
 			instance.onStartThread = nil
+
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
+
 				if commitTerminal(instance) then
 					dispatchInterrupt(instance, "ActionStartFailed")
 				end
 			end
 		end)
+
 		instance.onStartThread = startThread
 		local resumed: boolean, failure: any = coroutine.resume(startThread)
+
 		if not resumed then
 			instance.onStartThread = nil
 			ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
+
 			if commitTerminal(instance) then
 				dispatchInterrupt(instance, "ActionStartFailed")
 			end
@@ -542,59 +643,80 @@ function ActionControllerInstancesModule.new(
 			actionId = actionId,
 			parameters = parameters,
 		})
+
 		local conflicts: { InternalActionInstance }?, reason: string? =
 			resolveConflicts(definition.locks, nil, incomingContext)
+
 		if conflicts == nil then
 			return nil, reason
 		end
+
 		local availabilityReason: string? = validateRequest()
+
 		if availabilityReason ~= nil then
 			return nil, availabilityReason
 		end
+
 		local tags: InternalTagController? = getTagController()
+
 		if #definition.activeTags > 0 or #definition.appliedTags > 0 then
 			if tags == nil then
 				local first = definition.activeTags[1] or definition.appliedTags[1]
+
 				return nil, "ActionTagActivationFailed:" .. first.id
 			end
+
 			local tagReason: string? = tags:_validateApplications(definition.activeTags)
 				or tags:_validateApplications(definition.appliedTags)
+
 			if tagReason ~= nil then
 				return nil, "ActionTagActivationFailed:" .. tagReason
 			end
 		end
+
 		-- All fallible Tag validation precedes preemption. No consumer work or
 		-- yielding occurs between validation and the complete authoritative commit.
 		local resourcePlan: ActionControllerResources.ResourcePlan?, resourceReason: string? =
 			ActionControllerResources.Resolve(actor, definition)
+
 		if resourceReason ~= nil then
 			return nil, resourceReason
 		end
+
 		local resources: ResourceTypes.InternalResourceController? = if resourcePlan ~= nil
 			then resourcePlan.controller
 			else actor:GetController("ResourceController") :: ResourceTypes.InternalResourceController?
+
 		if resources ~= nil and resources:_isDestroyed() then
 			resources = nil
 		end
+
 		if resources ~= nil then
 			resources:_beginMutationBatch()
 		end
+
 		-- Spend the fixed pre-transaction price before any same-transaction derived changes.
 		if resourcePlan ~= nil then
 			resourcePlan.commit()
 		end
+
 		if tags ~= nil then
 			tags:_beginMutationBatch()
 		end
+
 		for _, owner: InternalActionInstance in conflicts do
 			commitTerminal(owner)
 		end
+
 		local ownedTagReceipts: { TagMutationReceipt } = {}
+
 		if tags ~= nil then
 			for _, application in definition.activeTags do
 				local added: boolean, applicationReason: string?, receipt: TagMutationReceipt? =
 					tags:_addTagWithReceipt(application.id, { duration = application.duration })
+
 				assert(added, applicationReason or "ActionTagActivationFailed")
+
 				if receipt ~= nil then
 					if receipt.previousVersion == nil then
 						table.insert(ownedTagReceipts, receipt)
@@ -609,39 +731,52 @@ function ActionControllerInstancesModule.new(
 					end
 				end
 			end
+
 			for _, application in definition.appliedTags do
 				local added: boolean, applicationReason: string? =
 					tags:_addTagWithReceipt(application.id, { duration = application.duration })
+
 				assert(added, applicationReason or "ActionTagActivationFailed")
 			end
 		end
+
 		local instance: InternalActionInstance =
 			commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
+
 		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+
 		if resources ~= nil then
 			resources:_finishMutationBatch()
 		end
+
 		ownedSignals:WithDeferredDestroy(function()
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
 			end
+
 			issueStarted(instance)
+
 			if tags ~= nil then
 				tags:_dispatchMutationEvents(tagEvents)
 			end
+
 			for _, owner: InternalActionInstance in conflicts do
 				dispatchTerminalTags(owner)
 			end
+
 			if resources ~= nil then
 				resources:_dispatchChanges()
 			end
+
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")
 			end
+
 			if isActive(instance) then
 				beginStart(instance)
 			end
 		end)
+
 		return instance.sequenceId, nil
 	end
 
@@ -649,17 +784,23 @@ function ActionControllerInstancesModule.new(
 		if controllerState.destroyed then
 			return false, "ActionControllerDestroyed"
 		end
+
 		if not validSequenceId(sequenceId) then
 			return false, "ActionSequenceIdInvalid"
 		end
+
 		local instance: InternalActionInstance? = activeBySequenceId[sequenceId]
+
 		if instance == nil then
 			return false, "ActionInstanceNotActive"
 		end
+
 		local callback = instance.implementation.onStopRequested
+
 		if callback ~= nil then
 			local succeeded: boolean, _first: any, _second: any, failureKind: string?, failureDetail: any =
 				ActionControllerHooks.RunNonSuspending(callback, instance.context, { parameters = parameters })
+
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(
 					actor,
@@ -669,6 +810,7 @@ function ActionControllerInstancesModule.new(
 				)
 			end
 		end
+
 		return true, nil
 	end
 
@@ -682,30 +824,40 @@ function ActionControllerInstancesModule.new(
 
 	function instances:Destroy(): ()
 		local activeInstances: { InternalActionInstance } = {}
+
 		for _, instance: InternalActionInstance in activeBySequenceId do
 			table.insert(activeInstances, instance)
 		end
+
 		table.sort(activeInstances, function(left: InternalActionInstance, right: InternalActionInstance): boolean
 			return left.sequenceId < right.sequenceId
 		end)
+
 		local tags: InternalTagController? = getTagController()
+
 		if tags ~= nil then
 			tags:_beginMutationBatch()
 		end
+
 		for _, instance: InternalActionInstance in activeInstances do
 			commitTerminal(instance)
 		end
+
 		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+
 		ownedSignals:WithDeferredDestroy(function()
 			for _, instance: InternalActionInstance in activeInstances do
 				issueInterrupted(instance, "ActionControllerDestroyed")
 			end
+
 			if tags ~= nil then
 				tags:_dispatchMutationEvents(tagEvents)
 			end
+
 			for _, instance: InternalActionInstance in activeInstances do
 				dispatchTerminalTags(instance)
 			end
+
 			for _, instance: InternalActionInstance in activeInstances do
 				invokeInterrupt(instance, "ActionControllerDestroyed")
 			end

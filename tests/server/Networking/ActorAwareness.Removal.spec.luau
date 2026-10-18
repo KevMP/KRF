@@ -12,9 +12,11 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)

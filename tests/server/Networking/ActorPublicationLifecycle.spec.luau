@@ -14,6 +14,7 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local Server = require(KRF.server)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local ActorRegistry: ActorTypes.ActorRegistry = require(KRF.server.Actor.ActorRegistry)
+
 local Lifecycle: ServerNetworkingTypes.PublicationLifecycleModule =
 	require(KRF.server.Networking.utils.ActorPublicationLifecycle)
 
@@ -31,19 +32,24 @@ beforeEach(function()
 	order = {}
 	model = Instance.new("Model")
 	model.Parent = workspace
+
 	Lifecycle.AttachActor = function(_actor: ActorTypes.Actor): (boolean, string?)
 		table.insert(order, "AttachPublication")
+
 		return true, nil
 	end
+
 	Lifecycle.DetachActor = function(_actor: ActorTypes.Actor): ()
 		table.insert(order, "DetachPublication")
 	end
+
 	local success: boolean, failure: ServerTypes.StartupFailure? = Server.Init({
 		controllers = {
 			{
 				key = "Game.Controller",
 				factory = function(_actor: ActorTypes.Actor): ActorTypes.Controller
 					table.insert(order, "AttachController")
+
 					return {
 						Destroy = function(): ()
 							table.insert(order, "DestroyController")
@@ -53,6 +59,7 @@ beforeEach(function()
 			},
 		},
 	})
+
 	expect(success).toBe(true)
 	expect(failure).toBeNil()
 end)
@@ -61,11 +68,13 @@ afterEach(function()
 	for _, connection: SignalTypes.Connection<> in connections do
 		connection:Disconnect()
 	end
+
 	for _, actor: ActorTypes.Actor in actors do
 		if actor.enabled then
 			ActorRuntime.UnregisterActor(actor)
 		end
 	end
+
 	model:Destroy()
 	Lifecycle.AttachActor = originalAttach
 	Lifecycle.DetachActor = originalDetach
@@ -74,27 +83,33 @@ end)
 
 local function register(): (ActorTypes.Actor?, string?)
 	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
+
 	if actor ~= nil then
 		table.insert(actors, actor)
 	end
+
 	return actor, reason
 end
 
 it("attaches Networking after controllers and before enabling or notifying consumers", function()
 	local enabledAtAttach: boolean? = nil
 	local controllerAtAttach: ActorTypes.Controller? = nil
+
 	Lifecycle.AttachActor = function(actor: ActorTypes.Actor): (boolean, string?)
 		enabledAtAttach = actor.enabled
 		controllerAtAttach = actor:GetController("Game.Controller")
 		table.insert(order, "AttachPublication")
+
 		return true, nil
 	end
+
 	table.insert(
 		connections,
 		ActorRuntime.OnActorRegistered:Connect(function(): ()
 			table.insert(order, "PublicRegistered")
 		end)
 	)
+
 	local actor: ActorTypes.Actor?, reason: string? = register()
 	expect(reason).toBeNil()
 	assert(actor ~= nil, "Expected registered Actor")
@@ -107,12 +122,15 @@ end)
 it("observes a mutation immediately after RegisterActor returns without waiting for public callbacks", function()
 	local notification: (() -> ())? = nil
 	local observedMutations: number = 0
+
 	Lifecycle.AttachActor = function(_actor: ActorTypes.Actor): (boolean, string?)
 		notification = function(): ()
 			observedMutations += 1
 		end
+
 		return true, nil
 	end
+
 	local actor: ActorTypes.Actor?, reason: string? = register()
 	expect(reason).toBeNil()
 	assert(actor ~= nil, "Expected registered Actor")
@@ -124,16 +142,20 @@ end)
 it("establishes the committed observer before a public registration callback can mutate authority", function()
 	local attached: boolean = false
 	local attachedAtPublicCallback: boolean? = nil
+
 	Lifecycle.AttachActor = function(_actor: ActorTypes.Actor): (boolean, string?)
 		attached = true
+
 		return true, nil
 	end
+
 	table.insert(
 		connections,
 		ActorRuntime.OnActorRegistered:Connect(function(): ()
 			attachedAtPublicCallback = attached
 		end)
 	)
+
 	local actor: ActorTypes.Actor?, reason: string? = register()
 	expect(reason).toBeNil()
 	expect(actor ~= nil).toBe(true)
@@ -142,15 +164,18 @@ end)
 
 it("returns the stable publication attachment failure and rolls back controllers and registry binding", function()
 	local publicRegistrations: number = 0
+
 	Lifecycle.AttachActor = function(_actor: ActorTypes.Actor): (boolean, string?)
 		return false, "InvalidPublicationSnapshot:Game.State"
 	end
+
 	table.insert(
 		connections,
 		ActorRuntime.OnActorRegistered:Connect(function(): ()
 			publicRegistrations += 1
 		end)
 	)
+
 	local actor: ActorTypes.Actor?, reason: string? = register()
 	expect(actor).toBeNil()
 	expect(reason).toBe("InvalidPublicationSnapshot:Game.State")
@@ -185,6 +210,7 @@ it("allows a lifecycle seam call after startup reset without retaining the old r
 	Server._ResetForTests()
 	Lifecycle.AttachActor = originalAttach
 	Lifecycle.DetachActor = originalDetach
+
 	local actor: ActorTypes.Actor = require(KRF.server.Actor.ActorEntity).new()
 	local attached: boolean, reason: string? = Lifecycle.AttachActor(actor)
 	expect(attached).toBe(true)

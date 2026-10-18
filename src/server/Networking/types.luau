@@ -9,6 +9,7 @@ local types = {}
 export type HandshakeDependencies = {
 	SendReliable: (player: Player, payload: buffer) -> (),
 }
+
 export type ServerHandshake = {
 	Handle: (self: ServerHandshake, player: Player, payload: any, ...any) -> (),
 	IsClientReady: (self: ServerHandshake, player: Player) -> boolean,
@@ -19,9 +20,11 @@ export type ServerHandshake = {
 	Destroy: (self: ServerHandshake) -> (),
 	_GetConnectionCountForTests: (self: ServerHandshake) -> number,
 }
+
 export type ServerHandshakeModule = {
 	new: (protocol: SharedNetworkingTypes.PreparedProtocol, dependencies: HandshakeDependencies) -> ServerHandshake,
 }
+
 export type ServerNetworking = {
 	Prepare: (
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog
@@ -44,6 +47,7 @@ export type ServerNetworking = {
 -- Framework-private publication contracts. N4 owns recipient filtering and wire records.
 export type PublicationPatch = SharedNetworkingTypes.ActorPatch
 export type PublicationCaptureResult = { read value: any, read patch: PublicationPatch?, read encodedSizeBytes: number }
+
 export type PublicationCapturePlan = {
 	Capture: (
 		self: PublicationCapturePlan,
@@ -51,22 +55,27 @@ export type PublicationCapturePlan = {
 		previous: PublicationCaptureResult?
 	) -> (PublicationCaptureResult?, string?),
 }
+
 export type PublicationCaptureModule = {
 	Compile: (schema: SharedNetworkingTypes.CompiledSchema) -> PublicationCapturePlan,
 }
+
 export type PublicationDomainPatch = SharedNetworkingTypes.ActorDomainPatch
 export type PublicationEvent = SharedNetworkingTypes.ActorEvent
+
 export type PublicationCommit = {
 	read actor: ActorTypes.Actor,
 	read sequence: number,
 	read patches: { PublicationDomainPatch },
 	read events: { PublicationEvent },
 }
+
 -- The wrapper preserves a present domain whose Optional state is nil.
 export type PublicationDomainTruth = SharedNetworkingTypes.ActorDomainTruth
 export type PublicationBaseline = { read sequence: number, read domains: { [string]: PublicationDomainTruth } }
 export type PublicationFault = { read actorId: string, read domainId: string, read reason: string }
 export type PublicationRuntimeOptions = { ReportFault: ((fault: PublicationFault) -> ())? }
+
 export type PublicationRuntime = {
 	AttachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (),
@@ -77,6 +86,7 @@ export type PublicationRuntime = {
 	WithActorCommit: (self: PublicationRuntime, actor: ActorTypes.Actor, callback: () -> ()) -> (),
 	Destroy: (self: PublicationRuntime) -> (),
 }
+
 export type PublicationRuntimeModule = {
 	new: (
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
@@ -87,6 +97,7 @@ export type PublicationRuntimeModule = {
 		maxEventBytes: number
 	) -> (boolean, string?),
 }
+
 export type PublicationLifecycleModule = {
 	AttachActor: (actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (actor: ActorTypes.Actor) -> (),
@@ -94,27 +105,32 @@ export type PublicationLifecycleModule = {
 
 -- Stream identities are opaque to N3; N4 supplies recipient-visible work.
 export type PublicationStreamKey = { read recipient: any, read actor: any }
+
 export type PublicationFilteredCommit = {
 	read sequence: number,
 	read patches: { PublicationDomainPatch },
 	read events: { PublicationEvent },
 }
+
 export type PublicationRecord = {
 	read stream: PublicationStreamKey,
 	read commit: PublicationFilteredCommit,
 	read encodedSizeBytes: number,
 }
+
 export type PublicationStreamStatus = {
 	read needsBaseline: boolean,
 	read pendingRecords: number,
 	read pendingEvents: number,
 	read queuedBytes: number,
 }
+
 export type PublicationDrainResult = {
 	read records: { PublicationRecord },
 	read encodedBytes: number,
 	read visitedStreams: number,
 }
+
 export type PublicationSchedulerOptions = {
 	read maxBarriers: number,
 	read maxEvents: number,
@@ -122,6 +138,7 @@ export type PublicationSchedulerOptions = {
 	-- N4 supplies codec-aware record sizing, including conservative framing.
 	read MeasureRecord: (commit: PublicationFilteredCommit) -> number,
 }
+
 export type PublicationScheduler = {
 	Enqueue: (
 		self: PublicationScheduler,
@@ -141,10 +158,12 @@ export type PublicationScheduler = {
 	DrainBudgeted: (self: PublicationScheduler, maxBytes: number, maxRecords: number) -> PublicationDrainResult,
 	Destroy: (self: PublicationScheduler) -> (),
 }
+
 export type PublicationSchedulerModule = { new: (options: PublicationSchedulerOptions) -> PublicationScheduler }
 
 -- Actor awareness
 export type ActorAwarenessFault = { player: Player, actorId: string, reason: string }
+
 export type ActorAwarenessDependencies = {
 	IsClientReady: (Player) -> boolean,
 	ObserveClientReady: ((Player) -> ()) -> () -> (),
@@ -155,6 +174,7 @@ export type ActorAwarenessDependencies = {
 	ObserveAssociationChanged: ((Model) -> ()) -> () -> (),
 	ReportFault: (ActorAwarenessFault) -> (),
 }
+
 -- Small injected limits exercise boundaries without large allocations. Defaults are private tuning.
 export type ActorAwarenessOptions = {
 	maxBaselineBytes: number,
@@ -165,6 +185,7 @@ export type ActorAwarenessOptions = {
 	maxRevision: number,
 	maxGeneration: number?,
 }
+
 export type ActorAwarenessRuntime = {
 	OnActorRegistered: (self: ActorAwarenessRuntime, actor: ActorTypes.Actor) -> (),
 	OnActorUnregistering: (self: ActorAwarenessRuntime, actor: ActorTypes.Actor) -> (),
@@ -182,6 +203,7 @@ export type ActorAwarenessRuntime = {
 	Step: (self: ActorAwarenessRuntime, maxBytes: number, maxRecords: number) -> (),
 	Destroy: (self: ActorAwarenessRuntime) -> (),
 }
+
 export type ActorAwarenessRuntimeModule = {
 	new: (
 		publication: PublicationRuntime,
@@ -191,9 +213,11 @@ export type ActorAwarenessRuntimeModule = {
 		options: ActorAwarenessOptions
 	) -> ActorAwarenessRuntime,
 }
+
 export type ActorRecipientSelectionModule = {
 	ShouldBeAware: (player: Player, actor: ActorTypes.Actor) -> boolean,
 }
+
 export type ActorModelMarkerModule = {
 	Install: (actor: ActorTypes.Actor) -> (boolean, string?),
 	Remove: (actor: ActorTypes.Actor) -> (),
@@ -202,6 +226,7 @@ export type ActorModelMarkerModule = {
 }
 
 export type AwarenessStepBudget = { read maxBytes: number, read maxRecords: number }
+
 export type AwarenessSchedulingModule = {
 	GetBudget: () -> AwarenessStepBudget,
 	ObserveStep: (() -> ()) -> () -> (),
@@ -212,6 +237,7 @@ export type PlayerAssociationSource = {
 	ObserveAssociationChanged: ((Model) -> ()) -> () -> (),
 	Destroy: () -> (),
 }
+
 export type PlayerAssociationModule = { new: (players: Players?) -> PlayerAssociationSource }
 
 -- Recovery
@@ -221,12 +247,15 @@ export type ResyncDependencies = {
 	RequestReplacementBaseline: (Player, number, string?) -> (boolean, string?),
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
 }
+
 -- Hard admission bounds are injected for deterministic boundary tests.
 export type ResyncOptions = { windowSeconds: number, maxRequestsPerClient: number, maxRequestsPerActor: number }
+
 export type ResyncRuntime = {
 	Handle: (self: ResyncRuntime, player: Player, payload: any, ...any) -> (boolean, string?),
 	Destroy: (self: ResyncRuntime) -> (),
 }
+
 export type ResyncRuntimeModule = { new: (ResyncDependencies, ResyncOptions) -> ResyncRuntime }
 
 return types

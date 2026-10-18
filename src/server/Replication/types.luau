@@ -26,6 +26,7 @@ export type ReplicationDomainDefinition = {
 }
 
 export type LoadedReplicationEventDefinition = { read id: string, read payload: SharedNetworkingTypes.CompiledSchema }
+
 export type LoadedReplicationDomainDefinition = {
 	read id: string,
 	read state: SharedNetworkingTypes.CompiledSchema,

@@ -16,6 +16,7 @@ function ProtocolTestUtils.createPlayer(): Player
 	-- Injected transports need only an Instance identity and teardown; native
 	-- Player delivery is exercised separately in the engine integration check.
 	local identity: Folder = Instance.new("Folder")
+
 	return identity :: any
 end
 
@@ -38,6 +39,7 @@ function ProtocolTestUtils.encode(message: SharedNetworkingTypes.ProtocolMessage
 	local encoded: buffer?, reason: string? = Codec.Encode(message)
 	expect(reason).toBeNil()
 	assert(encoded ~= nil, "Expected a protocol buffer")
+
 	return encoded
 end
 
@@ -45,6 +47,7 @@ function ProtocolTestUtils.decode(payload: buffer): SharedNetworkingTypes.Protoc
 	local message: SharedNetworkingTypes.ProtocolMessage?, reason: string? = Codec.Decode(payload)
 	expect(reason).toBeNil()
 	assert(message ~= nil, "Expected a protocol message")
+
 	return message
 end
 

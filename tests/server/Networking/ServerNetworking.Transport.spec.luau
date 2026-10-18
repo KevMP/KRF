@@ -17,8 +17,10 @@ local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.serve
 local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
 local Codec: SharedNetworkingTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
 local Compiler: SharedNetworkingTypes.CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local DomainTestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 local ServerTestUtils = require(script.Parent.Parent.Utils.Networking.ServerProtocolTestUtils)
 local ProtocolTestUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -46,8 +48,10 @@ beforeEach(function()
 	-- copied. Use a capability-safe Instance as the injected connected player.
 	player = ProtocolTestUtils.createPlayer()
 	player.Parent = Players
+
 	Transport.Create = function(parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		root.Parent = parent
+
 		local reliable: any = {
 			OnServerEvent = inbound.Event,
 			FireClient = function(_self: any, recipient: Player, payload: buffer): ()
@@ -55,6 +59,7 @@ beforeEach(function()
 				table.insert(sent, payload)
 			end,
 		}
+
 		return {
 			root = root,
 			reliable = reliable,
@@ -82,9 +87,11 @@ end)
 
 local function emit(message: SharedNetworkingTypes.ProtocolMessage): ()
 	inbound:Fire(player, ProtocolTestUtils.encode(message))
+
 	task.defer(function(): ()
 		barrier:Fire()
 	end)
+
 	barrier.Event:Wait()
 end
 
@@ -94,14 +101,17 @@ it("wires the reliable listener to the handshake and exposes private ready/close
 	expect(failure).toBeNil()
 	local readyCalls: number = 0
 	local closedCalls: number = 0
+
 	Networking.ObserveClientReady(function(recipient: Player): ()
 		expect(recipient).toBe(player)
 		readyCalls += 1
 	end)
+
 	Networking.ObserveClientClosed(function(recipient: Player): ()
 		expect(recipient).toBe(player)
 		closedCalls += 1
 	end)
+
 	expect(Networking.IsClientReady(player)).toBe(false)
 	local sentBefore: boolean, beforeReason: string? = Networking.SendReliable(player, buffer.create(0))
 	expect(sentBefore).toBe(false)
@@ -150,6 +160,7 @@ it("returns transport creation failure without publishing a runtime", function()
 	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		return nil, "TransportConflict"
 	end
+
 	local success: boolean, failure: string? = Networking.Publish(protocol)
 	expect(success).toBe(false)
 	expect(failure).toBe("TransportConflict")
@@ -163,6 +174,7 @@ it("removes only owned transports when handshake construction unexpectedly fails
 	): ServerNetworkingTypes.ServerHandshake
 		error("HandshakeConstructionFailed")
 	end
+
 	local completed: boolean, reason: any = pcall(Networking.Publish, protocol)
 	expect(completed).toBe(false)
 	expect(string.find(tostring(reason), "HandshakeConstructionFailed", 1, true) ~= nil).toBe(true)
@@ -175,9 +187,11 @@ it("rejects private observation and publication before any runtime is activated"
 	local success: boolean, reason: string? = Networking.SendReliable(player, buffer.create(0))
 	expect(success).toBe(false)
 	expect(reason).toBe("ClientNotReady")
+
 	expect(function()
 		Networking.ObserveClientReady(function(): () end)
 	end).toThrow("NetworkingNotInitialized")
+
 	expect(function()
 		Networking.ObserveClientClosed(function(): () end)
 	end).toThrow("NetworkingNotInitialized")
@@ -186,26 +200,33 @@ end)
 it("distinguishes a malformed encoded manifest from event codec compilation failure", function()
 	local catalog: ReplicationTypes.PreparedReplicationDomainCatalog =
 		DomainTestUtils.prepare({ DomainTestUtils.createDomain("Game.Other") })
+
 	Codec.Encode = function(_message: SharedNetworkingTypes.ProtocolMessage): (buffer?, string?)
 		return nil, "UnsupportedSchema"
 	end
+
 	local rejected: SharedNetworkingTypes.PreparedProtocol?, reason: string? = Networking.Prepare(catalog)
 	expect(rejected).toBeNil()
 	expect(reason).toBe("InvalidProtocolManifest")
 	Codec.Encode = originalEncode
+
 	local domain: ReplicationTypes.ReplicationDomainDefinition = DomainTestUtils.createDomain("Game.Events")
 	domain.events = { { id = "Changed", payload = domain.state } }
 	catalog = DomainTestUtils.prepare({ domain })
 	local calls: number = 0
+
 	Compiler.Compile = function(
 		schema: SharedNetworkingTypes.CompiledSchema
 	): (SharedNetworkingTypes.CompiledCodec?, string?)
 		calls += 1
+
 		if calls == 2 then
 			return nil, "UnsupportedSchema"
 		end
+
 		return originalCompile(schema)
 	end
+
 	rejected, reason = Networking.Prepare(catalog)
 	expect(rejected).toBeNil()
 	expect(reason).toBe("CodecCompilationFailure")

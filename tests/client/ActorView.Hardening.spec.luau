@@ -12,9 +12,11 @@ local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -66,12 +68,14 @@ it("ignores redundant Model binding and stale unbind callbacks without losing th
 	local actor: Types.ActorStreamRecord = TestUtils.actor(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		view.OnModelChanged:Connect(function(_previous: Model?, _current: Model?)
 			changes += 1
 		end)
 	)
+
 	fixture.runtime.consumer.OnModelBound(actor, candidate.model)
 	local other: Types.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorB")
 	fixture.runtime.consumer.OnModelUnbound(actor, other.model)

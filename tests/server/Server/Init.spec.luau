@@ -73,6 +73,7 @@ local function createModel(): Model
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 	table.insert(testModels, model)
+
 	return model
 end
 
@@ -154,12 +155,14 @@ it("KRF.Server.Init loads built-in controllers when game catalogs are omitted", 
 
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+
 	expect(Controllers.GetAutoAttachKeys()).toEqual({
 		"TagController",
 		"PropertyController",
 		"ResourceController",
 		"ActionController",
 	})
+
 	expect(Tags.IsLoaded()).toBe(true)
 	expect(#Tags.GetAll()).toBe(0)
 	expect(Resources.IsLoaded()).toBe(true)
@@ -220,38 +223,46 @@ it(
 it("KRF.Server.Init rejects unknown Action Tag, Resource, and Action references before publication", function()
 	local unknownTagAction: ActionDefinition = createActionDefinition("Action.UnknownTag")
 	unknownTagAction.requiredTags = { "Tag.Unknown" }
+
 	local unknownTagStarted: boolean, unknownTagFailure: StartupFailure? =
 		Init({ actions = {
 			function()
 				return unknownTagAction
 			end,
 		} })
+
 	expect(unknownTagStarted).toBe(false)
 	expectFailure(unknownTagFailure, "Action", "ActionRequiredTagUnknown:Tag.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)
 
 	Server._ResetForTests()
+
 	local unknownResourceAction: ActionDefinition = createActionDefinition("Action.UnknownResource")
 	unknownResourceAction.costs = { ["Resource.Unknown"] = 1 }
+
 	local unknownResourceStarted: boolean, unknownResourceFailure: StartupFailure? =
 		Init({ actions = {
 			function()
 				return unknownResourceAction
 			end,
 		} })
+
 	expect(unknownResourceStarted).toBe(false)
 	expectFailure(unknownResourceFailure, "Action", "ActionCostResourceUnknown:Resource.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)
 
 	Server._ResetForTests()
+
 	local unknownActionReference: ActionDefinition = createActionDefinition("Action.UnknownReference")
 	unknownActionReference.interruptibleBy = { "Action.Unknown" }
+
 	local unknownActionStarted: boolean, unknownActionFailure: StartupFailure? =
 		Init({ actions = {
 			function()
 				return unknownActionReference
 			end,
 		} })
+
 	expect(unknownActionStarted).toBe(false)
 	expectFailure(unknownActionFailure, "Action", "ActionInterruptibleByUnknown:Action.Unknown")
 	expect(Actions.IsLoaded()).toBe(false)
@@ -345,17 +356,21 @@ end)
 
 it("KRF.Server.Init preserves catalog order between unrelated controllers", function()
 	local attachmentOrder: { string } = {}
+
 	local firstController: ControllerDef = {
 		key = "Game.First",
 		factory = function(_actor: Actor): Controller
 			table.insert(attachmentOrder, "Game.First")
+
 			return { Destroy = function() end }
 		end,
 	}
+
 	local secondController: ControllerDef = {
 		key = "Game.Second",
 		factory = function(_actor: Actor): Controller
 			table.insert(attachmentOrder, "Game.Second")
+
 			return { Destroy = function() end }
 		end,
 	}
@@ -363,10 +378,12 @@ it("KRF.Server.Init preserves catalog order between unrelated controllers", func
 	local started: boolean, failure: StartupFailure? = Init({
 		controllers = { firstController, secondController },
 	})
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 
 	local actor: Actor?, registrationReason: string? = Runtime.RegisterActor(createModel())
+
 	if actor ~= nil then
 		table.insert(testActors, actor)
 	end
@@ -378,6 +395,7 @@ end)
 
 it("Actors registered at different times receive the same dependency-ordered auto-attach set", function()
 	local attachmentOrder: { string } = {}
+
 	local function definition(key: string, dependsOn: { string }?, autoAttach: boolean?): ControllerDef
 		return {
 			key = key,
@@ -385,6 +403,7 @@ it("Actors registered at different times receive the same dependency-ordered aut
 			autoAttach = autoAttach,
 			factory = function(_actor: Actor): Controller
 				table.insert(attachmentOrder, key)
+
 				return { Destroy = function() end }
 			end,
 		}
@@ -397,14 +416,17 @@ it("Actors registered at different times receive the same dependency-ordered aut
 			definition("Game.Root", nil, nil),
 		},
 	})
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 
 	local firstActor: Actor?, firstReason: string? = Runtime.RegisterActor(createModel())
 	local secondActor: Actor?, secondReason: string? = Runtime.RegisterActor(createModel())
+
 	if firstActor ~= nil then
 		table.insert(testActors, firstActor)
 	end
+
 	if secondActor ~= nil then
 		table.insert(testActors, secondActor)
 	end
@@ -418,9 +440,11 @@ end)
 
 it("Actor registration before KRF.Server.Init leaves no lifecycle residue", function()
 	local registrationEvents: number = 0
+
 	local connection = Runtime.OnActorRegistered:Connect(function(_actor: Actor)
 		registrationEvents += 1
 	end)
+
 	table.insert(testConnections, connection)
 
 	local model: Model = createModel()
@@ -438,9 +462,11 @@ it("Loading ControllerRegistry directly does not unlock Actor registration", fun
 	expect(loadReason).toBeNil()
 
 	local registrationEvents: number = 0
+
 	local connection = Runtime.OnActorRegistered:Connect(function(_actor: Actor)
 		registrationEvents += 1
 	end)
+
 	table.insert(testConnections, connection)
 
 	local model: Model = createModel()
@@ -461,6 +487,7 @@ it("Actor registration after successful KRF.Server.Init succeeds", function()
 
 	local model: Model = createModel()
 	local actor: Actor?, reason: string? = Runtime.RegisterActor(model)
+
 	if actor ~= nil then
 		table.insert(testActors, actor)
 	end
@@ -481,13 +508,16 @@ it("Actor registration after failed KRF.Server.Init remains unavailable without 
 	local started: boolean, failure: StartupFailure? = Init({
 		controllers = { createControllerDefinition("Game.NeedsMissing", { "Game.Missing" }) },
 	})
+
 	expect(started).toBe(false)
 	expectFailure(failure, "Controller", "MissingDependency:Game.NeedsMissing->Game.Missing")
 
 	local registrationEvents: number = 0
+
 	local connection = Runtime.OnActorRegistered:Connect(function(_actor: Actor)
 		registrationEvents += 1
 	end)
+
 	table.insert(testConnections, connection)
 
 	local model: Model = createModel()
@@ -514,6 +544,7 @@ it("KRF.Server.Init rejects later initialization after failure", function()
 	local started: boolean, failure: StartupFailure? = Init({
 		controllers = { createControllerDefinition("Game.NeedsMissing", { "Game.Missing" }) },
 	})
+
 	expect(started).toBe(false)
 	expectFailure(failure, "Controller", "MissingDependency:Game.NeedsMissing->Game.Missing")
 

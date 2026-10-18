@@ -21,8 +21,10 @@ local Controllers: ControllerTypes.ControllerRegistry = require(KRF.server.Contr
 local Tags: TagTypes.TagRegistry = require(KRF.server.Tags.TagRegistry)
 local Resources: ResourceTypes.ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
 local Actions: ActionTypes.ActionRegistry = require(KRF.server.Action.ActionRegistry)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local TestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 
 type ServerStartConfig = ServerTypes.ServerStartConfig
@@ -78,6 +80,7 @@ end)
 it("publishes replication domains together with controllers, tags, resources, and actions", function()
 	local definition: ReplicationDomainDefinition = TestUtils.createDomain("Game.CombatState")
 	definition.events = { { id = "GuardBroken", payload = Schema.Struct({ previousGuard = Schema.F32 }) } }
+
 	local config: ServerStartConfig = {
 		controllers = {
 			{
@@ -101,6 +104,7 @@ it("publishes replication domains together with controllers, tags, resources, an
 		},
 		replicationDomains = { definition, TestUtils.createDomain("Game.Targeting") },
 	}
+
 	local started: boolean, failure: StartupFailure? = Server.Init(config)
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
@@ -130,6 +134,7 @@ it("keeps domain ids independent from controller keys and allows projections wit
 		},
 		replicationDomains = { TestUtils.createDomain("Game.SharedName"), TestUtils.createDomain("Game.Projection") },
 	})
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	expect((Domains.Get("Game.SharedName") :: LoadedDomain).id).toBe("Game.SharedName")
@@ -138,6 +143,7 @@ it("keeps domain ids independent from controller keys and allows projections wit
 end)
 
 type InvalidStartupCase = { name: string, field: string, value: any, reason: string }
+
 local invalidDomains: { InvalidStartupCase } = {
 	{ name = "id", field = "id", value = "", reason = "ReplicationDomainIdCannotBeEmpty" },
 	{ name = "state schema", field = "state", value = {}, reason = "SchemaKindInvalid" },
@@ -157,10 +163,12 @@ local invalidDomains: { InvalidStartupCase } = {
 		reason = "DuplicateReplicationEventId",
 	},
 }
+
 for _, domainCase: InvalidStartupCase in invalidDomains do
 	it("an invalid domain " .. domainCase.name .. " leaves every startup catalog unpublished", function()
 		local invalid: any = TestUtils.createDomain("Game.Invalid")
 		invalid[domainCase.field] = domainCase.value
+
 		local started: boolean, failure: StartupFailure? = Server.Init({
 			tags = { { id = "Game.ValidTag", duplicateBehavior = "Ignore", visibility = "ServerOnly" } },
 			resources = { { id = "Game.ValidResource", max = { value = 100 }, visibility = "ServerOnly" } },
@@ -171,6 +179,7 @@ for _, domainCase: InvalidStartupCase in invalidDomains do
 			},
 			replicationDomains = { TestUtils.createDomain("Game.Valid"), invalid },
 		})
+
 		expect(started).toBe(false)
 		expectFailure(failure, "ReplicationDomain", domainCase.reason)
 		expectUnpublished()
@@ -181,6 +190,7 @@ it("duplicate domain ids fail startup before publishing any catalog", function()
 	local started: boolean, failure: StartupFailure? = Server.Init({
 		replicationDomains = { TestUtils.createDomain("Game.Duplicate"), TestUtils.createDomain("Game.Duplicate") },
 	})
+
 	expect(started).toBe(false)
 	expectFailure(failure, "ReplicationDomain", "DuplicateReplicationDomainId")
 	expectUnpublished()
@@ -194,6 +204,7 @@ it("malformed game domain catalogs fail startup rather than being ignored", func
 end)
 
 type OtherCatalogCase = { name: string, config: ServerStartConfig, system: string, reason: string }
+
 local otherCatalogFailures: { OtherCatalogCase } = {
 	{
 		name = "Controller",
@@ -235,6 +246,7 @@ local otherCatalogFailures: { OtherCatalogCase } = {
 		},
 	},
 }
+
 for _, catalogCase: OtherCatalogCase in otherCatalogFailures do
 	it("a failing " .. catalogCase.name .. " catalog also leaves valid replication domains unpublished", function()
 		local config: ServerStartConfig = table.clone(catalogCase.config)
@@ -249,8 +261,10 @@ end
 it("startup rejects an already published domain catalog without replacing it or publishing other catalogs", function()
 	TestUtils.load({ TestUtils.createDomain("Game.Existing") })
 	local existing: LoadedDomain = Domains.Get("Game.Existing") :: LoadedDomain
+
 	local started: boolean, failure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.New") } })
+
 	expect(started).toBe(false)
 	expectFailure(failure, "Server", "CatalogAlreadyLoaded")
 	expect(Controllers.IsLoaded()).toBe(false)
@@ -265,8 +279,10 @@ it("a preloaded existing catalog prevents domain publication", function()
 	local loaded: boolean, reason: string? = Controllers.Load({})
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
+
 	local started: boolean, failure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.New") } })
+
 	expect(started).toBe(false)
 	expectFailure(failure, "Server", "CatalogAlreadyLoaded")
 	expect(Domains.IsLoaded()).toBe(false)
@@ -279,8 +295,10 @@ it("failed domain startup consumes the single initialization attempt without lat
 	local started: boolean, failure: StartupFailure? = Server.Init({ replicationDomains = { invalid } })
 	expect(started).toBe(false)
 	expectFailure(failure, "ReplicationDomain", "ReplicationDomainSnapshotMustBeFunction")
+
 	local retried: boolean, retryFailure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.Valid") } })
+
 	expect(retried).toBe(false)
 	expectFailure(retryFailure, "Server", "ServerInitAlreadyAttempted")
 	expectUnpublished()
@@ -289,12 +307,15 @@ end)
 it("successful domain startup cannot be repeated to replace the immutable catalog", function()
 	local started: boolean, failure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.Original") } })
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	local original: LoadedDomain = Domains.Get("Game.Original") :: LoadedDomain
 	expect(original.id).toBe("Game.Original")
+
 	local repeated: boolean, repeatFailure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.Replacement") } })
+
 	expect(repeated).toBe(false)
 	expectFailure(repeatFailure, "Server", "ServerInitAlreadyAttempted")
 	expect(Domains.Get("Game.Original")).toBe(original)
@@ -319,11 +340,14 @@ end)
 
 it("startup does not invoke Actor snapshot or observation callbacks", function()
 	local callbackCalls: number = 0
+
 	local definition: ReplicationDomainDefinition = TestUtils.createDomain("Game.Static")
+
 	definition.snapshot = function(_actor: ActorTypes.Actor): any
 		callbackCalls += 1
 		error("SnapshotCalledDuringStartup")
 	end
+
 	definition.observe = function(
 		_actor: ActorTypes.Actor,
 		_onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
@@ -331,6 +355,7 @@ it("startup does not invoke Actor snapshot or observation callbacks", function()
 		callbackCalls += 1
 		error("ObserveCalledDuringStartup")
 	end
+
 	local started: boolean, failure: StartupFailure? = Server.Init({ replicationDomains = { definition } })
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
@@ -339,22 +364,27 @@ end)
 
 it("startup adds only the framework reliable and reserved unreliable transport pair", function()
 	local existingRemotes: { [Instance]: boolean } = {}
+
 	for _, instance: Instance in game:GetDescendants() do
 		if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") or instance:IsA("UnreliableRemoteEvent") then
 			existingRemotes[instance] = true
 		end
 	end
+
 	local started: boolean, failure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.State") } })
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	local reliableCount: number = 0
 	local unreliableCount: number = 0
 	local remoteFunctionCount: number = 0
+
 	for _, instance: Instance in game:GetDescendants() do
 		if existingRemotes[instance] then
 			continue
 		end
+
 		if instance.ClassName == "RemoteEvent" then
 			reliableCount += 1
 		elseif instance.ClassName == "UnreliableRemoteEvent" then
@@ -363,6 +393,7 @@ it("startup adds only the framework reliable and reserved unreliable transport p
 			remoteFunctionCount += 1
 		end
 	end
+
 	expect(reliableCount).toBe(1)
 	expect(unreliableCount).toBe(1)
 	expect(remoteFunctionCount).toBe(0)
@@ -371,13 +402,16 @@ end)
 it("Server test reset clears domains alongside the existing startup catalogs", function()
 	local started: boolean, failure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.Old") } })
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	expect(Domains.IsLoaded()).toBe(true)
 	Server._ResetForTests()
 	expectUnpublished()
+
 	local restarted: boolean, restartFailure: StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.New") } })
+
 	expect(restarted).toBe(true)
 	expect(restartFailure).toBeNil()
 	expect(Domains.Get("Game.Old")).toBeNil()
@@ -391,13 +425,16 @@ it("startup owns validated supporting catalogs before Action factories can mutat
 		visibility = "ServerOnly",
 		properties = { WalkSpeed = { multiply = 1.25 } },
 	}
+
 	local resource: ResourceTypes.ResourceDefinition = {
 		id = "Game.Guard",
 		max = { value = 100 },
 		visibility = "ServerOnly",
 	}
+
 	local sourceTags: { TagTypes.TagDefinition } = { tag }
 	local sourceResources: { ResourceTypes.ResourceDefinition } = { resource }
+
 	local started: boolean, failure: StartupFailure? = Server.Init({
 		tags = sourceTags,
 		resources = sourceResources,
@@ -408,6 +445,7 @@ it("startup owns validated supporting catalogs before Action factories can mutat
 				resource.max.value = -1
 				table.clear(sourceTags)
 				table.clear(sourceResources)
+
 				return {
 					id = "Game.Block",
 					visibility = "ServerOnly",
@@ -418,15 +456,18 @@ it("startup owns validated supporting catalogs before Action factories can mutat
 		},
 		replicationDomains = { TestUtils.createDomain("Game.State") },
 	})
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 	local loadedTag: TagTypes.TagDefinition? = Tags.Get("Game.Grounded")
 	local loadedResource: ResourceTypes.LoadedResourceDefinition? = Resources.Get("Game.Guard")
 	expect(loadedTag).never.toBeNil()
 	expect(loadedResource).never.toBeNil()
+
 	expect(
 		((loadedTag :: TagTypes.TagDefinition).properties :: { [string]: TagTypes.PropertyModifier }).WalkSpeed.multiply
 	).toBe(1.25)
+
 	expect((loadedResource :: ResourceTypes.LoadedResourceDefinition).max.value).toBe(100)
 	expect(Tags.Get("Game.Mutated")).toBeNil()
 	expect(Domains.IsLoaded()).toBe(true)

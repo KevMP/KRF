@@ -28,6 +28,7 @@ afterEach(function()
 	for _, controller: any in controllers do
 		controller:Destroy()
 	end
+
 	ActionRegistry._resetForTests()
 end)
 
@@ -37,12 +38,16 @@ local function createController(definition: ActionDefinition): (Actor, any)
 			return table.clone(definition)
 		end,
 	}, {}, {})
+
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
+
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
+
 	return actor, controller
 end
 
@@ -58,9 +63,11 @@ end
 it("uses one factory instance across start, stop, end, and interrupt callbacks", function()
 	local observations: { string } = {}
 	local created: number = 0
+
 	local factory = function(): ActionDefinition
 		created += 1
 		local privateCount: number = 0
+
 		return {
 			id = "Action.Sprint",
 			visibility = "ServerOnly",
@@ -80,10 +87,13 @@ it("uses one factory instance across start, stop, end, and interrupt callbacks",
 			end,
 		}
 	end
+
 	local loaded: boolean = ActionRegistry.Load({ factory }, {}, {})
 	expect(loaded).toBe(true)
+
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
 	local first: any = controller:RequestAction("Action.Sprint")
@@ -102,6 +112,7 @@ end)
 it("keeps accepted callbacks fixed when consumer code mutates its returned table", function()
 	local calls: { string } = {}
 	local current: ActionDefinition? = nil
+
 	local factory = function(): ActionDefinition
 		local definition: ActionDefinition = {
 			id = "Action.Sprint",
@@ -114,22 +125,31 @@ it("keeps accepted callbacks fixed when consumer code mutates its returned table
 				table.insert(calls, "original end")
 			end,
 		}
+
 		current = definition
+
 		return definition
 	end
+
 	expect((ActionRegistry.Load({ factory }, {}, {}))).toBe(true)
+
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: any = ActionControllerModule.new(actor)
 	table.insert(controllers, controller)
 	local result: any = controller:RequestAction("Action.Sprint")
+
 	local mutable: ActionDefinition = current :: ActionDefinition
+
 	mutable.onStopRequested = function()
 		table.insert(calls, "mutated stop")
 	end
+
 	mutable.onEnd = function()
 		table.insert(calls, "mutated end")
 	end
+
 	expect((controller:RequestStop(result.sequenceId))).toBe(true)
 	expect((controller:EndAction(result.sequenceId))).toBe(true)
 	expect(calls).toEqual({ "original stop", "original end" })
@@ -138,14 +158,18 @@ end)
 it("delivers stop synchronously without automatic termination", function()
 	local context: any = nil
 	local requests: { any } = {}
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 	end
+
 	definition.onStopRequested = function(value: any, request: any)
 		expect(value).toBe(context)
 		table.insert(requests, request.parameters)
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
 	local parameters = { charge = 7 }
@@ -167,14 +191,18 @@ end)
 it("contains yielding and failing stop callbacks without ending the Action", function()
 	for _, failure: string in { "error", "yield" } do
 		local continued: boolean = false
+
 		local definition: ActionDefinition = action()
+
 		definition.onStopRequested = function()
 			if failure == "error" then
 				error("stop boom")
 			end
+
 			task.wait()
 			continued = true
 		end
+
 		local _actor: Actor, controller: any = createController(definition)
 		local result: any = controller:RequestAction("Action.Sprint")
 		expect((controller:RequestStop(result.sequenceId))).toBe(true)
@@ -190,14 +218,18 @@ it("retires a suspended onStart on external End, Interrupt, and Destroy", functi
 	for _, termination: string in { "End", "Interrupt", "Destroy" } do
 		local resumed: boolean = false
 		local context: any = nil
+
 		local definition: ActionDefinition = action()
+
 		definition.onStart = function(value: any)
 			context = value
 			task.wait()
 			resumed = true
 		end
+
 		local _actor: Actor, controller: any = createController(definition)
 		local result: any = controller:RequestAction("Action.Sprint")
+
 		if termination == "End" then
 			expect((controller:EndAction(result.sequenceId))).toBe(true)
 		elseif termination == "Interrupt" then
@@ -205,6 +237,7 @@ it("retires a suspended onStart on external End, Interrupt, and Destroy", functi
 		else
 			controller:Destroy()
 		end
+
 		expect(context:IsActive()).toBe(false)
 		flushEvents()
 		expect(resumed).toBe(false)
@@ -217,13 +250,16 @@ it("retires an onStart invocation that suspends after self-termination", functio
 	local context: any = nil
 	local selfEnded: boolean? = nil
 	local continued: boolean = false
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(value: any)
 		context = value
 		selfEnded = value:End()
 		task.wait()
 		continued = true
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	local result: any = controller:RequestAction("Action.Sprint")
 	expect(result.accepted).toBe(true)
@@ -237,18 +273,24 @@ it("commits all active instances inactive before the first teardown hook", funct
 	local contexts: { any } = {}
 	local interruptedReasons: { string } = {}
 	local observedAllInactive: { boolean } = {}
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(context: any)
 		table.insert(contexts, context)
 	end
+
 	definition.onInterrupt = function(_context: any, reason: string)
 		local allInactive: boolean = true
+
 		for _, context: any in contexts do
 			allInactive = allInactive and not context:IsActive()
 		end
+
 		table.insert(observedAllInactive, allInactive)
 		table.insert(interruptedReasons, reason)
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -263,11 +305,14 @@ end)
 
 it("contains a failing teardown hook and still interrupts every instance", function()
 	local calls: number = 0
+
 	local definition: ActionDefinition = action()
+
 	definition.onInterrupt = function(): ()
 		calls += 1
 		error("cleanup boom")
 	end
+
 	local _actor: Actor, controller: any = createController(definition)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
@@ -280,10 +325,13 @@ it("rejects public mutations during teardown and emits one interruption per acti
 	local contexts: { any } = {}
 	local mutationResults: { boolean } = {}
 	local interruptionCount: number = 0
+
 	local definition: ActionDefinition = action()
+
 	definition.onStart = function(context: any)
 		table.insert(contexts, context)
 	end
+
 	definition.onInterrupt = function(context: any)
 		local requested: any = controller:RequestAction("Action.Sprint")
 		table.insert(mutationResults, requested.accepted)
@@ -291,11 +339,14 @@ it("rejects public mutations during teardown and emits one interruption per acti
 		table.insert(mutationResults, (controller:EndAction(context.sequenceId)))
 		table.insert(mutationResults, (controller:InterruptAction(context.sequenceId, "Again")))
 	end
+
 	local _actor: Actor
 	_actor, controller = createController(definition)
+
 	controller.OnActionInterrupted:Connect(function()
 		interruptionCount += 1
 	end)
+
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	expect(controller:RequestAction("Action.Sprint").accepted).toBe(true)
 	controller:Destroy()

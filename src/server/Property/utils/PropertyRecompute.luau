@@ -63,6 +63,7 @@ function PropertyRecompute.RecomputePropertiesAffectedByTags(
 	local changes: { ResolvedChange } = {}
 	local affectedPropertyNames: { string } = {}
 	local seen: { [string]: boolean } = {}
+
 	for _, event: TagTypes.TagMutationEvent in events do
 		for _, propertyName: string in PropertyModifierCollector.GetAffectedPropertyNames(event.tagId) do
 			if not seen[propertyName] then
@@ -71,6 +72,7 @@ function PropertyRecompute.RecomputePropertiesAffectedByTags(
 			end
 		end
 	end
+
 	table.sort(affectedPropertyNames)
 
 	for _, propertyName in affectedPropertyNames do

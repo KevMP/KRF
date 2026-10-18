@@ -12,9 +12,11 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -33,9 +35,11 @@ it("allocates distinct positive integral handles and establishes actorId mapping
 	expect(firstHandle).never.toBe(secondHandle)
 	TestUtils.drain(fixture)
 	local mapping: { [number]: string } = {}
+
 	for _, record: any in TestUtils.kind(fixture, player, "BaselineBegin") do
 		mapping[record.handle] = record.actorId
 	end
+
 	expect(mapping).toEqual({ [firstHandle] = first:GetId(), [secondHandle] = second:GetId() })
 end)
 
@@ -116,6 +120,7 @@ end)
 
 it("reports handle exhaustion explicitly instead of wrapping into a retired handle", function()
 	fixture.options.maxHandle = 1
+
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.ready(fixture, player)

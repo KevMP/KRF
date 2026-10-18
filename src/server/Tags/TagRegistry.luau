@@ -36,6 +36,7 @@ function TagRegistry.Load(definitions: { TagDefinition }): (boolean, string?)
 	table.freeze(orderedDefinitions)
 
 	isLoaded = true
+
 	return true, nil
 end
 

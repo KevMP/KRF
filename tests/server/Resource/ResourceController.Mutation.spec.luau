@@ -166,6 +166,7 @@ it("returns true only when enough spendable value exists and rejects invalid Can
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:CanSpend("Resource.Resolve", "boom" :: any)
+
 	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:CanSpend("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
@@ -230,6 +231,7 @@ it("subtracts current value only when enough spendable value exists and rejects 
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Spend("Resource.Resolve", "boom" :: any)
+
 	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Spend("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
@@ -295,6 +297,7 @@ it("adds current value up to the resolved max and rejects invalid Restore calls"
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Restore("Resource.Resolve", "boom" :: any)
+
 	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Restore("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)
@@ -361,6 +364,7 @@ it("subtracts current value down to the resolved min and rejects invalid Drain c
 
 	local invalidTypeOk: boolean, invalidTypeReason: string? =
 		resourceController:Drain("Resource.Resolve", "boom" :: any)
+
 	local invalidNanOk: boolean, invalidNanReason: string? = resourceController:Drain("Resource.Resolve", 0 / 0)
 
 	expect(invalidTypeOk).toBe(false)

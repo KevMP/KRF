@@ -19,8 +19,10 @@ local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local Server = require(KRF.server)
 local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
+
 local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local Controllers: ControllerTypes.ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
 local Tags: TagTypes.TagRegistry = require(KRF.server.Tags.TagRegistry)
 local Resources: ResourceTypes.ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
@@ -35,11 +37,13 @@ beforeEach(function()
 	Server._ResetForTests()
 	Networking._ResetForTests()
 end)
+
 afterEach(function()
 	Networking.Prepare = originalPrepare
 	Networking.Publish = originalPublish
 	Server._ResetForTests()
 	Networking._ResetForTests()
+
 	if collision ~= nil then
 		collision:Destroy()
 		collision = nil
@@ -58,6 +62,7 @@ end
 
 it("prepares Networking from owned N1 metadata before publishing any catalog", function()
 	local prepareCalls: number = 0
+
 	Networking.Prepare = function(
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog
 	): (SharedNetworkingTypes.PreparedProtocol?, string?)
@@ -65,10 +70,13 @@ it("prepares Networking from owned N1 metadata before publishing any catalog", f
 		expectUnpublished()
 		expect(table.isfrozen(catalog)).toBe(true)
 		expect(catalog.definitionsById["Game.State"].state.kind).toBe("Struct")
+
 		return originalPrepare(catalog)
 	end
+
 	local success: boolean, failure: ServerTypes.StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.State") } })
+
 	expect(success).toBe(true)
 	expect(failure).toBeNil()
 	expect(prepareCalls).toBe(1)
@@ -88,8 +96,10 @@ do
 		): (SharedNetworkingTypes.PreparedProtocol?, string?)
 			return nil, reason
 		end
+
 		local success: boolean, failure: ServerTypes.StartupFailure? =
 			Server.Init({ replicationDomains = { TestUtils.createDomain("Game.State") } })
+
 		expect(success).toBe(false)
 		expect(failure).toEqual({ system = "Networking", reason = reason })
 		expectUnpublished()
@@ -103,17 +113,22 @@ it("rolls back catalog publication if transport activation fails after protocol 
 		bootstrapBuffer = buffer.create(1),
 		runtime = { domainsById = {}, domainsByCode = {} },
 	}
+
 	Networking.Prepare = function(
 		_catalog: ReplicationTypes.PreparedReplicationDomainCatalog
 	): (SharedNetworkingTypes.PreparedProtocol?, string?)
 		return prepared, nil
 	end
+
 	Networking.Publish = function(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
 		expect(protocol).toBe(prepared)
+
 		return false, "TransportConflict"
 	end
+
 	local success: boolean, failure: ServerTypes.StartupFailure? =
 		Server.Init({ replicationDomains = { TestUtils.createDomain("Game.State") } })
+
 	expect(success).toBe(false)
 	expect(failure).toEqual({ system = "Networking", reason = "TransportConflict" })
 	expectUnpublished()
@@ -124,6 +139,7 @@ it("detects a real reserved path collision without deleting the existing hierarc
 	reserved.Name = Transport.ROOT_NAME
 	reserved.Parent = ReplicatedStorage
 	collision = reserved
+
 	local marker: StringValue = Instance.new("StringValue")
 	marker.Value = "consumer-owned"
 	marker.Parent = reserved
@@ -142,11 +158,14 @@ it("keeps unexpected preparation failures observable with every startup registry
 	): (SharedNetworkingTypes.PreparedProtocol?, string?)
 		error("UnexpectedNetworkingPreparationFailure")
 	end
+
 	local success: boolean? = nil
 	local failure: ServerTypes.StartupFailure? = nil
+
 	local completed: boolean, thrown: any = pcall(function()
 		success, failure = Server.Init({})
 	end)
+
 	if completed then
 		expect(success).toBe(false)
 		assert(failure ~= nil, "Unexpected failure must be observable")
@@ -155,15 +174,18 @@ it("keeps unexpected preparation failures observable with every startup registry
 	else
 		expect(string.find(tostring(thrown), "UnexpectedNetworkingPreparationFailure", 1, true) ~= nil).toBe(true)
 	end
+
 	expectUnpublished()
 end)
 
 it("keeps Server.Init non-yielding and one-shot while Networking starts", function()
 	local success: boolean? = nil
 	local failure: ServerTypes.StartupFailure? = nil
+
 	local initThread: thread = coroutine.create(function()
 		success, failure = Server.Init({})
 	end)
+
 	local completed: boolean = coroutine.resume(initThread)
 	expect(completed).toBe(true)
 	expect(coroutine.status(initThread)).toBe("dead")

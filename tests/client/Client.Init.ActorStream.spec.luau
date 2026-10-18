@@ -13,8 +13,10 @@ local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Client: ClientTypes.Client = require(KRF.client)
 local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
 local Stream: ClientNetworkingTypes.ActorStreamRuntimeModule = require(KRF.client.Networking.ActorStreamRuntime)
+
 local Discovery: ClientNetworkingTypes.ActorModelDiscoveryModule =
 	require(KRF.client.Networking.utils.ActorModelDiscovery)
+
 local TestUtils = require(script.Parent.Utils.ClientTestUtils)
 local StreamTestUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -44,6 +46,7 @@ beforeEach(function()
 	Native.DiscoverTransport = fixture.dependencies.DiscoverTransport
 	Native.ScheduleTimeout = fixture.dependencies.ScheduleTimeout
 	Native.Resume = fixture.dependencies.Resume
+
 	discovery = {
 		GetCandidates = function(): { ClientNetworkingTypes.ActorModelCandidate }
 			return {}
@@ -58,9 +61,11 @@ beforeEach(function()
 			discoveryDestroyed += 1
 		end,
 	}
+
 	Discovery.new = function(_root: Instance?): ClientNetworkingTypes.ActorModelDiscoveryAdapter
 		return discovery
 	end
+
 	Stream.new = function(
 		_codec: SharedNetworkingTypes.ActorStreamCodec,
 		_consumer: ClientNetworkingTypes.ActorStreamConsumer?,
@@ -70,10 +75,12 @@ beforeEach(function()
 		created += 1
 		expect(installedDiscovery).toBe(discovery)
 		table.insert(fixture.order, "ActorConsumers")
+
 		return {
 			Handle = function(_self: ClientNetworkingTypes.ActorStreamRuntime, payload: any): (boolean, string?)
 				expect(typeof(payload)).toBe("buffer")
 				table.insert(deliveries, payload)
+
 				return true, nil
 			end,
 			GetByHandle = function(
@@ -100,11 +107,14 @@ beforeEach(function()
 		}
 	end
 end)
+
 afterEach(function()
 	Client._ResetForTests()
+
 	if fixture.initThread ~= nil and coroutine.status(fixture.initThread) ~= "dead" then
 		coroutine.close(fixture.initThread)
 	end
+
 	Stream.new = originalNew
 	Discovery.new = originalDiscovery
 	Native.Now = originalNow
@@ -119,6 +129,7 @@ local function start(): ()
 		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
 		fixture.result = { success = success, failure = failure }
 	end)
+
 	fixture.initThread = initThread
 	local completed: boolean, reason: any = coroutine.resume(initThread)
 	expect(completed).toBe(true)
@@ -145,13 +156,16 @@ it("continues routing Reliable Actor buffers after READY_ACK finishes Client.Ini
 	-- The real N4 codec produces Actor packets using the same catalog as the bootstrap.
 	local actorFixture: StreamTestUtils.Fixture = StreamTestUtils.new()
 	local body: buffer = StreamTestUtils.body(actorFixture)
+
 	local first: buffer?, firstReason: string? = actorFixture.codec.Encode({
 		{ kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = buffer.len(body) },
 		{ kind = "BaselineChunk", handle = 1, generation = 1, offset = 0, bytes = body },
 		{ kind = "BaselineEnd", handle = 1, generation = 1, revision = 1 },
 	})
+
 	expect(firstReason).toBeNil()
 	assert(first ~= nil, "Expected real baseline packet")
+
 	local second: buffer?, secondReason: string? = actorFixture.codec.Encode({
 		{
 			kind = "Commit",
@@ -166,6 +180,7 @@ it("continues routing Reliable Actor buffers after READY_ACK finishes Client.Ini
 			events = {},
 		},
 	})
+
 	expect(secondReason).toBeNil()
 	assert(second ~= nil, "Expected real live Actor packet")
 	TestUtils.emit(fixture, first)
@@ -196,6 +211,7 @@ for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" }
 		start()
 		TestUtils.bootstrap(fixture)
 		expect(created).toBe(1)
+
 		if failure == "ReadyRejected" then
 			TestUtils.emit(fixture, ProtocolUtils.encode({ kind = "Reject", reason = "ReadyRejected" }))
 		elseif failure == "HandshakeTimeout" then
@@ -204,6 +220,7 @@ for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" }
 		else
 			Client._ResetForTests()
 		end
+
 		TestUtils.expectFailure(fixture, failure)
 		expect(destroyed).toBe(1)
 		expect(discoveryDestroyed).toBe(1)
@@ -216,10 +233,12 @@ end
 it("destroys the installed Actor runtime when READY transmission throws", function()
 	fixture.onSend = function(payload: buffer): ()
 		local message: SharedNetworkingTypes.ProtocolMessage = ProtocolUtils.decode(payload)
+
 		if message.kind == "Ready" then
 			error("ForcedReadySendFailure", 0)
 		end
 	end
+
 	start()
 	TestUtils.bootstrap(fixture)
 	TestUtils.expectFailure(fixture, "StartupInternalFailure:ForcedReadySendFailure")
@@ -237,6 +256,7 @@ it("rolls back discovery and sends no READY when Actor runtime construction fail
 	): ClientNetworkingTypes.ActorStreamRuntime
 		error("ForcedActorStreamConstructionFailure", 0)
 	end
+
 	start()
 	TestUtils.bootstrap(fixture)
 	TestUtils.expectFailure(fixture, "StartupInternalFailure:ForcedActorStreamConstructionFailure")

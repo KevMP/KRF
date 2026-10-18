@@ -24,6 +24,7 @@ local TagRegistry = require(KRF.server.Tags.TagRegistry)
 local TagTestUtils: any = script.Parent.Parent.Utils.Tags
 
 local MixedTagCatalog: { TagDefinition } = require(TagTestUtils.MixedTagCatalog) :: { TagDefinition }
+
 local ValidPropertyModifierCatalog: { TagDefinition } =
 	require(TagTestUtils.ValidPropertyModifierCatalog) :: { TagDefinition }
 
@@ -69,6 +70,7 @@ end
 it("recomputes built-in WalkSpeed on tag add and fires resolved then umbrella events without a base event", function()
 	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 	local baseEventCount: number = 0
 	local eventOrder: { string } = {}
 	local umbrellaPayload: PropertyChange? = nil
@@ -76,6 +78,7 @@ it("recomputes built-in WalkSpeed on tag add and fires resolved then umbrella ev
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			table.insert(eventOrder, "resolved")
@@ -85,6 +88,7 @@ it("recomputes built-in WalkSpeed on tag add and fires resolved then umbrella ev
 			expect(newValue).toBeCloseTo(25.3, 5)
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		table.insert(eventOrder, "umbrella")
 		umbrellaPayload = change
@@ -112,6 +116,7 @@ end)
 it("recomputes resolved WalkSpeed from active normal modifiers when the base value is written", function()
 	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 	local eventOrder: { string } = {}
 	local baseOldValue: number? = nil
 	local baseNewValue: number? = nil
@@ -130,6 +135,7 @@ it("recomputes resolved WalkSpeed from active normal modifiers when the base val
 			baseNewValue = newValue
 		end
 	)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			table.insert(eventOrder, "resolved")
@@ -139,6 +145,7 @@ it("recomputes resolved WalkSpeed from active normal modifiers when the base val
 			resolvedNewValue = newValue
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		table.insert(eventOrder, "umbrella")
 		umbrellaPayload = change
@@ -186,6 +193,7 @@ it(
 	function()
 		local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 			createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 		local eventOrder: { string } = {}
 		local baseOldValue: number? = nil
 		local baseNewValue: number? = nil
@@ -203,9 +211,11 @@ it(
 				baseNewValue = newValue
 			end
 		)
+
 		local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 			resolvedEventCount += 1
 		end)
+
 		local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 			table.insert(eventOrder, "umbrella")
 			umbrellaPayload = change
@@ -263,12 +273,14 @@ it(
 	function()
 		local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 			createControllerWithCatalog(MixedTagCatalog)
+
 		local resolvedEventCount: number = 0
 		local umbrellaEventCount: number = 0
 
 		local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 			resolvedEventCount += 1
 		end)
+
 		local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 			umbrellaEventCount += 1
 		end)
@@ -293,6 +305,7 @@ it(
 it("applies an already-active custom-property modifier when the property is created later", function()
 	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(MixedTagCatalog)
+
 	local eventOrder: { string } = {}
 	local umbrellaPayload: PropertyChange? = nil
 
@@ -307,6 +320,7 @@ it("applies an already-active custom-property modifier when the property is crea
 			expect(newValue).toBe(100)
 		end
 	)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			table.insert(eventOrder, "resolved")
@@ -316,6 +330,7 @@ it("applies an already-active custom-property modifier when the property is crea
 			expect(newValue).toBe(75)
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		table.insert(eventOrder, "umbrella")
 		umbrellaPayload = change
@@ -369,6 +384,7 @@ end)
 it("recomputes through the normal modifier path when removing the final active set modifier", function()
 	local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(MixedTagCatalog)
+
 	local resolvedChanges: { { propertyName: string, oldValue: number?, newValue: number } } = {}
 
 	tagController:AddTag("Buff.Sprint")
@@ -377,6 +393,7 @@ it("recomputes through the normal modifier path when removing the final active s
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			expect(eventActor).toBe(actor)
+
 			table.insert(resolvedChanges, {
 				propertyName = propertyName,
 				oldValue = oldValue,
@@ -407,6 +424,7 @@ it("recomputes through the normal modifier path when the final active set modifi
 	runWithManualStepping(function()
 		local actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 			createControllerWithCatalog(MixedTagCatalog, true)
+
 		local resolvedChanges: { { propertyName: string, oldValue: number?, newValue: number } } = {}
 
 		tagController:AddTag("Buff.Sprint")
@@ -415,6 +433,7 @@ it("recomputes through the normal modifier path when the final active set modifi
 		local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 			function(eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 				expect(eventActor).toBe(actor)
+
 				table.insert(resolvedChanges, {
 					propertyName = propertyName,
 					oldValue = oldValue,
@@ -443,6 +462,7 @@ end)
 it("fires no property events when refresh recomputes but the final resolved value stays the same", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(MixedTagCatalog)
+
 	local baseEventCount: number = 0
 	local resolvedEventCount: number = 0
 	local umbrellaEventCount: number = 0
@@ -452,9 +472,11 @@ it("fires no property events when refresh recomputes but the final resolved valu
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 		resolvedEventCount += 1
 	end)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 		umbrellaEventCount += 1
 	end)
@@ -478,6 +500,7 @@ it(
 	function()
 		local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 			createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 		local resolvedEventCount: number = 0
 		local umbrellaEventCount: number = 0
 
@@ -487,6 +510,7 @@ it(
 		local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 			resolvedEventCount += 1
 		end)
+
 		local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 			umbrellaEventCount += 1
 		end)
@@ -508,6 +532,7 @@ it(
 it("fires only when stack removal changes the final unclamped WalkSpeed", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 	local baseEventCount: number = 0
 	local eventOrder: { string } = {}
 	local resolvedOldValue: number? = nil
@@ -521,6 +546,7 @@ it("fires only when stack removal changes the final unclamped WalkSpeed", functi
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(
 		function(_eventActor: Actor, propertyName: string, oldValue: number?, newValue: number)
 			table.insert(eventOrder, "resolved")
@@ -529,6 +555,7 @@ it("fires only when stack removal changes the final unclamped WalkSpeed", functi
 			resolvedNewValue = newValue
 		end
 	)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function(change: PropertyChange)
 		table.insert(eventOrder, "umbrella")
 		umbrellaPayload = change
@@ -566,6 +593,7 @@ end)
 it("fires no property events when a set modifier recomputes to the value already stored", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 	local baseEventCount: number = 0
 	local resolvedEventCount: number = 0
 	local umbrellaEventCount: number = 0
@@ -577,9 +605,11 @@ it("fires no property events when a set modifier recomputes to the value already
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 		resolvedEventCount += 1
 	end)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 		umbrellaEventCount += 1
 	end)
@@ -601,6 +631,7 @@ end)
 it("stops emitting later property events if the controller is destroyed during a multi-property recompute", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(MixedTagCatalog)
+
 	local resolvedEventCount: number = 0
 
 	local setOk: boolean, setReason: string? = propertyController:SetBaseProperty("DashCostMultiplier", 1.5)
@@ -625,6 +656,7 @@ end)
 it("ignores later tag mutations after the property controller is destroyed", function()
 	local _actor: Actor, tagController: TagControllerType, propertyController: PropertyController =
 		createControllerWithCatalog(ValidPropertyModifierCatalog)
+
 	local baseEventCount: number = 0
 	local resolvedEventCount: number = 0
 	local umbrellaEventCount: number = 0
@@ -632,9 +664,11 @@ it("ignores later tag mutations after the property controller is destroyed", fun
 	local baseConnection = propertyController.OnBasePropertyChanged:Connect(function()
 		baseEventCount += 1
 	end)
+
 	local resolvedConnection = propertyController.OnResolvedPropertyChanged:Connect(function()
 		resolvedEventCount += 1
 	end)
+
 	local umbrellaConnection = propertyController.OnPropertyChanged:Connect(function()
 		umbrellaEventCount += 1
 	end)

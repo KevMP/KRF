@@ -30,6 +30,7 @@ export type SchemaDefinition =
 -- Framework-private metadata for validation, structural diffing, and N2 codecs.
 -- Bounds must conservatively cover encoding; N2 owns the exact wire layout.
 export type CompiledField = { read name: string, read schema: CompiledSchema }
+
 export type CompiledSchema =
 	{ kind: PrimitiveKind, maxEncodedBytes: number }
 	| { kind: "String", maxBytes: number, maxEncodedBytes: number }
@@ -69,14 +70,17 @@ export type SchemaValidator = {
 -- Protocol bootstrap and transport
 -- Private wire metadata, deliberately separate from server domain definitions.
 export type ManifestEvent = { read id: string, read code: number, read payload: SchemaDefinition }
+
 export type ManifestDomain = {
 	read id: string,
 	read code: number,
 	read state: SchemaDefinition,
 	read events: { ManifestEvent },
 }
+
 export type ProtocolManifest = { read version: number, read domains: { ManifestDomain } }
 export type ClientEvent = { read id: string, read code: number, read codec: CompiledCodec }
+
 export type ClientDomain = {
 	read id: string,
 	read code: number,
@@ -84,15 +88,18 @@ export type ClientDomain = {
 	read eventsById: { [string]: ClientEvent },
 	read eventsByCode: { [number]: ClientEvent },
 }
+
 export type ClientProtocol = {
 	read domainsById: { [string]: ClientDomain },
 	read domainsByCode: { [number]: ClientDomain },
 }
+
 export type PreparedProtocol = {
 	read manifest: ProtocolManifest,
 	read bootstrapBuffer: buffer,
 	read runtime: ClientProtocol,
 }
+
 -- Closed framework vocabulary; arbitrary diagnostic strings never enter Reject.
 export type ProtocolRejectionReason =
 	"ProtocolMismatch"
@@ -100,25 +107,30 @@ export type ProtocolRejectionReason =
 	| "UnsupportedSchema"
 	| "BootstrapTooLarge"
 	| "ReadyRejected"
+
 export type ProtocolMessage =
 	{ kind: "Hello", version: number }
 	| { kind: "Bootstrap", manifest: ProtocolManifest }
 	| { kind: "Ready" }
 	| { kind: "ReadyAck" }
 	| { kind: "Reject", reason: ProtocolRejectionReason }
+
 export type ProtocolCodec = {
 	Encode: (message: ProtocolMessage) -> (buffer?, string?),
 	Decode: (payload: any) -> (ProtocolMessage?, string?),
 }
+
 export type ManifestCompiler = {
 	Reconstruct: (manifest: ProtocolManifest) -> (ClientProtocol?, string?),
 }
+
 export type OwnedTransport = {
 	root: Folder,
 	reliable: RemoteEvent,
 	unreliable: UnreliableRemoteEvent,
 	Destroy: () -> (),
 }
+
 export type Transport = {
 	ROOT_NAME: string,
 	RELIABLE_NAME: string,
@@ -133,9 +145,11 @@ export type ActorPatch =
 	{ read kind: "Replace", read value: any }
 	| { read kind: "Struct", read fields: { [string]: ActorPatch } }
 	| { read kind: "Map", read entries: { [any]: any }, read removed: { any } }
+
 export type ActorDomainTruth = { read value: any }
 export type ActorDomainPatch = { read domainId: string, read patch: ActorPatch }
 export type ActorEvent = { read domainId: string, read eventId: string, read payload: any }
+
 export type ActorStreamRecord =
 	-- Identity appears only when the connection first learns a handle. Replacement Begins omit it.
 	{ kind: "BaselineBegin", handle: number, actorId: string?, generation: number, totalBytes: number }
@@ -145,6 +159,7 @@ export type ActorStreamRecord =
 	| { kind: "ActorRemove", handle: number }
 	-- Terminal stream failure releases an assembly without removing Actor awareness.
 	| { kind: "ActorHalt", handle: number }
+
 export type ActorStreamCodec = {
 	Encode: (records: { ActorStreamRecord }) -> (buffer?, string?),
 	Measure: (records: { ActorStreamRecord }) -> (number?, string?),
@@ -152,7 +167,9 @@ export type ActorStreamCodec = {
 	EncodeBaseline: (domains: { [string]: ActorDomainTruth }) -> (buffer?, string?),
 	DecodeBaseline: (payload: buffer) -> ({ [string]: ActorDomainTruth }?, string?),
 }
+
 export type ActorSchemaCatalog = { [string]: CompiledSchema }
+
 export type ActorStreamCodecModule = {
 	Compile: (protocol: ClientProtocol, schemas: ActorSchemaCatalog) -> ActorStreamCodec,
 }

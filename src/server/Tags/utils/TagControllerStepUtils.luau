@@ -31,6 +31,7 @@ local function AdvanceTicking(tagRecord: TagInstanceRecord, deltaTime: number, t
 	end
 
 	local nextRemainingToNextTick: number = remainingToNextTick - deltaTime
+
 	tagRecord.remainingToNextTick = nextRemainingToNextTick
 
 	if nextRemainingToNextTick > 0 then
@@ -52,6 +53,7 @@ local function AdvanceDuration(tagRecord: TagInstanceRecord, deltaTime: number):
 	end
 
 	local nextRemainingDuration: number = remainingDuration - deltaTime
+
 	tagRecord.remainingDuration = nextRemainingDuration
 
 	return nextRemainingDuration <= 0

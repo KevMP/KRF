@@ -12,8 +12,10 @@ local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Validator: SharedNetworkingTypes.SchemaValidator = require(KRF.shared.Networking.utils.SchemaValidator)
+
 local Registry: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local TestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 
 type ReplicationDomainDefinition = ReplicationTypes.ReplicationDomainDefinition
@@ -64,8 +66,10 @@ it("rejects new preparation and repeated publication without replacing the publi
 	expect(published).toBe(true)
 	expect(publishReason).toBeNil()
 	local original: LoadedDomain = Registry.Get("Game.First") :: LoadedDomain
+
 	local replacement: PreparedCatalog?, prepareReason: string? =
 		Registry.Prepare({ TestUtils.createDomain("Game.Third") })
+
 	expect(replacement).toBeNil()
 	expect(prepareReason).toBe("ReplicationDomainDefinitionsAlreadyLoaded")
 	local repeated: boolean, repeatedReason: string? = Registry.Publish(first)
@@ -83,8 +87,10 @@ end)
 it("owns prepared definitions before publication rather than retaining mutable caller tables", function()
 	local definition: ReplicationDomainDefinition = TestUtils.createDomain("Game.Original")
 	definition.events = { { id = "Changed", payload = Schema.U8 } }
+
 	local sourceCatalog: { ReplicationDomainDefinition } = { definition }
 	local prepared: PreparedCatalog = TestUtils.prepare(sourceCatalog)
+
 	definition.id = "Game.Mutated"
 	definition.audience = "Owner"
 	(definition.events :: { ReplicationTypes.ReplicationEventDefinition })[1].id = "Mutated"
@@ -103,32 +109,41 @@ it("source catalog, callbacks, events, and nested schemas cannot alter published
 	local sourceValues: { string } = { "Idle", "Blocking" }
 	local sourceState: any = { kind = "Struct", fields = { mode = { kind = "Enum", values = sourceValues } } }
 	local sourcePayload: any = { kind = "Struct", fields = { amount = { kind = "U8" } } }
+
 	local definition: ReplicationDomainDefinition = TestUtils.createDomain("Game.Original")
 	definition.state = sourceState
 	definition.events = { { id = "Changed", payload = sourcePayload } }
+
 	definition.observe = function(
 		_actor: ActorTypes.Actor,
 		_onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
 	): (() -> ())?
 		return function() end
 	end
+
 	local originalSnapshot: (ActorTypes.Actor) -> any = definition.snapshot
+
 	local originalObserve: ((ActorTypes.Actor, ReplicationTypes.ReplicationDomainOnCommitted) -> (() -> ())?)? =
 		definition.observe
+
 	local sourceCatalog: { ReplicationDomainDefinition } = { definition }
 	TestUtils.load(sourceCatalog)
 	definition.id = "Game.Mutated"
 	definition.audience = "Owner"
+
 	definition.snapshot = function(_actor: ActorTypes.Actor): any
 		return { mutated = true }
 	end
+
 	definition.observe = nil
 	(definition.events :: { ReplicationTypes.ReplicationEventDefinition })[1].id = "Mutated"
 	(definition.events :: { ReplicationTypes.ReplicationEventDefinition })[1].payload = Schema.Boolean
+
 	table.insert(
 		definition.events :: { ReplicationTypes.ReplicationEventDefinition },
 		{ id = "Injected", payload = Schema.F64 }
 	)
+
 	sourceValues[1] = "Flying"
 	sourceState.fields.mode.kind = "Boolean"
 	sourcePayload.fields.amount.kind = "Boolean"
@@ -160,18 +175,23 @@ it("published domain, event, and compiled schema metadata are recursively immuta
 	local loaded: LoadedDomain = Registry.Get(definition.id) :: LoadedDomain
 	local stateSchema: SharedNetworkingTypes.CompiledSchema = loaded.state
 	local eventSchema: SharedNetworkingTypes.CompiledSchema = loaded.events[1].payload
+
 	local domainMutable: boolean = pcall(function()
 		(loaded :: any).audience = "Owner"
 	end)
+
 	local eventsMutable: boolean = pcall(function()
 		table.clear(loaded.events)
 	end)
+
 	local eventMutable: boolean = pcall(function()
 		(loaded.events[1] :: any).id = "Mutated"
 	end)
+
 	local schemaMutable: boolean = pcall(function()
 		loaded.state.maxEncodedBytes = math.huge
 	end)
+
 	assert(stateSchema.kind == "Struct", "Expected a compiled state Struct")
 	assert(eventSchema.kind == "Enum", "Expected a compiled event Enum")
 	expect(domainMutable).toBe(false)
@@ -190,19 +210,24 @@ it("mutating registry read collections cannot remove, replace, or insert registr
 	local second: LoadedDomain = Registry.Get("Game.Second") :: LoadedDomain
 	local all: { LoadedDomain } = Registry.GetAll()
 	local byId: { [string]: LoadedDomain } = Registry.GetAllById()
+
 	-- Both frozen collections and defensive copies satisfy read ownership.
 	pcall(function()
 		table.clear(all)
 	end)
+
 	pcall(function()
 		byId["Game.First"] = second
 	end)
+
 	pcall(function()
 		byId["Game.Second"] = nil
 	end)
+
 	pcall(function()
 		byId["Game.Injected"] = first
 	end)
+
 	expect(Registry.Get("Game.First")).toBe(first)
 	expect(Registry.Get("Game.Second")).toBe(second)
 	expect(Registry.Get("Game.Injected")).toBeNil()

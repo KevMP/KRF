@@ -25,6 +25,7 @@ type ResourceRecord = ResourceControllerRecomputeUtils.ResourceRecord
 type ResourceRecordsById = ResourceControllerRecomputeUtils.ResourceRecordsById
 type ResourceIdsByPropertyName = ResourceControllerRecomputeUtils.ResourceIdsByPropertyName
 type ResourceRecomputeChange = ResourceControllerRecomputeUtils.ResourceRecomputeChange
+
 type ResourceControllerModule = {
 	new: (actor: Actor) -> ResourceController,
 	Step: (deltaTime: number) -> (),
@@ -43,6 +44,7 @@ local function UpdateHeartbeatConnection(): ()
 	if automaticSteppingEnabled and hasRegeneratingControllers then
 		if HeartBeatConnection == nil then
 			automaticStepAccumulatorSeconds = 0
+
 			HeartBeatConnection = RunService.Heartbeat:Connect(function(deltaTime: number)
 				automaticStepAccumulatorSeconds += deltaTime
 
@@ -81,6 +83,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	local destroyed: boolean = false
 	local disconnectPropertyMutations: (() -> ())? = nil
+
 	local journal: ResourceControllerEvent.ResourceEventJournal =
 		ResourceControllerEvent.new(ownedSignals, OnResourceChangedSignal)
 
@@ -99,7 +102,9 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	local function commitCurrent(resourceId: string, record: ResourceRecord, value: number): ()
 		local previous: number = record.currentValue
+
 		record.currentValue = value
+
 		queueChange({
 			resourceId = resourceId,
 			currentOldValue = previous,
@@ -114,12 +119,15 @@ function ResourceController.new(actor: Actor): ResourceController
 	function controller:_beginMutationBatch(): ()
 		journal:BeginBatch()
 	end
+
 	function controller:_isDestroyed(): boolean
 		return destroyed
 	end
+
 	function controller:_finishMutationBatch(): ()
 		journal:FinishBatch()
 	end
+
 	function controller:_dispatchChanges(): ()
 		journal:Drain()
 	end
@@ -128,31 +136,42 @@ function ResourceController.new(actor: Actor): ResourceController
 		if destroyed then
 			return nil, "ResourceControllerDestroyed"
 		end
+
 		local prepared: { { id: string, record: ResourceRecord, previous: number, value: number } } = {}
 		local ids: { string } = {}
+
 		for id: string in amounts do
 			table.insert(ids, id)
 		end
+
 		table.sort(ids)
+
 		for _, id: string in ids do
 			local allowed: boolean, reason: string? = controller:CanSpend(id, amounts[id])
+
 			if not allowed then
 				return nil, (reason or "InvalidResourceAmount") .. ":" .. id
 			end
+
 			local record: ResourceRecord = resourcesById[id]
 			local value: number = record.currentValue - amounts[id]
+
 			if not math.isfinite(value) then
 				return nil, "InvalidResourceValue:" .. id
 			end
+
 			table.insert(prepared, { id = id, record = record, previous = record.currentValue, value = value })
 		end
+
 		return function(): ()
 			assert(not destroyed, "ResourceControllerDestroyed")
+
 			for _, mutation in prepared do
 				assert(
 					resourcesById[mutation.id] == mutation.record and mutation.record.currentValue == mutation.previous,
 					"ResourcePreparedMutationInvalidated"
 				)
+
 				commitCurrent(mutation.id, mutation.record, mutation.value)
 			end
 		end,
@@ -161,6 +180,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
+
 		if definition == nil then
 			return false, "UnknownResourceId:" .. resourceId
 		end
@@ -178,6 +198,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 		local resolvedMin: number?, resolvedMax: number?, resolvedRegenRate: number?, resolveReason: string? =
 			ResourceStateResolver.Resolve(propertyController, definition)
+
 		if resolvedMin == nil or resolvedMax == nil then
 			return false, resolveReason
 		end
@@ -196,6 +217,7 @@ function ResourceController.new(actor: Actor): ResourceController
 		}
 
 		ResourceControllerRecomputeUtils.IndexPropertySources(resourceIdsByPropertyName, definition)
+
 		if definition.regen ~= nil then
 			regeneratingActorsByController[controller] = actor
 			UpdateHeartbeatConnection()
@@ -238,6 +260,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:GetCurrent(resourceId: string): number?
 		local resourceRecord: ResourceRecord? = resourcesById[resourceId]
+
 		if resourceRecord == nil then
 			return nil
 		end
@@ -247,6 +270,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:GetMax(resourceId: string): number?
 		local resourceRecord: ResourceRecord? = resourcesById[resourceId]
+
 		if resourceRecord == nil then
 			return nil
 		end
@@ -256,6 +280,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:GetMin(resourceId: string): number?
 		local resourceRecord: ResourceRecord? = resourcesById[resourceId]
+
 		if resourceRecord == nil then
 			return nil
 		end
@@ -284,6 +309,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:Spend(resourceId: string, amount: number): (boolean, string?)
 		local canSpendOk: boolean, canSpendReason: string? = controller:CanSpend(resourceId, amount)
+
 		if not canSpendOk then
 			return false, canSpendReason
 		end
@@ -328,6 +354,7 @@ function ResourceController.new(actor: Actor): ResourceController
 
 		for resourceId: string, resourceRecord: ResourceRecord in resourcesById do
 			local resolvedRegenRate: number? = resourceRecord.resolvedRegenRate
+
 			if resolvedRegenRate == nil or resolvedRegenRate <= 0 then
 				continue
 			end
@@ -346,6 +373,7 @@ function ResourceController.new(actor: Actor): ResourceController
 		UpdateHeartbeatConnection()
 
 		local disconnect: (() -> ())? = disconnectPropertyMutations
+
 		if disconnect ~= nil then
 			disconnect()
 			disconnectPropertyMutations = nil
@@ -369,12 +397,15 @@ function ResourceController.new(actor: Actor): ResourceController
 					propertyController,
 					names
 				)
+
 			for _, change: ResourceRecomputeChange in changes do
 				queueChange(change)
 			end
 		end
+
 		local internalProperties: PropertyTypes.InternalPropertyController =
 			propertyController :: PropertyTypes.InternalPropertyController
+
 		if internalProperties._observeResolvedMutations ~= nil then
 			disconnectPropertyMutations = internalProperties:_observeResolvedMutations({
 				Commit = commitProperties,
@@ -390,11 +421,13 @@ function ResourceController.new(actor: Actor): ResourceController
 					journal:Drain()
 				end
 			)
+
 			disconnectPropertyMutations = function(): ()
 				connection:Disconnect()
 			end
 		end
 	end
+
 	for _, definition: LoadedResourceDefinition in ResourceRegistry.GetAll() do
 		if definition.autoAssign then
 			local addOk: boolean, addReason: string? = controller:AddResource(definition.id)

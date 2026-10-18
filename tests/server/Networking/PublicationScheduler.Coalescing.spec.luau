@@ -12,9 +12,11 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.PublicationSched
 
 local scheduler: ServerNetworkingTypes.PublicationScheduler
 local stream: ServerNetworkingTypes.PublicationStreamKey = { recipient = "PlayerA", actor = "ActorX" }
+
 beforeEach(function()
 	scheduler = TestUtils.createScheduler()
 end)
+
 afterEach(function()
 	scheduler:Destroy()
 end)
@@ -29,12 +31,14 @@ it("collapses repeated state-only mutations to one latest absolute value and one
 	for sequence: number = 1, 1000 do
 		enqueue(TestUtils.scalar(sequence, "Game.Mana", sequence % 100, nil))
 	end
+
 	expect(scheduler:GetStreamStatus(stream)).toEqual({
 		needsBaseline = false,
 		pendingRecords = 1,
 		pendingEvents = 0,
 		queuedBytes = 16,
 	})
+
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(1)
 	expect(drained.records[1].commit).toEqual(TestUtils.scalar(1000, "Game.Mana", 0, nil))
@@ -50,13 +54,16 @@ it("merges state before an event into its Actor-wide barrier without leaking lat
 	expect(#drained.records).toBe(2)
 	local first: ServerNetworkingTypes.PublicationFilteredCommit = drained.records[1].commit
 	local patches: { [string]: ServerNetworkingTypes.PublicationPatch } = {}
+
 	for _, patch: ServerNetworkingTypes.PublicationDomainPatch in first.patches do
 		patches[patch.domainId] = patch.patch
 	end
+
 	expect(patches).toEqual({
 		["Game.Mana"] = { kind = "Replace", value = 50 },
 		["Game.Guard"] = { kind = "Replace", value = 0 },
 	})
+
 	expect(first.events).toEqual({ { domainId = "Game.Guard", eventId = "Broken", payload = {} } })
 	expect(first.sequence).toBe(2)
 	expect(drained.records[2].commit).toEqual(TestUtils.scalar(3, "Game.Mana", 40, nil))
@@ -81,6 +88,7 @@ it("retains separate event-only barriers without manufacturing state patches", f
 			events = { { domainId = "Game.Action", eventId = "Pulse", payload = { count = sequence } } },
 		})
 	end
+
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(2)
 	expect(drained.records[1].commit.patches).toEqual({})
@@ -96,12 +104,15 @@ it("composes repeated and disjoint nested Struct field changes", function()
 			nested = { kind = "Struct", fields = { active = { kind = "Replace", value = true } } },
 		},
 	}))
+
 	enqueue(TestUtils.patch(2, {
 		kind = "Struct",
 		fields = { current = { kind = "Replace", value = 40 }, maximum = { kind = "Replace", value = 80 } },
 	}))
+
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(1)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{
 			domainId = "Game.State",
@@ -121,6 +132,7 @@ it("preserves explicit Optional removal when an earlier tail made it present", f
 	enqueue(TestUtils.patch(1, { kind = "Struct", fields = { target = { kind = "Replace", value = "Enemy" } } }))
 	enqueue(TestUtils.patch(2, { kind = "Struct", fields = { target = { kind = "Replace" } } }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Struct", fields = { target = { kind = "Replace" } } } },
 	})
@@ -130,6 +142,7 @@ it("collapses Map add then update to the final whole-entry value", function()
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = { stacks = 1, active = true } }, removed = {} }))
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = { Haste = { stacks = 2, active = false } }, removed = {} }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{
 			domainId = "Game.State",
@@ -152,6 +165,7 @@ it("keeps Map removal when no delivered baseline established absence", function(
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(1)
 	expect(drained.records[1].commit.sequence).toBe(2)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
 	})
@@ -159,11 +173,13 @@ end)
 
 it("advances delivered Map truth after drain so a later update and removal cannot cancel", function()
 	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = {} } })
+
 	local added: ServerNetworkingTypes.PublicationFilteredCommit = TestUtils.patch(1, {
 		kind = "Map",
 		entries = { Haste = 1 },
 		removed = {},
 	})
+
 	enqueue(added)
 	local firstDrain: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#firstDrain.records).toBe(1)
@@ -173,6 +189,7 @@ it("advances delivered Map truth after drain so a later update and removal canno
 	local secondDrain: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#secondDrain.records).toBe(1)
 	expect(secondDrain.records[1].commit.sequence).toBe(3)
+
 	expect(secondDrain.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
 	})
@@ -180,15 +197,18 @@ end)
 
 it("keeps a Map removal after an undrained event barrier added the key", function()
 	scheduler:ResetAfterBaseline(stream, { ["Game.State"] = { value = {} } })
+
 	enqueue({
 		sequence = 1,
 		patches = { { domainId = "Game.State", patch = { kind = "Map", entries = { Haste = 1 }, removed = {} } } },
 		events = { { domainId = "Game.State", eventId = "Applied", payload = {} } },
 	})
+
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = { Haste = 2 }, removed = {} }))
 	enqueue(TestUtils.patch(3, { kind = "Map", entries = {}, removed = { "Haste" } }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(2)
+
 	expect(drained.records[2].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
 	})
@@ -199,6 +219,7 @@ it("keeps Map removal when the baseline key existed instead of cancelling an upd
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = { Haste = 2 }, removed = {} }))
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = {}, removed = { "Haste" } }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Map", entries = {}, removed = { "Haste" } } },
 	})
@@ -208,6 +229,7 @@ it("collapses Map remove then add to final truth without keeping a contradictory
 	enqueue(TestUtils.patch(1, { kind = "Map", entries = {}, removed = { "Haste" } }))
 	enqueue(TestUtils.patch(2, { kind = "Map", entries = { Haste = 3 }, removed = {} }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Map", entries = { Haste = 3 }, removed = {} } },
 	})
@@ -217,6 +239,7 @@ it("collapses Array replacements to the newest ordered value", function()
 	enqueue(TestUtils.patch(1, { kind = "Replace", value = { 1, 2 } }))
 	enqueue(TestUtils.patch(2, { kind = "Replace", value = { 2, 1, 3 } }))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
+
 	expect(drained.records[1].commit.patches).toEqual({
 		{ domainId = "Game.State", patch = { kind = "Replace", value = { 2, 1, 3 } } },
 	})
@@ -224,8 +247,10 @@ end)
 
 it("uses recipient and Actor identities rather than the StreamKey table identity", function()
 	enqueue(TestUtils.scalar(1, "Game.Mana", 50, nil))
+
 	local sameStream: ServerNetworkingTypes.PublicationStreamKey =
 		{ recipient = stream.recipient, actor = stream.actor }
+
 	expect(scheduler:Enqueue(sameStream, TestUtils.scalar(2, "Game.Mana", 40, nil))).toBe(true)
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	expect(#drained.records).toBe(1)
@@ -234,11 +259,13 @@ end)
 
 it("shares immutable authoritative data across recipient queues without mutating either input", function()
 	local patch: ServerNetworkingTypes.PublicationPatch = { kind = "Replace", value = 50 }
+
 	local commit: ServerNetworkingTypes.PublicationFilteredCommit = {
 		sequence = 1,
 		patches = { { domainId = "Game.Mana", patch = patch } },
 		events = {},
 	}
+
 	table.freeze(patch)
 	table.freeze(commit.patches[1])
 	table.freeze(commit.patches)
@@ -250,12 +277,15 @@ it("shares immutable authoritative data across recipient queues without mutating
 	enqueue(TestUtils.scalar(2, "Game.Mana", 40, nil))
 	local drained: ServerNetworkingTypes.PublicationDrainResult = scheduler:DrainBudgeted(1024, 8)
 	local recipientValues: { [string]: any } = {}
+
 	for _, record: ServerNetworkingTypes.PublicationRecord in drained.records do
 		recipientValues[record.stream.recipient] = record.commit.patches[1].patch
 	end
+
 	expect(recipientValues).toEqual({
 		PlayerA = { kind = "Replace", value = 40 },
 		PlayerB = { kind = "Replace", value = 50 },
 	})
+
 	expect(commit).toEqual(TestUtils.scalar(1, "Game.Mana", 50, nil))
 end)

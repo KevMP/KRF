@@ -24,21 +24,27 @@ local fixture: TestUtils.Fixture
 local handshake: ServerNetworkingTypes.ServerHandshake? = nil
 local models: { Model } = {}
 local originalInstall: typeof(Marker.Install) = Marker.Install
+
 beforeEach(function()
 	Server._ResetForTests()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	Marker.Install = originalInstall
 	TestUtils.destroy(fixture)
+
 	if handshake ~= nil then
 		handshake:Destroy()
 		handshake = nil
 	end
+
 	Server._ResetForTests()
+
 	for _, model: Model in models do
 		model:Destroy()
 	end
+
 	models = {}
 end)
 
@@ -46,26 +52,34 @@ it("orders real N2 READY_ACK before baseline work initiated by the private Ready
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.actor(fixture, nil)
 	local order: { string } = {}
+
 	handshake = Handshake.new(fixture.protocol, {
 		SendReliable = function(_recipient: Player, payload: buffer): ()
 			table.insert(order, ProtocolUtils.decode(payload).kind)
 		end,
 	})
+
 	local installed: ServerNetworkingTypes.ServerHandshake = handshake
+
 	fixture.dependencies.IsClientReady = function(recipient: Player): boolean
 		return installed:IsClientReady(recipient)
 	end
+
 	fixture.dependencies.ObserveClientReady = function(callback: (Player) -> ()): () -> ()
 		return installed:ObserveClientReady(callback)
 	end
+
 	fixture.dependencies.ObserveClientClosed = function(callback: (Player) -> ()): () -> ()
 		return installed:ObserveClientClosed(callback)
 	end
+
 	fixture.dependencies.SendReliable = function(recipient: Player, payload: buffer): (boolean, string?)
 		table.insert(order, "ActorPacket")
 		table.insert(fixture.deliveries, { player = recipient, payload = payload })
+
 		return true, nil
 	end
+
 	TestUtils.start(fixture)
 	installed:Handle(player, ProtocolUtils.encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION }))
 	TestUtils.drain(fixture)
@@ -85,6 +99,7 @@ it("installs identity synchronously before RegisterActor returns and removes it 
 	local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
+
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 	table.insert(models, model)
@@ -104,12 +119,15 @@ it("rolls back N3, controllers and Model binding when marker installation fails 
 	local publication: ServerNetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Expected startup-owned N3")
 	local attempted: ActorTypes.Actor? = nil
+
 	Marker.Install = function(actor: ActorTypes.Actor): (boolean, string?)
 		attempted = actor
 		expect(actor.enabled).toBe(false)
 		expect(publication:CaptureBaseline(actor)).never.toBeNil()
+
 		return false, "ForcedMarkerFailure"
 	end
+
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 	table.insert(models, model)

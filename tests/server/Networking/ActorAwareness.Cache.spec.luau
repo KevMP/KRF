@@ -14,9 +14,11 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUti
 type CachedBaseline = { sequence: number, public: { body: buffer }?, owner: { body: buffer }? }
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -26,6 +28,7 @@ for _, ownerOnly: boolean in { false, true } do
 		"expires both reusable projections without changing in-flight bodies for ownerOnly=" .. tostring(ownerOnly),
 		function()
 			fixture.options.maxChunkBytes = 1
+
 			local owner: Player = TestUtils.player(fixture)
 			local observer: Player = TestUtils.player(fixture)
 			local actor: ActorTypes.Actor = TestUtils.actor(fixture, owner)
@@ -43,6 +46,7 @@ for _, ownerOnly: boolean in { false, true } do
 			runtime:Step(512, 4)
 			expect(#TestUtils.kind(fixture, owner, "BaselineBegin")).toBe(2)
 			expect(TestUtils.kind(fixture, owner, "BaselineEnd")).toEqual({})
+
 			local domain: typeof(fixture.publicDomain) = if ownerOnly then fixture.ownerDomain else fixture.publicDomain
 			domain.value += 1
 			domain.callbacks[actor]()
@@ -58,14 +62,18 @@ for _, ownerOnly: boolean in { false, true } do
 			local observerHandle: number? = runtime:GetHandle(observer, actor)
 			local lateHandle: number? = runtime:GetHandle(late, actor)
 			assert(ownerHandle ~= nil and observerHandle ~= nil and lateHandle ~= nil, "Expected independent streams")
+
 			expect(TestUtils.baseline(fixture, owner, ownerHandle)).toEqual({
 				["Game.Public"] = { value = 10 },
 				["Game.Private"] = { value = 20 },
 			})
+
 			expect(TestUtils.baseline(fixture, observer, observerHandle)).toEqual({ ["Game.Public"] = { value = 10 } })
+
 			expect(TestUtils.baseline(fixture, late, lateHandle)).toEqual({
 				["Game.Public"] = { value = if ownerOnly then 10 else 11 },
 			})
+
 			local commits: { any } = TestUtils.kind(fixture, owner, "Commit")
 			expect(#commits).toBe(1)
 			expect(commits[1].handle).toBe(ownerHandle)
@@ -98,15 +106,18 @@ it("retains a current-sequence cache captured by an earlier committed observer",
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, owner)
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime? = nil
 	local handle: number? = nil
+
 	fixture.publication:ObserveCommits(function(commit: ServerNetworkingTypes.PublicationCommit)
 		if commit.actor ~= actor then
 			return
 		end
+
 		assert(runtime ~= nil and handle ~= nil, "Expected established stream before publication")
 		local accepted: boolean, reason: string? = runtime:RequestReplacementBaseline(owner, handle, "EarlierObserver")
 		expect(accepted).toBe(true)
 		expect(reason).toBeNil()
 	end)
+
 	runtime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, owner)
 	TestUtils.drain(fixture)
@@ -117,6 +128,7 @@ it("retains a current-sequence cache captured by an earlier committed observer",
 	expect(reusable[actor].sequence).toBe(fixture.publication:GetActorSequence(actor))
 	TestUtils.drain(fixture)
 	assert(handle ~= nil, "Expected stable handle")
+
 	expect(TestUtils.baseline(fixture, owner, handle)).toEqual({
 		["Game.Public"] = { value = 11 },
 		["Game.Private"] = { value = 20 },

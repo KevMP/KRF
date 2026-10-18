@@ -37,6 +37,7 @@ it("publishes sorted net changes only after the outermost mutation batch closes"
 	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignals.new({ signal })
 	local journal: ResourceEventJournal = ResourceControllerEvent.new(ownedSignals, signal)
 	local changes: { ResourceChange } = {}
+
 	signal:Connect(function(event: ResourceChange)
 		table.insert(changes, event)
 	end)
@@ -71,6 +72,7 @@ it("discards pending and batched changes on destruction and ignores later public
 	local ownedSignals: SignalTypes.OwnedSignals = OwnedSignals.new({ signal })
 	local journal: ResourceEventJournal = ResourceControllerEvent.new(ownedSignals, signal)
 	local count: number = 0
+
 	signal:Connect(function(_event: ResourceChange)
 		count += 1
 	end)

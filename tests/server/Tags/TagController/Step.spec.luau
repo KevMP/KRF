@@ -55,6 +55,7 @@ local function createControllerWithCatalog(catalog: { TagDefinition }): (TagCont
 
 	local actor: Actor = ActorEntity.new()
 	actor.enabled = true
+
 	local controller: TagControllerType = TagController.new(actor)
 
 	return controller, actor
@@ -81,6 +82,7 @@ it("runs onTick before expiry using the controller actor and step delta", functi
 		local eventOrder: { string } = {}
 		local hookActors: { Actor } = {}
 		local hookDeltas: { number } = {}
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.OnFire",
@@ -95,6 +97,7 @@ it("runs onTick before expiry using the controller actor and step delta", functi
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType, actor: Actor = createControllerWithCatalog(tickCatalog)
 
 		local added: boolean, reason: string? = controller:AddTag("Status.OnFire")
@@ -126,6 +129,7 @@ end)
 it("does not tick before one full interval elapses", function()
 	runWithManualStepping(function()
 		local tickCount: number = 0
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.Scorched",
@@ -138,6 +142,7 @@ it("does not tick before one full interval elapses", function()
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 
 		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
@@ -156,6 +161,7 @@ it("fires at most one tick per instance in a single advancement pass", function(
 	runWithManualStepping(function()
 		local tickCount: number = 0
 		local tickDeltas: { number } = {}
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.Scorched",
@@ -169,6 +175,7 @@ it("fires at most one tick per instance in a single advancement pass", function(
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 
 		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
@@ -187,6 +194,7 @@ it("does not fire OnTagChanged when a tick occurs without any other mutation", f
 	runWithManualStepping(function()
 		local tickCount: number = 0
 		local changedCount: number = 0
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.Scorched",
@@ -199,6 +207,7 @@ it("does not fire OnTagChanged when a tick occurs without any other mutation", f
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 
 		local added: boolean, reason: string? = controller:AddTag("Status.Scorched")
@@ -242,6 +251,7 @@ end)
 it("preserves elapsed tick progress when a Refresh tag is reapplied", function()
 	runWithManualStepping(function()
 		local tickCount: number = 0
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.BurningRefresh",
@@ -254,6 +264,7 @@ it("preserves elapsed tick progress when a Refresh tag is reapplied", function()
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 
 		local added: boolean, reason: string? = controller:AddTag("Status.BurningRefresh")
@@ -265,6 +276,7 @@ it("preserves elapsed tick progress when a Refresh tag is reapplied", function()
 		local refreshed: boolean, refreshReason: string? = controller:AddTag("Status.BurningRefresh", {
 			duration = 4,
 		})
+
 		expect(refreshed).toBe(true)
 		expect(refreshReason).toBeNil()
 
@@ -279,6 +291,7 @@ end)
 it("lets stacked timed instances tick independently when only one crosses the boundary", function()
 	runWithManualStepping(function()
 		local tickCount: number = 0
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Buff.BurningStacks",
@@ -292,6 +305,7 @@ it("lets stacked timed instances tick independently when only one crosses the bo
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 
 		local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.BurningStacks")
@@ -327,6 +341,7 @@ it("isolates onTick failures so advancement still completes", function()
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 		local expiredCount: number = 0
 
@@ -354,6 +369,7 @@ it("skips a later due tick when an earlier tick removes that tag in the same pas
 		local firstHookCount: number = 0
 		local secondHookCount: number = 0
 		local controllerRef: TagControllerType? = nil
+
 		local tickCatalog: { TagDefinition } = {
 			{
 				id = "Status.FirstTick",
@@ -380,6 +396,7 @@ it("skips a later due tick when an earlier tick removes that tag in the same pas
 				end,
 			} :: TagDefinition,
 		}
+
 		local controller: TagControllerType = createControllerWithCatalog(tickCatalog)
 		controllerRef = controller
 
@@ -438,12 +455,14 @@ it(
 			local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", {
 				duration = 6,
 			})
+
 			expect(firstAdded).toBe(true)
 			expect(firstReason).toBeNil()
 
 			local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.Sprint", {
 				duration = 2,
 			})
+
 			expect(secondAdded).toBe(true)
 			expect(secondReason).toBeNil()
 
@@ -526,6 +545,7 @@ it("expires a timed tag when one advancement step drops it below zero", function
 		local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
 		})
+
 		expect(added).toBe(true)
 		expect(reason).toBeNil()
 
@@ -551,12 +571,14 @@ it("expires every eligible timed stack instance in the same pass", function()
 		local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 1,
 		})
+
 		expect(firstAdded).toBe(true)
 		expect(firstReason).toBeNil()
 
 		local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(secondAdded).toBe(true)
 		expect(secondReason).toBeNil()
 
@@ -591,12 +613,14 @@ it("expires one stacked timed instance while leaving later-expiring instances ac
 		local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 1,
 		})
+
 		expect(firstAdded).toBe(true)
 		expect(firstReason).toBeNil()
 
 		local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 3,
 		})
+
 		expect(secondAdded).toBe(true)
 		expect(secondReason).toBeNil()
 
@@ -630,6 +654,7 @@ it("refresh resets remaining duration to the newly resolved value instead of ext
 		local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
 			duration = 5,
 		})
+
 		expect(added).toBe(true)
 		expect(reason).toBeNil()
 
@@ -638,6 +663,7 @@ it("refresh resets remaining duration to the newly resolved value instead of ext
 		local refreshed: boolean, refreshReason: string? = controller:AddTag("Status.Stunned", {
 			duration = 4,
 		})
+
 		expect(refreshed).toBe(true)
 		expect(refreshReason).toBeNil()
 		local tagInstances: { TagInstanceSnapshot } = controller:GetTagInstances("Status.Stunned")
@@ -681,6 +707,7 @@ it("Destroy removes timed instances from future advancement", function()
 		local added: boolean, reason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
 		})
+
 		expect(added).toBe(true)
 		expect(reason).toBeNil()
 
@@ -759,12 +786,14 @@ it("remains stable when expiry listeners mutate tag state during the advancement
 		local stunnedAdded: boolean, stunnedReason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
 		})
+
 		expect(stunnedAdded).toBe(true)
 		expect(stunnedReason).toBeNil()
 
 		local sprintAdded: boolean, sprintReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(sprintAdded).toBe(true)
 		expect(sprintReason).toBeNil()
 
@@ -789,12 +818,14 @@ it("remains stable when expiry listeners mutate tag state during the advancement
 		TagController.Step(1)
 
 		expect(expiredTagIds).toEqual({ "Status.Stunned", "Buff.Sprint" })
+
 		expect(changedTagIds).toEqual({
 			"Status.Rooted",
 			"Status.Stunned",
 			"Status.Rooted",
 			"Buff.Sprint",
 		})
+
 		expect(controller:HasTag("Status.Stunned")).toBe(false)
 		expect(controller:HasTag("Buff.Sprint")).toBe(false)
 		expect(controller:HasTag("Status.Rooted")).toBe(false)
@@ -811,12 +842,14 @@ it("skips a later expired record cleanly when an earlier expiry destroys the con
 		local stunnedAdded: boolean, stunnedReason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
 		})
+
 		expect(stunnedAdded).toBe(true)
 		expect(stunnedReason).toBeNil()
 
 		local sprintAdded: boolean, sprintReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(sprintAdded).toBe(true)
 		expect(sprintReason).toBeNil()
 
@@ -847,12 +880,14 @@ it("skips a later expired record when an earlier expiry removes that tag entirel
 		local stunnedAdded: boolean, stunnedReason: string? = controller:AddTag("Status.Stunned", {
 			duration = 0.5,
 		})
+
 		expect(stunnedAdded).toBe(true)
 		expect(stunnedReason).toBeNil()
 
 		local sprintAdded: boolean, sprintReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(sprintAdded).toBe(true)
 		expect(sprintReason).toBeNil()
 
@@ -882,18 +917,21 @@ it("skips a stale expired stack record when an earlier expiry removes that speci
 		local firstAdded: boolean, firstReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(firstAdded).toBe(true)
 		expect(firstReason).toBeNil()
 
 		local secondAdded: boolean, secondReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 0.5,
 		})
+
 		expect(secondAdded).toBe(true)
 		expect(secondReason).toBeNil()
 
 		local thirdAdded: boolean, thirdReason: string? = controller:AddTag("Buff.Sprint", {
 			duration = 5,
 		})
+
 		expect(thirdAdded).toBe(true)
 		expect(thirdReason).toBeNil()
 

@@ -36,6 +36,7 @@ it("normalizes string and explicit Action Tag applications in declaration order"
 		activeTags = { "Tag.Blocking", { id = "Tag.Bleeding", duration = 3 } },
 		appliedTags = { { id = "Tag.Bleeding", duration = 6 }, "Tag.Blocking" },
 	}
+
 	local loaded: boolean, reason: string? = loadDefinition(definition)
 	expect(loaded).toBe(true)
 	expect(reason).toBeNil()
@@ -71,6 +72,7 @@ it("rejects malformed declarative Tag applications before publishing", function(
 		{ id = "Tag.Bleeding", duration = math.huge },
 		{ id = "Tag.Bleeding", duration = 0 / 0 },
 	}
+
 	for _, field: string in { "activeTags", "appliedTags" } do
 		for _, entry: any in invalidEntries do
 			local definition: any = { id = "Action.Attack", visibility = "ServerOnly" }
@@ -91,6 +93,7 @@ it("requires declarative Tag fields to be dense arrays", function()
 		{ [2] = "Tag.Blocking" },
 		{ [1] = "Tag.Blocking", [3] = "Tag.Bleeding" },
 	}
+
 	for _, field: string in { "activeTags", "appliedTags" } do
 		for _, collection: any in invalidCollections do
 			local definition: any = { id = "Action.Attack", visibility = "ServerOnly" }
@@ -107,15 +110,18 @@ end)
 it("owns immutable copies of declarative Tag application arrays and entries", function()
 	local entry: { id: string, duration: number } = { id = "Tag.Bleeding", duration = 6 }
 	local activeTags: { any } = { entry }
+
 	local definition: any = {
 		id = "Action.Attack",
 		visibility = "ServerOnly",
 		activeTags = activeTags,
 	}
+
 	expect((loadDefinition(definition))).toBe(true)
 	entry.id = "Tag.Unknown"
 	entry.duration = 12
 	activeTags[1] = "Tag.Blocking"
+
 	local loaded: any = ActionRegistry.Get("Action.Attack")
 	expect(loaded.activeTags).toEqual({ { id = "Tag.Bleeding", duration = 6 } })
 	expect(table.isfrozen(loaded.activeTags)).toBe(true)
@@ -124,15 +130,18 @@ end)
 
 it("owns applied Tag options independently of source mutation", function()
 	local entry: { id: string, duration: number } = { id = "Tag.Bleeding", duration = 4 }
+
 	local source: any = {
 		id = "Action.Attack",
 		visibility = "ServerOnly",
 		appliedTags = { entry },
 	}
+
 	expect((loadDefinition(source))).toBe(true)
 	entry.id = "Tag.Blocking"
 	entry.duration = 12
 	source.appliedTags[1] = "Tag.Blocking"
+
 	local loaded: any = ActionRegistry.Get("Action.Attack")
 	expect(loaded.appliedTags).toEqual({ { id = "Tag.Bleeding", duration = 4 } })
 	expect(table.isfrozen(loaded.appliedTags)).toBe(true)

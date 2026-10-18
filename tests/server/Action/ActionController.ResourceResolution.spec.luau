@@ -31,9 +31,11 @@ local mana: ResourceTypes.ResourceDefinition = {
 	regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 5 } },
 	initialValue = 60,
 }
+
 local initial: { [string]: number } = { MinMana = 10, MaxMana = 100, ManaRegen = 5 }
 local recovered: { [string]: number } = { MinMana = 15, MaxMana = 90, ManaRegen = 9 }
 type InvalidValueCase = { name: string, value: number }
+
 local invalidValues: { InvalidValueCase } = {
 	{ name = "positive infinity", value = math.huge },
 	{ name = "negative infinity", value = -math.huge },
@@ -44,8 +46,10 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 	for _, case: InvalidValueCase in invalidValues do
 		it("preserves the complete Resource snapshot when " .. propertyName .. " resolves to " .. case.name, function()
 			ResourceTestUtils.initialize({}, { mana })
+
 			local _actor: Actor, _actions: ActionController, resources: ResourceController, properties: PropertyController =
 				ResourceTestUtils.registerActor()
+
 			expect((properties:SetBaseProperty(propertyName, case.value))).toBe(true)
 			local assigned: boolean, reason: string? = resources:AddResource("Mana")
 			expect(assigned).toBe(false)
@@ -57,15 +61,19 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 			expect((resources:AddResource("Mana"))).toBe(true)
 			expect((resources:Spend("Mana", 20))).toBe(true)
 			local changes: { ResourceChange } = {}
+
 			resources.OnResourceChanged:Connect(function(change: ResourceChange)
 				table.insert(changes, change)
 			end)
+
 			expect((properties:SetBaseProperty(propertyName, case.value))).toBe(true)
+
 			for _, otherName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 				if otherName ~= propertyName then
 					expect((properties:SetBaseProperty(otherName, recovered[otherName]))).toBe(true)
 				end
 			end
+
 			expect(resources:GetMin("Mana")).toBe(10)
 			expect(resources:GetMax("Mana")).toBe(100)
 			expect(resources:GetCurrent("Mana")).toBe(40)
@@ -84,6 +92,7 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 
 	it("keeps acceptance and prepared costs when a Tag overflows " .. propertyName, function()
 		local observed: { { number? } } = {}
+
 		ResourceTestUtils.initialize({
 			{
 				id = "Cast",
@@ -94,6 +103,7 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 				onStart = function(context: ActionTypes.ActionExecutionContext)
 					local resources: ResourceController =
 						context.actor:GetController("ResourceController") :: ResourceController
+
 					table.insert(
 						observed,
 						{ resources:GetCurrent("Mana"), resources:GetMin("Mana"), resources:GetMax("Mana") }
@@ -108,20 +118,26 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 				properties = { [propertyName] = { multiply = 1e308 } },
 			},
 		})
+
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController, tags: TagController =
 			ResourceTestUtils.registerActor()
+
 		expect((resources:AddResource("Mana"))).toBe(true)
 		local changes: { ResourceChange } = {}
+
 		resources.OnResourceChanged:Connect(function(change: ResourceChange)
 			table.insert(changes, change)
 		end)
+
 		actions.OnActionStarted:Connect(function()
 			table.insert(observed, { resources:GetCurrent("Mana"), resources:GetMin("Mana"), resources:GetMax("Mana") })
 		end)
+
 		expect(actions:RequestAction("Cast")).toEqual({ accepted = true, sequenceId = 1 })
 		expect(properties:GetResolvedProperty(propertyName)).toBe(math.huge)
 		expect(observed).toEqual({ { 40, 10, 100 }, { 40, 10, 100 } })
 		expect(#changes).toBe(1)
+
 		expect(changes[1]).toEqual({
 			actor = _actor,
 			resourceId = "Mana",
@@ -132,6 +148,7 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 			maxOldValue = 100,
 			maxNewValue = 100,
 		})
+
 		resources:Step(1)
 		expect(resources:GetCurrent("Mana")).toBe(45)
 		expect((tags:RemoveTag("Overflow"))).toBe(true)

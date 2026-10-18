@@ -13,8 +13,10 @@ local ReplicationTypes = require(KRF.server.Replication.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
 local Handshake: ServerNetworkingTypes.ServerHandshakeModule = require(KRF.server.Networking.ServerHandshake)
+
 local Scheduling: ServerNetworkingTypes.AwarenessSchedulingModule =
 	require(KRF.server.Networking.utils.AwarenessScheduling)
+
 local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Codec: SharedNetworkingTypes.ActorStreamCodecModule = require(KRF.shared.Networking.ActorStreamCodec)
@@ -31,17 +33,20 @@ local protocol: SharedNetworkingTypes.PreparedProtocol?
 local step: (() -> ())?
 local instances: { Instance } = {}
 local sent: { buffer } = {}
+
 beforeEach(function()
 	Server._ResetForTests()
 	connection = nil
 	protocol = nil
 	step = nil
 	sent = {}
+
 	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		local root: Folder = Instance.new("Folder")
 		local incoming: BindableEvent = Instance.new("BindableEvent")
 		table.insert(instances, root)
 		table.insert(instances, incoming)
+
 		return {
 			root = root,
 			unreliable = {} :: any,
@@ -57,6 +62,7 @@ beforeEach(function()
 		},
 			nil
 	end
+
 	Handshake.new = function(
 		prepared: SharedNetworkingTypes.PreparedProtocol,
 		dependencies: ServerNetworkingTypes.HandshakeDependencies
@@ -64,23 +70,29 @@ beforeEach(function()
 		protocol = prepared
 		local created: ServerNetworkingTypes.ServerHandshake = originalHandshake(prepared, dependencies)
 		connection = created
+
 		return created
 	end
+
 	Scheduling.ObserveStep = function(callback: () -> ()): () -> ()
 		step = callback
+
 		return function()
 			step = nil
 		end
 	end
 end)
+
 afterEach(function()
 	Server._ResetForTests()
 	Transport.Create = originalCreate
 	Handshake.new = originalHandshake
 	Scheduling.ObserveStep = originalStep
+
 	for _, instance: Instance in instances do
 		instance:Destroy()
 	end
+
 	instances = {}
 end)
 
@@ -93,6 +105,7 @@ it("recovers through the production-private replacement seam without replacing N
 	local current: number = 10
 	local snapshots: number = 0
 	local committed: ReplicationTypes.ReplicationDomainOnCommitted? = nil
+
 	expect(Server.Init({
 		replicationDomains = {
 			{
@@ -100,6 +113,7 @@ it("recovers through the production-private replacement seam without replacing N
 				state = Schema.U8,
 				snapshot = function(_actor: ActorTypes.Actor): any
 					snapshots += 1
+
 					return current
 				end,
 				observe = function(
@@ -107,11 +121,13 @@ it("recovers through the production-private replacement seam without replacing N
 					callback: ReplicationTypes.ReplicationDomainOnCommitted
 				): (() -> ())?
 					committed = callback
+
 					return nil
 				end,
 			},
 		},
 	})).toBe(true)
+
 	local model: Model = Instance.new("Model")
 	model.Parent = workspace
 	table.insert(instances, model)
@@ -124,11 +140,14 @@ it("recovers through the production-private replacement seam without replacing N
 	expect(failure).toBe("ClientNotReady")
 	installed:Handle(player, ProtocolUtils.encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION }))
 	installed:Handle(player, ProtocolUtils.encode({ kind = "Ready" }))
+
 	for _ = 1, 8 do
 		step()
 	end
+
 	local codec: SharedNetworkingTypes.ActorStreamCodec =
 		Codec.Compile(protocol.runtime, { ["Game.Recovery"] = SchemaUtils.compile(Schema.U8) })
+
 	local initial: { SharedNetworkingTypes.ActorStreamRecord }?, initialReason: string? = codec.Decode(sent[3])
 	assert(initial ~= nil, initialReason)
 	local begin: SharedNetworkingTypes.ActorStreamRecord = initial[1]
@@ -151,17 +170,22 @@ it("recovers through the production-private replacement seam without replacing N
 	accepted, failure = Networking.RequestReplacementBaseline(player, begin.handle, "DuplicateRecovery")
 	expect(accepted).toBe(false)
 	expect(failure).toBe("BaselineAlreadyPending")
+
 	for _ = 1, 8 do
 		step()
 	end
+
 	local body: buffer? = nil
 	local generation: number = 0
 	local completed: boolean = false
+
 	for _, payload: buffer in sent do
 		local records: { SharedNetworkingTypes.ActorStreamRecord }?, decodeReason: string? = codec.Decode(payload)
 		assert(records ~= nil, decodeReason)
+
 		for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 			expect(record.handle).toBe(begin.handle)
+
 			if record.kind == "BaselineBegin" then
 				expect(record.actorId).toBeNil()
 				expect(record.generation > begin.generation).toBe(true)
@@ -180,10 +204,13 @@ it("recovers through the production-private replacement seam without replacing N
 			end
 		end
 	end
+
 	expect(completed).toBe(true)
 	assert(body ~= nil, "Expected complete replacement body")
+
 	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, baselineReason: string? =
 		codec.DecodeBaseline(body)
+
 	expect(baselineReason).toBeNil()
 	expect(domains).toEqual({ ["Game.Recovery"] = { value = 12 } })
 	expect(snapshots).toBe(2)
@@ -201,6 +228,7 @@ for _, oversized: boolean in { false, true } do
 		local snapshots: number = 0
 		local committed: ReplicationTypes.ReplicationDomainOnCommitted? = nil
 		local state: SharedNetworkingTypes.SchemaDefinition = Schema.String(300000)
+
 		expect(Server.Init({
 			replicationDomains = {
 				{
@@ -208,6 +236,7 @@ for _, oversized: boolean in { false, true } do
 					state = state,
 					snapshot = function(_actor: ActorTypes.Actor): any
 						snapshots += 1
+
 						return current
 					end,
 					observe = function(
@@ -215,11 +244,13 @@ for _, oversized: boolean in { false, true } do
 						callback: ReplicationTypes.ReplicationDomainOnCommitted
 					): (() -> ())?
 						committed = callback
+
 						return nil
 					end,
 				},
 			},
 		})).toBe(true)
+
 		local model: Model = Instance.new("Model")
 		model.Parent = workspace
 		table.insert(instances, model)
@@ -232,37 +263,47 @@ for _, oversized: boolean in { false, true } do
 		connection:Handle(player, ProtocolUtils.encode({ kind = "Ready" }))
 		expect(ProtocolUtils.decode(sent[1]).kind).toBe("Bootstrap")
 		expect(ProtocolUtils.decode(sent[2]).kind).toBe("ReadyAck")
+
 		for _ = 1, 8 do
 			step()
 		end
+
 		if oversized then
 			expect(#sent).toBe(2)
 		else
 			local codec: SharedNetworkingTypes.ActorStreamCodec =
 				Codec.Compile(protocol.runtime, { ["Game.Large"] = SchemaUtils.compile(state) })
+
 			local records: { SharedNetworkingTypes.ActorStreamRecord } = {}
+
 			for index: number = 3, #sent do
 				local decoded: { SharedNetworkingTypes.ActorStreamRecord }?, decodeReason: string? =
 					codec.Decode(sent[index])
+
 				assert(decoded ~= nil, decodeReason)
+
 				for _, record: SharedNetworkingTypes.ActorStreamRecord in decoded do
 					table.insert(records, record)
 				end
 			end
+
 			expect(records[1].kind).toBe("BaselineBegin")
 			expect(records[#records].kind).toBe("BaselineEnd")
 			local previous: number = #sent
 			current = "second"
 			assert(committed ~= nil, "Expected domain observer")
 			committed()
+
 			for _ = 1, 8 do
 				step()
 			end
+
 			expect(#sent).toBe(previous + 1)
 			local live: { SharedNetworkingTypes.ActorStreamRecord }?, liveReason: string? = codec.Decode(sent[#sent])
 			assert(live ~= nil, liveReason)
 			expect(live[1].kind).toBe("Commit")
 		end
+
 		expect(snapshots).toBe(if oversized then 1 else 2)
 		Networking.Destroy()
 		expect(ActorRuntime.UnregisterActor(actor)).toBe(true)

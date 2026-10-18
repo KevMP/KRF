@@ -11,8 +11,10 @@ local ActorTypes = require(KRF.server.Actor.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
+
 local Registry: ReplicationTypes.InternalReplicationDomainRegistry =
 	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local TestUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
 
 type Actor = ActorTypes.Actor
@@ -54,10 +56,12 @@ it("prepares empty and multiple-domain catalogs as complete unpublished candidat
 	local empty: PreparedCatalog = TestUtils.prepare({})
 	expect(empty.orderedDefinitions).toEqual({})
 	expect(empty.definitionsById).toEqual({})
+
 	local multiple: PreparedCatalog = TestUtils.prepare({
 		TestUtils.createDomain("Game.CombatState"),
 		TestUtils.createDomain("Game.Targeting"),
 	})
+
 	expect(#multiple.orderedDefinitions).toBe(2)
 	expect(multiple.definitionsById["Game.CombatState"].id).toBe("Game.CombatState")
 	expect(multiple.definitionsById["Game.Targeting"].id).toBe("Game.Targeting")
@@ -67,8 +71,10 @@ end)
 it("accepts explicit All and Owner audiences", function()
 	local public: ReplicationDomainDefinition = TestUtils.createDomain("Game.Public")
 	local private: ReplicationDomainDefinition = TestUtils.createDomain("Game.Private")
+
 	public.audience = "All"
 	private.audience = "Owner"
+
 	local prepared: PreparedCatalog = TestUtils.prepare({ public, private })
 	expect(prepared.definitionsById[public.id].audience).toBe("All")
 	expect(prepared.definitionsById[private.id].audience).toBe("Owner")
@@ -77,11 +83,14 @@ end)
 it("preserves optional observation and snapshot callbacks without invoking them during startup", function()
 	local snapshotCalls: number = 0
 	local observeCalls: number = 0
+
 	local definition: ReplicationDomainDefinition = TestUtils.createDomain("Game.Observed")
+
 	definition.snapshot = function(_actor: Actor): any
 		snapshotCalls += 1
 		error("SnapshotMustNotRunDuringStartup")
 	end
+
 	definition.observe = function(
 		_actor: Actor,
 		_onCommitted: ReplicationTypes.ReplicationDomainOnCommitted
@@ -89,9 +98,12 @@ it("preserves optional observation and snapshot callbacks without invoking them 
 		observeCalls += 1
 		error("ObserveMustNotRunDuringStartup")
 	end
+
 	TestUtils.load({ definition })
+
 	local loaded: ReplicationTypes.LoadedReplicationDomainDefinition =
 		Registry.Get(definition.id) :: ReplicationTypes.LoadedReplicationDomainDefinition
+
 	expect(loaded.snapshot).toBe(definition.snapshot)
 	expect(loaded.observe).toBe(definition.observe)
 	expect(snapshotCalls).toBe(0)
@@ -99,6 +111,7 @@ it("preserves optional observation and snapshot callbacks without invoking them 
 end)
 
 type InvalidDomainCase = { name: string, field: string, value: any, reason: string }
+
 local invalidDomains: { InvalidDomainCase } = {
 	{ name = "missing id", field = "id", value = nil, reason = "ReplicationDomainIdMissing" },
 	{ name = "numeric id", field = "id", value = 1, reason = "ReplicationDomainIdMustBeString" },
@@ -123,6 +136,7 @@ local invalidDomains: { InvalidDomainCase } = {
 	{ name = "non-string audience", field = "audience", value = true, reason = "ReplicationDomainAudienceInvalid" },
 	{ name = "empty audience", field = "audience", value = "", reason = "ReplicationDomainAudienceInvalid" },
 }
+
 for _, domainCase: InvalidDomainCase in invalidDomains do
 	it("rejects a domain with " .. domainCase.name .. " without publishing an earlier valid domain", function()
 		local invalid: any = TestUtils.createDomain("Game.Invalid")
@@ -142,6 +156,7 @@ end)
 
 it("rejects duplicate domain ids deterministically across the shared framework and game namespace", function()
 	expectRejected({ TestUtils.createDomain("Tags"), TestUtils.createDomain("Tags") }, "DuplicateReplicationDomainId")
+
 	expectRejected(
 		{ TestUtils.createDomain("Game.State"), TestUtils.createDomain("Game.State") },
 		"DuplicateReplicationDomainId"
@@ -157,8 +172,10 @@ end)
 it("accepts bounded event schemas and permits the same event id in different domains", function()
 	local first: ReplicationDomainDefinition = TestUtils.createDomain("Game.First")
 	local second: ReplicationDomainDefinition = TestUtils.createDomain("Game.Second")
+
 	first.events = { { id = "Changed", payload = Schema.Struct({ amount = Schema.F32 }) } }
 	second.events = { { id = "Changed", payload = Schema.U8 } }
+
 	local prepared: PreparedCatalog = TestUtils.prepare({ first, second })
 	expect(prepared.definitionsById[first.id].events[1].id).toBe("Changed")
 	expect(prepared.definitionsById[first.id].events[1].payload.kind).toBe("Struct")
@@ -167,6 +184,7 @@ it("accepts bounded event schemas and permits the same event id in different dom
 end)
 
 type InvalidEventCase = { name: string, events: any, reason: string }
+
 local invalidEvents: { InvalidEventCase } = {
 	{ name = "non-table collection", events = false, reason = "ReplicationEventsMustBeArray" },
 	{ name = "dictionary collection", events = { Changed = {} }, reason = "ReplicationEventsMustBeArray" },
@@ -187,6 +205,7 @@ local invalidEvents: { InvalidEventCase } = {
 		reason = "SchemaArrayMaxLengthInvalid",
 	},
 }
+
 for _, eventCase: InvalidEventCase in invalidEvents do
 	it("rejects event declarations with " .. eventCase.name .. " transactionally", function()
 		local invalid: any = TestUtils.createDomain("Game.Invalid")
@@ -207,6 +226,7 @@ it("failed preparation leaves consumer definitions mutable and permits corrected
 	expectRejected({ definition }, "ReplicationDomainAudienceInvalid")
 	expect(table.isfrozen(definition)).toBe(false)
 	definition.audience = "Owner"
+
 	local prepared: PreparedCatalog = TestUtils.prepare({ definition })
 	expect(prepared.definitionsById[definition.id].audience).toBe("Owner")
 	expect(Registry.IsLoaded()).toBe(false)
@@ -214,6 +234,7 @@ end)
 
 it("rejects packet metadata and undeclared fields in semantic domain definitions", function()
 	local unsupportedFields: { any } = { "wireId", "packetOpcode", "remote", "revision", "flushInterval", 1 }
+
 	for _, field: any in unsupportedFields do
 		local definition: any = TestUtils.createDomain("Game.Invalid")
 		definition[field] = true

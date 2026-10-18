@@ -125,12 +125,14 @@ it("creates a first active instance and fires added then changed for an Ignore t
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
 	expect(eventOrder).toEqual({ "added", "changed" })
+
 	expect(activeTags).toEqual({
 		{
 			tagId = "Status.Rooted",
 			stackCount = 1,
 		},
 	})
+
 	expect(tagInstances).toEqual({
 		{
 			tagId = "Status.Rooted",
@@ -150,6 +152,7 @@ it("uses explicit duration over default duration when AddTag creates a new insta
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
 		{
 			tagId = "Status.Stunned",
@@ -193,6 +196,7 @@ it("uses the tag default duration when AddTag is called without an explicit dura
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
 		{
 			tagId = "Status.Stunned",
@@ -210,6 +214,7 @@ it("is indefinite when neither explicit nor default duration exists", function()
 
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
+
 	expect(controller:GetTagInstances("Status.Rooted")).toEqual({
 		{
 			tagId = "Status.Rooted",
@@ -242,6 +247,7 @@ it("leaves Ignore tags unchanged and fires no mutation events on reapply", funct
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventCount).toBe(2)
+
 	expect(controller:GetTagInstances("Status.Rooted")).toEqual({
 		{
 			tagId = "Status.Rooted",
@@ -265,6 +271,7 @@ it("does not retrofit explicit duration onto an active Ignore tag when reapplied
 
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
+
 	expect(controller:GetTagInstances("Status.Rooted")).toEqual({
 		{
 			tagId = "Status.Rooted",
@@ -296,6 +303,7 @@ it("creates a first active instance and fires added then changed for a Refresh t
 	expect(added).toBe(true)
 	expect(reason).toBeNil()
 	expect(eventOrder).toEqual({ "added", "changed" })
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
 		{
 			tagId = "Status.Stunned",
@@ -330,6 +338,7 @@ it("refreshes an existing Refresh tag instead of creating a second instance", fu
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventOrder).toEqual({ "refreshed", "changed" })
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
 		{
 			tagId = "Status.Stunned",
@@ -346,6 +355,7 @@ it("resolves refresh duration again on reapply instead of preserving the prior e
 	local firstAdded: boolean, firstReason: string? = controller:AddTag("Status.Stunned", {
 		duration = 9,
 	})
+
 	expect(firstAdded).toBe(true)
 	expect(firstReason).toBeNil()
 
@@ -353,6 +363,7 @@ it("resolves refresh duration again on reapply instead of preserving the prior e
 
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual({
 		{
 			tagId = "Status.Stunned",
@@ -389,6 +400,7 @@ it("fires refreshed then changed when an indefinite Refresh tag is reapplied", f
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
 	expect(eventOrder).toEqual({ "refreshed", "changed" })
+
 	expect(controller:GetTagInstances("Status.RootedRefresh")).toEqual({
 		{
 			tagId = "Status.RootedRefresh",
@@ -436,6 +448,7 @@ it("GetActiveTags preserves oldest-applied tag ordering across different active 
 	local sprintAdded: boolean, sprintReason: string? = controller:AddTag("Buff.Sprint", {
 		duration = 8,
 	})
+
 	expect(sprintAdded).toBe(true)
 	expect(sprintReason).toBeNil()
 
@@ -515,6 +528,7 @@ it("prefers refreshing a finite stack instance over an indefinite one at maxStac
 			appliedOrder = 1,
 		},
 	}
+
 	expect(controller:GetTagInstances("Buff.StackIndefinite")).toEqual(expectedInstances)
 end)
 
@@ -540,6 +554,7 @@ it("fires added then changed for each Stack apply while below maxStacks", functi
 
 	expect(secondAdded).toBe(true)
 	expect(secondReason).toBeNil()
+
 	expect(eventOrder).toEqual({
 		"added:Buff.Sprint",
 		"changed:Buff.Sprint",
@@ -610,6 +625,7 @@ it("refreshes the lowest-remaining oldest stack instance when reapplied at maxSt
 
 	expect(refreshed).toBe(true)
 	expect(refreshReason).toBeNil()
+
 	expect(controller:GetTagInstances("Buff.Sprint")).toEqual({
 		{
 			tagId = "Buff.Sprint",
@@ -653,6 +669,7 @@ it("allows uncapped Stack tags to keep creating new active instances", function(
 	expect(activeTags[1].tagId).toBe("Buff.Endurance")
 	expect(activeTags[1].stackCount).toBe(3)
 	expect(activeTags[1].remainingDuration).toBe(12)
+
 	expect(controller:GetTagInstances("Buff.Endurance")).toEqual({
 		{
 			tagId = "Buff.Endurance",
@@ -688,6 +705,7 @@ it("no expiry or removal occurs merely because duration metadata exists", functi
 	task.wait(0.1)
 
 	expect(controller:HasTag("Status.Stunned")).toBe(true)
+
 	local expectedInstances: { TagInstanceSnapshot } = {
 		{
 			tagId = "Status.Stunned",
@@ -696,6 +714,7 @@ it("no expiry or removal occurs merely because duration metadata exists", functi
 			appliedOrder = 0,
 		},
 	}
+
 	expect(controller:GetTagInstances("Status.Stunned")).toEqual(expectedInstances)
 end)
 

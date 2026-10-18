@@ -11,9 +11,11 @@ local SharedTypes = require(KRF.shared.Networking.types)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -25,16 +27,19 @@ it("observes membership-only replacements with immutable sorted deltas and fresh
 	local stamina: PublicTypes.DomainView = TestUtils.domain(fixture)
 	local changes: { PublicTypes.DomainMembershipChange } = {}
 	local observations: { any } = {}
+
 	table.insert(
 		fixture.connections,
 		view.OnDomainsChanged:Connect(function(change: PublicTypes.DomainMembershipChange)
 			table.insert(changes, change)
+
 			table.insert(
 				observations,
 				{ ids = view:GetDomainIds(), retired = owner:GetState(), available = view:IsAvailable() }
 			)
 		end)
 	)
+
 	local truth: { [string]: SharedTypes.ActorDomainTruth } = TestUtils.truth()
 	truth["Game.Owner"] = nil
 	truth["Game.Counter"] = nil
@@ -59,10 +64,12 @@ it(
 		local owner: PublicTypes.DomainView = TestUtils.domain(fixture, "Game.Owner")
 		local order: { string } = {}
 		local observed: any = nil
+
 		table.insert(
 			fixture.connections,
 			view.OnDomainsChanged:Connect(function(_change: PublicTypes.DomainMembershipChange)
 				table.insert(order, "Domains")
+
 				observed = {
 					current = TestUtils.domain(fixture):GetState().current,
 					retired = owner:GetState(),
@@ -70,12 +77,14 @@ it(
 				}
 			end)
 		)
+
 		table.insert(
 			fixture.connections,
 			TestUtils.domain(fixture).OnChanged:Connect(function(_change: PublicTypes.DomainChange)
 				table.insert(order, "State")
 			end)
 		)
+
 		local truth: { [string]: SharedTypes.ActorDomainTruth } = TestUtils.truth(50)
 		truth["Game.Owner"] = nil
 		TestUtils.baseline(fixture, 1, nil, 20, truth, 2)
@@ -86,6 +95,7 @@ it(
 
 it("does not synthesize initial or unchanged membership changes, including a live empty domain set", function()
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		fixture.runtime.registry.OnActorViewAdded:Connect(function(view: PublicTypes.ActorView)
@@ -97,6 +107,7 @@ it("does not synthesize initial or unchanged membership changes, including a liv
 			)
 		end)
 	)
+
 	TestUtils.baseline(fixture, 1, nil, 10, {})
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	expect(view:IsAvailable()).toBe(true)
@@ -113,12 +124,14 @@ it("keeps valid Optional nil distinguishable from retirement and emits nothing f
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local owner: PublicTypes.DomainView = TestUtils.domain(fixture, "Game.Owner")
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		view.OnDomainsChanged:Connect(function(_change: PublicTypes.DomainMembershipChange)
 			changes += 1
 		end)
 	)
+
 	expect(owner:GetState()).toBeNil()
 	expect(view:IsAvailable()).toBe(true)
 	expect(view:GetDomain("Game.Owner")).toBe(owner)
@@ -135,20 +148,24 @@ for _, empty: boolean in { false, true } do
 		local order: { string } = {}
 		local observedMembership: { any } = {}
 		local observedUnavailable: any = nil
+
 		table.insert(
 			fixture.connections,
 			view.OnDomainsChanged:Connect(function(change: PublicTypes.DomainMembershipChange)
 				table.insert(order, "Domains")
+
 				table.insert(
 					observedMembership,
 					{ change = change, available = view:IsAvailable(), ids = view:GetDomainIds() }
 				)
 			end)
 		)
+
 		table.insert(
 			fixture.connections,
 			view.OnUnavailable:Connect(function()
 				table.insert(order, "Unavailable")
+
 				observedUnavailable = {
 					available = view:IsAvailable(),
 					ids = view:GetDomainIds(),
@@ -156,10 +173,12 @@ for _, empty: boolean in { false, true } do
 				}
 			end)
 		)
+
 		TestUtils.commit(fixture, 12)
 		expect(view:IsAvailable()).toBe(true)
 		TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 }, { kind = "ActorHalt", handle = 1 } })
 		expect(order).toEqual(if empty then { "Unavailable" } else { "Domains", "Unavailable" })
+
 		local expectedMembership: { any } = if empty
 			then {}
 			else {
@@ -169,6 +188,7 @@ for _, empty: boolean in { false, true } do
 					ids = {},
 				},
 			}
+
 		expect(observedMembership).toEqual(expectedMembership)
 		expect(observedUnavailable).toEqual({ available = false, ids = {}, registered = view })
 	end)
@@ -178,28 +198,35 @@ it("retires new Actor-level signals on removal without synthesizing terminal-fai
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local notifications: number = 0
+
 	table.insert(
 		fixture.connections,
 		view.OnUnavailable:Connect(function()
 			notifications += 1
 		end)
 	)
+
 	table.insert(
 		fixture.connections,
 		view.OnDomainsChanged:Connect(function(_change: PublicTypes.DomainMembershipChange)
 			notifications += 1
 		end)
 	)
+
 	TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })
 	expect(view:IsAvailable()).toBe(false)
 	expect(notifications).toBe(0)
+
 	local connected: boolean = pcall(function()
 		view.OnUnavailable:Connect(function() end)
 	end)
+
 	expect(connected).toBe(false)
+
 	connected = pcall(function()
 		view.OnDomainsChanged:Connect(function(_change: PublicTypes.DomainMembershipChange) end)
 	end)
+
 	expect(connected).toBe(false)
 end)
 
@@ -207,18 +234,21 @@ it("allows removal from a membership callback and suppresses later retired-domai
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		TestUtils.domain(fixture).OnChanged:Connect(function(_change: PublicTypes.DomainChange)
 			changes += 1
 		end)
 	)
+
 	table.insert(
 		fixture.connections,
 		view.OnDomainsChanged:Connect(function(_change: PublicTypes.DomainMembershipChange)
 			fixture.runtime.consumer.OnActorRemoved(TestUtils.actor(fixture))
 		end)
 	)
+
 	local truth: { [string]: SharedTypes.ActorDomainTruth } = TestUtils.truth(50)
 	truth["Game.Owner"] = nil
 	TestUtils.baseline(fixture, 1, nil, 20, truth, 2)

@@ -16,6 +16,7 @@ local function compile(definition: SharedNetworkingTypes.SchemaDefinition): Serv
 	local schema: SharedNetworkingTypes.CompiledSchema?, reason: string? = Compiler.Compile(definition)
 	expect(reason).toBeNil()
 	assert(schema ~= nil, "Expected compiled capture schema")
+
 	return Capture.Compile(schema)
 end
 
@@ -27,10 +28,12 @@ local function capture(
 	local result: ServerNetworkingTypes.PublicationCaptureResult?, reason: string? = plan:Capture(value, previous)
 	expect(reason).toBeNil()
 	assert(result ~= nil, "Expected schema-owned capture")
+
 	return result
 end
 
 type ScalarCase = { name: string, schema: SharedNetworkingTypes.SchemaDefinition, before: any, after: any, bytes: number }
+
 local scalarCases: { ScalarCase } = {
 	{ name = "Boolean", schema = Schema.Boolean, before = false, after = true, bytes = 1 },
 	{ name = "U8", schema = Schema.U8, before = 255, after = 0, bytes = 1 },
@@ -71,10 +74,13 @@ it("emits only changed Struct fields and omits unchanged nested subtrees", funct
 		current = Schema.U8,
 		settings = Schema.Struct({ active = Schema.Boolean, maximum = Schema.U8 }),
 	}))
+
 	local initial: ServerNetworkingTypes.PublicationCaptureResult =
 		capture(plan, { current = 80, settings = { active = false, maximum = 100 } }, nil)
+
 	local changed: ServerNetworkingTypes.PublicationCaptureResult =
 		capture(plan, { current = 54, settings = { active = true, maximum = 100 } }, initial)
+
 	expect(changed.patch).toEqual({
 		kind = "Struct",
 		fields = {
@@ -82,6 +88,7 @@ it("emits only changed Struct fields and omits unchanged nested subtrees", funct
 			settings = { kind = "Struct", fields = { active = { kind = "Replace", value = true } } },
 		},
 	})
+
 	expect(changed.value).toEqual({ current = 54, settings = { active = true, maximum = 100 } })
 	expect(initial.value).toEqual({ current = 80, settings = { active = false, maximum = 100 } })
 end)
@@ -99,6 +106,7 @@ end)
 it("preserves an explicit Optional removal inside a Struct instead of silently omitting it", function()
 	local plan: ServerNetworkingTypes.PublicationCapturePlan =
 		compile(Schema.Struct({ target = Schema.Optional(Schema.String(8)) }))
+
 	local initial: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, { target = "Enemy" }, nil)
 	expect(capture(plan, {}, initial).patch).toEqual({ kind = "Struct", fields = { target = { kind = "Replace" } } })
 end)
@@ -106,16 +114,19 @@ end)
 it("emits Map additions, removals and whole-entry updates while omitting unchanged entries", function()
 	local plan: ServerNetworkingTypes.PublicationCapturePlan =
 		compile(Schema.Map(Schema.String(8), Schema.Struct({ stacks = Schema.U8, active = Schema.Boolean }), 4))
+
 	local initial: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, {
 		Kept = { stacks = 1, active = true },
 		Gone = { stacks = 2, active = true },
 		Changed = { stacks = 3, active = true },
 	}, nil)
+
 	local changed: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, {
 		Kept = { stacks = 1, active = true },
 		Added = { stacks = 4, active = false },
 		Changed = { stacks = 5, active = true },
 	}, initial)
+
 	expect(changed.patch).toEqual({
 		kind = "Map",
 		entries = {
@@ -124,11 +135,13 @@ it("emits Map additions, removals and whole-entry updates while omitting unchang
 		},
 		removed = { "Gone" },
 	})
+
 	expect(changed.value).toEqual({
 		Kept = { stacks = 1, active = true },
 		Added = { stacks = 4, active = false },
 		Changed = { stacks = 5, active = true },
 	})
+
 	expect(capture(plan, changed.value, changed).patch).toBeNil()
 end)
 
@@ -142,8 +155,10 @@ end)
 
 it("orders multiple Map removals deterministically for the same final truth", function()
 	local plan: ServerNetworkingTypes.PublicationCapturePlan = compile(Schema.Map(Schema.String(8), Schema.U8, 3))
+
 	local initial: ServerNetworkingTypes.PublicationCaptureResult =
 		capture(plan, { Zebra = 1, Alpha = 2, Kept = 3 }, nil)
+
 	local changed: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, { Kept = 3 }, initial)
 	expect(changed.patch).toEqual({ kind = "Map", entries = {}, removed = { "Alpha", "Zebra" } })
 end)
@@ -158,16 +173,22 @@ end)
 
 it("owns nested snapshot and patch data when the same mutable source table is reused", function()
 	local source: any = { nested = { count = 1 }, values = { 10, 20 } }
+
 	local plan: ServerNetworkingTypes.PublicationCapturePlan =
 		compile(Schema.Struct({ nested = Schema.Struct({ count = Schema.U8 }), values = Schema.Array(Schema.U8, 2) }))
+
 	local initial: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, source, nil)
+
 	source.nested.count = 2
 	source.values[1] = 30
+
 	local changed: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, source, initial)
+
 	source.nested.count = 3
 	source.values[1] = 40
 	expect(initial.value).toEqual({ nested = { count = 1 }, values = { 10, 20 } })
 	expect(changed.value).toEqual({ nested = { count = 2 }, values = { 30, 20 } })
+
 	expect(changed.patch).toEqual({
 		kind = "Struct",
 		fields = {
@@ -184,6 +205,7 @@ type InvalidCase = {
 	invalid: any,
 	reason: string,
 }
+
 local invalidCases: { InvalidCase } = {
 	{
 		name = "wrong primitive type",
@@ -264,12 +286,15 @@ local invalidCases: { InvalidCase } = {
 		reason = "SchemaMapTooLarge",
 	},
 }
+
 for _, case: InvalidCase in invalidCases do
 	it("rejects " .. case.name .. " without altering the previous canonical capture", function()
 		local plan: ServerNetworkingTypes.PublicationCapturePlan = compile(case.schema)
 		local initial: ServerNetworkingTypes.PublicationCaptureResult = capture(plan, case.initial, nil)
+
 		local rejected: ServerNetworkingTypes.PublicationCaptureResult?, reason: string? =
 			plan:Capture(case.invalid, initial)
+
 		expect(rejected).toBeNil()
 		expect(reason).toBe(case.reason)
 		expect(initial.value).toEqual(case.initial)
@@ -288,6 +313,7 @@ end)
 it("accounts for variable-sized captured values using N2 codec bytes", function()
 	local definition: SharedNetworkingTypes.SchemaDefinition =
 		Schema.Struct({ label = Schema.String(8), items = Schema.Array(Schema.U16, 4) })
+
 	local schema: SharedNetworkingTypes.CompiledSchema?, schemaReason: string? = Compiler.Compile(definition)
 	expect(schemaReason).toBeNil()
 	assert(schema ~= nil, "Expected compiled schema")
@@ -303,13 +329,16 @@ end)
 it("does not need Measure traversal solely to size a fixed-size schema", function()
 	local originalCompile: typeof(Codecs.Compile) = Codecs.Compile
 	local measureCalls: number = 0
+
 	Codecs.Compile = function(
 		schema: SharedNetworkingTypes.CompiledSchema
 	): (SharedNetworkingTypes.CompiledCodec?, string?)
 		local codec: SharedNetworkingTypes.CompiledCodec?, reason: string? = originalCompile(schema)
+
 		if codec == nil then
 			return nil, reason
 		end
+
 		return {
 			fixedSizeBytes = codec.fixedSizeBytes,
 			maxSizeBytes = codec.maxSizeBytes,
@@ -317,18 +346,23 @@ it("does not need Measure traversal solely to size a fixed-size schema", functio
 			Read = codec.Read,
 			Measure = function(value: any): (number?, string?)
 				measureCalls += 1
+
 				return codec.Measure(value)
 			end,
 		},
 			nil
 	end
+
 	local success: boolean, failure: any = pcall(function()
 		local plan: ServerNetworkingTypes.PublicationCapturePlan =
 			compile(Schema.Struct({ active = Schema.Boolean, count = Schema.U16 }))
+
 		expect(capture(plan, { active = true, count = 4 }, nil).encodedSizeBytes).toBe(3)
 		expect(measureCalls).toBe(0)
 	end)
+
 	Codecs.Compile = originalCompile
+
 	if not success then
 		error(failure, 0)
 	end

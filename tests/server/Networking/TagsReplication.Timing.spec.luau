@@ -14,14 +14,17 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.TagsReplicationT
 
 local fixture: TestUtils.Fixture
 local otherFixture: TestUtils.Fixture? = nil
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	if otherFixture ~= nil then
 		TestUtils.destroy(otherFixture)
 		otherFixture = nil
 	end
+
 	TestUtils.destroy(fixture)
 end)
 
@@ -31,12 +34,14 @@ it("keeps the initial timing anchor through repeated countdown steps and snapsho
 	local expected = { ["Status.Burning"] = { stackCount = 1, expiresAt = 1010 } }
 	expect(TestUtils.snapshot(fixture)).toEqual(expected)
 	local clockReads: number = fixture.clock.reads
+
 	for _ = 1, 20 do
 		TestUtils.step(fixture, 0.125)
 		-- Real synchronized-clock samples and Tag stepping need not line up exactly.
 		fixture.clock.now += 0.001
 		expect(TestUtils.snapshot(fixture)).toEqual(expected)
 	end
+
 	expect(fixture.clock.reads).toBe(clockReads)
 	expect(fixture.commits).toEqual({})
 end)
@@ -48,6 +53,7 @@ it("retains untouched anchors exactly when an unrelated visible Tag mutates afte
 	TestUtils.step(fixture, 2)
 	fixture.clock.now += 0.125
 	TestUtils.add(fixture, "Buff.Stack", 3)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Buff.Stack" } },
@@ -66,10 +72,12 @@ it("recomputes only the touched stacked Tag's authoritative longest finite timin
 	TestUtils.step(fixture, 1)
 	fixture.clock.now += 0.25
 	TestUtils.add(fixture, "Buff.Stack", 8)
+
 	expect(TestUtils.snapshot(fixture)).toEqual({
 		["Status.Burning"] = { stackCount = 1, expiresAt = 1010 },
 		["Buff.Stack"] = { stackCount = 2, expiresAt = 1009.25 },
 	})
+
 	expect(#fixture.commits).toBe(1)
 end)
 
@@ -78,18 +86,24 @@ it("does not enumerate all active Tags or query unrelated instances on the one-T
 	TestUtils.add(fixture, "Status.Permanent")
 	TestUtils.add(fixture, "Buff.Stack", 2)
 	TestUtils.observe(fixture)
+
 	fixture.tags.GetActiveTags = function(): { TagTypes.ActiveTagSnapshot }
 		error("OneTagMutationMustNotRebuildAllActiveTags")
 	end
+
 	local originalInstances = fixture.tags.GetTagInstances
+
 	fixture.tags.GetTagInstances = function(
 		self: TagTypes.InternalTagController,
 		tagId: string
 	): { TagTypes.TagInstanceSnapshot }
 		expect(tagId).toBe("Buff.Stack")
+
 		return originalInstances(self, tagId)
 	end
+
 	TestUtils.add(fixture, "Buff.Stack", 6)
+
 	expect(fixture.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Buff.Stack" } },
@@ -106,6 +120,7 @@ for _, visibility: TagTypes.TagVisibility in { "ClientVisible", "ServerOnly" } d
 	it("runs " .. visibility .. " onTick callbacks without generating Ticked events or countdown commits", function()
 		TestUtils.destroy(fixture)
 		local ticks: number = 0
+
 		fixture = TestUtils.new({
 			{ id = "Status.Permanent", visibility = "ClientVisible", duplicateBehavior = "Ignore" },
 			{
@@ -119,11 +134,14 @@ for _, visibility: TagTypes.TagVisibility in { "ClientVisible", "ServerOnly" } d
 				end,
 			},
 		})
+
 		TestUtils.add(fixture, "Status.Ticking")
 		TestUtils.observe(fixture)
+
 		for _ = 1, 4 do
 			TestUtils.step(fixture, 0.5)
 		end
+
 		expect(ticks).toBe(4)
 		expect(fixture.commits).toEqual({})
 		TestUtils.add(fixture, "Status.Permanent")
@@ -135,8 +153,10 @@ end
 it("does not share projection entries or detach state between Actors using the same generated domain", function()
 	local secondActor: ActorTypes.Actor = ActorEntity.new()
 	secondActor.enabled = true
+
 	local secondTags: TagTypes.InternalTagController = TagController.new(secondActor) :: TagTypes.InternalTagController
 	assert(secondActor:SetController("TagController", secondTags), "Expected second controller installation")
+
 	local second: TestUtils.Fixture = {
 		actor = secondActor,
 		tags = secondTags,
@@ -145,6 +165,7 @@ it("does not share projection entries or detach state between Actors using the s
 		commits = {},
 		disconnects = {},
 	}
+
 	otherFixture = second
 	TestUtils.add(fixture, "Status.Burning")
 	TestUtils.add(second, "Buff.Stack", 6)
@@ -158,6 +179,7 @@ it("does not share projection entries or detach state between Actors using the s
 	disconnect()
 	TestUtils.add(second, "Status.Permanent")
 	expect(#fixture.commits).toBe(1)
+
 	expect(second.commits).toEqual({
 		{
 			events = { { id = "Added", payload = "Status.Permanent" } },

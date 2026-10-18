@@ -2,6 +2,7 @@
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local ControllerTypes = {}
+
 export type Controller = ActorTypes.Controller
 
 export type ControllerDef = {
@@ -21,4 +22,5 @@ export type ControllerRegistry = {
 	_ResetForTests: () -> (),
 	_RollbackStartup: () -> (),
 }
+
 return ControllerTypes

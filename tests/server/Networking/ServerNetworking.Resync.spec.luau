@@ -12,8 +12,10 @@ local ServerNetworkingTypes = require(KRF.server.Networking.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
+
 local Scheduling: ServerNetworkingTypes.AwarenessSchedulingModule =
 	require(KRF.server.Networking.utils.AwarenessScheduling)
+
 local Control: ServerNetworkingTypes.ResyncRuntimeModule = require(KRF.server.Networking.ResyncRuntime)
 local Networking: ServerNetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local ActorRuntime: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
@@ -53,6 +55,7 @@ beforeEach(function()
 	destroyed = 0
 	handled = 0
 	step = nil
+
 	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		return {
 			root = root,
@@ -69,12 +72,15 @@ beforeEach(function()
 		},
 			nil
 	end
+
 	Scheduling.ObserveStep = function(callback: () -> ()): () -> ()
 		step = callback
+
 		return function()
 			step = nil
 		end
 	end
+
 	Control.new = function(
 		dependencies: ServerNetworkingTypes.ResyncDependencies,
 		options: ServerNetworkingTypes.ResyncOptions
@@ -83,6 +89,7 @@ beforeEach(function()
 		local runtime: ServerNetworkingTypes.ResyncRuntime = originalControl(dependencies, options)
 		local handle: typeof(runtime.Handle) = runtime.Handle
 		local destroy: typeof(runtime.Destroy) = runtime.Destroy
+
 		runtime.Handle = function(
 			self: ServerNetworkingTypes.ResyncRuntime,
 			recipient: Player,
@@ -90,14 +97,18 @@ beforeEach(function()
 			...: any
 		): (boolean, string?)
 			handled += 1
+
 			return handle(self, recipient, payload, ...)
 		end
+
 		runtime.Destroy = function(self: ServerNetworkingTypes.ResyncRuntime)
 			destroyed += 1
 			destroy(self)
 		end
+
 		return runtime
 	end
+
 	local success: boolean, failure: any = Server.Init({
 		replicationDomains = {
 			{
@@ -109,19 +120,23 @@ beforeEach(function()
 			},
 		},
 	})
+
 	expect(success).toBe(true)
 	expect(failure).toBeNil()
 	local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(model)
 	assert(actor ~= nil, reason)
+
 	local manifest: SharedNetworkingTypes.ProtocolManifest = {
 		version = Constants.PROTOCOL_VERSION,
 		domains = { { id = "Game.Recovery", code = 0, state = Schema.U8, events = {} } },
 	}
+
 	local protocol: SharedNetworkingTypes.ClientProtocol?
 	protocol, reason = Manifest.Reconstruct(manifest)
 	assert(protocol ~= nil, reason)
 	codec = Codec.Compile(protocol, { ["Game.Recovery"] = SchemaUtils.compile(Schema.U8) })
 end)
+
 afterEach(function()
 	Server._ResetForTests()
 	Transport.Create = originalCreate
@@ -136,9 +151,11 @@ end)
 
 local function emit(payload: buffer, ...: any): ()
 	inbound:Fire(player, payload, ...)
+
 	task.defer(function()
 		barrier:Fire()
 	end)
+
 	barrier.Event:Wait()
 end
 
@@ -147,27 +164,34 @@ local function ready(): number
 	emit(ProtocolUtils.encode({ kind = "Ready" }))
 	expect(Networking.IsClientReady(player)).toBe(true)
 	assert(step ~= nil, "Expected production awareness driver")
+
 	for _ = 1, 8 do
 		step()
 	end
+
 	local handle: number? = nil
+
 	for index: number = 3, #sent do
 		local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(sent[index])
 		assert(records ~= nil, reason)
+
 		for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 			if record.kind == "BaselineBegin" then
 				handle = record.handle
 			end
 		end
 	end
+
 	assert(handle ~= nil, "Expected real production Actor baseline")
 	sent = {}
+
 	return handle
 end
 
 local function request(handle: number): buffer
 	local payload: buffer?, reason: string? = ResyncCodec.Encode(handle)
 	assert(payload ~= nil, reason)
+
 	return payload
 end
 
@@ -179,14 +203,18 @@ it(
 		emit(request(handle))
 		expect(handled).toBe(1)
 		assert(step ~= nil, "Expected active driver")
+
 		for _ = 1, 8 do
 			step()
 		end
+
 		local began: number = 0
 		local ended: number = 0
+
 		for _, payload: buffer in sent do
 			local records: { SharedNetworkingTypes.ActorStreamRecord }?, reason: string? = codec.Decode(payload)
 			assert(records ~= nil, reason)
+
 			for _, record: SharedNetworkingTypes.ActorStreamRecord in records do
 				if record.kind == "BaselineBegin" then
 					began += 1
@@ -197,6 +225,7 @@ it(
 				end
 			end
 		end
+
 		expect(began).toBe(1)
 		expect(ended).toBe(1)
 	end
@@ -214,9 +243,11 @@ it("rejects extra control arguments without scheduling a replacement or corrupti
 	local handle: number = ready()
 	emit(request(handle), "unexpected")
 	assert(step ~= nil, "Expected active driver")
+
 	for _ = 1, 8 do
 		step()
 	end
+
 	expect(sent).toEqual({})
 	expect(Networking.IsClientReady(player)).toBe(true)
 end)

@@ -13,9 +13,11 @@ local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -26,12 +28,14 @@ it("reflects N4 stream-in, stream-out and a new Model binding without changing d
 	local domain: PublicTypes.DomainView = TestUtils.domain(fixture)
 	local previous: any = domain:GetState()
 	local changes: { any } = {}
+
 	table.insert(
 		fixture.connections,
 		view.OnModelChanged:Connect(function(old: Model?, current: Model?)
 			table.insert(changes, { previous = old, current = current, observed = view:GetModel() })
 		end)
 	)
+
 	local first: ClientNetworkingTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
 	local second: ClientNetworkingTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
 	expect(fixture.runtime.registry.GetActorViewByModel(first.model)).toBeNil()
@@ -45,11 +49,13 @@ it("reflects N4 stream-in, stream-out and a new Model binding without changing d
 	StreamUtils.add(fixture.stream, second)
 	expect(view:GetModel()).toBe(second.model)
 	expect(fixture.runtime.registry.GetActorViewByModel(second.model)).toBe(view)
+
 	expect(changes).toEqual({
 		{ current = first.model, observed = first.model },
 		{ previous = first.model },
 		{ current = second.model, observed = second.model },
 	})
+
 	expect(TestUtils.domain(fixture)).toBe(domain)
 	expect(domain:GetState()).toBe(previous)
 	expect(fixture.requests).toEqual({})
@@ -62,6 +68,7 @@ it("does not synthesize OnModelChanged for a binding already present at ActorVie
 	local candidate: ClientNetworkingTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
 	StreamUtils.add(fixture.stream, candidate)
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		fixture.runtime.registry.OnActorViewAdded:Connect(function(view: PublicTypes.ActorView)
@@ -73,6 +80,7 @@ it("does not synthesize OnModelChanged for a binding already present at ActorVie
 			)
 		end)
 	)
+
 	TestUtils.baseline(fixture)
 	expect(TestUtils.view(fixture):GetModel()).toBe(candidate.model)
 	expect(changes).toBe(0)
@@ -84,15 +92,19 @@ it("does not double-notify duplicate discovery markers for the same Model", func
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 	local changes: number = 0
+
 	table.insert(
 		fixture.connections,
 		view.OnModelChanged:Connect(function(_old: Model?, _current: Model?)
 			changes += 1
 		end)
 	)
+
 	local first: ClientNetworkingTypes.ActorModelCandidate = StreamUtils.candidate(fixture.stream, "ActorA")
+
 	local duplicate: ClientNetworkingTypes.ActorModelCandidate =
 		StreamUtils.candidate(fixture.stream, "ActorA", first.model)
+
 	StreamUtils.add(fixture.stream, first)
 	StreamUtils.add(fixture.stream, duplicate)
 	StreamUtils.remove(fixture.stream, first)
@@ -140,47 +152,61 @@ for _, recovering: boolean in { false, true } do
 		assert(event ~= nil, "Expected domain event")
 		local other: PublicTypes.ActorView = TestUtils.view(fixture, "ActorB")
 		local removed: { PublicTypes.ActorView } = {}
+
 		table.insert(
 			fixture.connections,
 			fixture.runtime.registry.OnActorViewRemoving:Connect(function(removing: PublicTypes.ActorView)
 				table.insert(removed, removing)
 			end)
 		)
+
 		if recovering then
 			TestUtils.commit(fixture, 12)
 		end
+
 		local actor: ClientNetworkingTypes.ActorStreamRecord = TestUtils.actor(fixture)
 		TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })
+
 		local accepted: boolean, reason: string? =
 			StreamUtils.send(fixture.stream, { { kind = "ActorRemove", handle = 1 } })
+
 		expect(accepted).toBe(false)
 		expect(reason).toBe("RetiredActorHandle")
 		expect(removed).toEqual({ view })
 		expect(fixture.runtime.registry.GetActorViewById("ActorA")).toBeNil()
 		expect(fixture.runtime.registry.GetActorViewByModel(candidate.model)).toBeNil()
 		expect(fixture.runtime.registry.GetAllActorViews()).toEqual({ other })
+
 		local connectedChange: boolean = pcall(function()
 			domain.OnChanged:Connect(function(_change: PublicTypes.DomainChange) end)
 		end)
+
 		expect(connectedChange).toBe(false)
+
 		local connectedEvent: boolean = pcall(function()
 			event:Connect(function(_payload: any) end)
 		end)
+
 		expect(connectedEvent).toBe(false)
+
 		local connectedModel: boolean = pcall(function()
 			view.OnModelChanged:Connect(function(_old: Model?, _new: Model?) end)
 		end)
+
 		expect(connectedModel).toBe(false)
 		-- Retained private callbacks cannot resurrect or reconnect the retired identity.
 		fixture.runtime.consumer.OnCommitReady(actor, 11, { TestUtils.patch(1) }, {})
 		fixture.runtime.consumer.OnBaselineReady(actor, 50, TestUtils.truth(1))
 		fixture.runtime.consumer.OnActorRemoved(actor)
+
 		local readable: boolean, state: any = pcall(function(): any
 			return domain:GetState()
 		end)
+
 		if readable then
 			expect(state).toBeNil()
 		end
+
 		expect(fixture.runtime.registry.GetActorViewById("ActorA")).toBeNil()
 		expect(removed).toEqual({ view })
 		expect(#fixture.requests).toBe(if recovering then 1 else 0)
@@ -194,22 +220,26 @@ end
 it("retires an incomplete Actor without publishing Added or Removing", function()
 	local added: number = 0
 	local removing: number = 0
+
 	table.insert(
 		fixture.connections,
 		fixture.runtime.registry.OnActorViewAdded:Connect(function(_view: PublicTypes.ActorView)
 			added += 1
 		end)
 	)
+
 	table.insert(
 		fixture.connections,
 		fixture.runtime.registry.OnActorViewRemoving:Connect(function(_view: PublicTypes.ActorView)
 			removing += 1
 		end)
 	)
+
 	TestUtils.send(
 		fixture,
 		{ { kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 1 } }
 	)
+
 	local actor: ClientNetworkingTypes.ActorStreamRecord = TestUtils.actor(fixture)
 	TestUtils.send(fixture, { { kind = "ActorRemove", handle = 1 } })
 	fixture.runtime.consumer.OnBaselineReady(actor, 10, TestUtils.truth())
@@ -226,12 +256,15 @@ it("invalidates terminally halted truth, stops resync, and preserves identity/Mo
 	local diagnostics: ClientNetworkingTypes.ActorViewDiagnostics? = fixture.runtime:_InspectForTests(1)
 	assert(diagnostics ~= nil, "Expected terminal diagnostics")
 	expect(diagnostics.status).toBe("Halted")
+
 	local readable: boolean, state: any = pcall(function(): any
 		return domain:GetState()
 	end)
+
 	if readable then
 		expect(state).toBeNil()
 	end
+
 	fixture.runtime.consumer.OnCommitReady(TestUtils.actor(fixture), 11, { TestUtils.patch(1) }, {})
 	fixture.runtime.consumer.OnBaselineReady(TestUtils.actor(fixture), 50, TestUtils.truth(1))
 	expect(fixture.requests).toEqual({})
@@ -259,6 +292,7 @@ it("halts an incomplete initial Actor without ever making its later data public"
 		fixture,
 		{ { kind = "BaselineBegin", handle = 1, actorId = "ActorA", generation = 1, totalBytes = 1 } }
 	)
+
 	local actor: ClientNetworkingTypes.ActorStreamRecord = TestUtils.actor(fixture)
 	TestUtils.send(fixture, { { kind = "ActorHalt", handle = 1 } })
 	fixture.runtime.consumer.OnBaselineReady(actor, 50, TestUtils.truth())

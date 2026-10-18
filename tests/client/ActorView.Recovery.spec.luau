@@ -13,9 +13,11 @@ local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local TestUtils = require(script.Parent.Utils.ActorViewTestUtils)
 
 local fixture: TestUtils.Fixture
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)
+
 afterEach(function()
 	TestUtils.destroy(fixture)
 end)
@@ -70,13 +72,16 @@ it("drops all incremental work while awaiting baseline without a growing history
 	TestUtils.baseline(fixture)
 	local state: any = TestUtils.domain(fixture):GetState()
 	local changed: number = 0
+
 	table.insert(
 		fixture.connections,
 		TestUtils.domain(fixture).OnChanged:Connect(function(_change: PublicTypes.DomainChange)
 			changed += 1
 		end)
 	)
+
 	TestUtils.commit(fixture, 12, { TestUtils.patch(1) })
+
 	for revision: number = 11, 266 do
 		TestUtils.commit(
 			fixture,
@@ -85,6 +90,7 @@ it("drops all incremental work while awaiting baseline without a growing history
 			{ { domainId = "Game.Counter", eventId = "Changed", payload = revision } }
 		)
 	end
+
 	expect(TestUtils.domain(fixture):GetState()).toBe(state)
 	expect(changed).toBe(0)
 	expect(#fixture.requests).toBe(1)
@@ -106,13 +112,16 @@ it("isolates recovery by Actor while another Actor continues revisions and seman
 	local payloads: { number } = {}
 	local event: SignalTypes.Event<any>? = TestUtils.domain(fixture, "Game.Counter", "ActorB"):GetEvent("Changed")
 	assert(event ~= nil, "Expected declared counter event")
+
 	table.insert(
 		fixture.connections,
 		event:Connect(function(payload: number)
 			table.insert(payloads, payload)
 		end)
 	)
+
 	TestUtils.commit(fixture, 12, { TestUtils.patch(5) })
+
 	TestUtils.commit(
 		fixture,
 		11,
@@ -120,6 +129,7 @@ it("isolates recovery by Actor while another Actor continues revisions and seman
 		{ { domainId = "Game.Counter", eventId = "Changed", payload = 11 } },
 		2
 	)
+
 	expect(TestUtils.view(fixture, "ActorB")).toBe(other)
 	expect(TestUtils.domain(fixture, nil, "ActorB"):GetState().current).toBe(60)
 	expect(payloads).toEqual({ 11 })
@@ -157,9 +167,11 @@ end)
 
 it("keeps a failed resync send observable and bounded without throwing out of the receive path", function()
 	TestUtils.destroy(fixture)
+
 	fixture = TestUtils.new(function(_payload: buffer)
 		error("ForcedResyncSendFailure", 0)
 	end)
+
 	TestUtils.baseline(fixture)
 	local previous: any = TestUtils.domain(fixture):GetState()
 	TestUtils.commit(fixture, 12)

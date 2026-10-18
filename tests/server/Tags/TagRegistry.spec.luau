@@ -27,8 +27,10 @@ local NonPositiveTickIntervalCataloge: unknown = require(TagTestUtils.NonPositiv
 local NonNumericMaxStacksCataloge: unknown = require(TagTestUtils.NonNumericMaxStacksCatalog)
 local NonPositiveMaxStacksCataloge: unknown = require(TagTestUtils.NonPositiveMaxStacksCatalog)
 local NonIntegerMaxStacksCataloge: unknown = require(TagTestUtils.NonIntegerMaxStacksCatalog)
+
 local MaxStacksWithoutStackDuplicateBehaviorCataloge: unknown =
 	require(TagTestUtils.MaxStacksWithoutStackDuplicateBehaviorCatalog)
+
 local ValidPropertyModifierCataloge: unknown = require(TagTestUtils.ValidPropertyModifierCatalog)
 local MixedPropertyModifierModeCataloge: unknown = require(TagTestUtils.MixedPropertyModifierModeCatalog)
 local MixedSetMultiplyPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMultiplyPropertyModifierCatalog)
@@ -36,8 +38,10 @@ local MixedSetMinPropertyModifierCataloge: unknown = require(TagTestUtils.MixedS
 local MixedSetMaxPropertyModifierCataloge: unknown = require(TagTestUtils.MixedSetMaxPropertyModifierCatalog)
 local NonNumericSetPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericSetPropertyModifierCatalog)
 local NonNumericAddPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericAddPropertyModifierCatalog)
+
 local NonNumericMultiplyPropertyModifierCataloge: unknown =
 	require(TagTestUtils.NonNumericMultiplyPropertyModifierCatalog)
+
 local NonNumericMinPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMinPropertyModifierCatalog)
 local NonNumericMaxPropertyModifierCataloge: unknown = require(TagTestUtils.NonNumericMaxPropertyModifierCatalog)
 local NonTablePropertiesCataloge: unknown = require(TagTestUtils.NonTablePropertiesCatalog)
@@ -67,6 +71,7 @@ it("TagRegistry.Load rejects tag definitions with missing, empty, or duplicate i
 
 	local missingIdLoaded: boolean, missingIdReason: string? =
 		TagRegistry.Load(MissingTagIdCataloge :: { TagDefinition })
+
 	expect(missingIdLoaded).toBe(false)
 	expect(missingIdReason).toBe("TagIdMissing")
 
@@ -76,6 +81,7 @@ it("TagRegistry.Load rejects tag definitions with missing, empty, or duplicate i
 
 	local duplicateIdLoaded: boolean, duplicateIdReason: string? =
 		TagRegistry.Load(DuplicateTagIdCataloge :: { TagDefinition })
+
 	expect(duplicateIdLoaded).toBe(false)
 	expect(duplicateIdReason).toBe("TagIdAlreadyRegistered")
 end)
@@ -85,11 +91,13 @@ it("TagRegistry.Load rejects invalid duplicateBehavior and visibility values", f
 
 	local invalidDuplicateBehaviorLoaded: boolean, invalidDuplicateBehaviorReason: string? =
 		TagRegistry.Load(InvalidDuplicateBehaviorCataloge :: { TagDefinition })
+
 	expect(invalidDuplicateBehaviorLoaded).toBe(false)
 	expect(invalidDuplicateBehaviorReason).toBe("TagDuplicateBehaviorInvalid")
 
 	local invalidVisibilityLoaded: boolean, invalidVisibilityReason: string? =
 		TagRegistry.Load(InvalidVisibilityCataloge :: { TagDefinition })
+
 	expect(invalidVisibilityLoaded).toBe(false)
 	expect(invalidVisibilityReason).toBe("TagVisibilityInvalid")
 end)
@@ -99,21 +107,25 @@ it("TagRegistry.Load rejects invalid defaultDuration and tickInterval values", f
 
 	local nonNumericDefaultDurationLoaded: boolean, nonNumericDefaultDurationReason: string? =
 		TagRegistry.Load(NonNumericDefaultDurationCataloge :: { TagDefinition })
+
 	expect(nonNumericDefaultDurationLoaded).toBe(false)
 	expect(nonNumericDefaultDurationReason).toBe("TagDefaultDurationMustBeNumber")
 
 	local nonPositiveDefaultDurationLoaded: boolean, nonPositiveDefaultDurationReason: string? =
 		TagRegistry.Load(NonPositiveDefaultDurationCataloge :: { TagDefinition })
+
 	expect(nonPositiveDefaultDurationLoaded).toBe(false)
 	expect(nonPositiveDefaultDurationReason).toBe("TagDefaultDurationMustBePositive")
 
 	local nonNumericTickIntervalLoaded: boolean, nonNumericTickIntervalReason: string? =
 		TagRegistry.Load(NonNumericTickIntervalCataloge :: { TagDefinition })
+
 	expect(nonNumericTickIntervalLoaded).toBe(false)
 	expect(nonNumericTickIntervalReason).toBe("TagTickIntervalMustBeNumber")
 
 	local nonPositiveTickIntervalLoaded: boolean, nonPositiveTickIntervalReason: string? =
 		TagRegistry.Load(NonPositiveTickIntervalCataloge :: { TagDefinition })
+
 	expect(nonPositiveTickIntervalLoaded).toBe(false)
 	expect(nonPositiveTickIntervalReason).toBe("TagTickIntervalMustBePositive")
 end)
@@ -123,21 +135,25 @@ it("TagRegistry.Load enforces maxStacks validation rules", function()
 
 	local nonNumericMaxStacksLoaded: boolean, nonNumericMaxStacksReason: string? =
 		TagRegistry.Load(NonNumericMaxStacksCataloge :: { TagDefinition })
+
 	expect(nonNumericMaxStacksLoaded).toBe(false)
 	expect(nonNumericMaxStacksReason).toBe("TagMaxStacksMustBeNumber")
 
 	local nonPositiveMaxStacksLoaded: boolean, nonPositiveMaxStacksReason: string? =
 		TagRegistry.Load(NonPositiveMaxStacksCataloge :: { TagDefinition })
+
 	expect(nonPositiveMaxStacksLoaded).toBe(false)
 	expect(nonPositiveMaxStacksReason).toBe("TagMaxStacksMustBePositive")
 
 	local nonIntegerMaxStacksLoaded: boolean, nonIntegerMaxStacksReason: string? =
 		TagRegistry.Load(NonIntegerMaxStacksCataloge :: { TagDefinition })
+
 	expect(nonIntegerMaxStacksLoaded).toBe(false)
 	expect(nonIntegerMaxStacksReason).toBe("TagMaxStacksMustBeInteger")
 
 	local maxStacksWithoutStackDuplicateBehaviorLoaded: boolean, maxStacksWithoutStackDuplicateBehaviorReason: string? =
 		TagRegistry.Load(MaxStacksWithoutStackDuplicateBehaviorCataloge :: { TagDefinition })
+
 	expect(maxStacksWithoutStackDuplicateBehaviorLoaded).toBe(false)
 	expect(maxStacksWithoutStackDuplicateBehaviorReason).toBe("TagMaxStacksRequiresStackDuplicateBehavior")
 end)
@@ -147,6 +163,7 @@ it("TagRegistry.Load accepts valid property modifier shapes in override and norm
 
 	local validPropertyModifierLoaded: boolean, validPropertyModifierReason: string? =
 		TagRegistry.Load(ValidPropertyModifierCataloge :: { TagDefinition })
+
 	expect(validPropertyModifierLoaded).toBe(true)
 	expect(validPropertyModifierReason).toBeNil()
 end)
@@ -156,21 +173,25 @@ it("TagRegistry.Load rejects property entries that mix override and normal modif
 
 	local mixedPropertyModifierModeLoaded: boolean, mixedPropertyModifierModeReason: string? =
 		TagRegistry.Load(MixedPropertyModifierModeCataloge :: { TagDefinition })
+
 	expect(mixedPropertyModifierModeLoaded).toBe(false)
 	expect(mixedPropertyModifierModeReason).toBe("TagPropertyModifierSetCannotBeCombined")
 
 	local mixedSetMultiplyPropertyModifierLoaded: boolean, mixedSetMultiplyPropertyModifierReason: string? =
 		TagRegistry.Load(MixedSetMultiplyPropertyModifierCataloge :: { TagDefinition })
+
 	expect(mixedSetMultiplyPropertyModifierLoaded).toBe(false)
 	expect(mixedSetMultiplyPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
 
 	local mixedSetMinPropertyModifierLoaded: boolean, mixedSetMinPropertyModifierReason: string? =
 		TagRegistry.Load(MixedSetMinPropertyModifierCataloge :: { TagDefinition })
+
 	expect(mixedSetMinPropertyModifierLoaded).toBe(false)
 	expect(mixedSetMinPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
 
 	local mixedSetMaxPropertyModifierLoaded: boolean, mixedSetMaxPropertyModifierReason: string? =
 		TagRegistry.Load(MixedSetMaxPropertyModifierCataloge :: { TagDefinition })
+
 	expect(mixedSetMaxPropertyModifierLoaded).toBe(false)
 	expect(mixedSetMaxPropertyModifierReason).toBe("TagPropertyModifierSetCannotBeCombined")
 end)
@@ -180,26 +201,31 @@ it("TagRegistry.Load rejects non-numeric property modifier values", function()
 
 	local nonNumericSetPropertyModifierLoaded: boolean, nonNumericSetPropertyModifierReason: string? =
 		TagRegistry.Load(NonNumericSetPropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonNumericSetPropertyModifierLoaded).toBe(false)
 	expect(nonNumericSetPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 
 	local nonNumericAddPropertyModifierLoaded: boolean, nonNumericAddPropertyModifierReason: string? =
 		TagRegistry.Load(NonNumericAddPropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonNumericAddPropertyModifierLoaded).toBe(false)
 	expect(nonNumericAddPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 
 	local nonNumericMultiplyPropertyModifierLoaded: boolean, nonNumericMultiplyPropertyModifierReason: string? =
 		TagRegistry.Load(NonNumericMultiplyPropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonNumericMultiplyPropertyModifierLoaded).toBe(false)
 	expect(nonNumericMultiplyPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 
 	local nonNumericMinPropertyModifierLoaded: boolean, nonNumericMinPropertyModifierReason: string? =
 		TagRegistry.Load(NonNumericMinPropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonNumericMinPropertyModifierLoaded).toBe(false)
 	expect(nonNumericMinPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 
 	local nonNumericMaxPropertyModifierLoaded: boolean, nonNumericMaxPropertyModifierReason: string? =
 		TagRegistry.Load(NonNumericMaxPropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonNumericMaxPropertyModifierLoaded).toBe(false)
 	expect(nonNumericMaxPropertyModifierReason).toBe("TagPropertyModifierValueMustBeNumber")
 end)
@@ -209,31 +235,37 @@ it("TagRegistry.Load rejects unknown or malformed property modifier metadata", f
 
 	local nonTablePropertiesLoaded: boolean, nonTablePropertiesReason: string? =
 		TagRegistry.Load(NonTablePropertiesCataloge :: { TagDefinition })
+
 	expect(nonTablePropertiesLoaded).toBe(false)
 	expect(nonTablePropertiesReason).toBe("TagPropertiesMustBeTable")
 
 	local nonStringPropertyNameLoaded: boolean, nonStringPropertyNameReason: string? =
 		TagRegistry.Load(NonStringPropertyNameCataloge :: { TagDefinition })
+
 	expect(nonStringPropertyNameLoaded).toBe(false)
 	expect(nonStringPropertyNameReason).toBe("TagPropertyNameMustBeString")
 
 	local emptyPropertyNameLoaded: boolean, emptyPropertyNameReason: string? =
 		TagRegistry.Load(EmptyPropertyNameCataloge :: { TagDefinition })
+
 	expect(emptyPropertyNameLoaded).toBe(false)
 	expect(emptyPropertyNameReason).toBe("TagPropertyNameCannotBeEmpty")
 
 	local nonTablePropertyModifierLoaded: boolean, nonTablePropertyModifierReason: string? =
 		TagRegistry.Load(NonTablePropertyModifierCataloge :: { TagDefinition })
+
 	expect(nonTablePropertyModifierLoaded).toBe(false)
 	expect(nonTablePropertyModifierReason).toBe("TagPropertyModifierMustBeTable")
 
 	local unknownPropertyModifierFieldLoaded: boolean, unknownPropertyModifierFieldReason: string? =
 		TagRegistry.Load(UnknownPropertyModifierFieldCataloge :: { TagDefinition })
+
 	expect(unknownPropertyModifierFieldLoaded).toBe(false)
 	expect(unknownPropertyModifierFieldReason).toBe("TagPropertyModifierFieldInvalid")
 
 	local emptyPropertyModifierLoaded: boolean, emptyPropertyModifierReason: string? =
 		TagRegistry.Load(EmptyPropertyModifierCataloge :: { TagDefinition })
+
 	expect(emptyPropertyModifierLoaded).toBe(false)
 	expect(emptyPropertyModifierReason).toBe("TagPropertyModifierCannotBeEmpty")
 end)
@@ -243,6 +275,7 @@ it("TagRegistry.Load failure does not partially commit catalog state", function(
 
 	local partiallyInvalidLoaded: boolean, partiallyInvalidReason: string? =
 		TagRegistry.Load(PartiallyInvalidTagCataloge :: { TagDefinition })
+
 	expect(partiallyInvalidLoaded).toBe(false)
 	expect(partiallyInvalidReason).toBe("TagVisibilityInvalid")
 
@@ -331,11 +364,13 @@ it("TagRegistry read surfaces remain stable after load and do not expose mutable
 	local mutateAllDefinitionsSucceeded: boolean = pcall(function()
 		table.insert(allDefinitions, minimalValidCatalog[1])
 	end)
+
 	expect(mutateAllDefinitionsSucceeded).toBe(false)
 
 	local mutateAllDefinitionsByIdSucceeded: boolean = pcall(function()
 		allDefinitionsById["Status.Rooted"] = minimalValidCatalog[1]
 	end)
+
 	expect(mutateAllDefinitionsByIdSucceeded).toBe(false)
 
 	expect(#TagRegistry.GetAll()).toBe(4)
