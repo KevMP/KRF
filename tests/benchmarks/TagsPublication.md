@@ -16,7 +16,7 @@ For each size, three separate controller lifetimes measure:
 
 Static catalog/schema compilation, initial seeding/attachment and teardown are outside timing. Each mode/size has 32 warmups and three trials of 200 individually timed refreshes, yielding outside the timed interval every 20 samples. Each process therefore records 600 samples per mode/size. GC and scheduling variation can affect tails; elapsed microseconds are observations, not CI thresholds.
 
-There are no N4 recipients, packet encoding/delivery or N5 client callbacks in these CPU measurements. They do not measure FPS, network latency, bandwidth, concurrent Actors, multi-domain transactions or large instance stacks. The separate native two-client fixture verifies actual startup, transports and consumer installation. That fixture originally had only two visible IDs and one private ID active, four instances total; it was not a scaling test.
+There are no N4 recipients, packet encoding/delivery or N5 client callbacks in these CPU measurements. They do not measure FPS, network latency, bandwidth, concurrent Actors, multi-domain transactions or large instance stacks. The separate native two-client fixture verifies actual startup, transports and consumer installation. Its initial baseline had two visible IDs and one private ID active, four instances total. Its authoritative mutation batch briefly reached five instances before removing one stack; clients received the final aggregate. It was not a scaling test.
 
 ## Results
 
