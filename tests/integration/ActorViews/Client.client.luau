@@ -11,7 +11,7 @@ local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegi
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("ActorViewTestControl") :: RemoteEvent
 
 -- Deliberately no Native/InstallConsumers overrides, Consumer.Install calls,
--- fake transports, fake Players or direct N4/N5 delivery callbacks.
+-- fake transports, fake Players or direct stream/view delivery callbacks.
 local view: Types.ActorView? = nil
 local domain: Types.DomainView? = nil
 local private: Types.DomainView? = nil

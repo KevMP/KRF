@@ -188,7 +188,7 @@ local function maybeComplete(): ()
 
 		-- Endpoint and consumer callbacks have no promised execution order. Drain
 		-- the final receive callback before freezing traffic counters. The server
-		-- independently checks these against successful ordinary N4 sends.
+		-- independently checks these against successful ordinary Actor stream sends.
 		task.defer(function()
 			RunService.Heartbeat:Wait()
 

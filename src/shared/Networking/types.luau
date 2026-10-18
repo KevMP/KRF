@@ -2,7 +2,7 @@
 local types = {}
 
 -- Schemas and codecs
--- Framework-private N2 codec contract. Read limits are exclusive byte offsets.
+-- Framework-private codec contract. Read limits are exclusive byte offsets.
 -- A nil decoded Optional is successful when newOffset is present and reason is nil.
 export type CompiledCodec = {
 	read fixedSizeBytes: number?,
@@ -27,8 +27,8 @@ export type SchemaDefinition =
 	| { kind: "Array", element: SchemaDefinition, maxLength: number }
 	| { kind: "Map", key: SchemaDefinition, value: SchemaDefinition, maxEntries: number }
 
--- Framework-private metadata for validation, structural diffing, and N2 codecs.
--- Bounds must conservatively cover encoding; N2 owns the exact wire layout.
+-- Framework-private metadata for validation, structural diffing, and codecs.
+-- Bounds must conservatively cover encoding; the codec owns the exact wire layout.
 export type CompiledField = { read name: string, read schema: CompiledSchema }
 
 export type CompiledSchema =
@@ -140,7 +140,7 @@ export type Transport = {
 }
 
 -- Actor stream
--- N4 private logical records. No opcodes or byte widths are locked by these types.
+-- Framework-private logical records. No opcodes or byte widths are locked by these types.
 export type ActorPatch =
 	{ read kind: "Replace", read value: any }
 	| { read kind: "Struct", read fields: { [string]: ActorPatch } }

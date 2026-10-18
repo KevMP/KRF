@@ -9,6 +9,9 @@
       }
     },
     "ReplicatedStorage": {
+      "NetworkingBaselineOriginalScenario": {
+        "$path": "tests/integration/NetworkingBaseline/Utils/Scenario.luau"
+      },
       "NetworkingBaselineScenario": {
         "$path": "tests/integration/NetworkingBaseline/Utils/Scenario.luau"
       },

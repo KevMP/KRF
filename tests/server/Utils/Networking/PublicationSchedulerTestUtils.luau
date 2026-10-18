@@ -15,7 +15,7 @@ function PublicationSchedulerTestUtils.createScheduler(): ServerNetworkingTypes.
 		maxEvents = 16,
 		maxQueuedBytes = 1024,
 		-- Synthetic fixed-size encoder: every logical record costs exactly 16 bytes.
-		-- These tests isolate scheduling; N2 codec sizing is tested separately.
+		-- These tests isolate scheduling; wire codec sizing is tested separately.
 		MeasureRecord = function(_commit: ServerNetworkingTypes.PublicationFilteredCommit): number
 			return 16
 		end,

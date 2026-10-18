@@ -34,17 +34,17 @@ export type ServerNetworking = {
 	ObserveClientReady: (callback: (Player) -> ()) -> () -> (),
 	ObserveClientClosed: (callback: (Player) -> ()) -> () -> (),
 	SendReliable: (player: Player, payload: buffer) -> (boolean, string?),
-	-- Framework-private recovery entrypoint; N4 retains ownership of the installed runtime.
+	-- Framework-private recovery entrypoint; ActorAwarenessRuntime retains ownership of the installed runtime.
 	RequestReplacementBaseline: (player: Player, handle: number, reason: string?) -> (boolean, string?),
 	Destroy: () -> (),
 	_IsInitialized: () -> boolean,
 	_ResetForTests: () -> (),
-	-- Framework-private test seam for verifying startup ownership of N3.
+	-- Framework-private test seam for verifying startup ownership of PublicationRuntime.
 	_GetPublicationRuntimeForTests: () -> PublicationRuntime?,
 }
 
 -- Publication
--- Framework-private publication contracts. N4 owns recipient filtering and wire records.
+-- Framework-private publication contracts. ActorAwarenessRuntime owns recipient filtering and wire records.
 export type PublicationPatch = SharedNetworkingTypes.ActorPatch
 export type PublicationCaptureResult = { read value: any, read patch: PublicationPatch?, read encodedSizeBytes: number }
 
@@ -103,7 +103,7 @@ export type PublicationLifecycleModule = {
 	DetachActor: (actor: ActorTypes.Actor) -> (),
 }
 
--- Stream identities are opaque to N3; N4 supplies recipient-visible work.
+-- Stream identities are opaque to PublicationRuntime; ActorAwarenessRuntime supplies recipient-visible work.
 export type PublicationStreamKey = { read recipient: any, read actor: any }
 
 export type PublicationFilteredCommit = {
@@ -135,7 +135,7 @@ export type PublicationSchedulerOptions = {
 	read maxBarriers: number,
 	read maxEvents: number,
 	read maxQueuedBytes: number,
-	-- N4 supplies codec-aware record sizing, including conservative framing.
+	-- ActorAwarenessRuntime supplies codec-aware record sizing, including conservative framing.
 	read MeasureRecord: (commit: PublicationFilteredCommit) -> number,
 }
 

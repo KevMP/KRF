@@ -10,7 +10,7 @@ local SchemaCompiler = {} :: Types.SchemaCompiler
 
 local MAX_SAFE_INTEGER: number = 9007199254740991
 -- Conservative allowance for a future length or enum ordinal representation.
--- N2 may narrow this overhead; consumers cannot rely on byte offsets or packing.
+-- The codec may narrow this overhead; consumers cannot rely on byte offsets or packing.
 local COLLECTION_PREFIX_MAX_BYTES: number = 8
 
 local function addBytes(first: number, second: number): number?

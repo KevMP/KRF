@@ -37,6 +37,7 @@ ActorAwarenessRuntime.__index = ActorAwarenessRuntime
 
 type RuntimeState = {
 	codec: SharedNetworkingTypes.ActorStreamCodec,
+	measuredRecords: { [Types.PublicationFilteredCommit]: number },
 	dependencies: Types.ActorAwarenessDependencies,
 	options: Types.ActorAwarenessOptions,
 	connections: { [Player]: Connection },
@@ -51,6 +52,25 @@ type RuntimeState = {
 }
 
 type Runtime = typeof(setmetatable({} :: RuntimeState, ActorAwarenessRuntime))
+
+function ActorAwarenessRuntime._measureRecord(self: Runtime, commit: Types.PublicationFilteredCommit): number
+	local cached: number? = self.measuredRecords[commit]
+
+	if cached ~= nil then
+		return cached
+	end
+
+	-- Publication projections and scheduler compositions are immutable once queued. Weak
+	-- keys do not retain publication history after the recipient queues release it.
+	-- Handle/revision are fixed-width U32s, so size is recipient-independent.
+	local size: number = self.codec.Measure({
+		{ kind = "Commit", handle = 1, revision = 1, patches = commit.patches, events = commit.events },
+	}) or math.huge
+
+	self.measuredRecords[commit] = size
+
+	return size
+end
 
 function ActorAwarenessRuntime._activate(self: Runtime, stream: Stream): ()
 	local connection: Connection? = self.connections[stream.player]
@@ -91,7 +111,7 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 		return
 	end
 
-	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.codec, self.options, {
+	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.options, {
 		Project = function(
 			projectedActor: ActorTypes.Actor,
 			player: Player
@@ -102,6 +122,9 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 			self:_activate(active)
 		end,
 		ReportFault = self.dependencies.ReportFault,
+		MeasureRecord = function(commit: Types.PublicationFilteredCommit): number
+			return self:_measureRecord(commit)
+		end,
 	})
 
 	connection.nextHandle += 1
@@ -278,14 +301,20 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 
 			local canBegin: boolean = connection.transfers[stream] ~= nil or count < Constants.MAX_PENDING_BASELINES
 			local record: SharedNetworkingTypes.ActorStreamRecord? = nil
+			local measuredBytes: number? = nil
 
 			if not visited[stream] then
 				visited[stream] = true
-				record = stream:Prepare(maxBytes, canBegin, deliveryBudget)
+				record, measuredBytes = stream:Prepare(maxBytes, canBegin, deliveryBudget)
 			end
 
 			if record ~= nil then
-				local size: number?, reason: string? = self.codec.Measure({ record })
+				local size: number? = measuredBytes
+				local reason: string? = nil
+
+				if size == nil then
+					size, reason = self.codec.Measure({ record })
+				end
 
 				if size == nil then
 					stream:Fault(reason or "InvalidActorPacket")
@@ -422,6 +451,7 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	table.clear(self.players)
 	table.clear(self.models)
 	self.projections:Destroy()
+	table.clear(self.measuredRecords)
 	table.clear(self.active)
 end
 
@@ -442,6 +472,7 @@ function ActorAwarenessRuntime.new(
 
 	local state: RuntimeState = {
 		codec = codec,
+		measuredRecords = setmetatable({}, { __mode = "k" }),
 		dependencies = dependencies,
 		options = options,
 		connections = {},

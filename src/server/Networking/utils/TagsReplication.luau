@@ -44,7 +44,7 @@ function TagsReplication.Build(
 	end
 
 	-- Pending initial captures do not own an observer. Weak Actor keys release
-	-- them if N3 rejects initial admission before observe can install cleanup.
+	-- them if PublicationRuntime rejects initial admission before observe can install cleanup.
 	local projections: { [ActorTypes.Actor]: Projection } = setmetatable({}, { __mode = "k" })
 
 	local function controllerFor(actor: ActorTypes.Actor): TagTypes.InternalTagController

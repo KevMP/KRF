@@ -4,7 +4,7 @@ local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
 local ActorRecipientSelection = {} :: Types.ActorRecipientSelectionModule
 
--- M0 selects every Ready recipient. Readiness and stream lifecycle remain N4-owned.
+-- Select every Ready recipient. ActorAwarenessRuntime owns readiness and stream lifecycle.
 function ActorRecipientSelection.ShouldBeAware(_player: Player, _actor: ActorTypes.Actor): boolean
 	return true
 end

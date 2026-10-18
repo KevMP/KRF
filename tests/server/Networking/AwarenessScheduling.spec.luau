@@ -28,7 +28,7 @@ it("emits scheduling events from native frames and stops them when disconnected"
 		calls += 1
 	end)
 
-	-- Bounded native-frame waits; no wait depends on the missing N4 callback.
+	-- Bounded native-frame waits; no wait depends on the missing stream callback.
 	RunService.Heartbeat:Wait()
 	RunService.Heartbeat:Wait()
 	task.wait()

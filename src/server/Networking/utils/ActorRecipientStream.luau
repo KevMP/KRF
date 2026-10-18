@@ -10,6 +10,7 @@ export type Dependencies = {
 	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
 	ReportFault: (Types.ActorAwarenessFault) -> (),
+	MeasureRecord: (Types.PublicationFilteredCommit) -> number,
 }
 
 type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks" }
@@ -105,7 +106,6 @@ function ActorRecipientStream.new(
 	actor: ActorTypes.Actor,
 	player: Player,
 	handle: number,
-	codec: SharedNetworkingTypes.ActorStreamCodec,
 	options: Types.ActorAwarenessOptions,
 	dependencies: Dependencies
 ): Stream
@@ -113,13 +113,7 @@ function ActorRecipientStream.new(
 		maxBarriers = options.maxEvents,
 		maxEvents = options.maxEvents,
 		maxQueuedBytes = options.maxQueuedBytes,
-		MeasureRecord = function(commit: Types.PublicationFilteredCommit): number
-			local size: number? = codec.Measure({
-				{ kind = "Commit", handle = 1, revision = 1, patches = commit.patches, events = commit.events },
-			})
-
-			return size or math.huge
-		end,
+		MeasureRecord = dependencies.MeasureRecord,
 	})
 
 	local state: StreamState = {
@@ -151,21 +145,21 @@ function ActorRecipientStream.Prepare(
 	maxBytes: number,
 	canBegin: boolean,
 	deliveryBudget: number
-): SharedNetworkingTypes.ActorStreamRecord?
+): (SharedNetworkingTypes.ActorStreamRecord?, number?)
 	if self.removed then
-		return { kind = "ActorRemove", handle = self.handle }
+		return { kind = "ActorRemove", handle = self.handle }, nil
 	end
 
 	if self.haltPending then
-		return { kind = "ActorHalt", handle = self.handle }
+		return { kind = "ActorHalt", handle = self.handle }, nil
 	end
 
 	if self.failed then
-		return nil
+		return nil, nil
 	end
 
 	if self.recapture and not self:Capture() then
-		return nil
+		return nil, nil
 	end
 
 	local pending: Baseline? = self.baseline
@@ -173,7 +167,7 @@ function ActorRecipientStream.Prepare(
 	if pending ~= nil then
 		if pending.phase == "Begin" then
 			if not canBegin then
-				return nil
+				return nil, nil
 			end
 
 			return {
@@ -182,14 +176,15 @@ function ActorRecipientStream.Prepare(
 				actorId = if self.identitySent then nil else self.actor:GetId(),
 				generation = self.generation,
 				totalBytes = buffer.len(pending.body),
-			}
+			},
+				nil
 		elseif pending.offset < buffer.len(pending.body) then
 			-- Header and fixed Chunk framing consume 26 bytes in a single-record packet.
 			local length: number =
 				math.min(self.options.maxChunkBytes, buffer.len(pending.body) - pending.offset, maxBytes - 26)
 
 			if length <= 0 then
-				return nil
+				return nil, nil
 			end
 
 			local chunk: buffer = buffer.create(length)
@@ -201,13 +196,14 @@ function ActorRecipientStream.Prepare(
 				generation = self.generation,
 				offset = pending.offset,
 				bytes = chunk,
-			}
+			},
+				nil
 		end
 
 		if self.revision >= self.options.maxRevision then
 			self:Fault("ActorRevisionExhausted")
 
-			return nil
+			return nil, nil
 		end
 
 		return {
@@ -215,17 +211,18 @@ function ActorRecipientStream.Prepare(
 			handle = self.handle,
 			generation = self.generation,
 			revision = self.revision + 1,
-		}
+		},
+			nil
 	end
 
 	if self.scheduler:GetStreamStatus(self.key).pendingRecords == 0 then
-		return nil
+		return nil, nil
 	end
 
 	if self.revision >= self.options.maxRevision then
 		self:Fault("ActorRevisionExhausted")
 
-		return nil
+		return nil, nil
 	end
 
 	local nextBytes: number? = self.scheduler:GetNextRecordBytes(self.key)
@@ -236,13 +233,13 @@ function ActorRecipientStream.Prepare(
 		if self.blockedBudget == nil or deliveryBudget > self.blockedBudget then
 			self.blockedBudget = deliveryBudget
 
-			return nil
+			return nil, nil
 		end
 
 		self.recapture = true
 
 		if not self:Capture() then
-			return nil
+			return nil, nil
 		end
 
 		return self:Prepare(maxBytes, canBegin, deliveryBudget)
@@ -254,7 +251,7 @@ function ActorRecipientStream.Prepare(
 	local record: Types.PublicationRecord? = drained.records[1]
 
 	if record == nil then
-		return nil
+		return nil, nil
 	end
 
 	return {
@@ -263,7 +260,8 @@ function ActorRecipientStream.Prepare(
 		revision = self.revision + 1,
 		patches = record.commit.patches,
 		events = record.commit.events,
-	}
+	},
+		record.encodedSizeBytes
 end
 
 function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.ActorStreamRecord): ()

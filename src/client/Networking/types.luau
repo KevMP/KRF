@@ -5,7 +5,7 @@ local PublicTypes = require(script.Parent.Parent.Actor.types)
 local types = {}
 
 -- Actor stream and Model discovery
--- N4 owns one stable identity record per awareness lifetime and updates its Model
+-- The Actor stream runtime owns one stable identity record per awareness lifetime and updates its Model
 -- in place. Consumers must not manufacture or mutate these records.
 export type ActorStreamRecord = { read actorId: string, read handle: number, read model: Model? }
 
@@ -18,7 +18,7 @@ export type ActorStreamConsumer = {
 		{ SharedNetworkingTypes.ActorEvent }
 	) -> (),
 	-- Once per terminal failure, after assembly cleanup, even before the first baseline.
-	-- N5 must invalidate authoritative state, mark the view unavailable and stop resync
+	-- The ActorView runtime must invalidate authoritative state, mark the view unavailable and stop resync
 	-- for this handle. Identity and Model lifecycle continue until OnActorRemoved.
 	OnActorHalted: (ActorStreamRecord) -> (),
 	-- A decoded record is attributable to this Actor but cannot be consumed.

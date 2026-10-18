@@ -40,7 +40,7 @@ local disconnectPublication: (() -> ())? = nil
 local sentTraffic: { [Player]: { bytes: number, packets: number } } = {}
 local originalSendReliable = Networking.SendReliable
 
--- Observe successful ordinary N4 sends; delegate the actual transport unchanged.
+-- Observe successful ordinary Actor stream sends; delegate the actual transport unchanged.
 Networking.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
 	local success: boolean, reason: string? = originalSendReliable(player, payload)
 
