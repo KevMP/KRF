@@ -28,7 +28,7 @@ local MAX_SAFE_INTEGER: number = 9007199254740991
 type BoundsCase = { name: string, definition: SharedNetworkingTypes.SchemaDefinition, value: any }
 local cases: { BoundsCase } = {}
 
--- N1 reserves up to eight bytes for collection prefixes. The near-limit cases
+-- Schema bounds reserve up to eight bytes for collection prefixes. The near-limit cases
 -- leave that allowance intact, so these are compiled-legal descriptors.
 for _, maximum: number in { 4294967296, 2 ^ 40 + 1, 2 ^ 52 + 1, MAX_SAFE_INTEGER - 8 } do
 	table.insert(

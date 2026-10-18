@@ -51,7 +51,7 @@ function ResyncRuntime.new(dependencies: Types.ResyncDependencies, options: Type
 				return false, "ResyncRateLimited"
 			end
 
-			-- Charge attempts before N4 admission, bounding even unknown-handle floods.
+			-- Charge attempts before awareness admission, bounding even unknown-handle floods.
 			-- Only admitted handles get entries, bounding the per-window identity map.
 			window.attempts += 1
 

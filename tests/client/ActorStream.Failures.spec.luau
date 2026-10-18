@@ -100,7 +100,7 @@ for _, completedBaseline: boolean in { false, true } do
 			fixture.consumer.OnActorHalted = function(actor: ClientNetworkingTypes.ActorStreamRecord): ()
 				table.insert(notifications, "Halted")
 
-				-- Terminal status must already hold when N5 receives the notification.
+				-- Terminal status must already hold when the ActorView consumer receives the notification.
 				local accepted: boolean, reason: string? = TestUtils.send(fixture, {
 					{ kind = "Commit", handle = actor.handle, revision = 2, patches = {}, events = {} },
 				})

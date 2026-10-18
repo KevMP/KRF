@@ -32,7 +32,7 @@ function ActorViewRuntime.new(
 ): Types.ActorViewRuntime
 	local plan: Publication.Plan = Publication.Compile(protocol, schemas)
 	local states: { [number]: State } = {}
-	-- N4 owns handle retirement. Weak record tombstones additionally protect
+	-- The Actor stream runtime owns handle retirement. Weak record tombstones additionally protect
 	-- retained private callbacks without duplicating its lifetime-growing handle set.
 	local retired: { [Types.ActorStreamRecord]: boolean } = setmetatable({}, { __mode = "k" })
 	local destroyed: boolean = false

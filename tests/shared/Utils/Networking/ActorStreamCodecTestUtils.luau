@@ -36,7 +36,7 @@ function TestUtils.protocol(
 		},
 	}
 
-	-- N2 admits dense codebooks. Foreign catalogs add filler entries so they
+	-- The codec admits dense codebooks. Foreign catalogs add filler entries so they
 	-- remain valid while emitting codes unknown to the smaller receiving catalog.
 	for code: number = 0, (domainCode or 0) - 1 do
 		if code ~= 1 then

@@ -17,7 +17,7 @@ local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Transport = require(KRF.shared.Networking.Transport)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("TagsViewTestControl") :: RemoteEvent
 
--- Normal Client.Init owns discovery, consumer installation, N4 and N5. This
+-- Normal Client.Init owns discovery, consumer installation, Actor streams and views. This
 -- fixture only observes the actual Reliable endpoint; no receiver is injected.
 local root: Folder = ReplicatedStorage:WaitForChild(Transport.ROOT_NAME) :: Folder
 local reliable: RemoteEvent = root:WaitForChild(Transport.RELIABLE_NAME) :: RemoteEvent

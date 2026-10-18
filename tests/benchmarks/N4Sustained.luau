@@ -451,7 +451,7 @@ local function measure(population: any, recipients: number): any
 		})
 	end
 
-	-- Each 30 Hz virtual workload tick gives N4 two 60 Hz normal-budget Steps. This is
+	-- Each 30 Hz virtual workload tick gives the scheduler two 60 Hz normal-budget Steps. This is
 	-- CPU/queue pressure, not a server frame or wall-clock delivery experiment.
 	for tick, indices in plan do
 		if diagnostic then

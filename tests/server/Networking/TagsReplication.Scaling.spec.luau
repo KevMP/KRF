@@ -105,7 +105,7 @@ for _, activeCount: number in { 1, 64, 512 } do
 		end
 
 		expect(baseline.domains["KRF.Tags"].value).toEqual(expected)
-		-- This proves query/patch scope, not constant CPU cost: ordinary N3 still
+		-- This proves query/patch scope, not constant CPU cost: ordinary publication still
 		-- captures and measures the complete visible Map. Timings live separately.
 	end)
 end

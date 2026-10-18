@@ -11,6 +11,8 @@ Do not commit individual run outputs or machine manifests.
 | --- | --- |
 | `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic future-domain profiles remain distinct. |
 | `npm run test:integration:networking-baseline` | The same activity shapes through normal server/client startup and real transports, with two native clients and delivery/privacy/teardown assertions. |
+| `npm run measure:n4` | Sustained generic load at 75/90 Actors and 2/10/25/30 injected recipients: 30 seconds heavy, 15 seconds light, 75 seconds quiet recovery with ongoing sentinel traffic. Queue bounds, fairness, explicit replacement baselines and current truth are asserted. |
+| `npm run test:integration:n4-performance` | The original native server/client fixture with a Scenario wrapper selecting 75/90 Actors and 45 seconds of heavy Tags traffic; two native clients. |
 | `npm run test:integration:tags-load` | Separate native two-client Tags test at 25/50/100 Actors, paced and burst mutations. See [TagsLoad.md](./TagsLoad.md). |
 | `npm run measure:tags` | Separate extreme single-Actor Tag-map scaling test. See [TagsPublication.md](./TagsPublication.md). |
 
@@ -44,3 +46,36 @@ Quantiles use nearest rank, with p95 at 20 samples and p99 at 100; independent t
 counts still matter. Preserve correctness assertions and avoid machine timing gates.
 
 Historical findings and methodology live in [baseline PR #90](https://github.com/KevMP/KRF/pull/90).
+Optimization comparisons and architectural recommendations live in [PR #91](https://github.com/KevMP/KRF/pull/91).
+
+## Paired processing comparisons
+
+At each implementation, run `measure:networking` (short), `measure:n4` (sustained)
+and `test:integration:n4-performance` (native) twice in fresh processes. Copy each
+`result.json` into `build/n4-comparison/` using
+`<before|after>-<short|sustained|native>-run<number>.json`. Gzip JSON is also accepted.
+
+```powershell
+node scripts/analyze-n4-performance.cjs build/n4-comparison > build/n4-comparison/summary.json
+```
+
+The analyzer checks deterministic delivery signatures across paired CPU trials
+and reports pooled timings with per-trial totals. Keep the workloads, budgets and
+probe configuration identical. Do not mix duplicate plain/gzip copies of one run.
+Keep excluded pilots outside the matching filenames.
+
+To freeze a place and its workload before editing production code:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/measure-n4-performance.ps1 -PrepareOnly
+powershell -ExecutionPolicy Bypass -File scripts/measure-n4-performance.ps1 -PreparedRunDirectory <printed-directory>
+```
+
+Use `-Profile Native -PrepareOnly` to freeze the native variant. Keep the prepared
+directory intact and use a separate preparation for each trial. To compare the
+extended harness against the baseline PR, prepare it with only the three optimized
+modules restored from the baseline branch: `ActorAwarenessRuntime.luau`,
+`utils/ActorRecipientStream.luau` and `utils/PublicationScheduler.luau` under
+`src/server/Networking/`. Restore the optimized modules before preparing the after
+variant. This holds the sustained fixture constant without requiring historical
+measurement commits or saved results. Use a clean checkout and retain source hashes.

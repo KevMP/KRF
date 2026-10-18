@@ -153,7 +153,7 @@ it("continues routing Reliable Actor buffers after READY_ACK finishes Client.Ini
 	TestUtils.bootstrap(fixture)
 	TestUtils.acknowledge(fixture)
 	expect(fixture.result).toEqual({ success = true })
-	-- The real N4 codec produces Actor packets using the same catalog as the bootstrap.
+	-- The real Actor stream codec produces Actor packets using the same catalog as the bootstrap.
 	local actorFixture: StreamTestUtils.Fixture = StreamTestUtils.new()
 	local body: buffer = StreamTestUtils.body(actorFixture)
 

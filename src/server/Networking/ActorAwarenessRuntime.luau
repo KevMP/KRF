@@ -60,7 +60,7 @@ function ActorAwarenessRuntime._measureRecord(self: Runtime, commit: Types.Publi
 		return cached
 	end
 
-	-- N3 projections and scheduler compositions are immutable once queued. Weak
+	-- Publication projections and scheduler compositions are immutable once queued. Weak
 	-- keys do not retain publication history after the recipient queues release it.
 	-- Handle/revision are fixed-width U32s, so size is recipient-independent.
 	local size: number = self.codec.Measure({

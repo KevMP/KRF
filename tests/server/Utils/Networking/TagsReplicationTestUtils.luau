@@ -72,7 +72,7 @@ function TestUtils.snapshot(fixture: Fixture): Adapter.ReplicatedTagsState
 end
 
 function TestUtils.observe(fixture: Fixture): () -> ()
-	-- N3 captures before observing. Keep that ordering in this adapter harness.
+	-- PublicationRuntime captures before observing. Keep that ordering in this adapter harness.
 	TestUtils.snapshot(fixture)
 	local observe = fixture.definition.observe
 	assert(observe ~= nil, "Declared adapter must support observation")
