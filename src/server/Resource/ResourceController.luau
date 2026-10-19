@@ -87,6 +87,15 @@ function ResourceController.new(actor: Actor): ResourceController
 	local journal: ResourceControllerEvent.ResourceEventJournal =
 		ResourceControllerEvent.new(ownedSignals, OnResourceChangedSignal)
 
+	-- N7 TDD seams: committed observation and complete state capture are not implemented yet.
+	function controller:_getReplicationState(_resourceId: string): ResourceTypes.ResourceReplicationState?
+		return nil
+	end
+
+	function controller:_observeMutations(_observer: ResourceTypes.ResourceMutationObserver): () -> ()
+		return function(): () end
+	end
+
 	local function queueChange(change: ResourceRecomputeChange): ()
 		journal:Queue({
 			actor = actor,

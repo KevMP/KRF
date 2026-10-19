@@ -9,6 +9,7 @@
     "test:unit": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1 && npm run coverage",
     "test:integration:n5": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n5-native.ps1",
     "test:integration:n6": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n6-native.ps1",
+    "test:integration:n7": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1",
     "test:integration:tags-load": "powershell -ExecutionPolicy Bypass -File ./scripts/test-tags-load.ps1",
     "measure:tags": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-tags-publication.ps1",
     "measure:networking": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1",

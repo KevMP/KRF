@@ -1,6 +1,7 @@
 --!strict
 local Types = require(script.Parent.types)
 local TagsView = require(script.Parent.TagsView)
+local ResourcesView = require(script.Parent.ResourcesView)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 local Signal = require(script.Parent.Parent.Parent.shared.Signal.SignalModule)
 local OwnedSignals = require(script.Parent.Parent.Parent.shared.Signal.OwnedSignals)
@@ -44,7 +45,16 @@ function ActorView.new(
 		return if domain ~= nil then domain.view else nil
 	end)
 
+	local resources: Types.ResourcesViewOwner = ResourcesView.new(function(): Types.DomainView?
+		local domain: Types.DomainViewOwner? = currentDomains["KRF.Resources"]
+
+		return if domain ~= nil then domain.view else nil
+	end)
+
 	local view: Types.ActorView = table.freeze({
+		GetResources = function(_self: Types.ActorView): Types.ResourcesView
+			return resources.view
+		end,
 		GetTags = function(_self: Types.ActorView): Types.TagsView
 			return tags.view
 		end,
@@ -139,6 +149,7 @@ function ActorView.new(
 
 			destroyed = true
 			tags:Destroy()
+			resources:Destroy()
 			available = false
 			currentModel = nil
 

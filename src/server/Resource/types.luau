@@ -1,3 +1,4 @@
+--!strict
 local serverFolder = script.Parent.Parent
 local SignalTypes = require(serverFolder.Parent.shared.Signal.types)
 local ActorTypes = require(serverFolder.Actor.types)
@@ -84,7 +85,20 @@ export type ResourceController = {
 
 -- Framework-private mutation and publication seams; callers must commit a
 -- prepared mutation without intervening consumer work or yielding.
+export type ResourceReplicationState = {
+	read current: number,
+	read min: number,
+	read max: number,
+	read regenRate: number?,
+}
+
+export type ResourceMutationKind = "Added" | "Discrete" | "Recomputed" | "RegenStep"
+export type ResourceMutation = { read resourceId: string, read kind: ResourceMutationKind }
+export type ResourceMutationObserver = { Commit: ({ ResourceMutation }) -> (), Dispatch: () -> () }
+
 export type InternalResourceController = ResourceController & {
+	_getReplicationState: (self: InternalResourceController, resourceId: string) -> ResourceReplicationState?,
+	_observeMutations: (self: InternalResourceController, observer: ResourceMutationObserver) -> () -> (),
 	_isDestroyed: (self: InternalResourceController) -> boolean,
 	_prepareSpends: (self: InternalResourceController, amounts: { [string]: number }) -> ((() -> ())?, string?),
 	_beginMutationBatch: (self: InternalResourceController) -> (),
