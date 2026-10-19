@@ -28,6 +28,6 @@ Players and NPCs use the same Actor and controller model. Registries hold static
 
 ## Current scope
 
-The available runtime does not include complete input, combat, movement, inventory, quest, AI, or presentation systems. ActorViews expose registered replication domains and built-in ClientVisible Tags through [TagsView](./Tags/tag-views). Built-in Resources and Actions domains are not available yet; their `ClientVisible` metadata alone does not publish state.
+The available runtime does not include complete input, combat, movement, inventory, quest, AI, or presentation systems. ActorViews expose registered replication domains, active ClientVisible Tags through [TagsView](./Tags/tag-views), and assigned ClientVisible Resources through [ResourcesView](./Resource/resource-views). A built-in Actions domain is not available yet; Action `ClientVisible` metadata alone does not publish state.
 
 KRF does not prescribe your game's world, abilities, progression, or visual identity. Persistence, matchmaking, monetization, analytics, and final UI theming remain outside its scope.

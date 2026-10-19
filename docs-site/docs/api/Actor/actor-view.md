@@ -24,6 +24,7 @@ end
 | Method | [`GetId() -> string`](#id) |
 | Method | [`GetModel() -> Model?`](#model) |
 | Method | [`GetTags() -> TagsView`](#tags) |
+| Method | [`GetResources() -> ResourcesView`](#resources) |
 | Method | [`GetDomain(domainId: string) -> DomainView?`](#domain) |
 | Method | [`GetDomainIds() -> { string }`](#domains) |
 | Method | [`IsAvailable() -> boolean`](#available) |
@@ -48,6 +49,10 @@ Returns the visible domain, or `nil` for an unknown, invisible or retired domain
 ### `GetTags() -> TagsView` {#tags}
 
 Returns this ActorView's stable read-only [TagsView](./tags-view), including an empty view when no visible Tags domain exists.
+
+### `GetResources() -> ResourcesView` {#resources}
+
+Returns this ActorView's stable read-only [ResourcesView](./resources-view), including an empty view when no visible Resource definitions exist.
 
 ### `GetDomainIds() -> { string }` {#domains}
 
@@ -77,3 +82,4 @@ Fires once when terminal failure invalidates this view's domain truth.
 - [ActorView Registry](./actor-view-registry)
 - [DomainView](./domain-view)
 - [TagsView](./tags-view)
+- [ResourcesView](./resources-view)

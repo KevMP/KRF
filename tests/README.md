@@ -30,6 +30,7 @@ These fixtures run real server/client sessions separately from `npm test`:
 | --- | --- |
 | `npm run test:integration:n5` | Normal startup and consumer installation, ActorViews, live commits, rate-limited recovery, Owner privacy, terminal halt, removal, respawn, and reset |
 | `npm run test:integration:n6` | Normal startup, visible/private Tags, typed views and events, replacement, expiry, removal, respawn, and reset |
+| `npm run test:integration:n7` | Normal two-client startup, visible/private Resources, local regeneration without recurring packets, assignment and rate changes, replacement, removal, respawn, and reset |
 | `npm run test:integration:networking-baseline` | Two-client delivery, privacy, and teardown under representative gameplay workloads |
 | `npm run test:integration:n4-performance` | Native sustained publication load with two clients |
 | `npm run test:integration:tags-load` | Native Tags delivery at multiple Actor populations |

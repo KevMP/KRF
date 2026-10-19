@@ -52,11 +52,15 @@ Within one authoritative/batched transaction, `OnResourceChanged` publishes one 
 
 Action acceptance and cleanup commit Resource state before consumer callbacks. Event payloads describe their committed transitions; getters read current authoritative state, which reentry may already have changed. See [Advanced Action Ordering & Reentrancy](../Action/action-ordering) for the canonical dispatch and nested-notification contract, and [Action Resources](../Action/action-resources) for declarative requirements and costs.
 
+A replication publication error propagates after committed notifications and Action lifecycle callbacks have been issued. It does not undo Resource authority or refund an accepted Action. A rejected publication preserves the last published client state; a later meaningful update can publish the recovered Resource state. Inspect authoritative state before retrying a mutation after an exception.
+
 ## Regeneration
 
 Regeneration is measured in units per second and advances automatically in fixed 0.1-second steps while the Actor is enabled. It uses the latest resolved rate and clamps at maximum; a step that changes nothing fires no event.
 
 ## Design rules
+
+For client HUDs and cooldown displays, use [ResourcesView](./resource-views). It derives presentation estimates between meaningful authoritative changes without replicating every regeneration step. Its change event also reports resolved rate-only updates; the server `OnResourceChanged` contract above remains unchanged.
 
 - Declare Action costs in the Action definition. Use direct `Spend` for other all-or-nothing payments and `Drain` for forced loss.
 - Read resource current values from `ResourceController`, never `PropertyController`.

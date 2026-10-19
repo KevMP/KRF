@@ -12,6 +12,7 @@ local ResourceRegistry = require(script.Parent.ResourceRegistry)
 local ResourceControllerRecomputeUtils = require(script.Parent.utils.ResourceControllerRecompute)
 local ResourceStateResolver = require(script.Parent.utils.ResourceStateResolver)
 local ResourceControllerEvent = require(script.Parent.utils.ResourceControllerEvent)
+local ResourceMutationJournal = require(script.Parent.utils.ResourceMutationJournal)
 
 local RunService: RunService = game:GetService("RunService")
 local automaticStepIntervalSeconds: number = 0.1
@@ -87,6 +88,45 @@ function ResourceController.new(actor: Actor): ResourceController
 	local journal: ResourceControllerEvent.ResourceEventJournal =
 		ResourceControllerEvent.new(ownedSignals, OnResourceChangedSignal)
 
+	local mutations: ResourceMutationJournal.ResourceMutationJournal = ResourceMutationJournal.new()
+	local pendingAdded: { string } = {}
+
+	function controller:_getReplicationState(resourceId: string): ResourceTypes.ResourceReplicationState?
+		local record: ResourceRecord? = resourcesById[resourceId]
+
+		return if record ~= nil
+			then table.freeze({
+				current = record.currentValue,
+				min = record.resolvedMin,
+				max = record.resolvedMax,
+				regenRate = record.resolvedRegenRate,
+			})
+			else nil
+	end
+
+	function controller:_observeMutations(observer: ResourceTypes.ResourceMutationObserver): () -> ()
+		return mutations:Observe(observer)
+	end
+
+	local function dispatchChanges(): ()
+		mutations:Dispatch(function(): ()
+			local added: { string } = pendingAdded
+			pendingAdded = {}
+
+			for _, id: string in added do
+				if destroyed then
+					break
+				end
+
+				ownedSignals:WithDeferredDestroy(function(): ()
+					OnResourceAddedSignal:Fire(actor, id)
+				end)
+			end
+
+			journal:Drain()
+		end)
+	end
+
 	local function queueChange(change: ResourceRecomputeChange): ()
 		journal:Queue({
 			actor = actor,
@@ -100,8 +140,17 @@ function ResourceController.new(actor: Actor): ResourceController
 		})
 	end
 
-	local function commitCurrent(resourceId: string, record: ResourceRecord, value: number): ()
+	local function commitCurrent(
+		resourceId: string,
+		record: ResourceRecord,
+		value: number,
+		kind: ResourceTypes.ResourceMutationKind
+	): ()
 		local previous: number = record.currentValue
+
+		if previous == value then
+			return
+		end
 
 		record.currentValue = value
 
@@ -114,10 +163,13 @@ function ResourceController.new(actor: Actor): ResourceController
 			maxOldValue = record.resolvedMax,
 			maxNewValue = record.resolvedMax,
 		})
+
+		mutations:Touch(resourceId, kind)
 	end
 
 	function controller:_beginMutationBatch(): ()
 		journal:BeginBatch()
+		mutations:BeginBatch()
 	end
 
 	function controller:_isDestroyed(): boolean
@@ -126,10 +178,15 @@ function ResourceController.new(actor: Actor): ResourceController
 
 	function controller:_finishMutationBatch(): ()
 		journal:FinishBatch()
+		mutations:FinishBatch()
 	end
 
 	function controller:_dispatchChanges(): ()
-		journal:Drain()
+		dispatchChanges()
+	end
+
+	function controller:_rethrowMutationFailure(): ()
+		mutations:RethrowFailure()
 	end
 
 	function controller:_prepareSpends(amounts: { [string]: number }): ((() -> ())?, string?)
@@ -172,13 +229,19 @@ function ResourceController.new(actor: Actor): ResourceController
 					"ResourcePreparedMutationInvalidated"
 				)
 
-				commitCurrent(mutation.id, mutation.record, mutation.value)
+				commitCurrent(mutation.id, mutation.record, mutation.value, "Discrete")
 			end
+
+			mutations:Commit()
 		end,
 			nil
 	end
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
+		if destroyed then
+			return false, "ResourceControllerDestroyed"
+		end
+
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
 
 		if definition == nil then
@@ -223,14 +286,19 @@ function ResourceController.new(actor: Actor): ResourceController
 			UpdateHeartbeatConnection()
 		end
 
-		ownedSignals:WithDeferredDestroy(function()
-			OnResourceAddedSignal:Fire(actor, resourceId)
-		end)
+		table.insert(pendingAdded, resourceId)
+		mutations:Touch(resourceId, "Added")
+		mutations:Commit()
+		dispatchChanges()
 
 		return true, nil
 	end
 
-	function controller:SetCurrent(resourceId: string, value: number): (boolean, string?)
+	local function setCurrent(
+		resourceId: string,
+		value: number,
+		kind: ResourceTypes.ResourceMutationKind
+	): (boolean, string?)
 		if not controller:HasResource(resourceId) then
 			return false, "ResourceNotAssigned"
 		end
@@ -248,10 +316,15 @@ function ResourceController.new(actor: Actor): ResourceController
 			return true, nil
 		end
 
-		commitCurrent(resourceId, resourceRecord, nextCurrentValue)
-		journal:Drain()
+		commitCurrent(resourceId, resourceRecord, nextCurrentValue, kind)
+		mutations:Commit()
+		dispatchChanges()
 
 		return true, nil
+	end
+
+	function controller:SetCurrent(resourceId: string, value: number): (boolean, string?)
+		return setCurrent(resourceId, value, "Discrete")
 	end
 
 	function controller:HasResource(resourceId: string): boolean
@@ -359,7 +432,7 @@ function ResourceController.new(actor: Actor): ResourceController
 				continue
 			end
 
-			controller:Restore(resourceId, resolvedRegenRate * deltaTime)
+			setCurrent(resourceId, resourceRecord.currentValue + resolvedRegenRate * deltaTime, "RegenStep")
 		end
 	end
 
@@ -380,6 +453,8 @@ function ResourceController.new(actor: Actor): ResourceController
 		end
 
 		journal:Destroy()
+		mutations:Destroy()
+		table.clear(pendingAdded)
 		ownedSignals:Destroy()
 		table.clear(resourcesById)
 		table.clear(resourceIdsByPropertyName)
@@ -400,7 +475,10 @@ function ResourceController.new(actor: Actor): ResourceController
 
 			for _, change: ResourceRecomputeChange in changes do
 				queueChange(change)
+				mutations:Touch(change.resourceId, "Recomputed")
 			end
+
+			mutations:Commit()
 		end
 
 		local internalProperties: PropertyTypes.InternalPropertyController =
@@ -410,7 +488,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			disconnectPropertyMutations = internalProperties:_observeResolvedMutations({
 				Commit = commitProperties,
 				Dispatch = function(): ()
-					journal:Drain()
+					dispatchChanges()
 				end,
 			})
 		elseif propertyController.OnResolvedPropertyChanged ~= nil then
@@ -418,7 +496,7 @@ function ResourceController.new(actor: Actor): ResourceController
 			local connection: SignalTypes.Connection = propertyController.OnResolvedPropertyChanged:Connect(
 				function(_actor: Actor, name: string)
 					commitProperties({ name })
-					journal:Drain()
+					dispatchChanges()
 				end
 			)
 

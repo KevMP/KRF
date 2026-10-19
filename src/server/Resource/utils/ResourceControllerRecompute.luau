@@ -28,6 +28,8 @@ export type ResourceRecomputeChange = {
 	minNewValue: number,
 	maxOldValue: number,
 	maxNewValue: number,
+	regenRateOldValue: number?,
+	regenRateNewValue: number?,
 }
 
 local ResourceControllerRecomputeUtils = {}
@@ -70,6 +72,7 @@ local function recomputeResource(
 	local previousCurrentValue: number = resourceRecord.currentValue
 	local previousResolvedMin: number = resourceRecord.resolvedMin
 	local previousResolvedMax: number = resourceRecord.resolvedMax
+	local previousResolvedRegenRate: number? = resourceRecord.resolvedRegenRate
 
 	resourceRecord.resolvedMin = resolvedMin
 	resourceRecord.resolvedMax = resolvedMax
@@ -80,6 +83,7 @@ local function recomputeResource(
 		previousCurrentValue == resourceRecord.currentValue
 		and previousResolvedMin == resourceRecord.resolvedMin
 		and previousResolvedMax == resourceRecord.resolvedMax
+		and previousResolvedRegenRate == resourceRecord.resolvedRegenRate
 	then
 		return nil
 	end
@@ -92,6 +96,8 @@ local function recomputeResource(
 		minNewValue = resourceRecord.resolvedMin,
 		maxOldValue = previousResolvedMax,
 		maxNewValue = resourceRecord.resolvedMax,
+		regenRateOldValue = previousResolvedRegenRate,
+		regenRateNewValue = resourceRecord.resolvedRegenRate,
 	}
 end
 

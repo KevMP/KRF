@@ -33,6 +33,10 @@ With an attached `PropertyController`, a property-backed source seeds `defaultBa
 
 The registry can validate only default source values. Runtime assignment resolves the actual Actor properties and rejects a maximum below the minimum.
 
+## Client visibility
+
+`ClientVisible` definitions contribute ids to the built-in Resource protocol. Assigned entries appear in [ResourcesView](./resource-views); registered but unassigned definitions create no Actor state. `ServerOnly` definitions and their ids remain outside client metadata and state. When no visible definitions exist, the protocol omits the Resource domain and every ActorView still provides an empty ResourcesView.
+
 ## Catalog example
 
 This ModuleScript returns definitions for the `resources` field of your [game configuration](../initializing-krf). Game startup loads the catalog; the module does not call `ResourceRegistry.Load`.

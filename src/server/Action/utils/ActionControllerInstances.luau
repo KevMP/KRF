@@ -178,11 +178,49 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	local function dispatchEnd(instance: InternalActionInstance): ()
+	-- Notification failure cannot undo committed activation/termination. Complete
+	-- the remaining delivery and lifecycle hooks before returning the first error.
+	local function withNotifications(notify: (attempt: (callback: () -> ()) -> ()) -> ()): ()
+		local failed: boolean = false
+		local failure: any = nil
+
+		local function attempt(callback: () -> ()): ()
+			local success: boolean, reason: any = pcall(callback)
+
+			if not success and not failed then
+				failed, failure = true, reason
+			end
+		end
+
+		-- Take the transaction's error before lifecycle listeners can reenter a
+		-- Resource mutation and drain its pending public notifications themselves.
+		local resources: ResourceTypes.InternalResourceController? =
+			actor:GetController("ResourceController") :: ResourceTypes.InternalResourceController?
+
+		if resources ~= nil then
+			attempt(function()
+				(resources :: ResourceTypes.InternalResourceController):_rethrowMutationFailure()
+			end)
+		end
+
 		ownedSignals:WithDeferredDestroy(function()
+			notify(attempt)
+		end)
+
+		if failed then
+			error(failure, 0)
+		end
+	end
+
+	local function dispatchEnd(instance: InternalActionInstance): ()
+		withNotifications(function(attempt)
 			issueStarted(instance)
 			endedSignal:Fire(lifecycleEvent(instance))
-			dispatchTerminalTags(instance)
+
+			attempt(function()
+				dispatchTerminalTags(instance)
+			end)
+
 			local callback = instance.implementation.onEnd
 
 			if callback ~= nil then
@@ -221,9 +259,13 @@ function ActionControllerInstancesModule.new(
 	end
 
 	local function dispatchInterrupt(instance: InternalActionInstance, reason: string): ()
-		ownedSignals:WithDeferredDestroy(function()
+		withNotifications(function(attempt)
 			issueInterrupted(instance, reason)
-			dispatchTerminalTags(instance)
+
+			attempt(function()
+				dispatchTerminalTags(instance)
+			end)
+
 			invokeInterrupt(instance, reason)
 		end)
 	end
@@ -458,17 +500,21 @@ function ActionControllerInstancesModule.new(
 
 		table.freeze(claim)
 
-		ownedSignals:WithDeferredDestroy(function()
+		withNotifications(function(attempt)
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
 			end
 
 			if tags ~= nil then
-				tags:_dispatchMutationEvents(tagEvents)
+				attempt(function()
+					(tags :: InternalTagController):_dispatchMutationEvents(tagEvents)
+				end)
 			end
 
 			for _, owner: InternalActionInstance in conflicts do
-				dispatchTerminalTags(owner)
+				attempt(function()
+					dispatchTerminalTags(owner)
+				end)
 			end
 
 			for _, owner: InternalActionInstance in conflicts do
@@ -749,7 +795,7 @@ function ActionControllerInstancesModule.new(
 			resources:_finishMutationBatch()
 		end
 
-		ownedSignals:WithDeferredDestroy(function()
+		withNotifications(function(attempt)
 			for _, owner: InternalActionInstance in conflicts do
 				issueInterrupted(owner, "ActionLockPreempted")
 			end
@@ -757,15 +803,21 @@ function ActionControllerInstancesModule.new(
 			issueStarted(instance)
 
 			if tags ~= nil then
-				tags:_dispatchMutationEvents(tagEvents)
+				attempt(function()
+					(tags :: InternalTagController):_dispatchMutationEvents(tagEvents)
+				end)
 			end
 
 			for _, owner: InternalActionInstance in conflicts do
-				dispatchTerminalTags(owner)
+				attempt(function()
+					dispatchTerminalTags(owner)
+				end)
 			end
 
 			if resources ~= nil then
-				resources:_dispatchChanges()
+				attempt(function()
+					(resources :: ResourceTypes.InternalResourceController):_dispatchChanges()
+				end)
 			end
 
 			for _, owner: InternalActionInstance in conflicts do
@@ -845,17 +897,21 @@ function ActionControllerInstancesModule.new(
 
 		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
 
-		ownedSignals:WithDeferredDestroy(function()
+		withNotifications(function(attempt)
 			for _, instance: InternalActionInstance in activeInstances do
 				issueInterrupted(instance, "ActionControllerDestroyed")
 			end
 
 			if tags ~= nil then
-				tags:_dispatchMutationEvents(tagEvents)
+				attempt(function()
+					(tags :: InternalTagController):_dispatchMutationEvents(tagEvents)
+				end)
 			end
 
 			for _, instance: InternalActionInstance in activeInstances do
-				dispatchTerminalTags(instance)
+				attempt(function()
+					dispatchTerminalTags(instance)
+				end)
 			end
 
 			for _, instance: InternalActionInstance in activeInstances do

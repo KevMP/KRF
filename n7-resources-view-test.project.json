@@ -1,0 +1,18 @@
+{
+  "name": "KRF-N7-ResourcesView-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "ResourcesViewTestControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": {
+      "ResourcesViewTestServer": { "$path": "tests/integration/ResourcesView/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "ResourcesViewTestClient": { "$path": "tests/integration/ResourcesView/Client.client.luau" }
+      }
+    }
+  }
+}

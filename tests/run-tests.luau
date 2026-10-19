@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local runCLI = require(ReplicatedStorage.DevPackages.Jest).runCLI
 local coverage = require(ReplicatedStorage.DevPackages["roblox-coverage"])
@@ -24,7 +25,8 @@ local status, result = runCLI(ReplicatedStorage.Packages, {
 
 local coverageReport = coverage.istanbul()
 
-if processServiceExists then
+-- Local Studio runners still need fresh coverage when ProcessService is unavailable.
+if processServiceExists or RunService:IsStudio() then
 	local coverageJson = HttpService:JSONEncode(coverageReport)
 	print(COVERAGE_START_MARKER)
 

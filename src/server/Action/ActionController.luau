@@ -202,9 +202,13 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		end
 
 		controllerState.destroyed = true
-		instances:Destroy()
+		local success: boolean, failure: any = pcall(instances.Destroy, instances)
 		grants:Destroy()
 		ownedSignals:Destroy()
+
+		if not success then
+			error(failure, 0)
+		end
 	end
 
 	controller.OnActionGrantChanged = SignalModule.wrapEvent(grantChangedSignal)

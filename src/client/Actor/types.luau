@@ -25,6 +25,38 @@ export type TagsViewModule = {
 	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> TagsViewOwner,
 }
 
+export type ResourceSnapshot = {
+	read resourceId: string,
+	read current: number,
+	read min: number,
+	read max: number,
+	read regenRate: number?,
+}
+
+export type ResourceViewChange = {
+	read resourceId: string,
+	read previous: ResourceSnapshot?,
+	read current: ResourceSnapshot?,
+	read source: DomainChangeSource,
+}
+
+export type ResourcesView = {
+	read HasResource: (self: ResourcesView, resourceId: string) -> boolean,
+	read GetResource: (self: ResourcesView, resourceId: string) -> ResourceSnapshot?,
+	read GetCurrent: (self: ResourcesView, resourceId: string) -> number?,
+	read GetMin: (self: ResourcesView, resourceId: string) -> number?,
+	read GetMax: (self: ResourcesView, resourceId: string) -> number?,
+	read GetRegenRate: (self: ResourcesView, resourceId: string) -> number?,
+	read GetAssignedResources: (self: ResourcesView) -> { ResourceSnapshot },
+	read OnResourceChanged: SignalTypes.Event<ResourceViewChange>,
+}
+
+export type ResourcesViewOwner = { read view: ResourcesView, Destroy: (self: ResourcesViewOwner) -> () }
+
+export type ResourcesViewModule = {
+	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> ResourcesViewOwner,
+}
+
 export type DomainView = {
 	read GetId: (self: any) -> string,
 	read GetState: (self: any) -> any,
@@ -34,6 +66,7 @@ export type DomainView = {
 
 export type ActorView = {
 	read GetTags: (self: ActorView) -> TagsView,
+	read GetResources: (self: ActorView) -> ResourcesView,
 	read GetId: (self: any) -> string,
 	read GetModel: (self: any) -> Model?,
 	read GetDomain: (self: any, domainId: string) -> DomainView?,
