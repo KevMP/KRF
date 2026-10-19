@@ -8,6 +8,7 @@ export type ResourceMutationJournal = {
 	BeginBatch: (self: ResourceMutationJournal) -> (),
 	FinishBatch: (self: ResourceMutationJournal) -> (),
 	Dispatch: (self: ResourceMutationJournal, notify: () -> ()) -> (),
+	RethrowFailure: (self: ResourceMutationJournal) -> (),
 	Destroy: (self: ResourceMutationJournal) -> (),
 }
 
@@ -23,22 +24,52 @@ local priority: { [ResourceTypes.ResourceMutationKind]: number } = {
 
 function ResourceMutationJournal.new(): ResourceMutationJournal
 	local journal: ResourceMutationJournal = {} :: ResourceMutationJournal
-	local observers: { [ResourceTypes.ResourceMutationObserver]: boolean } = {}
+	local observers: { [ResourceTypes.ResourceMutationObserver]: { includeRegenSteps: boolean } } = {}
+	local regenObservers: number = 0
+	local dispatchPending: boolean = false
 	local touched: { [string]: ResourceTypes.ResourceMutationKind } = {}
 	local batchDepth: number = 0
+	local commitDepth: number = 0
+	local failed: boolean = false
+	local failure: any = nil
 	local destroyed: boolean = false
+
+	local function rememberFailure(success: boolean, reason: any): ()
+		if not success and not failed then
+			failed = true
+			failure = reason
+		end
+	end
 
 	function journal:Observe(observer: ResourceTypes.ResourceMutationObserver): () -> ()
 		assert(not destroyed, "ResourceControllerDestroyed")
-		observers[observer] = true
+		local previous = observers[observer]
+
+		if previous ~= nil and previous.includeRegenSteps then
+			regenObservers -= 1
+		end
+
+		local registration = { includeRegenSteps = observer.includeRegenSteps ~= false }
+
+		observers[observer] = registration
+
+		if registration.includeRegenSteps then
+			regenObservers += 1
+		end
 
 		return function(): ()
-			observers[observer] = nil
+			if observers[observer] == registration then
+				observers[observer] = nil
+
+				if registration.includeRegenSteps then
+					regenObservers -= 1
+				end
+			end
 		end
 	end
 
 	function journal:Touch(resourceId: string, kind: ResourceTypes.ResourceMutationKind): ()
-		if destroyed or next(observers) == nil then
+		if destroyed or next(observers) == nil or (kind == "RegenStep" and regenObservers == 0) then
 			return
 		end
 
@@ -62,24 +93,47 @@ function ResourceMutationJournal.new(): ResourceMutationJournal
 
 		table.sort(ids)
 		local mutations: { ResourceTypes.ResourceMutation } = {}
+		local meaningful: { ResourceTypes.ResourceMutation } = {}
 
 		for _, id: string in ids do
-			table.insert(mutations, table.freeze({ resourceId = id, kind = touched[id] }))
+			local mutation: ResourceTypes.ResourceMutation = table.freeze({ resourceId = id, kind = touched[id] })
+			table.insert(mutations, mutation)
+
+			if mutation.kind ~= "RegenStep" then
+				table.insert(meaningful, mutation)
+			end
 		end
 
 		table.freeze(mutations)
+		table.freeze(meaningful)
 		table.clear(touched)
+		commitDepth += 1
 
-		for observer: ResourceTypes.ResourceMutationObserver in table.clone(observers) do
-			if observers[observer] then
-				observer.Commit(mutations)
+		for observer: ResourceTypes.ResourceMutationObserver, registration in table.clone(observers) do
+			if observers[observer] == registration then
+				local selected = if registration.includeRegenSteps then mutations else meaningful
+
+				if #selected > 0 then
+					dispatchPending = true
+					rememberFailure(pcall(observer.Commit, selected))
+				end
 			end
 		end
+
+		commitDepth -= 1
 	end
 
 	function journal:BeginBatch(): ()
 		assert(not destroyed, "ResourceControllerDestroyed")
 		batchDepth += 1
+	end
+
+	function journal:RethrowFailure(): ()
+		if failed then
+			local reason: any = failure
+			failed, failure = false, nil
+			error(reason, 0)
+		end
 	end
 
 	function journal:FinishBatch(): ()
@@ -89,21 +143,50 @@ function ResourceMutationJournal.new(): ResourceMutationJournal
 	end
 
 	function journal:Dispatch(notify: () -> ()): ()
-		if destroyed or batchDepth > 0 then
+		if batchDepth > 0 or commitDepth > 0 then
 			return
 		end
 
-		notify()
-
-		for observer: ResourceTypes.ResourceMutationObserver in table.clone(observers) do
-			if observers[observer] then
-				observer.Dispatch()
+		if not dispatchPending and not failed then
+			if not destroyed then
+				notify()
 			end
+
+			return
+		end
+
+		dispatchPending = false
+
+		-- Authority is already installed. Finish notification delivery before
+		-- surfacing observer errors, including at Property/Action dispatch boundaries.
+		local dispatchFailed: boolean = failed
+		local dispatchFailure: any = failure
+		failed, failure = false, nil
+
+		if not destroyed then
+			rememberFailure(pcall(notify))
+
+			for observer: ResourceTypes.ResourceMutationObserver, registration in table.clone(observers) do
+				if observers[observer] == registration then
+					rememberFailure(pcall(observer.Dispatch))
+				end
+			end
+		end
+
+		if not dispatchFailed then
+			dispatchFailed, dispatchFailure = failed, failure
+		end
+
+		failed, failure = false, nil
+
+		if dispatchFailed then
+			error(dispatchFailure, 0)
 		end
 	end
 
 	function journal:Destroy(): ()
 		destroyed = true
+		regenObservers = 0
 		table.clear(observers)
 		table.clear(touched)
 	end

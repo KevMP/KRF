@@ -154,6 +154,7 @@ function ResourcesReplication.Build(
 			local active: boolean = true
 
 			local disconnect: () -> () = controller:_observeMutations({
+				includeRegenSteps = false,
 				Commit = function(mutations: { ResourceTypes.ResourceMutation }): ()
 					local meaningful: boolean = false
 

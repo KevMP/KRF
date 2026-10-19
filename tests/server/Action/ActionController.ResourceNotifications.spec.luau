@@ -30,6 +30,162 @@ local mana: ResourceTypes.ResourceDefinition = {
 	max = { propertyName = "MaxMana", defaultBaseValue = 100 },
 }
 
+for _, terminal: string in { "End", "Interrupt", "Destroy" } do
+	it(
+		"finishes committed Action hooks and notifications after Resource observer failure through " .. terminal,
+		function()
+			local order: { string } = {}
+
+			ResourceTestUtils.initialize({
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { Mana = 20 },
+					activeTags = { "Capacity" },
+					onStart = function()
+						table.insert(order, "StartHook")
+					end,
+					onEnd = function()
+						table.insert(order, "EndHook")
+					end,
+					onInterrupt = function()
+						table.insert(order, "InterruptHook")
+					end,
+				},
+			}, { mana }, {
+				{
+					id = "Capacity",
+					visibility = "ServerOnly",
+					duplicateBehavior = "Ignore",
+					properties = { MaxMana = { set = 90 } },
+				},
+			})
+
+			local _actor: Actor, actions: ActionController, resources: ResourceController =
+				ResourceTestUtils.registerActor()
+
+			local internal: ResourceTypes.InternalResourceController =
+				resources :: ResourceTypes.InternalResourceController
+
+			local disconnect = internal:_observeMutations({
+				Commit = function()
+					error("ResourceObserverFailure", 0)
+				end,
+				Dispatch = function() end,
+			})
+
+			actions.OnActionStarted:Connect(function()
+				table.insert(order, "Started")
+			end)
+
+			resources.OnResourceChanged:Connect(function()
+				table.insert(order, "Resource")
+			end)
+
+			local accepted: boolean, failure: any = pcall(function()
+				actions:RequestAction("Cast")
+			end)
+
+			expect(accepted).toBe(false)
+			expect(failure).toBe("ResourceObserverFailure")
+			expect(order).toEqual({ "Started", "Resource", "StartHook" })
+			expect(resources:GetCurrent("Mana")).toBe(80)
+			expect(resources:GetMax("Mana")).toBe(90)
+
+			local ended: boolean, endFailure: any = pcall(function()
+				if terminal == "End" then
+					actions:EndAction(1)
+				elseif terminal == "Interrupt" then
+					actions:InterruptAction(1, "Test")
+				else
+					actions:Destroy()
+				end
+			end)
+
+			expect(ended).toBe(false)
+			expect(endFailure).toBe("ResourceObserverFailure")
+			expect(resources:GetMax("Mana")).toBe(100)
+
+			expect(order).toEqual({
+				"Started",
+				"Resource",
+				"StartHook",
+				"Resource",
+				if terminal == "End" then "EndHook" else "InterruptHook",
+			})
+
+			disconnect()
+			internal:_dispatchChanges()
+			expect(#order).toBe(5)
+
+			if terminal == "Destroy" then
+				expect(function()
+					actions.OnActionStarted:Connect(function() end)
+				end).toThrow("Event: destroyed")
+			end
+		end
+	)
+end
+
+it(
+	"keeps the activation's observer error with its caller when Started reentry drains pending Resource events",
+	function()
+		local order: { string } = {}
+
+		ResourceTestUtils.initialize({
+			{
+				id = "Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				costs = { Mana = 20 },
+				onStart = function()
+					table.insert(order, "Hook")
+				end,
+			},
+		}, { mana })
+
+		local _actor: Actor, actions: ActionController, resources: ResourceController =
+			ResourceTestUtils.registerActor()
+
+		local internal: ResourceTypes.InternalResourceController = resources :: ResourceTypes.InternalResourceController
+		local fail: boolean = true
+
+		internal:_observeMutations({
+			Commit = function()
+				if fail then
+					error("ActivationPublicationFailure", 0)
+				end
+			end,
+			Dispatch = function() end,
+		})
+
+		local nestedSucceeded: boolean? = nil
+
+		actions.OnActionStarted:Connect(function()
+			table.insert(order, "Started")
+			fail = false
+			nestedSucceeded = resources:Spend("Mana", 1)
+			table.insert(order, "NestedReturned")
+		end)
+
+		resources.OnResourceChanged:Connect(function(change: ResourceChange)
+			table.insert(order, tostring(change.currentNewValue))
+		end)
+
+		local success: boolean, failure: any = pcall(function()
+			actions:RequestAction("Cast")
+		end)
+
+		expect(success).toBe(false)
+		expect(failure).toBe("ActivationPublicationFailure")
+		expect(nestedSucceeded).toBe(true)
+		expect(order).toEqual({ "Started", "80", "79", "NestedReturned", "Hook" })
+		internal:_dispatchChanges()
+		expect(#order).toBe(5)
+	end
+)
+
 for _, trigger: string in { "Started", "TagAdded", "Property" } do
 	it("drains the pending cost before a direct Resource mutation from " .. trigger .. " returns", function()
 		local order: { string } = {}

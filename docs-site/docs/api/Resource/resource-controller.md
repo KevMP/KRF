@@ -40,6 +40,7 @@ When the override is omitted, KRF uses the definition's `initialValue`, then the
 **Returns**
 
 - `true, nil`: the resource was assigned and `OnResourceAdded` fired.
+- `false, "ResourceControllerDestroyed"`: the controller has been destroyed.
 - `false, "UnknownResourceId:<id>"`: the registry has no definition.
 - `false, "ResourceAlreadyAssigned"`: the Actor already owns it.
 - `false, "InvalidResourceOverrideValue"`: the override is not finite numeric input.

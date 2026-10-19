@@ -185,6 +185,10 @@ function ResourceController.new(actor: Actor): ResourceController
 		dispatchChanges()
 	end
 
+	function controller:_rethrowMutationFailure(): ()
+		mutations:RethrowFailure()
+	end
+
 	function controller:_prepareSpends(amounts: { [string]: number }): ((() -> ())?, string?)
 		if destroyed then
 			return nil, "ResourceControllerDestroyed"
@@ -234,6 +238,10 @@ function ResourceController.new(actor: Actor): ResourceController
 	end
 
 	function controller:AddResource(resourceId: string, initialValueOverride: number?): (boolean, string?)
+		if destroyed then
+			return false, "ResourceControllerDestroyed"
+		end
+
 		local definition: LoadedResourceDefinition? = ResourceRegistry.Get(resourceId)
 
 		if definition == nil then

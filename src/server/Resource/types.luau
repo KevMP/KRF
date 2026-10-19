@@ -94,7 +94,12 @@ export type ResourceReplicationState = {
 
 export type ResourceMutationKind = "Added" | "Discrete" | "Recomputed" | "RegenStep"
 export type ResourceMutation = { read resourceId: string, read kind: ResourceMutationKind }
-export type ResourceMutationObserver = { Commit: ({ ResourceMutation }) -> (), Dispatch: () -> () }
+
+export type ResourceMutationObserver = {
+	read includeRegenSteps: boolean?,
+	Commit: ({ ResourceMutation }) -> (),
+	Dispatch: () -> (),
+}
 
 export type InternalResourceController = ResourceController & {
 	_getReplicationState: (self: InternalResourceController, resourceId: string) -> ResourceReplicationState?,
@@ -104,6 +109,7 @@ export type InternalResourceController = ResourceController & {
 	_beginMutationBatch: (self: InternalResourceController) -> (),
 	_finishMutationBatch: (self: InternalResourceController) -> (),
 	_dispatchChanges: (self: InternalResourceController) -> (),
+	_rethrowMutationFailure: (self: InternalResourceController) -> (),
 }
 
 return {}
