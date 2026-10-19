@@ -221,6 +221,7 @@ end)
 
 it("keeps installed truth and healthy subscriptions intact when another consumer yields or throws", function()
 	local changes: { Types.ResourceViewChange } = {}
+	local failures: { { success: boolean, reason: any } } = {}
 
 	fixture.view.OnResourceChanged:Connect(function()
 		table.insert(suspended, coroutine.running())
@@ -228,7 +229,13 @@ it("keeps installed truth and healthy subscriptions intact when another consumer
 	end)
 
 	fixture.view.OnResourceChanged:Connect(function()
-		error("ResourceViewConsumerFailure")
+		-- Capture this intentional consumer failure so the local runner can still
+		-- reject unexpected engine errors independently of Jest's assertions.
+		local success: boolean, reason: any = pcall(function()
+			error("ResourceViewConsumerFailure", 0)
+		end)
+
+		table.insert(failures, { success = success, reason = reason })
 	end)
 
 	fixture.view.OnResourceChanged:Connect(function(change: Types.ResourceViewChange)
@@ -250,7 +257,37 @@ it("keeps installed truth and healthy subscriptions intact when another consumer
 	end)
 
 	expect(completed).toBe(true)
+
+	expect(failures).toEqual({
+		{ success = false, reason = "ResourceViewConsumerFailure" },
+		{ success = false, reason = "ResourceViewConsumerFailure" },
+	})
+
 	expect(#changes).toBe(2)
 	expect(fixture.view:GetCurrent("Resource.Mana")).toBe(20)
 	expect(fixture.domain.view:GetState()["Resource.Mana"].anchorValue).toBe(20)
+end)
+
+it("stops later typed changes in the same notification when a consumer destroys the view", function()
+	local ids: { string } = {}
+
+	fixture.view.OnResourceChanged:Connect(function(change: Types.ResourceViewChange)
+		table.insert(ids, change.resourceId)
+		fixture.owner:Destroy()
+	end)
+
+	TestUtils.install(fixture, {
+		["Resource.Mana"] = { anchorValue = 30, anchorTime = 1000, min = 0, max = 100 },
+		["Resource.Rage"] = { anchorValue = 10, anchorTime = 1000, min = 0, max = 50 },
+	}, "Commit")
+
+	expect(ids).toEqual({ "Resource.Mana" })
+	expect(fixture.view:GetAssignedResources()).toEqual({})
+	expect(fixture.domain.view:GetState()["Resource.Rage"].anchorValue).toBe(10)
+
+	local connected: boolean = pcall(function()
+		fixture.view.OnResourceChanged:Connect(function() end)
+	end)
+
+	expect(connected).toBe(false)
 end)

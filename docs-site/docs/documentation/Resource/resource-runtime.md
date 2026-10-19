@@ -58,6 +58,8 @@ Regeneration is measured in units per second and advances automatically in fixed
 
 ## Design rules
 
+For client HUDs and cooldown displays, use [ResourcesView](./resource-views). It derives presentation estimates between meaningful authoritative changes without replicating every regeneration step. Its change event also reports resolved rate-only updates; the server `OnResourceChanged` contract above remains unchanged.
+
 - Declare Action costs in the Action definition. Use direct `Spend` for other all-or-nothing payments and `Drain` for forced loss.
 - Read resource current values from `ResourceController`, never `PropertyController`.
 - Subscribe to `OnResourceChanged` when another runtime system needs current value or bound changes.

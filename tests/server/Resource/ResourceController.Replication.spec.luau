@@ -274,3 +274,58 @@ it("disconnects idempotently and releases observation on controller teardown", f
 	fixture.resources:Destroy()
 	disconnect()
 end)
+
+it("stops later private commits and public dispatch when a committed observer destroys the controller", function()
+	local commits: number = 0
+	local publicChanges: number = 0
+	local disconnects: { () -> () } = {}
+
+	fixture.resources.OnResourceChanged:Connect(function()
+		publicChanges += 1
+	end)
+
+	for _ = 1, 2 do
+		local observer: ResourceTypes.ResourceMutationObserver = {
+			Commit = function()
+				commits += 1
+				fixture.resources:Destroy()
+			end,
+			Dispatch = function()
+				error("Destroyed Resource observer must not dispatch")
+			end,
+		}
+
+		table.insert(disconnects, fixture.resources:_observeMutations(observer))
+	end
+
+	expect(fixture.resources:Spend("Resource.Mana", 1)).toBe(true)
+	expect(commits).toBe(1)
+	expect(publicChanges).toBe(0)
+	expect(fixture.resources:_getReplicationState("Resource.Mana")).toBeNil()
+
+	for _, disconnect in disconnects do
+		disconnect()
+	end
+end)
+
+it("suppresses remaining observer dispatch after a dispatch callback tears down its controller", function()
+	local commits: number = 0
+	local dispatches: number = 0
+
+	for _ = 1, 2 do
+		fixture.resources:_observeMutations({
+			Commit = function()
+				commits += 1
+			end,
+			Dispatch = function()
+				dispatches += 1
+				fixture.resources:Destroy()
+			end,
+		})
+	end
+
+	expect(fixture.resources:Spend("Resource.Mana", 1)).toBe(true)
+	expect(commits).toBe(2)
+	expect(dispatches).toBe(1)
+	expect(fixture.resources:GetCurrent("Resource.Mana")).toBeNil()
+end)

@@ -193,7 +193,10 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		local definition: any = rawget(gameDomains, index)
 
 		-- Framework ids remain reserved when their visible catalogs are empty.
-		if type(definition) == "table" and rawget(definition, "id") == "KRF.Tags" then
+		if
+			type(definition) == "table"
+			and (rawget(definition, "id") == "KRF.Tags" or rawget(definition, "id") == "KRF.Resources")
+		then
 			return false, { system = "ReplicationDomain", reason = "DuplicateReplicationDomainId" }
 		end
 

@@ -2,7 +2,7 @@
 
 KRF is a server-authoritative Luau gameplay framework for Roblox. It provides
 Actor lifecycle, Tags and status effects, numeric Properties, Resources, Actions,
-and schema-defined replication with immutable client ActorViews and typed TagsViews.
+and schema-defined replication with immutable client ActorViews, TagsViews, and ResourcesViews.
 Games supply definitions, gameplay behavior, and presentation.
 
 [Guides and API reference](https://kevmp.github.io/KRF/) describe the current
@@ -44,6 +44,7 @@ Run these commands from the repository root:
 | `npm run test:unit` | Run Jest-Lua in Studio and check per-file coverage |
 | `npm run test:integration:n5` | Native two-client ActorView lifecycle and recovery coverage |
 | `npm run test:integration:n6` | Native two-client Tags replication and TagsView coverage |
+| `npm run test:integration:n7` | Native two-client Resources replication, interpolation, recovery, and teardown coverage |
 
 Run Studio jobs serially. See [test workflows](./tests/README.md) for standalone
 integration fixtures, [benchmarks](./tests/benchmarks/README.md) for load and
