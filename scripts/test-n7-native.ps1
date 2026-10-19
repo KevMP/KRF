@@ -1,17 +1,20 @@
 param(
     [string]$StudioPath,
-    [ValidateRange(30, 600)][int]$TimeoutSeconds = 180
+    [ValidateRange(30, 600)][int]$TimeoutSeconds = 180,
+    [ValidateSet("n7", "n8")][string]$Suite = "n7"
 )
 
 $ErrorActionPreference = "Stop"
 $repository = Split-Path -Parent $PSScriptRoot
-$runDirectory = Join-Path $repository ("build\n7-native\" + [guid]::NewGuid().ToString("N"))
+$runDirectory = Join-Path $repository ("build\" + $Suite + "-native\" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
-$placeFile = Join-Path $runDirectory "ResourcesView.rbxl"
+$viewName = if ($Suite -eq "n8") { "ActionsView" } else { "ResourcesView" }
+$placeFile = Join-Path $runDirectory ($viewName + ".rbxl")
 $outputFile = Join-Path $runDirectory "result.log"
 $stdoutFile = Join-Path $runDirectory "studio.stdout.log"
 $stderrFile = Join-Path $runDirectory "studio.stderr.log"
-$launcherFile = Join-Path $PSScriptRoot "run-n7-resources-view-tests.luau"
+$launcherName = if ($Suite -eq "n8") { "run-n8-actions-view-tests.luau" } else { "run-n7-resources-view-tests.luau" }
+$launcherFile = Join-Path $PSScriptRoot $launcherName
 
 if (-not $StudioPath) {
     $version = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "Roblox\Versions") -Directory |
@@ -23,8 +26,9 @@ if (-not $StudioPath) {
 }
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 
-Write-Host "Building native two-client N7 fixture..."
-& rojo build (Join-Path $repository "n7-resources-view-test.project.json") -o $placeFile
+Write-Host "Building native two-client $Suite fixture..."
+$projectName = if ($Suite -eq "n8") { "n8-actions-view-test.project.json" } else { "n7-resources-view-test.project.json" }
+& rojo build (Join-Path $repository $projectName) -o $placeFile
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # RunScript executes in the Edit DataModel with Command Bar permissions. The
@@ -42,18 +46,19 @@ $studioProcess = Start-Process -FilePath $StudioPath -ArgumentList $studioArgume
 if (-not $studioProcess.WaitForExit($TimeoutSeconds * 1000)) {
     # Only stop the process launched by this invocation, never an existing Studio.
     Stop-Process -Id $studioProcess.Id -ErrorAction SilentlyContinue
-    [Console]::Error.WriteLine("Native N7 launcher timed out. Inspect $runDirectory. No test result was verified.")
+    [Console]::Error.WriteLine("Native $Suite launcher timed out. Inspect $runDirectory. No test result was verified.")
     exit 2
 }
 $output = if (Test-Path -LiteralPath $outputFile) { Get-Content -LiteralPath $outputFile -Raw } else { "" }
 # Studio also echoes script source into output. Match an actual result line,
 # never a marker embedded in the echoed print statement.
-$resultLine = [regex]::Match($output, '(?m)^__KRF_NATIVE_N7_(PASS|FAIL)__ (\{[^\r\n]*\})\r?$')
+$resultPattern = '(?m)^__KRF_NATIVE_' + $Suite.ToUpperInvariant() + '_(PASS|FAIL)__ (\{[^\r\n]*\})\r?$'
+$resultLine = [regex]::Match($output, $resultPattern)
 if ($resultLine.Success) {
     Write-Host $resultLine.Value
     $result = $resultLine.Groups[2].Value | ConvertFrom-Json
     if ($resultLine.Groups[1].Value -eq "PASS" -and $result.success -eq $true) { exit 0 }
     if ($resultLine.Groups[1].Value -eq "FAIL" -and $result.success -eq $false) { exit 1 }
 }
-[Console]::Error.WriteLine("Studio produced no valid native N7 result marker. Inspect $runDirectory for a launcher or Studio error.")
+[Console]::Error.WriteLine("Studio produced no valid native $Suite result marker. Inspect $runDirectory for a launcher or Studio error.")
 exit 2

@@ -60,10 +60,11 @@ function ActionControllerInstancesModule.new(
 	startedSignal: SignalTypes.Signal<ActionLifecycleEvent>,
 	endedSignal: SignalTypes.Signal<ActionLifecycleEvent>,
 	interruptedSignal: SignalTypes.Signal<ActionInterruptedEvent>,
-	controllerState: { destroyed: boolean }
+	controllerState: { destroyed: boolean },
+	initialSequenceIdForTests: number?
 ): ActionControllerInstances
 	local instances: ActionControllerInstances = {} :: ActionControllerInstances
-	local nextSequenceId: number = 1
+	local nextSequenceId: number = initialSequenceIdForTests or 1
 	local activeBySequenceId: { [number]: InternalActionInstance } = {}
 	local lockOwners: { [string]: InternalActionInstance } = {}
 
