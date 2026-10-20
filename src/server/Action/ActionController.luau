@@ -12,7 +12,7 @@ local ActionControllerTagRequirements = require(script.Parent.utils.ActionContro
 local ActionControllerResources = require(script.Parent.utils.ActionControllerResources)
 
 type Actor = ActorTypes.Actor
-type ActionController = ActionTypes.ActionController
+type ActionController = ActionTypes.InternalActionController
 type ActionLifecycleEvent = ActionTypes.ActionLifecycleEvent
 type ActionInterruptedEvent = ActionTypes.ActionInterruptedEvent
 type ActionRequestResult = ActionTypes.ActionRequestResult
@@ -194,6 +194,14 @@ function ActionControllerModule.new(actor: Actor): ActionController
 
 	function controller:InterruptAction(sequenceId: number, reason: string): (boolean, string?)
 		return instances:InterruptAction(sequenceId, reason)
+	end
+
+	function controller:_observeMutations(callback: ({ ActionTypes.ActionReplicationMutation }) -> ()): () -> ()
+		return instances:ObserveMutations(callback)
+	end
+
+	function controller:_getActiveReplicationState(): { ActionTypes.ActionReplicationIdentity }
+		return instances:GetActiveReplicationState()
 	end
 
 	function controller:Destroy(): ()

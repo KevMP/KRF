@@ -13,8 +13,8 @@ A request follows this sequence:
 1. Check controller/Actor availability, Action identity, registry membership, effective grant, Tag requirements, Resource requirements, and affordability.
 2. Call the request factory and capture its callbacks. Call `onCanStart`, if defined.
 3. Recheck controller/Actor availability and grant. Resolve requested lifetime-lock conflicts against the current owners; each owner must permit the incoming id through `interruptibleBy` and optional `canBeInterruptedBy`.
-4. Revalidate availability, grants, and Tags; validate declarative Tag applications and build a fresh final Resource plan.
-5. Commit without intervening consumer work or yielding.
+4. Revalidate availability, grants, and Tags; check the supported sequence range and resulting visible-instance capacity, accounting for planned preemption.
+5. Validate declarative Tag applications and build a fresh final Resource plan; commit without intervening consumer work or yielding.
 
 Preflight rejects obvious failures before request factory work. Decision callbacks may change state or perform nested requests; the final plan therefore uses current state after those decisions. All Resource requirements and costs are evaluated against pre-spend values. Requirements cannot be rescued by planned owner cleanup or incoming Tags.
 
@@ -34,6 +34,10 @@ The static catalog supplies metadata; the request factory supplies only callback
 Tags removed from owners and added by the incoming activation resolve as one final derived-state change. Equivalent replacement modifiers do not cause intermediate clamping or fake Property/Resource notifications. Each affected Resource recomputes once from final Properties; valid bounds clamp the already-paid current value.
 
 Same-transaction Tag/Property effects cannot re-price the incoming Action. Invalid final bounds or non-finite derived min/max/regen preserve the Resource's last valid min/max/regen state, including committed current-value mutations. The Action remains accepted, its payment remains committed, and KRF does not repair the range. No terminal path automatically refunds costs.
+
+The complete Action, Tag and Resource transaction is captured for replication before public lifecycle signals and authored hooks. Direct End, Interrupt, scoped-claim preemption and controller destruction follow the same boundary. A hook-driven termination is a later logical commit, preserving both lifecycle occurrences.
+
+If capture rejects, the last published canonical state remains unchanged; later successful publication reconciles current truth without replaying rejected lifecycle events. A downstream publication observer can also throw after a commit has already been admitted; that commit remains published. Neither failure rolls back committed gameplay, refunds payment, or suppresses the required public notification and authored-hook phases. The first failure propagates after those phases finish.
 
 ## Normal post-commit dispatch {#post-commit-dispatch}
 

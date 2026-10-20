@@ -7,6 +7,8 @@ local ActionControllerUpdates = require(script.Parent.ActionControllerUpdates)
 local TagTypes = require(script.Parent.Parent.Parent.Tags.types)
 local ResourceTypes = require(script.Parent.Parent.Parent.Resource.types)
 local ActionControllerResources = require(script.Parent.ActionControllerResources)
+local ActionMutationJournal = require(script.Parent.ActionMutationJournal)
+local ActorPublicationLifecycle = require(script.Parent.Parent.Parent.Networking.utils.ActorPublicationLifecycle)
 
 type Actor = ActorTypes.Actor
 type ActionExecutionContext = ActionTypes.ActionExecutionContext
@@ -34,6 +36,11 @@ type InternalActionInstance = {
 }
 
 export type ActionControllerInstances = {
+	ObserveMutations: (
+		self: ActionControllerInstances,
+		callback: ({ ActionTypes.ActionReplicationMutation }) -> ()
+	) -> () -> (),
+	GetActiveReplicationState: (self: ActionControllerInstances) -> { ActionTypes.ActionReplicationIdentity },
 	Start: (
 		self: ActionControllerInstances,
 		actionId: string,
@@ -51,7 +58,7 @@ export type ActionControllerInstances = {
 local ActionControllerInstancesModule = {}
 
 local function validSequenceId(sequenceId: any): boolean
-	return type(sequenceId) == "number" and math.isfinite(sequenceId) and sequenceId >= 1 and sequenceId % 1 == 0
+	return type(sequenceId) == "number" and sequenceId >= 1 and sequenceId <= 4294967295 and sequenceId % 1 == 0
 end
 
 function ActionControllerInstancesModule.new(
@@ -66,7 +73,82 @@ function ActionControllerInstancesModule.new(
 	local instances: ActionControllerInstances = {} :: ActionControllerInstances
 	local nextSequenceId: number = initialSequenceIdForTests or 1
 	local activeBySequenceId: { [number]: InternalActionInstance } = {}
+	local activeVisibleCount: number = 0
 	local lockOwners: { [string]: InternalActionInstance } = {}
+	local journal: ActionMutationJournal.ActionMutationJournal = ActionMutationJournal.new()
+
+	local function mutation(
+		instance: InternalActionInstance,
+		kind: ActionTypes.ActionReplicationMutationKind
+	): ActionTypes.ActionReplicationMutation
+		return table.freeze({ kind = kind, actionId = instance.actionId, sequenceId = instance.sequenceId })
+	end
+
+	-- Closing publication can fail after authority is committed. Retain the first
+	-- failure locally so public delivery and authored hooks still complete once.
+	local function withCommit(
+		callback: () -> { ActionTypes.ActionReplicationMutation }
+	): ActionMutationJournal.MutationFailure?
+		local failure: ActionMutationJournal.MutationFailure? = nil
+		local committed: boolean = false
+
+		local success: boolean, detail: any = pcall(function()
+			ActorPublicationLifecycle.WithActorCommit(actor, function()
+				local mutations: { ActionTypes.ActionReplicationMutation } = callback()
+				committed = true
+
+				local resources: ResourceTypes.InternalResourceController? =
+					actor:GetController("ResourceController") :: ResourceTypes.InternalResourceController?
+
+				if resources ~= nil then
+					local resourceSuccess: boolean, resourceFailure: any = pcall(function()
+						resources:_rethrowMutationFailure()
+					end)
+
+					if not resourceSuccess then
+						failure = { value = resourceFailure }
+					end
+				end
+
+				local observerFailure: ActionMutationJournal.MutationFailure? = journal:Commit(mutations)
+
+				if failure == nil then
+					failure = observerFailure
+				end
+			end)
+		end)
+
+		if not success and not committed then
+			error(detail, 0)
+		end
+
+		if not success and failure == nil then
+			failure = { value = detail }
+		end
+
+		return failure
+	end
+
+	function instances:ObserveMutations(callback: ({ ActionTypes.ActionReplicationMutation }) -> ()): () -> ()
+		return journal:Observe(callback)
+	end
+
+	function instances:GetActiveReplicationState(): { ActionTypes.ActionReplicationIdentity }
+		local identities: { ActionTypes.ActionReplicationIdentity } = {}
+
+		for _, instance: InternalActionInstance in activeBySequenceId do
+			table.insert(identities, table.freeze({ actionId = instance.actionId, sequenceId = instance.sequenceId }))
+		end
+
+		table.sort(
+			identities,
+			function(left: ActionTypes.ActionReplicationIdentity, right: ActionTypes.ActionReplicationIdentity): boolean
+				return left.sequenceId < right.sequenceId
+			end
+		)
+
+		return table.freeze(identities)
+	end
 
 	local function getTagController(): InternalTagController?
 		return actor:GetController("TagController") :: InternalTagController?
@@ -95,6 +177,10 @@ function ActionControllerInstancesModule.new(
 		end
 
 		activeBySequenceId[instance.sequenceId] = nil
+
+		if instance.definition.visibility == "ClientVisible" then
+			activeVisibleCount -= 1
+		end
 
 		for lockId: string in instance.ownedLockReasons do
 			if lockOwners[lockId] == instance then
@@ -181,9 +267,12 @@ function ActionControllerInstancesModule.new(
 
 	-- Notification failure cannot undo committed activation/termination. Complete
 	-- the remaining delivery and lifecycle hooks before returning the first error.
-	local function withNotifications(notify: (attempt: (callback: () -> ()) -> ()) -> ()): ()
-		local failed: boolean = false
-		local failure: any = nil
+	local function withNotifications(
+		notify: (attempt: (callback: () -> ()) -> ()) -> (),
+		committedFailure: ActionMutationJournal.MutationFailure?
+	): ()
+		local failed: boolean = committedFailure ~= nil
+		local failure: any = if committedFailure ~= nil then committedFailure.value else nil
 
 		local function attempt(callback: () -> ()): ()
 			local success: boolean, reason: any = pcall(callback)
@@ -213,7 +302,7 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	local function dispatchEnd(instance: InternalActionInstance): ()
+	local function dispatchEnd(instance: InternalActionInstance, failure: ActionMutationJournal.MutationFailure?): ()
 		withNotifications(function(attempt)
 			issueStarted(instance)
 			endedSignal:Fire(lifecycleEvent(instance))
@@ -232,7 +321,7 @@ function ActionControllerInstancesModule.new(
 					ActionControllerHooks.WarnFailure(actor, instance.actionId, "onEnd", failureDetail or failureKind)
 				end
 			end
-		end)
+		end, failure)
 	end
 
 	local function issueInterrupted(instance: InternalActionInstance, reason: string): ()
@@ -259,7 +348,11 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	local function dispatchInterrupt(instance: InternalActionInstance, reason: string): ()
+	local function dispatchInterrupt(
+		instance: InternalActionInstance,
+		reason: string,
+		failure: ActionMutationJournal.MutationFailure?
+	): ()
 		withNotifications(function(attempt)
 			issueInterrupted(instance, reason)
 
@@ -268,7 +361,7 @@ function ActionControllerInstancesModule.new(
 			end)
 
 			invokeInterrupt(instance, reason)
-		end)
+		end, failure)
 	end
 
 	local function normalizeLockIds(lockIds: any): { string }?
@@ -465,20 +558,31 @@ function ActionControllerInstancesModule.new(
 		end
 
 		local tags: InternalTagController? = getTagController()
+		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
-		if tags ~= nil then
-			tags:_beginMutationBatch()
-		end
+		local failure: ActionMutationJournal.MutationFailure? = withCommit(
+			function(): { ActionTypes.ActionReplicationMutation }
+				local mutations: { ActionTypes.ActionReplicationMutation } = {}
 
-		for _, owner: InternalActionInstance in conflicts do
-			commitTerminal(owner)
-		end
+				if tags ~= nil then
+					tags:_beginMutationBatch()
+				end
 
-		for _, lockId: string in normalized do
-			addLockReason(instance, lockId)
-		end
+				for _, owner: InternalActionInstance in conflicts do
+					commitTerminal(owner)
+					table.insert(mutations, mutation(owner, "Interrupted"))
+				end
 
-		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+				for _, lockId: string in normalized do
+					addLockReason(instance, lockId)
+				end
+
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+
+				return mutations
+			end
+		)
+
 		local released: boolean = false
 
 		local claim: LockClaim = {
@@ -521,7 +625,7 @@ function ActionControllerInstancesModule.new(
 			for _, owner: InternalActionInstance in conflicts do
 				invokeInterrupt(owner, "ActionLockPreempted")
 			end
-		end)
+		end, failure)
 
 		return claim :: LockClaim?, nil
 	end
@@ -541,8 +645,15 @@ function ActionControllerInstancesModule.new(
 			return false, "ActionInstanceNotActive"
 		end
 
-		commitTerminal(instance)
-		dispatchEnd(instance)
+		local failure: ActionMutationJournal.MutationFailure? = withCommit(
+			function(): { ActionTypes.ActionReplicationMutation }
+				commitTerminal(instance)
+
+				return { mutation(instance, "Ended") }
+			end
+		)
+
+		dispatchEnd(instance, failure)
 
 		return true, nil
 	end
@@ -566,8 +677,15 @@ function ActionControllerInstancesModule.new(
 			return false, "ActionInstanceNotActive"
 		end
 
-		commitTerminal(instance)
-		dispatchInterrupt(instance, reason)
+		local failure: ActionMutationJournal.MutationFailure? = withCommit(
+			function(): { ActionTypes.ActionReplicationMutation }
+				commitTerminal(instance)
+
+				return { mutation(instance, "Interrupted") }
+			end
+		)
+
+		dispatchInterrupt(instance, reason, failure)
 
 		return true, nil
 	end
@@ -621,6 +739,10 @@ function ActionControllerInstancesModule.new(
 		instance.startedIssued = false
 		activeBySequenceId[sequenceId] = instance
 
+		if definition.visibility == "ClientVisible" then
+			activeVisibleCount += 1
+		end
+
 		for _, lockId: string in definition.locks do
 			addLockReason(instance, lockId)
 		end
@@ -656,8 +778,8 @@ function ActionControllerInstancesModule.new(
 			if not succeeded then
 				ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
 
-				if commitTerminal(instance) then
-					dispatchInterrupt(instance, "ActionStartFailed")
+				if isActive(instance) then
+					interruptById(instance.sequenceId, "ActionStartFailed")
 				end
 			end
 		end)
@@ -669,8 +791,8 @@ function ActionControllerInstancesModule.new(
 			instance.onStartThread = nil
 			ActionControllerHooks.WarnFailure(actor, instance.actionId, "onStart", failure)
 
-			if commitTerminal(instance) then
-				dispatchInterrupt(instance, "ActionStartFailed")
+			if isActive(instance) then
+				interruptById(instance.sequenceId, "ActionStartFailed")
 			end
 		elseif coroutine.status(startThread) ~= "dead" and not isActive(instance) then
 			ActionControllerHooks.CancelSuspendedThread(startThread)
@@ -685,6 +807,10 @@ function ActionControllerInstancesModule.new(
 		definition: LoadedActionDefinition,
 		validateRequest: () -> string?
 	): (number?, string?)
+		if not validSequenceId(nextSequenceId) then
+			return nil, "ActionSequenceIdExhausted"
+		end
+
 		local incomingContext: ActionTypes.ActionInterruptionContext = table.freeze({
 			actor = actor,
 			actionId = actionId,
@@ -702,6 +828,26 @@ function ActionControllerInstancesModule.new(
 
 		if availabilityReason ~= nil then
 			return nil, availabilityReason
+		end
+
+		-- Interruption decisions may reenter the controller. Recheck the shared
+		-- namespace and prospective visible capacity after every authored decision.
+		if not validSequenceId(nextSequenceId) then
+			return nil, "ActionSequenceIdExhausted"
+		end
+
+		if definition.visibility == "ClientVisible" then
+			local visibleCount: number = activeVisibleCount + 1
+
+			for _, owner: InternalActionInstance in conflicts do
+				if owner.definition.visibility == "ClientVisible" then
+					visibleCount -= 1
+				end
+			end
+
+			if visibleCount > 256 then
+				return nil, "ActionVisibleInstanceLimitReached"
+			end
 		end
 
 		local tags: InternalTagController? = getTagController()
@@ -738,63 +884,79 @@ function ActionControllerInstancesModule.new(
 			resources = nil
 		end
 
-		if resources ~= nil then
-			resources:_beginMutationBatch()
-		end
+		local instance: InternalActionInstance
+		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
-		-- Spend the fixed pre-transaction price before any same-transaction derived changes.
-		if resourcePlan ~= nil then
-			resourcePlan.commit()
-		end
+		local failure: ActionMutationJournal.MutationFailure? = withCommit(
+			function(): { ActionTypes.ActionReplicationMutation }
+				if resources ~= nil then
+					resources:_beginMutationBatch()
+				end
 
-		if tags ~= nil then
-			tags:_beginMutationBatch()
-		end
+				-- Spend the fixed pre-transaction price before any same-transaction derived changes.
+				if resourcePlan ~= nil then
+					resourcePlan.commit()
+				end
 
-		for _, owner: InternalActionInstance in conflicts do
-			commitTerminal(owner)
-		end
+				if tags ~= nil then
+					tags:_beginMutationBatch()
+				end
 
-		local ownedTagReceipts: { TagMutationReceipt } = {}
+				for _, owner: InternalActionInstance in conflicts do
+					commitTerminal(owner)
+				end
 
-		if tags ~= nil then
-			for _, application in definition.activeTags do
-				local added: boolean, applicationReason: string?, receipt: TagMutationReceipt? =
-					tags:_addTagWithReceipt(application.id, { duration = application.duration })
+				local ownedTagReceipts: { TagMutationReceipt } = {}
 
-				assert(added, applicationReason or "ActionTagActivationFailed")
+				if tags ~= nil then
+					for _, application in definition.activeTags do
+						local added: boolean, applicationReason: string?, receipt: TagMutationReceipt? =
+							tags:_addTagWithReceipt(application.id, { duration = application.duration })
 
-				if receipt ~= nil then
-					if receipt.previousVersion == nil then
-						table.insert(ownedTagReceipts, receipt)
-					else
-						-- Only advance ownership of a record already created by this instance.
-						for index: number, owned: TagMutationReceipt in ownedTagReceipts do
-							if owned.record == receipt.record and owned.version == receipt.previousVersion then
-								ownedTagReceipts[index] = receipt
-								break
+						assert(added, applicationReason or "ActionTagActivationFailed")
+
+						if receipt ~= nil then
+							if receipt.previousVersion == nil then
+								table.insert(ownedTagReceipts, receipt)
+							else
+								-- Only advance ownership of a record already created by this instance.
+								for index: number, owned: TagMutationReceipt in ownedTagReceipts do
+									if owned.record == receipt.record and owned.version == receipt.previousVersion then
+										ownedTagReceipts[index] = receipt
+										break
+									end
+								end
 							end
 						end
 					end
+
+					for _, application in definition.appliedTags do
+						local added: boolean, applicationReason: string? =
+							tags:_addTagWithReceipt(application.id, { duration = application.duration })
+
+						assert(added, applicationReason or "ActionTagActivationFailed")
+					end
 				end
+
+				instance = commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
+
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+
+				if resources ~= nil then
+					resources:_finishMutationBatch()
+				end
+
+				local mutations: { ActionTypes.ActionReplicationMutation } = {}
+
+				for _, owner: InternalActionInstance in conflicts do
+					table.insert(mutations, mutation(owner, "Interrupted"))
+				end
+
+				table.insert(mutations, mutation(instance, "Started"))
+
+				return mutations
 			end
-
-			for _, application in definition.appliedTags do
-				local added: boolean, applicationReason: string? =
-					tags:_addTagWithReceipt(application.id, { duration = application.duration })
-
-				assert(added, applicationReason or "ActionTagActivationFailed")
-			end
-		end
-
-		local instance: InternalActionInstance =
-			commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
-
-		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
-
-		if resources ~= nil then
-			resources:_finishMutationBatch()
-		end
+		)
 
 		withNotifications(function(attempt)
 			for _, owner: InternalActionInstance in conflicts do
@@ -828,7 +990,7 @@ function ActionControllerInstancesModule.new(
 			if isActive(instance) then
 				beginStart(instance)
 			end
-		end)
+		end, failure)
 
 		return instance.sequenceId, nil
 	end
@@ -888,15 +1050,28 @@ function ActionControllerInstancesModule.new(
 
 		local tags: InternalTagController? = getTagController()
 
-		if tags ~= nil then
-			tags:_beginMutationBatch()
-		end
+		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
-		for _, instance: InternalActionInstance in activeInstances do
-			commitTerminal(instance)
-		end
+		local failure: ActionMutationJournal.MutationFailure? = withCommit(
+			function(): { ActionTypes.ActionReplicationMutation }
+				local mutations: { ActionTypes.ActionReplicationMutation } = {}
 
-		local tagEvents: { TagTypes.TagMutationEvent } = if tags ~= nil then tags:_finishMutationBatch() else {}
+				if tags ~= nil then
+					tags:_beginMutationBatch()
+				end
+
+				for _, instance: InternalActionInstance in activeInstances do
+					commitTerminal(instance)
+					table.insert(mutations, mutation(instance, "Interrupted"))
+				end
+
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+
+				return mutations
+			end
+		)
+
+		journal:Destroy()
 
 		withNotifications(function(attempt)
 			for _, instance: InternalActionInstance in activeInstances do
@@ -918,7 +1093,7 @@ function ActionControllerInstancesModule.new(
 			for _, instance: InternalActionInstance in activeInstances do
 				invokeInterrupt(instance, "ActionControllerDestroyed")
 			end
-		end)
+		end, failure)
 	end
 
 	return instances

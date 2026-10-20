@@ -16,6 +16,9 @@ local ActionUtils = require(script.Parent.Parent.Utils.Action.ActionResourceTest
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ActionsReplicationTestUtils)
 local PublicationUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
+local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
+	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local runtime: NetworkingTypes.PublicationRuntime? = nil
 beforeEach(ActionUtils.reset)
 
@@ -44,6 +47,9 @@ for _, populated: boolean in { false, true } do
 			end
 
 			local definition: ReplicationTypes.ReplicationDomainDefinition = TestUtils.build()
+			-- The live runtime retains its compiled catalog; independently compile
+			-- this fresh adapter to exercise late attachment against current authority.
+			Domains._resetForTests()
 			local publication: NetworkingTypes.PublicationRuntime = PublicationUtils.createRuntime({ definition })
 			runtime = publication
 			local commits: { NetworkingTypes.PublicationCommit } = {}
@@ -68,6 +74,7 @@ end
 
 it("fails missing ActionController attachment observably without publishing empty state", function()
 	TestUtils.initialize({ TestUtils.action("Visible") })
+	Domains._resetForTests()
 	local publication: NetworkingTypes.PublicationRuntime = PublicationUtils.createRuntime({ TestUtils.build() })
 	runtime = publication
 	local actor: ActorTypes.Actor = ActorEntity.new()
@@ -109,6 +116,7 @@ for _, invalid: string in { "zero", "negative", "fraction", "overflow", "duplica
 		end
 
 		local faults: { NetworkingTypes.PublicationFault } = {}
+		Domains._resetForTests()
 
 		local publication: NetworkingTypes.PublicationRuntime = PublicationUtils.createRuntime({ TestUtils.build() }, {
 			ReportFault = function(fault: NetworkingTypes.PublicationFault)

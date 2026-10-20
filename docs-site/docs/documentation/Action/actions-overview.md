@@ -62,7 +62,7 @@ Registration defines the Action. A grant authorizes requests. Acceptance creates
 | `ResourceController` | Current meters, bounds, spending, and regeneration, including cooldowns and charges. |
 | Action author | Definitions, private activation state, game-specific decisions, and behavior inside callbacks. |
 
-These guides cover Action definitions and their server lifecycle. `RequestAction` is a low-level server entrypoint for integrations and occasional server-driven behavior; direct calls are not the usual Action-authoring workflow. Input integration is outside this guide. `visibility` is metadata, not an input binding.
+These guides cover Action definitions and their server lifecycle. `RequestAction` is a low-level server entrypoint for integrations and occasional server-driven behavior; direct calls are not the usual Action-authoring workflow. Input integration is outside this guide. `visibility` selects [client Action observation](./action-views); it does not bind input.
 
 ## Which KRF primitive should I use? {#which-primitive}
 

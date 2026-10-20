@@ -12,6 +12,8 @@ local GoodSignal: any = require(KRF.shared.Signal.GoodSignal)
 local ActorUtils = require(script.Parent.Utils.ActorViewTestUtils)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local TestUtils = require(script.Parent.Utils.ActionsViewTestUtils)
+local ActionsView: Types.ActionsViewModule = require(KRF.client.Actor.ActionsView)
+local DomainView: Types.DomainViewModule = require(KRF.client.Actor.DomainView)
 
 local fixture: ActorUtils.Fixture
 local originalFire: any = GoodSignal.Fire
@@ -260,9 +262,9 @@ it("retires every Action Event and never binds a stale view to a respawn", funct
 	expect(actions:GetActiveActions()).toEqual({})
 
 	for _, name: string in { "OnActionStarted", "OnActionEnded", "OnActionInterrupted", "OnStateChanged" } do
-		expect(pcall(function()
+		expect((pcall(function()
 			(actions :: any)[name]:Connect(function() end)
-		end)).toBe(false)
+		end))).toBe(false)
 	end
 
 	ActorUtils.baseline(fixture, 2, "Respawn", 0, TestUtils.truth({}))
@@ -304,4 +306,44 @@ it("rejects a private id in a decoded commit without partially changing valid si
 	expect(callbacks).toBe(0)
 	expect(#fixture.requests).toBe(1)
 	expect(#fixture.faults).toBe(1)
+end)
+
+it("retires its owner idempotently and ignores a previously scheduled domain change after teardown", function()
+	local domain: Types.DomainViewOwner? =
+		DomainView.new("KRF.Actions", table.freeze({ [1] = "Action.A" }), { "Started", "Ended", "Interrupted" })
+
+	assert(domain ~= nil, "Expected Actions domain owner")
+	local scheduled: ((Types.DomainChange) -> ())? = nil
+
+	GoodSignal.Connect = function(self: any, callback: any): any
+		scheduled = callback
+
+		return originalConnect(self, callback)
+	end
+
+	local owner: Types.ActionsViewOwner = ActionsView.new(function(): Types.DomainView?
+		return domain.view
+	end)
+
+	GoodSignal.Connect = originalConnect
+	assert(scheduled ~= nil, "Expected domain state subscription")
+	local changes: number = 0
+
+	owner.view.OnStateChanged:Connect(function()
+		changes += 1
+	end)
+
+	owner:Destroy()
+	owner:Destroy()
+	scheduled({ previous = {}, current = { [2] = "Action.B" }, source = "Commit" })
+	expect(changes).toBe(0)
+	expect(owner.view:GetActiveActions()).toEqual({})
+	expect(owner.view:GetAction(1)).toBeNil()
+
+	local subscribable: boolean = pcall(function()
+		owner.view.OnStateChanged:Connect(function() end)
+	end)
+
+	expect(subscribable).toBe(false)
+	domain:Destroy()
 end)

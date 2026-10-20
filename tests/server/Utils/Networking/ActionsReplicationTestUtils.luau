@@ -15,14 +15,9 @@ local ActionUtils = require(script.Parent.Parent.Action.ActionResourceTestUtils)
 local Builder = require(KRF.server.Replication.BuiltInReplicationDomains)
 local ActionRegistry: ActionTypes.ActionRegistry = require(KRF.server.Action.ActionRegistry)
 
--- Proposed private seam shapes live in the test helper until N8 implements them.
-export type Identity = { read actionId: string, read sequenceId: number }
-export type Mutation = { read kind: "Started" | "Ended" | "Interrupted", read actionId: string, read sequenceId: number }
-
-export type InternalController = ActionTypes.ActionController & {
-	_observeMutations: (self: InternalController, callback: ({ Mutation }) -> ()) -> () -> (),
-	_getActiveReplicationState: (self: InternalController) -> { Identity },
-}
+export type Identity = ActionTypes.ActionReplicationIdentity
+export type Mutation = ActionTypes.ActionReplicationMutation
+export type InternalController = ActionTypes.InternalActionController
 
 local TestUtils = {}
 
@@ -62,11 +57,11 @@ function TestUtils.initialize(definitions: { ActionTypes.ActionDefinition }): ()
 end
 
 function TestUtils.internal(controller: ActionTypes.ActionController): InternalController
-	local candidate: any = controller
+	local candidate: InternalController = controller :: InternalController
 	expect(type(candidate._observeMutations)).toBe("function")
 	expect(type(candidate._getActiveReplicationState)).toBe("function")
 
-	return candidate :: InternalController
+	return candidate
 end
 
 function TestUtils.domain(): ReplicationTypes.LoadedReplicationDomainDefinition

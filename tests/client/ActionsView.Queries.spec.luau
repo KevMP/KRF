@@ -46,18 +46,18 @@ it("returns a stable frozen facade with only queries and read-only Event surface
 	for _, name: string in { "OnActionStarted", "OnActionEnded", "OnActionInterrupted", "OnStateChanged" } do
 		local event: any = (actions :: any)[name]
 
-		expect(pcall(function()
+		expect((pcall(function()
 			return event.Fire
-		end)).toBe(false)
+		end))).toBe(false)
 
-		expect(pcall(function()
+		expect((pcall(function()
 			return event.Destroy
-		end)).toBe(false)
+		end))).toBe(false)
 	end
 
-	expect(pcall(function()
+	expect((pcall(function()
 		(actions :: any).RequestAction = function() end
-	end)).toBe(false)
+	end))).toBe(false)
 end)
 
 it("preserves duplicate ids as distinct immutable sequence snapshots in ascending numeric order", function()
@@ -78,9 +78,9 @@ it("preserves duplicate ids as distinct immutable sequence snapshots in ascendin
 	for _, snapshot: TestUtils.Snapshot in active do
 		expect(table.isfrozen(snapshot)).toBe(true)
 
-		expect(pcall(function()
+		expect((pcall(function()
 			(snapshot :: any).actionId = "Forged"
-		end)).toBe(false)
+		end))).toBe(false)
 	end
 
 	expect(actions:GetAction(11)).toEqual({ actionId = "Action.A", sequenceId = 11 })

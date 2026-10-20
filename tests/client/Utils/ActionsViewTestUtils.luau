@@ -5,31 +5,19 @@ local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local expect: any = JestGlobals.expect
 local Types = require(KRF.client.Actor.types)
 local SharedTypes = require(KRF.shared.Networking.types)
-local SignalTypes = require(KRF.shared.Signal.types)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local ActorUtils = require(script.Parent.ActorViewTestUtils)
 
--- Test-side contracts keep absent N8 APIs as assertions, not load/type failures.
-export type Snapshot = { read actionId: string, read sequenceId: number }
-
-export type ActionsView = {
-	read IsActionActive: (self: ActionsView, actionId: string) -> boolean,
-	read GetAction: (self: ActionsView, sequenceId: number) -> Snapshot?,
-	read GetActiveActions: (self: ActionsView) -> { Snapshot },
-	read OnActionStarted: SignalTypes.Event<Snapshot>,
-	read OnActionEnded: SignalTypes.Event<Snapshot>,
-	read OnActionInterrupted: SignalTypes.Event<Snapshot>,
-	read OnStateChanged: SignalTypes.Event<Types.DomainChangeSource>,
-}
+export type Snapshot = Types.ActionSnapshot
+export type ActionsView = Types.ActionsView
 
 local TestUtils = {}
 
 function TestUtils.get(actor: Types.ActorView): ActionsView
-	local candidate: any = actor
-	expect(type(candidate.GetActions)).toBe("function")
+	expect(type(actor.GetActions)).toBe("function")
 
-	return candidate:GetActions() :: ActionsView
+	return actor:GetActions()
 end
 
 function TestUtils.manifest(): SharedTypes.ProtocolManifest

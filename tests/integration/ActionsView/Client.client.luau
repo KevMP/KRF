@@ -6,6 +6,7 @@ packages:WaitForChild("KRF")
 local KRF = ReplicatedStorage.Packages.KRF
 local Types = require(KRF.client.Actor.types)
 local SharedTypes = require(KRF.shared.Networking.types)
+local SignalTypes = require(KRF.shared.Signal.types)
 local Client = require(KRF.client)
 local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local ProtocolCodec: SharedTypes.ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
@@ -22,9 +23,8 @@ local codec: SharedTypes.ActorStreamCodec? = nil
 local actorPackets: number = 0
 local baselineEnds: number = 0
 local view: Types.ActorView? = nil
--- N8's future public type is intentionally absent during this red pass.
-local actions: any = nil
-local stale: any = nil
+local actions: Types.ActionsView? = nil
+local stale: Types.ActionsView? = nil
 local history: { any } = {}
 local failed: boolean = false
 
@@ -41,11 +41,10 @@ local function waitFor(predicate: () -> boolean, reason: string): ()
 	end
 end
 
-local function getActions(actorView: Types.ActorView): any
-	local candidate: { GetActions: (Types.ActorView) -> any } = actorView :: any
-	assert(type(candidate.GetActions) == "function", "N8 must expose ActorView:GetActions")
+local function getActions(actorView: Types.ActorView): Types.ActionsView
+	assert(type(actorView.GetActions) == "function", "Expected ActorView:GetActions")
 
-	return candidate.GetActions(actorView)
+	return actorView:GetActions()
 end
 
 -- Observe bytes on the real endpoint; Client.Init installs the actual consumer.
@@ -123,12 +122,12 @@ local endpoint: RBXScriptConnection = reliable.OnClientEvent:Connect(function(pa
 	end
 end)
 
-local function record(kind: string, snapshot: any): ()
+local function record(kind: string, snapshot: Types.ActionSnapshot): ()
 	local completed: boolean, reason: any = pcall(function()
 		assert(table.isfrozen(snapshot), "Native lifecycle identity must be immutable")
 		local fields: number = 0
 
-		for key: string in snapshot do
+		for key: string in snapshot :: any do
 			assert(key == "actionId" or key == "sequenceId", "Private lifecycle field leaked")
 			fields += 1
 		end
@@ -168,31 +167,44 @@ local function runPhase(message: any): ()
 		view = Registry.GetActorViewById(actorId)
 		assert(view ~= nil, "Expected native ActorView")
 		actions = getActions(view)
+	end
 
+	local currentActions: Types.ActionsView? = actions
+	assert(currentActions ~= nil, "Expected native ActionsView")
+
+	if phase == "Initial" or phase == "Respawn" then
 		waitFor(function(): boolean
-			return #actions:GetActiveActions() == 2
+			return #currentActions:GetActiveActions() == 2
 		end, "Active duplicates missing from native baseline")
 
+		local first: Types.ActionSnapshot? = currentActions:GetAction(1)
+		local third: Types.ActionSnapshot? = currentActions:GetAction(3)
+
 		assert(
-			actions:GetAction(1).actionId == "Action.A" and actions:GetAction(3).actionId == "Action.A",
+			first ~= nil and third ~= nil and first.actionId == "Action.A" and third.actionId == "Action.A",
 			"Sequence identities collapsed"
 		)
 
 		assert(
-			actions:GetAction(2) == nil and not actions:IsActionActive("Private.Secret"),
+			currentActions:GetAction(2) == nil and not currentActions:IsActionActive("Private.Secret"),
 			"Typed ActionsView leaked private identity"
 		)
 
+		assert(view ~= nil, "Expected native ActorView")
 		local domain: Types.DomainView? = view:GetDomain("KRF.Actions")
 		assert(domain ~= nil and domain:GetState()[2] == nil, "Generic Actions DomainView leaked private identity")
 		assert(#root:GetChildren() == 2, "Action-specific framework Remote introduced")
 
 		if phase == "Initial" then
-			for _, kind: string in { "Started", "Ended", "Interrupted" } do
-				local event: any = actions["OnAction" .. kind]
+			local bindings: { { kind: string, event: SignalTypes.Event<Types.ActionSnapshot> } } = {
+				{ kind = "Started", event = currentActions.OnActionStarted },
+				{ kind = "Ended", event = currentActions.OnActionEnded },
+				{ kind = "Interrupted", event = currentActions.OnActionInterrupted },
+			}
 
-				event:Connect(function(snapshot: any)
-					record(kind, snapshot)
+			for _, binding in bindings do
+				binding.event:Connect(function(snapshot: Types.ActionSnapshot)
+					record(binding.kind, snapshot)
 				end)
 			end
 
@@ -205,7 +217,7 @@ local function runPhase(message: any): ()
 			)
 		else
 			assert(
-				actions ~= stale and #stale:GetActiveActions() == 0 and #history == 9,
+				stale ~= nil and currentActions ~= stale and #stale:GetActiveActions() == 0 and #history == 9,
 				"Respawn rebound stale subscriptions"
 			)
 		end
@@ -230,7 +242,9 @@ local function runPhase(message: any): ()
 		end
 
 		assert(
-			#actions:GetActiveActions() == 2 and actions:GetAction(3) ~= nil and actions:GetAction(4) ~= nil,
+			#currentActions:GetActiveActions() == 2
+				and currentActions:GetAction(3) ~= nil
+				and currentActions:GetAction(4) ~= nil,
 			"Native final active truth differs"
 		)
 	elseif phase == "Terminal" then
@@ -243,14 +257,14 @@ local function runPhase(message: any): ()
 			"Ended/Interrupted collapsed"
 		)
 
-		assert(#actions:GetActiveActions() == 0, "Terminal Actions retained active state")
+		assert(#currentActions:GetActiveActions() == 0, "Terminal Actions retained active state")
 	elseif phase == "Replacement" then
 		waitFor(function(): boolean
 			return baselineEnds >= 2
 		end, "Native replacement baseline missing")
 
 		assert(
-			view ~= nil and Registry.GetActorViewById(actorId) == view and getActions(view) == actions,
+			view ~= nil and Registry.GetActorViewById(actorId) == view and getActions(view) == currentActions,
 			"Replacement changed view identity"
 		)
 
@@ -260,25 +274,28 @@ local function runPhase(message: any): ()
 			return #history == 9
 		end, "Subscriptions did not survive native recovery")
 
-		assert(actions:GetAction(7) ~= nil and history[9][1] == "Started", "Live identity after recovery differs")
+		assert(
+			currentActions:GetAction(7) ~= nil and history[9][1] == "Started",
+			"Live identity after recovery differs"
+		)
 	elseif phase == "Removed" then
 		waitFor(function(): boolean
 			return Registry.GetActorViewById(actorId) == nil
 		end, "Native removal did not retire ActorView")
 
-		assert(#actions:GetActiveActions() == 0, "Removed ActionsView retained truth")
+		assert(#currentActions:GetActiveActions() == 0, "Removed ActionsView retained truth")
 
 		assert(not pcall(function()
-			actions.OnActionStarted:Connect(function() end)
+			currentActions.OnActionStarted:Connect(function() end)
 		end), "Removed ActionsView accepts subscriptions")
 
-		stale = actions
+		stale = currentActions
 	elseif phase == "Reset" then
 		Client._ResetForTests()
 		Client._ResetForTests()
 
 		assert(
-			#Registry.GetAllActorViews() == 0 and #actions:GetActiveActions() == 0,
+			#Registry.GetAllActorViews() == 0 and #currentActions:GetActiveActions() == 0,
 			"Reset retained native Action truth"
 		)
 

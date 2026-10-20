@@ -56,7 +56,7 @@ Unsupported fields are rejected. Static metadata is validated and copied at star
 
 `"ServerOnly"` or `"ClientVisible"`.
 
-Static visibility metadata.
+`ClientVisible` publishes current active identities and lifecycle occurrences through [ActionsView](/api/Actor/actions-view). `ServerOnly` ids are excluded from the client protocol; parameters, interruption reasons, grants and locks remain server-only in both cases.
 
 ## ActionTagApplication / ActionTagApplicationOptions {#action-tag-application}
 

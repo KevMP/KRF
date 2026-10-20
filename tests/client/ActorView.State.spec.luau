@@ -120,7 +120,7 @@ do
 	end)
 end
 
-it("keeps handles, revisions, mutation and future typed views out of the public ActorView", function()
+it("keeps handles, revisions and mutation out of the public ActorView", function()
 	TestUtils.baseline(fixture)
 	local view: PublicTypes.ActorView = TestUtils.view(fixture)
 
@@ -132,7 +132,6 @@ it("keeps handles, revisions, mutation and future typed views out of the public 
 			"consumer",
 			"GetHandle",
 			"GetRevision",
-			"GetActions",
 			"Apply",
 			"SendReliable",
 			"RequestResync",

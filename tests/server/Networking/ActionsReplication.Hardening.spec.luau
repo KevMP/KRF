@@ -18,6 +18,9 @@ local ActionUtils = require(script.Parent.Parent.Utils.Action.ActionResourceTest
 local TestUtils = require(script.Parent.Parent.Utils.Networking.ActionsReplicationTestUtils)
 local PublicationUtils = require(script.Parent.Parent.Utils.Networking.PublicationTestUtils)
 
+local Domains: ReplicationTypes.InternalReplicationDomainRegistry =
+	require(KRF.server.Replication.ReplicationDomainRegistry)
+
 local publication: NetworkingTypes.PublicationRuntime? = nil
 local scheduler: NetworkingTypes.PublicationScheduler? = nil
 beforeEach(ActionUtils.reset)
@@ -36,70 +39,92 @@ afterEach(function()
 	ActionUtils.cleanup()
 end)
 
-it(
-	"never publishes a sibling domain or earlier valid Action entry when a later mutation makes the group invalid",
-	function()
-		TestUtils.initialize({ TestUtils.action("Visible") })
-		local definition: ReplicationTypes.ReplicationDomainDefinition = TestUtils.build()
-		local actor: ActorTypes.Actor = ActorEntity.new()
-		local callback: (({ TestUtils.Mutation }) -> ())? = nil
+for _, invalid: string in { "overflow", "NaN", "duplicate", "terminal", "capacity" } do
+	it(
+		"rejects a live " .. invalid .. " batch without publishing a sibling domain or earlier valid Action entry",
+		function()
+			TestUtils.initialize({ TestUtils.action("Visible") })
+			local definition: ReplicationTypes.ReplicationDomainDefinition = TestUtils.build()
+			local actor: ActorTypes.Actor = ActorEntity.new()
+			local callback: (({ TestUtils.Mutation }) -> ())? = nil
 
-		expect(actor:SetController("ActionController", {
-			Destroy = function() end,
-			_getActiveReplicationState = function(): { TestUtils.Identity }
-				return {}
-			end,
-			_observeMutations = function(_self: any, observer: ({ TestUtils.Mutation }) -> ()): () -> ()
-				callback = observer
-
-				return function() end
-			end,
-		})).toBe(true)
-
-		local sibling: PublicationUtils.DomainFixture = PublicationUtils.createDomain("Game.Counter", Schema.U8, 1)
-		local faults: { NetworkingTypes.PublicationFault } = {}
-
-		local runtime: NetworkingTypes.PublicationRuntime = PublicationUtils.createRuntime(
-			{ definition, sibling.definition },
-			{
-				ReportFault = function(fault: NetworkingTypes.PublicationFault)
-					table.insert(faults, fault)
+			expect(actor:SetController("ActionController", {
+				Destroy = function() end,
+				_getActiveReplicationState = function(): { TestUtils.Identity }
+					return {}
 				end,
-			}
-		)
+				_observeMutations = function(_self: any, observer: ({ TestUtils.Mutation }) -> ()): () -> ()
+					callback = observer
 
-		publication = runtime
-		expect(runtime:AttachActor(actor)).toBe(true)
-		local previous: NetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
-		local commits: { NetworkingTypes.PublicationCommit } = {}
+					return function() end
+				end,
+			})).toBe(true)
 
-		runtime:ObserveCommits(function(commit: NetworkingTypes.PublicationCommit)
-			table.insert(commits, commit)
-		end)
+			local sibling: PublicationUtils.DomainFixture = PublicationUtils.createDomain("Game.Counter", Schema.U8, 1)
+			local faults: { NetworkingTypes.PublicationFault } = {}
+			Domains._resetForTests()
 
-		assert(callback ~= nil, "Expected N8 private observer installation")
-		local mutate: ({ TestUtils.Mutation }) -> () = callback
+			local runtime: NetworkingTypes.PublicationRuntime = PublicationUtils.createRuntime(
+				{ definition, sibling.definition },
+				{
+					ReportFault = function(fault: NetworkingTypes.PublicationFault)
+						table.insert(faults, fault)
+					end,
+				}
+			)
 
-		local completed: boolean = pcall(function()
-			runtime:WithActorCommit(actor, function()
-				sibling.value = 2
-				sibling.callbacks[actor]()
+			publication = runtime
+			expect(runtime:AttachActor(actor)).toBe(true)
+			local previous: NetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
+			local commits: { NetworkingTypes.PublicationCommit } = {}
 
-				mutate({
-					{ kind = "Started", actionId = "Visible", sequenceId = 1 },
-					{ kind = "Started", actionId = "Visible", sequenceId = 4294967296 },
-				})
+			runtime:ObserveCommits(function(commit: NetworkingTypes.PublicationCommit)
+				table.insert(commits, commit)
 			end)
-		end)
 
-		expect(completed).toBe(false)
-		expect(commits).toEqual({})
-		expect(runtime:GetActorSequence(actor)).toBe(0)
-		expect(runtime:CaptureBaseline(actor)).toEqual(previous)
-		expect(#faults).toBe(1)
-		expect(faults[1].domainId).toBe("KRF.Actions")
-	end
-)
+			assert(callback ~= nil, "Expected N8 private observer installation")
+			local mutate: ({ TestUtils.Mutation }) -> () = callback
+			local mutations: { TestUtils.Mutation } = { { kind = "Started", actionId = "Visible", sequenceId = 1 } }
+
+			if invalid == "capacity" then
+				for sequenceId: number = 2, 257 do
+					local entry: TestUtils.Mutation =
+						{ kind = "Started", actionId = "Visible", sequenceId = sequenceId }
+
+					table.insert(mutations, entry)
+				end
+			else
+				local entry: TestUtils.Mutation = {
+					kind = if invalid == "terminal" then "Ended" else "Started",
+					actionId = "Visible",
+					sequenceId = if invalid == "overflow"
+						then 4294967296
+						elseif invalid == "NaN" then 0 / 0
+						elseif invalid == "duplicate" then 1
+						else 2,
+				}
+
+				table.insert(mutations, entry)
+			end
+
+			local completed: boolean = pcall(function()
+				runtime:WithActorCommit(actor, function()
+					sibling.value = 2
+					sibling.callbacks[actor]()
+
+					mutate(mutations)
+				end)
+			end)
+
+			expect(completed).toBe(false)
+			expect(commits).toEqual({})
+			expect(runtime:GetActorSequence(actor)).toBe(0)
+			expect(runtime:CaptureBaseline(actor)).toEqual(previous)
+			expect(#faults).toBe(1)
+			expect(faults[1].domainId).toBe("KRF.Actions")
+		end
+	)
+end
 
 it("lets N3 bound lifecycle backlog and recover current truth without replaying discarded Starts", function()
 	TestUtils.initialize({ TestUtils.action("Visible"), TestUtils.action("Private", "ServerOnly") })

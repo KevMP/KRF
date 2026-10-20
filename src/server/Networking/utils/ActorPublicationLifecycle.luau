@@ -23,4 +23,12 @@ function ActorPublicationLifecycle.DetachActor(actor: ActorTypes.Actor): ()
 	end
 end
 
+function ActorPublicationLifecycle.WithActorCommit(actor: ActorTypes.Actor, callback: () -> ()): ()
+	if installed ~= nil then
+		installed:WithActorCommit(actor, callback)
+	else
+		callback()
+	end
+end
+
 return ActorPublicationLifecycle

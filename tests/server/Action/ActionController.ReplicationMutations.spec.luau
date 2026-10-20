@@ -156,10 +156,14 @@ for _, terminal: string in { "Ended", "Interrupted", "Destroy" } do
 
 		if terminal == "Ended" then
 			expect(actions:EndAction(1)).toBe(true)
-			expect(actions:EndAction(1)).toBe(false)
+			local ended: boolean, reason: string? = actions:EndAction(1)
+			expect(ended).toBe(false)
+			expect(reason).toBe("ActionInstanceNotActive")
 		elseif terminal == "Interrupted" then
 			expect(actions:InterruptAction(1, "Private.ServerReason")).toBe(true)
-			expect(actions:InterruptAction(1, "Private.ServerReason")).toBe(false)
+			local interrupted: boolean, reason: string? = actions:InterruptAction(1, "Private.ServerReason")
+			expect(interrupted).toBe(false)
+			expect(reason).toBe("ActionInstanceNotActive")
 		else
 			actions:Destroy()
 			actions:Destroy()
@@ -178,3 +182,95 @@ for _, terminal: string in { "Ended", "Interrupted", "Destroy" } do
 		expect(internal:_getActiveReplicationState()).toEqual({})
 	end)
 end
+
+it(
+	"cancels a yielding private observer, completes eligible delivery and hooks, and preserves the first failure",
+	function()
+		local order: { string } = {}
+
+		local definition: ActionTypes.ActionDefinition = TestUtils.action("Visible")
+
+		definition.onStart = function()
+			table.insert(order, "hook")
+		end
+
+		TestUtils.initialize({ definition })
+		local _actor: ActorTypes.Actor, actions: ActionTypes.ActionController = ActionUtils.registerActor()
+		local internal: TestUtils.InternalController = TestUtils.internal(actions)
+		local resumed: boolean = false
+
+		local disconnectYield: () -> () = internal:_observeMutations(function(batch: { TestUtils.Mutation })
+			expect(internal:_getActiveReplicationState()).toEqual({ { actionId = "Visible", sequenceId = 1 } })
+			expect(table.isfrozen(batch)).toBe(true)
+			expect(table.isfrozen(batch[1])).toBe(true)
+			table.insert(order, "yield")
+			coroutine.yield()
+			resumed = true
+		end)
+
+		local disconnectThrow: () -> () = internal:_observeMutations(function()
+			table.insert(order, "throw")
+			error("LaterObserverFailure", 0)
+		end)
+
+		internal:_observeMutations(function()
+			table.insert(order, "eligible")
+		end)
+
+		actions.OnActionStarted:Connect(function()
+			table.insert(order, "public")
+		end)
+
+		local succeeded: boolean, failure: any = pcall(function()
+			actions:RequestAction("Visible")
+		end)
+
+		expect(succeeded).toBe(false)
+		expect(failure).toBe("ActionMutationObserverYielded")
+		expect(order).toEqual({ "yield", "throw", "eligible", "public", "hook" })
+		expect(resumed).toBe(false)
+		disconnectYield()
+		disconnectThrow()
+		table.clear(order)
+		expect(TestUtils.accept(actions, "Visible")).toBe(2)
+		expect(order).toEqual({ "eligible", "public", "hook" })
+	end
+)
+
+it(
+	"checks disconnected observers before delivery and defers newly registered observers to the next transaction",
+	function()
+		TestUtils.initialize({ TestUtils.action("Visible") })
+		local _actor: ActorTypes.Actor, actions: ActionTypes.ActionController = ActionUtils.registerActor()
+		local internal: TestUtils.InternalController = TestUtils.internal(actions)
+		local order: { string } = {}
+		local disconnectSecond: () -> () = function() end
+		local added: boolean = false
+
+		local disconnectFirst: () -> () = internal:_observeMutations(function(batch: { TestUtils.Mutation })
+			table.insert(order, "first" .. batch[1].sequenceId)
+			disconnectSecond()
+
+			if not added then
+				added = true
+
+				internal:_observeMutations(function(nextBatch: { TestUtils.Mutation })
+					table.insert(order, "new" .. nextBatch[1].sequenceId)
+				end)
+			end
+		end)
+
+		disconnectSecond = internal:_observeMutations(function()
+			error("DisconnectedObserverMustNotRun", 0)
+		end)
+
+		TestUtils.accept(actions, "Visible")
+		expect(order).toEqual({ "first1" })
+		TestUtils.accept(actions, "Visible")
+		expect(order).toEqual({ "first1", "first2", "new2" })
+		disconnectFirst()
+		disconnectFirst()
+		actions:Destroy()
+		disconnectSecond()
+	end
+)
