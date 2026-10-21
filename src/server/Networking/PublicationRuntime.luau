@@ -15,6 +15,7 @@ type Attachment = {
 	active: boolean,
 	depth: number,
 	touched: { [string]: boolean },
+	retryTouched: { [string]: boolean }?,
 	events: { Types.PublicationEvent },
 	poisoned: boolean,
 }
@@ -34,16 +35,17 @@ type RuntimeState = {
 
 type Runtime = typeof(setmetatable({} :: RuntimeState, PublicationRuntime))
 
-local function runSync(callback: () -> ...any): (boolean, string, ...any)
+local function runSync(callback: (...any) -> ...any, ...: any): (boolean, string, ...any)
 	local thread = coroutine.create(callback)
-	local success, first, second = coroutine.resume(thread)
+	local success, first, second = coroutine.resume(thread, ...)
 
 	if not success then
 		return false, "Error", first
 	end
 
 	if coroutine.status(thread) ~= "dead" then
-		coroutine.close(thread)
+		pcall(task.cancel, thread)
+		pcall(coroutine.close, thread)
 
 		return false, "Yielded"
 	end
@@ -154,11 +156,11 @@ local function dispatchCommits(self: Runtime): ()
 				break
 			end
 
-			local success, reason = pcall(observer, commit)
+			local success, kind, reason = runSync(observer, commit)
 
 			if not success and not failed then
 				failed = true
-				failure = reason
+				failure = if kind == "Yielded" then "PublicationObserverYielded" else reason
 			end
 		end
 	end
@@ -170,27 +172,49 @@ local function dispatchCommits(self: Runtime): ()
 	end
 end
 
-local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attachment): ()
+local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attachment, grouped: boolean?): ()
 	local touched = attachment.touched
 	local events = attachment.events
+	local retryTouched = attachment.retryTouched
 
 	attachment.touched = {}
 	attachment.events = {}
 
+	if retryTouched ~= nil then
+		for domainId: string in retryTouched do
+			touched[domainId] = true
+		end
+	end
+
 	local staged: { [string]: Types.PublicationCaptureResult } = {}
 	local patches: { Types.PublicationDomainPatch } = {}
 
-	for _, domain in self.domains do
-		if touched[domain.id] then
-			local captured = captureDomain(self, actor, domain, attachment.captures[domain.id])
+	local success: boolean, failure: any = pcall(function()
+		for _, domain in self.domains do
+			if touched[domain.id] then
+				local captured = captureDomain(self, actor, domain, attachment.captures[domain.id])
 
-			staged[domain.id] = captured
+				staged[domain.id] = captured
 
-			if captured.patch ~= nil then
-				table.insert(patches, table.freeze({ domainId = domain.id, patch = captured.patch }))
+				if captured.patch ~= nil then
+					table.insert(patches, table.freeze({ domainId = domain.id, patch = captured.patch }))
+				end
 			end
 		end
+	end)
+
+	if not success then
+		-- A rejected atomic group remains coupled until a later notification can
+		-- capture all its domains. Retain only bounded dirty ids, never failed events.
+		-- Ordinary standalone domain failures keep their existing isolation behavior.
+		if grouped or retryTouched ~= nil then
+			attachment.retryTouched = touched
+		end
+
+		error(failure, 0)
 	end
+
+	attachment.retryTouched = nil
 
 	if #patches == 0 and #events == 0 then
 		return
@@ -294,6 +318,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 		active = true,
 		depth = 0,
 		touched = {},
+		retryTouched = nil,
 		events = {},
 		poisoned = false,
 	}
@@ -438,7 +463,7 @@ function PublicationRuntime.WithActorCommit(self: Runtime, actor: ActorTypes.Act
 			attachment.events = {}
 			attachment.poisoned = false
 		else
-			publish(self, actor, attachment)
+			publish(self, actor, attachment, true)
 		end
 	end
 

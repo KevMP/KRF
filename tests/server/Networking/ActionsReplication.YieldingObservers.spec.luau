@@ -204,9 +204,7 @@ for _, domain: string in { "Tag", "Resource" } do
 				expect(continued).toBe(false)
 				expect(healthyCommits).toBe(1)
 
-				if domain == "Resource" or phase == "Commit" then
-					expect(healthyDispatches).toBe(1)
-				end
+				expect(healthyDispatches).toBe(1)
 
 				if phase == "Commit" then
 					expect(orderAtYield).toEqual({})

@@ -37,7 +37,9 @@ Same-transaction Tag/Property effects cannot re-price the incoming Action. Inval
 
 The complete Action, Tag and Resource transaction is captured for replication before public lifecycle signals and authored hooks. Direct End, Interrupt, scoped-claim preemption and controller destruction follow the same boundary. A hook-driven termination is a later logical commit, preserving both lifecycle occurrences.
 
-If capture rejects, the last published canonical state remains unchanged; later successful publication reconciles current truth without replaying rejected lifecycle events. A downstream publication observer can also throw after a commit has already been admitted; that commit remains published. Neither failure rolls back committed gameplay, refunds payment, or suppresses the required public notification and authored-hook phases. The first failure propagates after those phases finish.
+If capture rejects, the last published canonical state remains unchanged; later successful publication reconciles every affected domain without replaying rejected lifecycle events, even when the later mutation changes only part of the rejected transaction. A downstream publication observer can also throw after a commit has already been admitted; that commit remains published. Neither failure rolls back committed gameplay, refunds payment, or suppresses the required public notification and authored-hook phases. The first failure propagates after those phases finish.
+
+Controller destruction during publication delivery does not discard an already committed operation's pending lifecycle notifications or replace its original failure. Action events retire after that operation finishes delivery.
 
 ## Normal post-commit dispatch {#post-commit-dispatch}
 

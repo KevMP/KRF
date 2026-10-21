@@ -508,3 +508,104 @@ it(
 		expect(reasons).toEqual({ "ServerOnlyReason", "ServerOnlyReason" })
 	end
 )
+
+it("reconciles every rejected Start domain when a later End does not mutate Resources", function()
+	setup()
+	local previous: NetworkingTypes.PublicationBaseline? = publication:CaptureBaseline(actor)
+	rejectCapture = true
+
+	local succeeded: boolean, failure: any = pcall(function()
+		actions:RequestAction("Incoming")
+	end)
+
+	expect(succeeded).toBe(false)
+	expect(failure).toBe("InvalidPublicationSnapshot:KRF.Tags")
+	expect(publication:CaptureBaseline(actor)).toEqual(previous)
+	expectCommittedStart(0)
+	rejectCapture = false
+	table.clear(order)
+	table.clear(lifecycleTruth)
+	expect(actions:EndAction(1)).toBe(true)
+	expect(resources:GetCurrent("Mana")).toBe(80)
+	expect(contexts[1]:IsActive()).toBe(false)
+	expect(tags:HasTag("Incoming")).toBe(false)
+	canonical(1, {}, 80, {})
+	expect(order).toEqual({ "Ended:1", "TagRemoved:Incoming", "EndHook:1" })
+	expect(#commits).toBe(1)
+	expect(TestUtils.events(commits[1])).toEqual({ actionEvent("Ended", "Incoming", 1) })
+
+	expect(lifecycleTruth).toEqual({
+		{ kind = "Ended", sequenceId = 1, active = false, mana = 80, incoming = false, revision = 1 },
+	})
+
+	expect(TestUtils.accept(actions, "Incoming")).toBe(2)
+	canonical(2, { [2] = "Incoming" }, 60, { Incoming = { stackCount = 1 } })
+	expect(#commits).toBe(2)
+	expect(TestUtils.events(commits[2])).toEqual({ actionEvent("Started", "Incoming", 2) })
+end)
+
+it(
+	"cancels a yielding admitted-publication observer, finishes Action delivery and keeps later commits dispatchable",
+	function()
+		setup()
+		local observerThread: thread? = nil
+		local continued: boolean = false
+		local sequences: { number } = {}
+
+		table.insert(
+			disconnects,
+			publication:ObserveCommits(function()
+				observerThread = coroutine.running()
+				coroutine.yield()
+				continued = true
+			end)
+		)
+
+		table.insert(
+			disconnects,
+			publication:ObserveCommits(function(commit: NetworkingTypes.PublicationCommit)
+				table.insert(sequences, commit.sequence)
+			end)
+		)
+
+		local succeeded: boolean? = nil
+		local failure: any = nil
+
+		local transaction: thread = coroutine.create(function()
+			succeeded, failure = pcall(function()
+				actions:RequestAction("Incoming")
+			end)
+		end)
+
+		local resumed: boolean = coroutine.resume(transaction)
+		local status: string = coroutine.status(transaction)
+
+		if status == "suspended" then
+			-- Keep the red regression bounded without leaving a suspended test caller.
+			pcall(task.cancel, transaction)
+			pcall(coroutine.close, transaction)
+		end
+
+		expect(resumed).toBe(true)
+		expect(status).toBe("dead")
+		expect(succeeded).toBe(false)
+		expect(failure).toBe("PublicationObserverYielded")
+		assert(observerThread ~= nil, "Expected downstream publication delivery")
+		expect(coroutine.status(observerThread)).toBe("dead")
+		expect(continued).toBe(false)
+		expectCommittedStart(1)
+		canonical(1, { [1] = "Incoming" }, 80, { Incoming = { stackCount = 1 } })
+		expect(sequences).toEqual({ 1 })
+		expect(#commits).toBe(1)
+		expect(TestUtils.events(commits[1])).toEqual({ actionEvent("Started", "Incoming", 1) })
+		disconnects[1]()
+		expect(actions:EndAction(1)).toBe(true)
+		expect(TestUtils.accept(actions, "Later")).toBe(2)
+		canonical(3, { [2] = "Later" }, 70, { OwnerB = { stackCount = 1 } })
+		expect(sequences).toEqual({ 1, 2, 3 })
+		expect(#commits).toBe(3)
+		expect(TestUtils.events(commits[2])).toEqual({ actionEvent("Ended", "Incoming", 1) })
+		expect(TestUtils.events(commits[3])).toEqual({ actionEvent("Started", "Later", 2) })
+		expect(continued).toBe(false)
+	end
+)

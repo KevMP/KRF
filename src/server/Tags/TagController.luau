@@ -163,12 +163,22 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	end
 
 	local function dispatchDerivedEvents(): ()
-		for observer: TagTypes.TagMutationObserver in mutationObservers do
-			local success: boolean, failure: any = runObserver(observer.Dispatch)
+		local failed: boolean = false
+		local firstFailure: any = nil
 
-			if not success then
-				error(failure, 0)
+		for observer: TagTypes.TagMutationObserver in table.clone(mutationObservers) do
+			if mutationObservers[observer] then
+				local success: boolean, failure: any = runObserver(observer.Dispatch)
+
+				if not success and not failed then
+					failed = true
+					firstFailure = failure
+				end
 			end
+		end
+
+		if failed then
+			error(firstFailure, 0)
 		end
 	end
 
