@@ -14,6 +14,21 @@ export type ResourceMutationJournal = {
 
 local ResourceMutationJournal = {}
 
+-- Keep private delivery synchronous without restricting public Signal listeners.
+local function runObserver(callback: (...any) -> (), ...: any): (boolean, any)
+	local observerThread: thread = coroutine.create(callback)
+	local success: boolean, failure: any = coroutine.resume(observerThread, ...)
+
+	if coroutine.status(observerThread) ~= "dead" then
+		pcall(task.cancel, observerThread)
+		pcall(coroutine.close, observerThread)
+
+		return false, "ResourceMutationObserverYielded"
+	end
+
+	return success, failure
+end
+
 -- A meaningful touch must survive later regeneration in the same transaction.
 local priority: { [ResourceTypes.ResourceMutationKind]: number } = {
 	RegenStep = 1,
@@ -115,7 +130,7 @@ function ResourceMutationJournal.new(): ResourceMutationJournal
 
 				if #selected > 0 then
 					dispatchPending = true
-					rememberFailure(pcall(observer.Commit, selected))
+					rememberFailure(runObserver(observer.Commit, selected))
 				end
 			end
 		end
@@ -168,7 +183,7 @@ function ResourceMutationJournal.new(): ResourceMutationJournal
 
 			for observer: ResourceTypes.ResourceMutationObserver, registration in table.clone(observers) do
 				if observers[observer] == registration then
-					rememberFailure(pcall(observer.Dispatch))
+					rememberFailure(runObserver(observer.Dispatch))
 				end
 			end
 		end

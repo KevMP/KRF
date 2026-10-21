@@ -56,6 +56,21 @@ local automaticStepAccumulatorSeconds: number = 0
 
 local advancingInstancesByController: { [TagController]: AdvancingControllerEntry } = {}
 
+-- Private observers must not suspend transaction finalization or lifecycle delivery.
+local function runObserver(callback: (...any) -> (), ...: any): (boolean, any)
+	local observerThread: thread = coroutine.create(callback)
+	local success: boolean, failure: any = coroutine.resume(observerThread, ...)
+
+	if coroutine.status(observerThread) ~= "dead" then
+		pcall(task.cancel, observerThread)
+		pcall(coroutine.close, observerThread)
+
+		return false, "TagMutationObserverYielded"
+	end
+
+	return success, failure
+end
+
 local function UpdateHeartbeatConnection(): ()
 	local hasTimedControllers: boolean = next(advancingInstancesByController) ~= nil
 
@@ -135,13 +150,13 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 	local function commitDerivedState(events: { TagTypes.TagMutationEvent }, onObserverFailure: ((any) -> ())?): ()
 		for observer: TagTypes.TagMutationObserver in mutationObservers do
-			if onObserverFailure == nil then
-				observer.Commit(events)
-			else
-				local success: boolean, failure: any = pcall(observer.Commit, events)
+			local success: boolean, failure: any = runObserver(observer.Commit, events)
 
-				if not success then
+			if not success then
+				if onObserverFailure ~= nil then
 					onObserverFailure(failure)
+				else
+					error(failure, 0)
 				end
 			end
 		end
@@ -149,7 +164,11 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 	local function dispatchDerivedEvents(): ()
 		for observer: TagTypes.TagMutationObserver in mutationObservers do
-			observer.Dispatch()
+			local success: boolean, failure: any = runObserver(observer.Dispatch)
+
+			if not success then
+				error(failure, 0)
+			end
 		end
 	end
 
