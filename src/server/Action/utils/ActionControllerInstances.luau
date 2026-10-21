@@ -87,14 +87,20 @@ function ActionControllerInstancesModule.new(
 	-- Closing publication can fail after authority is committed. Retain the first
 	-- failure locally so public delivery and authored hooks still complete once.
 	local function withCommit(
-		callback: () -> { ActionTypes.ActionReplicationMutation }
+		callback: (onObserverFailure: (any) -> ()) -> { ActionTypes.ActionReplicationMutation }
 	): ActionMutationJournal.MutationFailure?
 		local failure: ActionMutationJournal.MutationFailure? = nil
 		local committed: boolean = false
 
+		local function rememberFailure(detail: any): ()
+			if failure == nil then
+				failure = { value = detail }
+			end
+		end
+
 		local success: boolean, detail: any = pcall(function()
 			ActorPublicationLifecycle.WithActorCommit(actor, function()
-				local mutations: { ActionTypes.ActionReplicationMutation } = callback()
+				local mutations: { ActionTypes.ActionReplicationMutation } = callback(rememberFailure)
 				committed = true
 
 				local resources: ResourceTypes.InternalResourceController? =
@@ -106,7 +112,7 @@ function ActionControllerInstancesModule.new(
 					end)
 
 					if not resourceSuccess then
-						failure = { value = resourceFailure }
+						rememberFailure(resourceFailure)
 					end
 				end
 
@@ -171,7 +177,7 @@ function ActionControllerInstancesModule.new(
 		end
 	end
 
-	local function commitTerminal(instance: InternalActionInstance): boolean
+	local function commitTerminal(instance: InternalActionInstance, onObserverFailure: (any) -> ()): boolean
 		if not isActive(instance) then
 			return false
 		end
@@ -204,7 +210,7 @@ function ActionControllerInstancesModule.new(
 				tags:_removeByReceipt(handle)
 			end
 
-			instance.terminalTagEvents = tags:_finishMutationBatch()
+			instance.terminalTagEvents = tags:_finishMutationBatch(onObserverFailure)
 		end
 
 		table.clear(instance.ownedTagReceipts)
@@ -561,7 +567,7 @@ function ActionControllerInstancesModule.new(
 		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
 		local failure: ActionMutationJournal.MutationFailure? = withCommit(
-			function(): { ActionTypes.ActionReplicationMutation }
+			function(onObserverFailure: (any) -> ()): { ActionTypes.ActionReplicationMutation }
 				local mutations: { ActionTypes.ActionReplicationMutation } = {}
 
 				if tags ~= nil then
@@ -569,7 +575,7 @@ function ActionControllerInstancesModule.new(
 				end
 
 				for _, owner: InternalActionInstance in conflicts do
-					commitTerminal(owner)
+					commitTerminal(owner, onObserverFailure)
 					table.insert(mutations, mutation(owner, "Interrupted"))
 				end
 
@@ -577,7 +583,7 @@ function ActionControllerInstancesModule.new(
 					addLockReason(instance, lockId)
 				end
 
-				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch(onObserverFailure) else {}
 
 				return mutations
 			end
@@ -646,8 +652,8 @@ function ActionControllerInstancesModule.new(
 		end
 
 		local failure: ActionMutationJournal.MutationFailure? = withCommit(
-			function(): { ActionTypes.ActionReplicationMutation }
-				commitTerminal(instance)
+			function(onObserverFailure: (any) -> ()): { ActionTypes.ActionReplicationMutation }
+				commitTerminal(instance, onObserverFailure)
 
 				return { mutation(instance, "Ended") }
 			end
@@ -678,8 +684,8 @@ function ActionControllerInstancesModule.new(
 		end
 
 		local failure: ActionMutationJournal.MutationFailure? = withCommit(
-			function(): { ActionTypes.ActionReplicationMutation }
-				commitTerminal(instance)
+			function(onObserverFailure: (any) -> ()): { ActionTypes.ActionReplicationMutation }
+				commitTerminal(instance, onObserverFailure)
 
 				return { mutation(instance, "Interrupted") }
 			end
@@ -888,7 +894,7 @@ function ActionControllerInstancesModule.new(
 		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
 		local failure: ActionMutationJournal.MutationFailure? = withCommit(
-			function(): { ActionTypes.ActionReplicationMutation }
+			function(onObserverFailure: (any) -> ()): { ActionTypes.ActionReplicationMutation }
 				if resources ~= nil then
 					resources:_beginMutationBatch()
 				end
@@ -903,7 +909,7 @@ function ActionControllerInstancesModule.new(
 				end
 
 				for _, owner: InternalActionInstance in conflicts do
-					commitTerminal(owner)
+					commitTerminal(owner, onObserverFailure)
 				end
 
 				local ownedTagReceipts: { TagMutationReceipt } = {}
@@ -940,7 +946,7 @@ function ActionControllerInstancesModule.new(
 
 				instance = commitActivation(actionId, implementation, parameters, definition, ownedTagReceipts, tags)
 
-				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch(onObserverFailure) else {}
 
 				if resources ~= nil then
 					resources:_finishMutationBatch()
@@ -1053,7 +1059,7 @@ function ActionControllerInstancesModule.new(
 		local tagEvents: { TagTypes.TagMutationEvent } = {}
 
 		local failure: ActionMutationJournal.MutationFailure? = withCommit(
-			function(): { ActionTypes.ActionReplicationMutation }
+			function(onObserverFailure: (any) -> ()): { ActionTypes.ActionReplicationMutation }
 				local mutations: { ActionTypes.ActionReplicationMutation } = {}
 
 				if tags ~= nil then
@@ -1061,11 +1067,11 @@ function ActionControllerInstancesModule.new(
 				end
 
 				for _, instance: InternalActionInstance in activeInstances do
-					commitTerminal(instance)
+					commitTerminal(instance, onObserverFailure)
 					table.insert(mutations, mutation(instance, "Interrupted"))
 				end
 
-				tagEvents = if tags ~= nil then tags:_finishMutationBatch() else {}
+				tagEvents = if tags ~= nil then tags:_finishMutationBatch(onObserverFailure) else {}
 
 				return mutations
 			end

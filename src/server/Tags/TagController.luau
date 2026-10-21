@@ -133,9 +133,17 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		end
 	end
 
-	local function commitDerivedState(events: { TagTypes.TagMutationEvent }): ()
+	local function commitDerivedState(events: { TagTypes.TagMutationEvent }, onObserverFailure: ((any) -> ())?): ()
 		for observer: TagTypes.TagMutationObserver in mutationObservers do
-			observer.Commit(events)
+			if onObserverFailure == nil then
+				observer.Commit(events)
+			else
+				local success: boolean, failure: any = pcall(observer.Commit, events)
+
+				if not success then
+					onObserverFailure(failure)
+				end
+			end
 		end
 	end
 
@@ -174,7 +182,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	end
 
 	-- Detach before dispatch so reentrant mutations complete in their own batch.
-	function controller:_finishMutationBatch(): { TagTypes.TagMutationEvent }
+	function controller:_finishMutationBatch(onObserverFailure: ((any) -> ())?): { TagTypes.TagMutationEvent }
 		assert(mutationBatchDepth > 0, "TagMutationBatchNotOpen")
 		mutationBatchDepth -= 1
 
@@ -184,7 +192,9 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		local events: { TagTypes.TagMutationEvent } = deferredEvents
 		deferredEvents = {}
-		commitDerivedState(events)
+		-- An enclosing Action transaction must retain these events and finish its
+		-- other domains before surfacing an observer failure through public dispatch.
+		commitDerivedState(events, onObserverFailure)
 
 		return events
 	end

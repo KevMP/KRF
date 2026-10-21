@@ -89,7 +89,7 @@ export type TagMutationObserver = {
 export type InternalTagController = TagController & {
 	_observeMutations: (self: InternalTagController, observer: TagMutationObserver) -> () -> (),
 	_beginMutationBatch: (self: InternalTagController) -> (),
-	_finishMutationBatch: (self: InternalTagController) -> { TagMutationEvent },
+	_finishMutationBatch: (self: InternalTagController, onObserverFailure: ((any) -> ())?) -> { TagMutationEvent },
 	_dispatchMutationEvents: (self: InternalTagController, events: { TagMutationEvent }) -> (),
 	_validateApplications: (self: InternalTagController, applications: { TagApplication }) -> string?,
 	_addTagWithReceipt: (
