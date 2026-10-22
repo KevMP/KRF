@@ -95,6 +95,8 @@ export type ResourceReplicationState = {
 export type ResourceMutationKind = "Added" | "Discrete" | "Recomputed" | "RegenStep"
 export type ResourceMutation = { read resourceId: string, read kind: ResourceMutationKind }
 
+-- Each private phase snapshots registrations at entry and skips disconnections or
+-- replacements before delivery. Additions can join later phases, never the current pass.
 export type ResourceMutationObserver = {
 	read includeRegenSteps: boolean?,
 	Commit: ({ ResourceMutation }) -> (),

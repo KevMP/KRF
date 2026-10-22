@@ -34,6 +34,7 @@ Creates or updates a numeric base value, then recomputes the resolved value from
 
 - `true, nil`: the value is valid. Writing the current base value is a successful no-op.
 - `false, "InvalidPropertyValue"`: `value` is not a number; no property is created or changed.
+- `false, "PropertyControllerDestroyed"`: the controller has been destroyed; retained values stay unchanged.
 
 ### `GetBaseProperty(propertyName: string) -> number?` {#get-base-property}
 

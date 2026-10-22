@@ -43,7 +43,7 @@ $result = (($block.Groups[1].Value -split '\r?\n') -join '') | ConvertFrom-Json
 $result | Add-Member -NotePropertyName environment -NotePropertyValue (Get-NetworkingBenchmarkEnvironment $repository $StudioPath)
 $result | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
 if ($Workload -eq 'Observers') {
-    foreach ($relativePath in @('tests/benchmarks/MutationObservers.luau', 'src/server/Tags/TagController.luau', 'src/server/Resource/utils/ResourceMutationJournal.luau', 'src/server/Networking/PublicationRuntime.luau')) {
+    foreach ($relativePath in @('tests/benchmarks/MutationObservers.luau', 'src/server/Tags/TagController.luau', 'src/server/Property/PropertyController.luau', 'src/server/Resource/ResourceController.luau', 'src/server/Resource/utils/ResourceMutationJournal.luau', 'src/server/Networking/PublicationRuntime.luau')) {
         $result.environment.harnessSHA256[$relativePath] = (Get-FileHash -LiteralPath (Join-Path $repository $relativePath) -Algorithm SHA256).Hash
     }
 }

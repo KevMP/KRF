@@ -17,8 +17,10 @@ type Attachment = {
 	touched: { [string]: boolean },
 	retryGroups: { [string]: { [string]: boolean } },
 	events: { Types.PublicationEvent },
-	poisoned: boolean,
+	eventFailure: string?,
 }
+
+type CommitObserver = { callback: (Types.PublicationCommit) -> (), active: boolean }
 
 type RuntimeState = {
 	domains: { ReplicationTypes.LoadedReplicationDomainDefinition },
@@ -27,7 +29,7 @@ type RuntimeState = {
 	options: Types.PublicationRuntimeOptions?,
 	attachments: { [ActorTypes.Actor]: Attachment },
 	orderedActors: { ActorTypes.Actor },
-	observers: { (Types.PublicationCommit) -> () },
+	observers: { CommitObserver },
 	pendingCommits: { Types.PublicationCommit },
 	dispatching: boolean,
 	destroyed: boolean,
@@ -55,7 +57,7 @@ end
 
 local function fault(self: Runtime, actor: ActorTypes.Actor, domainId: string, reason: string): ()
 	if self.options ~= nil and self.options.ReportFault ~= nil then
-		pcall(self.options.ReportFault, { actorId = actor:GetId(), domainId = domainId, reason = reason })
+		runSync(self.options.ReportFault, { actorId = actor:GetId(), domainId = domainId, reason = reason })
 	end
 end
 
@@ -76,7 +78,7 @@ local function eventsFor(
 
 	if count == nil then
 		if attachment.depth > 0 then
-			attachment.poisoned = true
+			attachment.eventFailure = attachment.eventFailure or "InvalidPublicationEvent:" .. domainId
 		end
 
 		fault(self, actor, domainId, "InvalidPublicationEvent")
@@ -90,7 +92,7 @@ local function eventsFor(
 
 		if captured == nil then
 			if attachment.depth > 0 then
-				attachment.poisoned = true
+				attachment.eventFailure = attachment.eventFailure or "InvalidPublicationEvent:" .. domainId
 			end
 
 			fault(self, actor, domainId, "InvalidPublicationEvent")
@@ -156,7 +158,11 @@ local function dispatchCommits(self: Runtime): ()
 				break
 			end
 
-			local success, kind, reason = runSync(observer, commit)
+			if not observer.active then
+				continue
+			end
+
+			local success, kind, reason = runSync(observer.callback, commit)
 
 			if not success and not failed then
 				failed = true
@@ -352,7 +358,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 		touched = {},
 		retryGroups = {},
 		events = {},
-		poisoned = false,
+		eventFailure = nil,
 	}
 
 	local success, failure = pcall(function()
@@ -395,7 +401,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 		attachment.active = false
 
 		for _, connection in attachment.disconnects do
-			pcall(connection.callback)
+			runSync(connection.callback)
 		end
 
 		return false, tostring(failure)
@@ -425,8 +431,10 @@ function PublicationRuntime.DetachActor(self: Runtime, actor: ActorTypes.Actor):
 	end
 
 	for _, connection in attachment.disconnects do
-		if not pcall(connection.callback) then
-			fault(self, actor, connection.domainId, "PublicationDisconnectError")
+		local success: boolean, kind: string = runSync(connection.callback)
+
+		if not success then
+			fault(self, actor, connection.domainId, "PublicationDisconnect" .. kind)
 		end
 	end
 end
@@ -458,18 +466,19 @@ function PublicationRuntime.CaptureBaseline(self: Runtime, actor: ActorTypes.Act
 end
 
 function PublicationRuntime.ObserveCommits(self: Runtime, observer: (Types.PublicationCommit) -> ()): () -> ()
-	table.insert(self.observers, observer)
-	local active = true
+	assert(not self.destroyed, "PublicationRuntimeDestroyed")
+	local registration: CommitObserver = { callback = observer, active = true }
+	table.insert(self.observers, registration)
 
 	return function(): ()
-		if not active then
+		if not registration.active then
 			return
 		end
 
-		active = false
+		registration.active = false
 
 		for index, existing in self.observers do
-			if existing == observer then
+			if existing == registration then
 				table.remove(self.observers, index)
 				break
 			end
@@ -495,14 +504,24 @@ function PublicationRuntime.WithActorCommit(self: Runtime, actor: ActorTypes.Act
 	attachment.depth -= 1
 
 	if attachment.depth == 0 then
-		if attachment.poisoned then
+		local eventFailure: string? = attachment.eventFailure
+
+		if eventFailure ~= nil then
 			includeRetryGroups(attachment, attachment.touched)
 			retainRetryGroup(attachment, attachment.touched)
 			attachment.touched = {}
 			attachment.events = {}
-			attachment.poisoned = false
+			attachment.eventFailure = nil
+			error(eventFailure, 0)
 		else
-			publish(self, actor, attachment, true)
+			local previousSequence: number = attachment.sequence
+			local published: boolean, publicationFailure: any = pcall(publish, self, actor, attachment, true)
+
+			-- Admission advances sequence before downstream observers. Their failure
+			-- cannot replace an earlier authoritative error; rejected captures can.
+			if not published and (ok or attachment.sequence == previousSequence) then
+				error(publicationFailure, 0)
+			end
 		end
 	end
 
@@ -521,6 +540,10 @@ function PublicationRuntime.Destroy(self: Runtime): ()
 
 	for _, actor in table.clone(self.orderedActors) do
 		self:DetachActor(actor)
+	end
+
+	for _, observer: CommitObserver in self.observers do
+		observer.active = false
 	end
 
 	table.clear(self.observers)

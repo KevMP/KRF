@@ -81,6 +81,8 @@ export type TagController = {
 	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
 }
 
+-- Each private phase snapshots registrations at entry and skips disconnections or
+-- replacements before delivery. Additions can join later phases, never the current pass.
 export type TagMutationObserver = {
 	Commit: (events: { TagMutationEvent }) -> (),
 	Dispatch: () -> (),

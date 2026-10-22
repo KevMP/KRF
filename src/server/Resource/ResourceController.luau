@@ -53,8 +53,8 @@ local function UpdateHeartbeatConnection(): ()
 					return
 				end
 
-				ResourceController.Step(automaticStepIntervalSeconds)
 				automaticStepAccumulatorSeconds -= automaticStepIntervalSeconds
+				ResourceController.Step(automaticStepIntervalSeconds)
 			end)
 		end
 
@@ -425,6 +425,9 @@ function ResourceController.new(actor: Actor): ResourceController
 			return
 		end
 
+		local failed: boolean = false
+		local firstFailure: any = nil
+
 		for resourceId: string, resourceRecord: ResourceRecord in resourcesById do
 			local resolvedRegenRate: number? = resourceRecord.resolvedRegenRate
 
@@ -432,7 +435,17 @@ function ResourceController.new(actor: Actor): ResourceController
 				continue
 			end
 
-			setCurrent(resourceId, resourceRecord.currentValue + resolvedRegenRate * deltaTime, "RegenStep")
+			local success: boolean, failure: any =
+				pcall(setCurrent, resourceId, resourceRecord.currentValue + resolvedRegenRate * deltaTime, "RegenStep")
+
+			if not success and not failed then
+				failed = true
+				firstFailure = failure
+			end
+		end
+
+		if failed then
+			error(firstFailure, 0)
 		end
 	end
 
@@ -486,7 +499,12 @@ function ResourceController.new(actor: Actor): ResourceController
 
 		if internalProperties._observeResolvedMutations ~= nil then
 			disconnectPropertyMutations = internalProperties:_observeResolvedMutations({
-				Commit = commitProperties,
+				Commit = function(names: { string }): ()
+					commitProperties(names)
+					-- Transfer the failure to Property/Tag finalization before public
+					-- reentry can consume it while draining Resource notifications.
+					mutations:RethrowFailure()
+				end,
 				Dispatch = function(): ()
 					dispatchChanges()
 				end,
@@ -529,12 +547,24 @@ function ResourceController.Step(deltaTime: number): ()
 		return
 	end
 
+	local failed: boolean = false
+	local firstFailure: any = nil
+
 	for controller: ResourceController, actor: Actor in regeneratingActorsByController do
 		if not actor.enabled then
 			continue
 		end
 
-		controller:Step(deltaTime)
+		local success: boolean, failure: any = pcall(controller.Step, controller, deltaTime)
+
+		if not success and not failed then
+			failed = true
+			firstFailure = failure
+		end
+	end
+
+	if failed then
+		error(firstFailure, 0)
 	end
 end
 

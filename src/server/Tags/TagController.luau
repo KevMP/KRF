@@ -85,8 +85,8 @@ local function UpdateHeartbeatConnection(): ()
 					return
 				end
 
-				TagController.Step(automaticStepIntervalSeconds)
 				automaticStepAccumulatorSeconds -= automaticStepIntervalSeconds
+				TagController.Step(automaticStepIntervalSeconds)
 			end)
 		end
 
@@ -120,7 +120,7 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	local destroyed: boolean = false
 	local mutationBatchDepth: number = 0
 	local deferredEvents: { TagTypes.TagMutationEvent } = {}
-	local mutationObservers: { [TagTypes.TagMutationObserver]: boolean } = {}
+	local mutationObservers: { [TagTypes.TagMutationObserver]: {} } = {}
 	local recordVersions: { [TagInstanceRecord]: number } = setmetatable({}, { __mode = "k" }) :: { [TagInstanceRecord]: number }
 
 	local factoryContext: TagInstanceFactoryContext = {
@@ -141,24 +141,41 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	controller._activeTagsById = activeTagsById
 
 	function controller:_observeMutations(observer: TagTypes.TagMutationObserver): () -> ()
-		mutationObservers[observer] = true
+		assert(not destroyed, "TagControllerDestroyed")
+		local registration = {}
+
+		mutationObservers[observer] = registration
 
 		return function(): ()
-			mutationObservers[observer] = nil
+			if mutationObservers[observer] == registration then
+				mutationObservers[observer] = nil
+			end
 		end
 	end
 
 	local function commitDerivedState(events: { TagTypes.TagMutationEvent }, onObserverFailure: ((any) -> ())?): ()
-		for observer: TagTypes.TagMutationObserver in mutationObservers do
+		local failed: boolean = false
+		local firstFailure: any = nil
+
+		for observer: TagTypes.TagMutationObserver, registration in table.clone(mutationObservers) do
+			if mutationObservers[observer] ~= registration then
+				continue
+			end
+
 			local success: boolean, failure: any = runObserver(observer.Commit, events)
 
 			if not success then
 				if onObserverFailure ~= nil then
 					onObserverFailure(failure)
-				else
-					error(failure, 0)
+				elseif not failed then
+					failed = true
+					firstFailure = failure
 				end
 			end
+		end
+
+		if failed then
+			error(firstFailure, 0)
 		end
 	end
 
@@ -166,8 +183,8 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		local failed: boolean = false
 		local firstFailure: any = nil
 
-		for observer: TagTypes.TagMutationObserver in table.clone(mutationObservers) do
-			if mutationObservers[observer] then
+		for observer: TagTypes.TagMutationObserver, registration in table.clone(mutationObservers) do
+			if mutationObservers[observer] == registration then
 				local success: boolean, failure: any = runObserver(observer.Dispatch)
 
 				if not success and not failed then
@@ -201,9 +218,25 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 			return
 		end
 
-		commitDerivedState({ { kind = kind, tagId = tagId } })
-		dispatchEvent(kind, tagId)
-		dispatchDerivedEvents()
+		local failed: boolean = false
+		local firstFailure: any = nil
+
+		commitDerivedState({ { kind = kind, tagId = tagId } }, function(failure: any): ()
+			if not failed then
+				failed = true
+				firstFailure = failure
+			end
+		end)
+
+		if not destroyed then
+			dispatchEvent(kind, tagId)
+		end
+
+		local success: boolean, failure: any = pcall(dispatchDerivedEvents)
+
+		if failed or not success then
+			error(if failed then firstFailure else failure, 0)
+		end
 	end
 
 	function controller:_beginMutationBatch(): ()
@@ -267,6 +300,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 		tagId: string,
 		options: AddTagOptions?
 	): (boolean, string?, TagMutationReceipt?)
+		if destroyed then
+			return false, "TagControllerDestroyed", nil
+		end
+
 		local tagDefinition: TagDefinition? = TagRegistry.Get(tagId)
 
 		if tagDefinition == nil then
@@ -591,6 +628,9 @@ function TagController.Step(deltaTime: number)
 		return
 	end
 
+	local failed: boolean = false
+	local firstFailure: any = nil
+
 	for controller: TagController, advancingControllerEntry: AdvancingControllerEntry in advancingInstancesByController do
 		if not advancingControllerEntry.actor.enabled then
 			continue
@@ -638,8 +678,18 @@ function TagController.Step(deltaTime: number)
 		end
 
 		for _, tagRecord: TagInstanceRecord in expiredInstances do
-			internalController:_expireTimedInstance(tagRecord)
+			local success: boolean, failure: any =
+				pcall(internalController._expireTimedInstance, internalController, tagRecord)
+
+			if not success and not failed then
+				failed = true
+				firstFailure = failure
+			end
 		end
+	end
+
+	if failed then
+		error(firstFailure, 0)
 	end
 end
 

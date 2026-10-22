@@ -38,6 +38,7 @@ Adds, refreshes, stacks, or ignores an application according to the registered d
 - `true, nil`: the request was accepted, including an ignored reapplication.
 - `false, "UnknownTagId:<id>"`: the registry has no definition.
 - `false, "TagDurationMustBePositive"`: explicit duration is zero or negative.
+- `false, "TagControllerDestroyed"`: the controller has been destroyed; no instance is created.
 
 ### `RemoveTag(tagId: string) -> (boolean, string?)` {#remove-tag}
 
