@@ -24,12 +24,14 @@ built-in Resource replication excludes ordinary regeneration steps. Counts, curr
 authority, lifecycle publication totals and cleanup are asserted. Each row reports
 120 timed batches after 10 warmup batches, normalized per Resource change, Tag
 mutation or Action transition; the batch size is recorded. Yields occur outside
-timing. Separate Action rows include Resource costs with owned Tags and Resource
-costs without Tags. The latter records additional private Tag Commit and Dispatch
-callback totals across warmup and timed batches, allowing the same fixture to
-measure empty-batch delivery before and after a change. Run twice in fresh Studio
-processes. The empty-callback `pcall` row is an
-unsafe historical reference, not an interchangeable implementation. The separate
+timing. Separate Tag rows compare resolved Property changes with mutations that
+affect no Properties; the latter asserts unchanged Resource observer counts and
+exact Tag publication totals. Separate Action rows include Resource costs with
+owned Tags and Resource costs without Tags. The latter records additional private
+Tag Commit and Dispatch callback totals across warmup and timed batches, allowing
+the same fixture to measure empty-batch delivery before and after a change.
+Run twice in fresh Studio processes. The empty-callback `pcall` row is an unsafe
+historical reference, not an interchangeable implementation. The separate
 yielding-callback row measures detection and cancellation, which normal callbacks
 do not execute. Heap deltas show allocation/GC activity, not retained-memory growth.
 This measures server CPU without transport recipients; native suites cover delivery.

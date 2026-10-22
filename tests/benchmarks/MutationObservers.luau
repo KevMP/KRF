@@ -104,6 +104,7 @@ local function workload(population: number, extraObservers: number, activePerAct
 				duplicateBehavior = "Ignore",
 				properties = { WalkSpeed = { set = 8 } },
 			},
+			{ id = "Marker", visibility = "ClientVisible", duplicateBehavior = "Ignore" },
 		},
 		actions = {
 			function(): ActionTypes.ActionDefinition
@@ -222,6 +223,34 @@ local function workload(population: number, extraObservers: number, activePerAct
 	)
 
 	before = commits
+	local markerTagCommitsBefore: number = tagCommitCallbacks
+	local markerTagDispatchesBefore: number = tagDispatchCallbacks
+	local markerResourceCallbacksBefore: number = resourceCallbacks
+	local markerMetadata: any = metadata()
+
+	measure("TagAddRemoveWithoutProperties", population * 2, function()
+		for _, subject: Subject in subjects do
+			assert(subject.tags:AddTag("Marker"))
+			assert(subject.tags:RemoveTag("Marker"))
+		end
+	end, markerMetadata)
+
+	assert(commits - before == population * 2 * (warmup + samples), "Tag-only publication lost a transition")
+
+	assert(
+		tagCommitCallbacks - markerTagCommitsBefore == population * 2 * (warmup + samples) * extraObservers
+			and tagDispatchCallbacks - markerTagDispatchesBefore
+				== population * 2 * (warmup + samples) * extraObservers,
+		"Tag-only observer delivery count differs"
+	)
+
+	assert(resourceCallbacks == markerResourceCallbacksBefore, "Tag-only mutation notified Resource observers")
+	markerMetadata.publicationCommits = commits - before
+	markerMetadata.extraPrivateTagCommits = tagCommitCallbacks - markerTagCommitsBefore
+	markerMetadata.extraPrivateTagDispatches = tagDispatchCallbacks - markerTagDispatchesBefore
+	markerMetadata.extraPrivateResourceCallbacks = resourceCallbacks - markerResourceCallbacksBefore
+
+	before = commits
 
 	measure("ActionStartEndWithCostsTags", population * 2, function()
 		for _, subject: Subject in subjects do
@@ -258,6 +287,7 @@ local function workload(population: number, extraObservers: number, activePerAct
 	for _, subject: Subject in subjects do
 		assert(#subject.actions:_getActiveReplicationState() == activePerActor, "Benchmark leaked an Action")
 		assert(not subject.tags:HasTag("Slow"), "Benchmark leaked a Tag")
+		assert(not subject.tags:HasTag("Marker"), "Benchmark leaked a marker Tag")
 		local current: number? = subject.resources:GetCurrent("Meter1")
 
 		assert(

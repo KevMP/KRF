@@ -78,6 +78,7 @@ function PropertyController.new(actor: Actor): PropertyController
 	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
 	local disconnectTagMutations: (() -> ())? = nil
 	local mutationObservers: { [PropertyTypes.PropertyMutationObserver]: {} } = {}
+	local dispatchPending: boolean = false
 
 	function controller:_observeResolvedMutations(observer: PropertyTypes.PropertyMutationObserver): () -> ()
 		assert(not destroyed, "PropertyControllerDestroyed")
@@ -107,12 +108,21 @@ function PropertyController.new(actor: Actor): PropertyController
 			end
 		end
 
+		-- Reentry may drain notifications before later observers commit their work.
+		dispatchPending = true
+
 		if failed then
 			error(firstFailure, 0)
 		end
 	end
 
 	local function dispatchChanges(): ()
+		if not dispatchPending then
+			return
+		end
+
+		dispatchPending = false
+
 		local success: boolean, firstFailure: any = pcall(function(): ()
 			journal:Drain()
 		end)
@@ -154,6 +164,10 @@ function PropertyController.new(actor: Actor): PropertyController
 		local changes: { ResolvedChange } =
 			PropertyRecompute.RecomputePropertiesAffectedByTags(propertiesById, tagController, events)
 
+		if #changes == 0 then
+			return
+		end
+
 		for _, change: ResolvedChange in changes do
 			journal:Queue({
 				actor = actor,
@@ -165,6 +179,7 @@ function PropertyController.new(actor: Actor): PropertyController
 			}, false, true)
 		end
 
+		dispatchPending = true
 		local names: { string } = {}
 
 		for _, change: ResolvedChange in changes do
@@ -207,6 +222,7 @@ function PropertyController.new(actor: Actor): PropertyController
 				newResolvedValue = newResolvedValue,
 			}, true, true)
 
+			dispatchPending = true
 			finishChanges({ propertyName })
 
 			return true, nil
@@ -232,6 +248,7 @@ function PropertyController.new(actor: Actor): PropertyController
 			newResolvedValue = newResolvedValue,
 		}, true, previousResolvedValue ~= newResolvedValue)
 
+		dispatchPending = true
 		finishChanges(if previousResolvedValue ~= newResolvedValue then { propertyName } else nil)
 
 		return true, nil
