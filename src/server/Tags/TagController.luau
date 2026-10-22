@@ -254,14 +254,22 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 
 		local events: { TagTypes.TagMutationEvent } = deferredEvents
 		deferredEvents = {}
+
 		-- An enclosing Action transaction must retain these events and finish its
 		-- other domains before surfacing an observer failure through public dispatch.
-		commitDerivedState(events, onObserverFailure)
+		if #events > 0 then
+			commitDerivedState(events, onObserverFailure)
+		end
 
 		return events
 	end
 
 	function controller:_dispatchMutationEvents(events: { TagTypes.TagMutationEvent }): ()
+		-- Empty delivery must not flush another batch's pending derived notifications.
+		if #events == 0 then
+			return
+		end
+
 		for _, event: TagTypes.TagMutationEvent in events do
 			if destroyed then
 				break

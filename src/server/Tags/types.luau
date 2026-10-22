@@ -83,6 +83,7 @@ export type TagController = {
 
 -- Each private phase snapshots registrations at entry and skips disconnections or
 -- replacements before delivery. Additions can join later phases, never the current pass.
+-- Empty mutation batches run neither private phase.
 export type TagMutationObserver = {
 	Commit: (events: { TagMutationEvent }) -> (),
 	Dispatch: () -> (),

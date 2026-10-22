@@ -233,7 +233,8 @@ for _, operation: string in { "Start", "End", "Interrupt", "ClaimLocks", "Destro
 			expect(tags:HasTag("OwnerB")).toBe(false)
 			expect(tags:HasTag("Incoming")).toBe(operation == "Start")
 			expect(healthyTagCommits).toBe(1)
-			expect(tagDispatches).toBe(if operation == "End" or operation == "Interrupt" then 1 else 3)
+			-- Nested terminal batches return no events; only the completed outer batch dispatches.
+			expect(tagDispatches).toBe(1)
 			local expectedMutations: { ActionTypes.ActionReplicationMutation }
 
 			if operation == "End" or operation == "Interrupt" then

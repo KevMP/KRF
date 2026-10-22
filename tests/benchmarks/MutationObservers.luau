@@ -118,6 +118,14 @@ local function workload(population: number, extraObservers: number, activePerAct
 					activeTags = { "Slow" },
 				}
 			end,
+			function(): ActionTypes.ActionDefinition
+				return {
+					id = "CostOnly",
+					visibility = "ClientVisible",
+					autoGrant = true,
+					costs = { Meter1 = 1 },
+				}
+			end,
 		},
 	})
 
@@ -125,7 +133,8 @@ local function workload(population: number, extraObservers: number, activePerAct
 	local publication: NetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
 	assert(publication ~= nil, "Expected normal publication installation")
 	local commits: number = 0
-	local tagCallbacks: number = 0
+	local tagCommitCallbacks: number = 0
+	local tagDispatchCallbacks: number = 0
 	local resourceCallbacks: number = 0
 
 	publication:ObserveCommits(function()
@@ -155,10 +164,10 @@ local function workload(population: number, extraObservers: number, activePerAct
 		for _ = 1, extraObservers do
 			subject.tags:_observeMutations({
 				Commit = function()
-					tagCallbacks += 1
+					tagCommitCallbacks += 1
 				end,
 				Dispatch = function()
-					tagCallbacks += 1
+					tagDispatchCallbacks += 1
 				end,
 			})
 
@@ -195,7 +204,7 @@ local function workload(population: number, extraObservers: number, activePerAct
 	)
 
 	before = commits
-	callbacksBefore = tagCallbacks
+	callbacksBefore = tagCommitCallbacks + tagDispatchCallbacks
 
 	measure("TagAddRemoveWithProperties", population * 2, function()
 		for _, subject: Subject in subjects do
@@ -207,7 +216,8 @@ local function workload(population: number, extraObservers: number, activePerAct
 	assert(commits - before == population * 2 * (warmup + samples), "Tag publication lost a transition")
 
 	assert(
-		tagCallbacks - callbacksBefore == population * 2 * (warmup + samples) * extraObservers * 2,
+		tagCommitCallbacks + tagDispatchCallbacks - callbacksBefore
+			== population * 2 * (warmup + samples) * extraObservers * 2,
 		"Tag observer delivery count differs"
 	)
 
@@ -222,6 +232,28 @@ local function workload(population: number, extraObservers: number, activePerAct
 	end, metadata())
 
 	assert(commits - before == population * 2 * (warmup + samples), "Action publication lost a lifecycle transition")
+	before = commits
+	local tagCommitsBefore: number = tagCommitCallbacks
+	local tagDispatchesBefore: number = tagDispatchCallbacks
+	local costOnlyMetadata: any = metadata()
+
+	measure("ActionStartEndWithCostsNoTags", population * 2, function()
+		for _, subject: Subject in subjects do
+			local result: ActionTypes.ActionRequestResult = subject.actions:RequestAction("CostOnly")
+			assert(result.accepted, "Expected admitted benchmark Action without Tags")
+			assert(subject.actions:EndAction(result.sequenceId))
+		end
+	end, costOnlyMetadata)
+
+	assert(
+		commits - before == population * 2 * (warmup + samples),
+		"Tagless Action publication lost a lifecycle transition"
+	)
+
+	-- Record, rather than prescribe, empty Tag delivery so one fixture can compare implementations.
+	costOnlyMetadata.extraPrivateTagCommits = tagCommitCallbacks - tagCommitsBefore
+	costOnlyMetadata.extraPrivateTagDispatches = tagDispatchCallbacks - tagDispatchesBefore
+	costOnlyMetadata.publicationCommits = commits - before
 
 	for _, subject: Subject in subjects do
 		assert(#subject.actions:_getActiveReplicationState() == activePerActor, "Benchmark leaked an Action")
@@ -229,7 +261,7 @@ local function workload(population: number, extraObservers: number, activePerAct
 		local current: number? = subject.resources:GetCurrent("Meter1")
 
 		assert(
-			current ~= nil and math.abs(current - (1000000 - (warmup + samples) * 0.9)) < 0.0001,
+			current ~= nil and math.abs(current - (1000000 - (warmup + samples) * 1.9)) < 0.0001,
 			"Resource truth drifted"
 		)
 	end
