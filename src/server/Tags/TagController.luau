@@ -588,7 +588,10 @@ function TagController.new(actor: ActorTypes.Actor): TagController
 	end
 
 	function controller:_expireTimedInstance(tagRecord: TagInstanceRecord): boolean
-		if destroyed then
+		local remainingDuration: number? = tagRecord.remainingDuration
+
+		-- Ticks and earlier expiry listeners can refresh this same active record.
+		if destroyed or remainingDuration == nil or remainingDuration > 0 then
 			return false
 		end
 

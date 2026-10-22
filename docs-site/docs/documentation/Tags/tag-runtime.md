@@ -43,9 +43,11 @@ KRF advances timed and ticking instances automatically while the Actor is enable
 
 1. Advance tick countdown and remaining duration.
 2. Run a due `onTick` if the instance is still active.
-3. Expire instances whose remaining duration reached zero.
+3. Expire still-active instances whose current remaining duration is zero or negative.
 
 A tick therefore runs before expiry when both are due in the same step. Tick-only work does not fire `OnTagChanged`, and callback errors do not stop expiry.
+
+A refresh from a tick or an earlier expiry listener replaces the instance's deadline before its expiry turn, including when the refresh makes it indefinite.
 
 :::warning Keep `onTick` synchronous
 Tag callbacks run inside the shared advancement pass. Do not yield or perform slow work.
