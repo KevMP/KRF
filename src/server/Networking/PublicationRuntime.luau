@@ -15,7 +15,7 @@ type Attachment = {
 	active: boolean,
 	depth: number,
 	touched: { [string]: boolean },
-	retryTouched: { [string]: boolean }?,
+	retryGroups: { [string]: { [string]: boolean } },
 	events: { Types.PublicationEvent },
 	poisoned: boolean,
 }
@@ -172,25 +172,52 @@ local function dispatchCommits(self: Runtime): ()
 	end
 end
 
+local function includeRetryGroups(attachment: Attachment, touched: { [string]: boolean }): boolean
+	local retrying: boolean = false
+
+	-- Failed groups retain only their own dependencies. An unrelated notification
+	-- must neither retry a faulty producer nor become coupled to its recovery.
+	for domainId: string, dependencies in attachment.retryGroups do
+		if touched[domainId] then
+			retrying = true
+
+			for dependencyId: string in dependencies do
+				touched[dependencyId] = true
+			end
+		end
+	end
+
+	return retrying
+end
+
+local function retainRetryGroup(attachment: Attachment, touched: { [string]: boolean }): ()
+	for domainId: string in touched do
+		attachment.retryGroups[domainId] = touched
+	end
+end
+
 local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attachment, grouped: boolean?): ()
+	if not attachment.active then
+		return
+	end
+
 	local touched = attachment.touched
 	local events = attachment.events
-	local retryTouched = attachment.retryTouched
 
 	attachment.touched = {}
 	attachment.events = {}
 
-	if retryTouched ~= nil then
-		for domainId: string in retryTouched do
-			touched[domainId] = true
-		end
-	end
+	local retrying: boolean = includeRetryGroups(attachment, touched)
 
 	local staged: { [string]: Types.PublicationCaptureResult } = {}
 	local patches: { Types.PublicationDomainPatch } = {}
 
 	local success: boolean, failure: any = pcall(function()
 		for _, domain in self.domains do
+			if not attachment.active then
+				break
+			end
+
 			if touched[domain.id] then
 				local captured = captureDomain(self, actor, domain, attachment.captures[domain.id])
 
@@ -204,17 +231,22 @@ local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attac
 	end)
 
 	if not success then
-		-- A rejected atomic group remains coupled until a later notification can
-		-- capture all its domains. Retain only bounded dirty ids, never failed events.
-		-- Ordinary standalone domain failures keep their existing isolation behavior.
-		if grouped or retryTouched ~= nil then
-			attachment.retryTouched = touched
+		-- Overlapping groups join; disjoint groups remain independently recoverable.
+		-- Each domain belongs to at most one set, bounded by the loaded catalog.
+		if grouped or retrying then
+			retainRetryGroup(attachment, touched)
 		end
 
 		error(failure, 0)
 	end
 
-	attachment.retryTouched = nil
+	if not attachment.active then
+		return
+	end
+
+	for domainId: string in touched do
+		attachment.retryGroups[domainId] = nil
+	end
 
 	if #patches == 0 and #events == 0 then
 		return
@@ -318,7 +350,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 		active = true,
 		depth = 0,
 		touched = {},
-		retryTouched = nil,
+		retryGroups = {},
 		events = {},
 		poisoned = false,
 	}
@@ -332,6 +364,11 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 					return domain.observe(actor, function(reported: { ReplicationTypes.ReplicationDomainEvent }?): ()
 						if not attachment.active then
 							return
+						end
+
+						-- Invalid grouped events still participate in atomic recovery.
+						if attachment.depth > 0 then
+							attachment.touched[domain.id] = true
 						end
 
 						eventsFor(self, actor, attachment, domain.id, reported)
@@ -459,6 +496,8 @@ function PublicationRuntime.WithActorCommit(self: Runtime, actor: ActorTypes.Act
 
 	if attachment.depth == 0 then
 		if attachment.poisoned then
+			includeRetryGroups(attachment, attachment.touched)
+			retainRetryGroup(attachment, attachment.touched)
 			attachment.touched = {}
 			attachment.events = {}
 			attachment.poisoned = false

@@ -66,6 +66,8 @@ For a changing domain:
 
 KRF captures the complete state and event payloads before `onCommitted` returns. State changes and events from that boundary share one Actor sequence. An unchanged snapshot with no events produces no new sequence. Invalid events or snapshots reject the publication without changing the last captured state; a later valid notification can reconcile it.
 
+Domains changed together by a rejected framework transaction recover together when a later notification touches any participant. Persistent failure keeps that group at its last valid state; it does not block unrelated domains or Actors. Overlapping transactions share the recovery dependency, while disjoint groups recover independently. Recovery captures current truth and never replays events from rejected publications. Fix the faulty producer before expecting its group to advance; no polling retry runs in the background.
+
 `snapshot`, `observe`, observer delivery, and `onCommitted` must be synchronous and non-yielding. Do not use Heartbeat, `task.spawn`, `task.defer`, or an asynchronous Signal to deliver committed notifications. Later gameplay mutations must not alter captured event payloads.
 
 The committed-observer method belongs to your game; KRF prescribes no controller method name. The domain adapts that method to `onCommitted`. Omit `observe` only for state that remains static for the Actor's lifetime.

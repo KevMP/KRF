@@ -9,17 +9,32 @@ Do not commit individual run outputs or machine manifests.
 
 | Command | Workload and boundary |
 | --- | --- |
-| `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic future-domain profiles remain distinct. |
+| `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic domain profiles remain distinct. |
 | `npm run test:integration:networking-baseline` | The same activity shapes through normal server/client startup and real transports, with two native clients and delivery/privacy/teardown assertions. |
 | `npm run measure:n4` | Sustained generic load at 75/90 Actors and 2/10/25/30 injected recipients: 30 seconds heavy, 15 seconds light, 75 seconds quiet recovery with ongoing sentinel traffic. Queue bounds, fairness, explicit replacement baselines and current truth are asserted. |
 | `npm run test:integration:n4-performance` | The original native server/client fixture with a Scenario wrapper selecting 75/90 Actors and 45 seconds of heavy Tags traffic; two native clients. |
 | `npm run test:integration:tags-load` | Separate native two-client Tags test at 25/50/100 Actors, paced and burst mutations. See [TagsLoad.md](./TagsLoad.md). |
 | `npm run measure:tags` | Separate extreme single-Actor Tag-map scaling test. See [TagsPublication.md](./TagsPublication.md). |
+| `powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Observers` | Private mutation callback costs plus real regeneration, Tag/Property churn and Action Start/End transactions through normal server startup and N3 at 30/75/90 Actors. |
+
+The observer workload uses six regenerating Resources per Actor, two active Actions
+per Actor at 30/75 Actors and 32 at 90 Actors. Each population runs with zero, one
+and four additional private observers. Regeneration observers explicitly opt in;
+built-in Resource replication excludes ordinary regeneration steps. Counts, current
+authority, lifecycle publication totals and cleanup are asserted. Each row reports
+120 timed batches after 10 warmup batches, normalized per Resource change, Tag
+mutation or Action transition; the batch size is recorded. Yields occur outside
+timing. Run twice in fresh Studio processes. The empty-callback `pcall` row is an
+unsafe historical reference, not an interchangeable implementation. The separate
+yielding-callback row measures detection and cancellation, which normal callbacks
+do not execute. Heap deltas show allocation/GC activity, not retained-memory growth.
+This measures server CPU without transport recipients; native suites cover delivery.
 
 The realistic traces model 10/25/30 players and 20/50/60 NPCs. Tags have small
 active maps and varying stacks; only a subset fights. Synthetic game-defined
 domains model 20 or 40 active Actions **across the lobby** and six Resource-shaped
-entries per Actor. They exercise generic replication, not built-in future adapters.
+entries per Actor. They exercise generic replication rather than the built-in
+Actions/Resources adapters used by the separate observer workload.
 The scenario definitions and assertions in the fixtures are the workload contract.
 
 ## Analyze local baseline runs
