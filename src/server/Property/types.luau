@@ -31,6 +31,8 @@ export type PropertyController = {
 	Destroy: (self: any) -> (),
 }
 
+-- Each private phase snapshots registrations at entry and skips disconnections or
+-- replacements before delivery. Additions can join later phases, never the current pass.
 export type PropertyMutationObserver = {
 	Commit: (propertyNames: { string }) -> (),
 	Dispatch: () -> (),

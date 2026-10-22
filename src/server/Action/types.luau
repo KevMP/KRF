@@ -63,6 +63,11 @@ export type ActionLifecycleEvent = {
 
 export type ActionInterruptedEvent = ActionLifecycleEvent & { reason: string }
 
+-- Framework-private replication identities; execution context and parameters stay server-owned.
+export type ActionReplicationIdentity = { read actionId: string, read sequenceId: number }
+export type ActionReplicationMutationKind = "Started" | "Ended" | "Interrupted"
+export type ActionReplicationMutation = ActionReplicationIdentity & { read kind: ActionReplicationMutationKind }
+
 export type ActionController = {
 	Destroy: (self: ActionController) -> (),
 	SetGrants: (self: ActionController, sourceId: string, actionIds: { string }) -> (boolean, string?),
@@ -76,6 +81,11 @@ export type ActionController = {
 	OnActionStarted: SignalTypes.Event<ActionLifecycleEvent>,
 	OnActionEnded: SignalTypes.Event<ActionLifecycleEvent>,
 	OnActionInterrupted: SignalTypes.Event<ActionInterruptedEvent>,
+}
+
+export type InternalActionController = ActionController & {
+	_observeMutations: (self: InternalActionController, callback: ({ ActionReplicationMutation }) -> ()) -> () -> (),
+	_getActiveReplicationState: (self: InternalActionController) -> { ActionReplicationIdentity },
 }
 
 export type OnCanStart = (ActionStartContext) -> (boolean, string?)

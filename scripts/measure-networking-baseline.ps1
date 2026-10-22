@@ -1,6 +1,7 @@
 param(
     [string]$StudioPath,
-    [ValidateRange(60, 1200)][int]$TimeoutSeconds = 600
+    [ValidateRange(60, 1200)][int]$TimeoutSeconds = 600,
+    [ValidateSet('Networking', 'Observers')][string]$Workload = 'Networking'
 )
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -19,7 +20,7 @@ $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "CPU-only Studio baseline; logs: $runDirectory"
 $outputFile = Join-Path $runDirectory 'result.log'
-$scriptFile = Join-Path $repository 'tests\benchmarks\NetworkingBaseline.luau'
+$scriptFile = Join-Path $repository $(if ($Workload -eq 'Observers') { 'tests\benchmarks\MutationObservers.luau' } else { 'tests\benchmarks\NetworkingBaseline.luau' })
 # Direct file output avoids run-in-roblox's 1 MiB HTTP result limit. This is
 # the same RunScript mechanism used by the native multiplayer runner.
 $studioArguments = @(
@@ -40,6 +41,12 @@ if (-not $block.Success) { throw "No complete CPU result. Inspect $runDirectory.
 $result = (($block.Groups[1].Value -split '\r?\n') -join '') | ConvertFrom-Json
 . "$PSScriptRoot\networking-benchmark-environment.ps1"
 $result | Add-Member -NotePropertyName environment -NotePropertyValue (Get-NetworkingBenchmarkEnvironment $repository $StudioPath)
+$result | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
+if ($Workload -eq 'Observers') {
+    foreach ($relativePath in @('tests/benchmarks/MutationObservers.luau', 'src/server/Tags/TagController.luau', 'src/server/Property/PropertyController.luau', 'src/server/Resource/ResourceController.luau', 'src/server/Resource/utils/ResourceMutationJournal.luau', 'src/server/Networking/PublicationRuntime.luau')) {
+        $result.environment.harnessSHA256[$relativePath] = (Get-FileHash -LiteralPath (Join-Path $repository $relativePath) -Algorithm SHA256).Hash
+    }
+}
 $result | ConvertTo-Json -Depth 30 -Compress | Set-Content -LiteralPath (Join-Path $runDirectory 'result.json') -Encoding UTF8
 if ($result.success -ne $true) { exit 1 }
 Write-Host "__KRF_NETWORKING_CPU_PASS__ Results: $runDirectory"

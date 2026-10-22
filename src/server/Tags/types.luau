@@ -81,6 +81,9 @@ export type TagController = {
 	GetTagInstances: (any, tagId: string) -> { TagInstanceSnapshot },
 }
 
+-- Each private phase snapshots registrations at entry and skips disconnections or
+-- replacements before delivery. Additions can join later phases, never the current pass.
+-- Empty mutation batches run neither private phase.
 export type TagMutationObserver = {
 	Commit: (events: { TagMutationEvent }) -> (),
 	Dispatch: () -> (),
@@ -89,7 +92,7 @@ export type TagMutationObserver = {
 export type InternalTagController = TagController & {
 	_observeMutations: (self: InternalTagController, observer: TagMutationObserver) -> () -> (),
 	_beginMutationBatch: (self: InternalTagController) -> (),
-	_finishMutationBatch: (self: InternalTagController) -> { TagMutationEvent },
+	_finishMutationBatch: (self: InternalTagController, onObserverFailure: ((any) -> ())?) -> { TagMutationEvent },
 	_dispatchMutationEvents: (self: InternalTagController, events: { TagMutationEvent }) -> (),
 	_validateApplications: (self: InternalTagController, applications: { TagApplication }) -> string?,
 	_addTagWithReceipt: (

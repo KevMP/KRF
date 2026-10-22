@@ -26,6 +26,20 @@ type PropertyControllerEventContext = PropertyControllerEventUtils.PropertyContr
 
 local PropertyController = {}
 
+local function runObserver(callback: (...any) -> (), ...: any): (boolean, any)
+	local observerThread: thread = coroutine.create(callback)
+	local success: boolean, failure: any = coroutine.resume(observerThread, ...)
+
+	if coroutine.status(observerThread) ~= "dead" then
+		pcall(task.cancel, observerThread)
+		pcall(coroutine.close, observerThread)
+
+		return false, "PropertyMutationObserverYielded"
+	end
+
+	return success, failure
+end
+
 function PropertyController.new(actor: Actor): PropertyController
 	local controller: InternalPropertyController = {} :: InternalPropertyController
 	local destroyed: boolean = false
@@ -63,33 +77,96 @@ function PropertyController.new(actor: Actor): PropertyController
 	local tagController: TagController? = actor:GetController("TagController") :: TagController?
 	local journal: PropertyControllerEventUtils.PropertyEventJournal = PropertyControllerEventUtils.new(eventContext)
 	local disconnectTagMutations: (() -> ())? = nil
-	local mutationObservers: { [PropertyTypes.PropertyMutationObserver]: boolean } = {}
+	local mutationObservers: { [PropertyTypes.PropertyMutationObserver]: {} } = {}
+	local dispatchPending: boolean = false
 
 	function controller:_observeResolvedMutations(observer: PropertyTypes.PropertyMutationObserver): () -> ()
-		mutationObservers[observer] = true
+		assert(not destroyed, "PropertyControllerDestroyed")
+		local registration = {}
+
+		mutationObservers[observer] = registration
 
 		return function(): ()
-			mutationObservers[observer] = nil
+			if mutationObservers[observer] == registration then
+				mutationObservers[observer] = nil
+			end
 		end
 	end
 
 	local function commitDerivedState(names: { string }): ()
-		for observer: PropertyTypes.PropertyMutationObserver in mutationObservers do
-			observer.Commit(names)
+		local failed: boolean = false
+		local firstFailure: any = nil
+
+		for observer: PropertyTypes.PropertyMutationObserver, registration in table.clone(mutationObservers) do
+			if mutationObservers[observer] == registration then
+				local success: boolean, failure: any = runObserver(observer.Commit, names)
+
+				if not success and not failed then
+					failed = true
+					firstFailure = failure
+				end
+			end
+		end
+
+		-- Reentry may drain notifications before later observers commit their work.
+		dispatchPending = true
+
+		if failed then
+			error(firstFailure, 0)
 		end
 	end
 
 	local function dispatchChanges(): ()
-		journal:Drain()
+		if not dispatchPending then
+			return
+		end
 
-		for observer: PropertyTypes.PropertyMutationObserver in mutationObservers do
-			observer.Dispatch()
+		dispatchPending = false
+
+		local success: boolean, firstFailure: any = pcall(function(): ()
+			journal:Drain()
+		end)
+
+		local failed: boolean = not success
+
+		for observer: PropertyTypes.PropertyMutationObserver, registration in table.clone(mutationObservers) do
+			if mutationObservers[observer] == registration then
+				local dispatched: boolean, failure: any = runObserver(observer.Dispatch)
+
+				if not dispatched and not failed then
+					failed = true
+					firstFailure = failure
+				end
+			end
+		end
+
+		if failed then
+			error(firstFailure, 0)
+		end
+	end
+
+	local function finishChanges(names: { string }?): ()
+		local committed: boolean = true
+		local commitFailure: any = nil
+
+		if names ~= nil then
+			committed, commitFailure = pcall(commitDerivedState, names)
+		end
+
+		local dispatched: boolean, dispatchFailure: any = pcall(dispatchChanges)
+
+		if not committed or not dispatched then
+			error(if not committed then commitFailure else dispatchFailure, 0)
 		end
 	end
 
 	local function commitTagChanges(events: { TagTypes.TagMutationEvent }): ()
 		local changes: { ResolvedChange } =
 			PropertyRecompute.RecomputePropertiesAffectedByTags(propertiesById, tagController, events)
+
+		if #changes == 0 then
+			return
+		end
 
 		for _, change: ResolvedChange in changes do
 			journal:Queue({
@@ -102,6 +179,7 @@ function PropertyController.new(actor: Actor): PropertyController
 			}, false, true)
 		end
 
+		dispatchPending = true
 		local names: { string } = {}
 
 		for _, change: ResolvedChange in changes do
@@ -116,6 +194,10 @@ function PropertyController.new(actor: Actor): PropertyController
 	end
 
 	function controller:SetBaseProperty(propertyName: string, value: number): (boolean, string?)
+		if destroyed then
+			return false, "PropertyControllerDestroyed"
+		end
+
 		if typeof(value) ~= "number" then
 			return false, "InvalidPropertyValue"
 		end
@@ -140,8 +222,8 @@ function PropertyController.new(actor: Actor): PropertyController
 				newResolvedValue = newResolvedValue,
 			}, true, true)
 
-			commitDerivedState({ propertyName })
-			dispatchChanges()
+			dispatchPending = true
+			finishChanges({ propertyName })
 
 			return true, nil
 		end
@@ -166,11 +248,8 @@ function PropertyController.new(actor: Actor): PropertyController
 			newResolvedValue = newResolvedValue,
 		}, true, previousResolvedValue ~= newResolvedValue)
 
-		if previousResolvedValue ~= newResolvedValue then
-			commitDerivedState({ propertyName })
-		end
-
-		dispatchChanges()
+		dispatchPending = true
+		finishChanges(if previousResolvedValue ~= newResolvedValue then { propertyName } else nil)
 
 		return true, nil
 	end

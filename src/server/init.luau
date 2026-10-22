@@ -195,7 +195,11 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		-- Framework ids remain reserved when their visible catalogs are empty.
 		if
 			type(definition) == "table"
-			and (rawget(definition, "id") == "KRF.Tags" or rawget(definition, "id") == "KRF.Resources")
+			and (
+				rawget(definition, "id") == "KRF.Tags"
+				or rawget(definition, "id") == "KRF.Resources"
+				or rawget(definition, "id") == "KRF.Actions"
+			)
 		then
 			return false, { system = "ReplicationDomain", reason = "DuplicateReplicationDomainId" }
 		end

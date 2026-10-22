@@ -101,6 +101,7 @@ export type PublicationRuntimeModule = {
 export type PublicationLifecycleModule = {
 	AttachActor: (actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (actor: ActorTypes.Actor) -> (),
+	WithActorCommit: (actor: ActorTypes.Actor, callback: () -> ()) -> (),
 }
 
 -- Stream identities are opaque to PublicationRuntime; ActorAwarenessRuntime supplies recipient-visible work.

@@ -23,6 +23,7 @@ const sidebarsApi: SidebarsConfig = {
         'Actor/actor-view',
         'Actor/tags-view',
         'Actor/resources-view',
+        'Actor/actions-view',
         'Actor/domain-view',
       ],
     },

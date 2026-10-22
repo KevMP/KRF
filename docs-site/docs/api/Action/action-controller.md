@@ -62,7 +62,7 @@ Requests one Action on this Actor. An accepted result is `{ accepted = true, seq
 
 **Integration API.** Use for request-delivery integrations or occasional server-driven behavior. Normal Action authoring uses factories and callbacks; this method does not provide input integration.
 
-Checks start requirements and atomically commits prepared costs and declarative effects with activation. Parameters are passed unchanged. Acceptance does not imply the instance is still active when the method returns.
+Checks start requirements and atomically commits prepared costs and declarative effects with activation. Parameters are passed unchanged. Acceptance does not imply the instance is still active when the method returns. Publication failure after commit does not refund or undo authority; required public notifications and hooks complete before the original error propagates.
 
 | Rejection reason | Cause |
 | --- | --- |
@@ -86,6 +86,8 @@ Checks start requirements and atomically commits prepared costs and declarative 
 | `ActionFactoryFailed` / `ActionFactoryYielded` / `ActionFactoryInvalidResult` | The per-request factory errored, yielded, or returned an invalid Action implementation. No sequence id is consumed. |
 | `ActionCanStartRejected` | `onCanStart` returned `false` without a usable custom reason. |
 | `ActionCanStartFailed` / `ActionCanStartYielded` / `ActionCanStartInvalidResult` | The decision callback errored, attempted to yield, or returned a non-boolean first value. |
+| `ActionSequenceIdExhausted` | No supported sequence identity remains in this controller lifetime. |
+| `ActionVisibleInstanceLimitReached` | The resulting active ClientVisible set would exceed 256 after planned preemption. |
 | `ActionLockConflict` | A conflicting owner did not permit preemption, or conflict planning remained unstable. |
 | `ActionInterruptDecisionFailed` / `ActionInterruptDecisionYielded` / `ActionInterruptDecisionInvalidResult` | A conflicting owner's interruption hook errored, yielded, or returned a non-boolean value. |
 | Game-defined string | `onCanStart` returned `false, reason` with a non-empty string. |
@@ -98,7 +100,7 @@ Calls the instance's optional `onStopRequested(ctx, request)` synchronously with
 
 Ends one active instance. Returns `false` with `ActionSequenceIdInvalid`, `ActionInstanceNotActive`, or `ActionControllerDestroyed` on failure.
 
-Sequence ids supplied to Stop, End, or Interrupt must be finite positive integers. Successful End/Interrupt returns `true, nil`.
+Sequence ids supplied to Stop, End, or Interrupt must be positive integers from 1 through 4,294,967,295. Successful End/Interrupt returns `true, nil`.
 
 ### `InterruptAction(sequenceId: number, reason: string) -> (boolean, string?)` {#interrupt-action}
 

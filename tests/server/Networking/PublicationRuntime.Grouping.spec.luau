@@ -236,15 +236,23 @@ it("rejects the whole grouped publication when one final snapshot is invalid", f
 		domains = { ["Game.Resource"] = { value = 100 }, ["Game.Action"] = { value = false } },
 	})
 
+	-- Retrying an unrelated participant must not drop the rejected group when
+	-- its sibling is still invalid, or publish a partial canonical state.
+	resource.value = 60
+	expect((pcall(resource.callbacks[actor], nil))).toBe(false)
+	expect(runtime:GetActorSequence(actor)).toBe(0)
+	expect(commits).toEqual({})
 	action.value = true
 
 	runtime:WithActorCommit(actor, function(): ()
-		resource.callbacks[actor]()
 		action.callbacks[actor]()
 	end)
 
 	expect(commits[1].sequence).toBe(1)
 	expect(#commits[1].patches).toBe(2)
+	local recovered: ServerNetworkingTypes.PublicationBaseline? = runtime:CaptureBaseline(actor)
+	assert(recovered ~= nil, "Expected retained Actor publication")
+	expect(recovered.domains["Game.Resource"].value).toBe(60)
 end)
 
 for _, invalidReport: { name: string, events: any } in

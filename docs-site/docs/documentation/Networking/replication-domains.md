@@ -6,7 +6,7 @@ sidebar_position: 2
 
 A replication domain declares the Actor state and gameplay occurrences your game approves for replication. Your controller owns gameplay; the domain defines its state projection and committed-observation callback contract.
 
-Use custom domains for game-owned state. KRF automatically publishes assigned ClientVisible Resources through [ResourcesView](../Resource/resource-views) and active ClientVisible Tags through [TagsView](../Tags/tag-views). Stamina, Mana, and similar meters belong to Resources; use these built-in projections for framework-owned state. A built-in Actions domain is not available yet; Action `ClientVisible` metadata alone does not publish state.
+Use custom domains for game-owned state. KRF automatically publishes assigned ClientVisible Resources through [ResourcesView](../Resource/resource-views) and active ClientVisible Tags through [TagsView](../Tags/tag-views). Stamina, Mana, and similar meters belong to Resources; use these built-in projections for framework-owned state. Active ClientVisible Actions publish through [ActionsView](../Action/action-views), including distinct Started, Ended and Interrupted occurrences.
 
 Supply domains through `Server.Init({ replicationDomains = ... })`, separately from controller definitions. Startup installs the server publication runtime and prepares schema metadata for the [networking handshake](./startup). Registering an Actor captures each domain and attaches its committed observer before the Actor is enabled or public registration callbacks run.
 
@@ -66,6 +66,8 @@ For a changing domain:
 
 KRF captures the complete state and event payloads before `onCommitted` returns. State changes and events from that boundary share one Actor sequence. An unchanged snapshot with no events produces no new sequence. Invalid events or snapshots reject the publication without changing the last captured state; a later valid notification can reconcile it.
 
+Domains changed together by a rejected framework transaction recover together when a later notification touches any participant. Persistent failure keeps that group at its last valid state; it does not block unrelated domains or Actors. Overlapping transactions share the recovery dependency, while disjoint groups recover independently. Recovery captures current truth and never replays events from rejected publications. Fix the faulty producer before expecting its group to advance; no polling retry runs in the background.
+
 `snapshot`, `observe`, observer delivery, and `onCommitted` must be synchronous and non-yielding. Do not use Heartbeat, `task.spawn`, `task.defer`, or an asynchronous Signal to deliver committed notifications. Later gameplay mutations must not alter captured event payloads.
 
 The committed-observer method belongs to your game; KRF prescribes no controller method name. The domain adapts that method to `onCommitted`. Omit `observe` only for state that remains static for the Actor's lifetime.
@@ -78,7 +80,7 @@ The committed-observer method belongs to your game; KRF prescribes no controller
 
 KRF combines framework and game domains before startup validation. Duplicate domain ids, malformed events, invalid schemas or audiences, and missing required callbacks fail before publication. Event ids must be unique within a domain; different domains may reuse an event id.
 
-`KRF.Tags` and `KRF.Resources` are reserved for the built-in projections, including when an empty visible catalog causes either protocol domain to be omitted. Game definitions cannot claim these ids. ServerOnly Tag and Resource ids are excluded before their visible schemas are compiled.
+`KRF.Tags`, `KRF.Resources` and `KRF.Actions` are reserved for the built-in projections, including when an empty visible catalog causes a protocol domain to be omitted. Game definitions cannot claim these ids. ServerOnly Tag, Resource and Action ids are excluded before their visible schemas are compiled.
 
 Successful startup publishes immutable catalog metadata. Source-table edits cannot change the loaded contract; live gameplay state stays in the controller. Games cannot register or replace domains at runtime. Definitions contain semantic fields only: games supply no Remote references, wire ids, byte offsets, revisions, or flush settings.
 
