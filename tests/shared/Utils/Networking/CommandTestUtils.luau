@@ -9,16 +9,11 @@ local SignalTypes = require(KRF.shared.Signal.types)
 -- The public facade path is specified by #79. Server module locations are not;
 -- find the named contracts without prescribing a new source-system layout.
 local registryModule: Instance? = KRF.server:FindFirstChild("CommandRegistry", true)
-local authorizationModule: Instance? = KRF.server:FindFirstChild("CommandAuthorization", true)
 local runtimeModule: Instance? = KRF.client.Networking:FindFirstChild("CommandRuntime")
 -- Absent modules must not produce analyzer/import failures on a RED branch.
 -- Existing modules still load normally; a broken import is a fixture regression.
 local requireOptional: (ModuleScript) -> any = require :: any
 local registry: any = if registryModule ~= nil then requireOptional(registryModule :: ModuleScript) else nil
-
-local authorization: any = if authorizationModule ~= nil
-	then requireOptional(authorizationModule :: ModuleScript)
-	else nil
 
 local runtime: any = if runtimeModule ~= nil then requireOptional(runtimeModule :: ModuleScript) else nil
 
@@ -43,11 +38,6 @@ export type Facade = {
 	read Send: (string, PublicTypes.ActorView?, any?) -> (number?, string?),
 	read OnCommandResult: SignalTypes.Event<any>,
 	read OnCommandUncertain: SignalTypes.Event<any>,
-}
-
-export type Authorization = {
-	AnyReadyClient: (context: any, request: any) -> (boolean, string?),
-	OwnerActor: (context: any, request: any) -> (boolean, string?),
 }
 
 export type ManifestCommand = {
@@ -102,12 +92,6 @@ function TestUtils.runtime(): Facade
 	assert(runtime ~= nil, "[N9 missing contract] client.Networking.CommandRuntime: Send and runtime events (#79.21)")
 
 	return runtime
-end
-
-function TestUtils.authorization(): Authorization
-	assert(authorization ~= nil, "[N9 missing contract] CommandAuthorization: explicit command authority (#79.11-12)")
-
-	return authorization
 end
 
 return TestUtils

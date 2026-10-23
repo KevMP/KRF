@@ -13,8 +13,8 @@ local control: RemoteEvent = ReplicatedStorage:WaitForChild("CommandTestControl"
 local view: PublicTypes.ActorView? = nil
 local failed: boolean = false
 
-local function report(phase: string, failure: string?): ()
-	control:FireServer(phase, failure)
+local function report(phase: string, failure: string?, sentIds: { number }?): ()
+	control:FireServer(phase, failure, sentIds)
 end
 
 local function waitFor(predicate: () -> boolean, reason: string): ()
@@ -30,6 +30,8 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 	if failed then
 		return
 	end
+
+	local sentIds: { number }? = nil
 
 	local completed: boolean, reason: any = pcall(function(): ()
 		if phase == "Exercise" then
@@ -47,11 +49,30 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 			local second: number? = nil
 			second, failure = Commands.Send("Game.Interact", view, { choice = 7 })
 			assert(second ~= nil and failure == nil and second > first, "Expected installed private target mapping")
+			sentIds = { first, second }
 
-			assert(
-				Commands.OnCommandResult.Fire == nil and Commands.OnCommandUncertain.Fire == nil,
-				"Public events must not expose owning Signals"
-			)
+			for _, event: any in { Commands.OnCommandResult, Commands.OnCommandUncertain } do
+				assert(
+					type(event.Connect) == "function"
+						and type(event.Once) == "function"
+						and type(event.Wait) == "function",
+					"Expected KRF Event API"
+				)
+
+				for _, member: string in { "Fire", "Destroy", "DisconnectAll" } do
+					local readable: boolean = pcall(function(): ()
+						local _: any = event[member]
+					end)
+
+					assert(not readable, "KRF Event must reject owning-member access")
+				end
+
+				local writable: boolean = pcall(function(): ()
+					event.Connect = function() end
+				end)
+
+				assert(not writable, "KRF Event must reject mutation")
+			end
 
 			local allowed: { [string]: boolean } = { Send = true, OnCommandResult = true, OnCommandUncertain = true }
 
@@ -81,7 +102,7 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 		failed = true
 	end
 
-	report(phase, if completed then nil else tostring(reason))
+	report(phase, if completed then nil else tostring(reason), sentIds)
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()

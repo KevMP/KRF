@@ -7,6 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+local Signal = require(KRF.shared.Signal.SignalModule)
 local Client = require(KRF.client)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
@@ -22,6 +24,47 @@ end)
 
 afterEach(function()
 	fixture.cleanup()
+end)
+
+local function expectReadOnlyEvent(publicEvent: SignalTypes.Event<any>): ()
+	local event: any = publicEvent
+	expect(type(event.Connect)).toBe("function")
+	expect(type(event.Once)).toBe("function")
+	expect(type(event.Wait)).toBe("function")
+	local connection: SignalTypes.Connection = event:Connect(function() end)
+	connection:Disconnect()
+	local once: SignalTypes.Connection = event:Once(function() end)
+	once:Disconnect()
+
+	-- Match SignalModule.wrapEvent's strict read-only surface. Its methods
+	-- live behind a metatable; table freezing is not the Event contract.
+	for _, member: string in { "Fire", "Destroy", "DisconnectAll", "NotARealMember" } do
+		expect(function()
+			local _: any = event[member]
+		end).toThrow()
+	end
+
+	expect(function()
+		event.Connect = function() end
+	end).toThrow()
+
+	expect(function()
+		event.NotARealMember = true
+	end).toThrow()
+end
+
+it("accepts the established SignalModule Event wrapper in the runtime Event assertions", function()
+	local signal: SignalTypes.Signal<any> = Signal.new()
+
+	local completed: boolean, reason: any = pcall(function()
+		expectReadOnlyEvent(Signal.wrapEvent(signal))
+	end)
+
+	signal:Destroy()
+
+	if not completed then
+		error(reason, 0)
+	end
 end)
 
 local function expectNotAdmitted(runtime: Commands.Facade): ()
@@ -157,12 +200,6 @@ it("exposes only Send and read-only runtime events, without transport or private
 	expect(table.isfrozen(runtime)).toBe(true)
 
 	for _, event: any in { runtime.OnCommandResult, runtime.OnCommandUncertain } do
-		expect(type(event.Connect)).toBe("function")
-		expect(type(event.Once)).toBe("function")
-		expect(type(event.Wait)).toBe("function")
-		expect(event.Fire).toBeNil()
-		expect(event.Destroy).toBeNil()
-		expect(event.DisconnectAll).toBeNil()
-		expect(table.isfrozen(event)).toBe(true)
+		expectReadOnlyEvent(event)
 	end
 end)

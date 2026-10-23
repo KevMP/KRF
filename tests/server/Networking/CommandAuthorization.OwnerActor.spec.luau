@@ -8,7 +8,6 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
-local Commands = require(script.Parent.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -21,13 +20,18 @@ afterEach(function()
 	TestUtils.destroy(fixture)
 end)
 
-it("does not treat an aware client or matching ownerUserId as OwnerActor authority", function()
-	local authorization: Commands.Authorization = Commands.authorization()
+-- The production server command runtime does not exist yet. Do not call the
+-- helper with a made-up context: that would leave this N4 runtime disconnected
+-- from authorization and could reward a direct Player.Character comparison.
+-- These are intentional failing tests, not skipped tests or authorization proof.
+it("[blocked integration] denies an aware client with matching UserId when N4 associates another Player", function()
 	local player: Player = { UserId = 42 } :: any
 	local other: Player = { UserId = 42 } :: any
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, other)
 
-	other.Character = actor.model
+	-- Deliberately disagree with the injected N4 association: direct Character
+	-- comparison would allow this requester, whereas the N4 mapping denies it.
+	player.Character = actor.model
 
 	local runtime: NetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
@@ -36,17 +40,14 @@ it("does not treat an aware client or matching ownerUserId as OwnerActor authori
 	expect(runtime:IsAware(player, actor)).toBe(true)
 	expect(runtime:GetPlayerForActor(actor)).toBe(other)
 
-	local allowed: boolean, reason: string? = authorization.OwnerActor(
-		{ player = player, actor = actor },
-		{ ownerUserId = 42 }
+	error(
+		"[N9 blocked integration] OwnerActor must deny this aware requester despite Character/UserId matches; "
+			.. "bind authorization through the production server command runtime to this N4 association dependency (#79.12)",
+		0
 	)
-
-	expect(allowed).toBe(false)
-	expect(type(reason)).toBe("string")
 end)
 
-it("authorizes the Player's directly associated Character Actor and denies an unassociated NPC", function()
-	local authorization: Commands.Authorization = Commands.authorization()
+it("[blocked integration] accepts the N4-associated Character Actor and denies an unassociated NPC", function()
 	local player: Player = {} :: any
 	local character: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	local npc: ActorTypes.Actor = TestUtils.actor(fixture)
@@ -58,18 +59,17 @@ it("authorizes the Player's directly associated Character Actor and denies an un
 	TestUtils.drain(fixture)
 	expect(runtime:GetActorForPlayer(player)).toBe(character)
 	expect(runtime:GetPlayerForActor(character)).toBe(player)
-	local allowed: boolean, reason: string? = authorization.OwnerActor({ player = player, actor = character }, nil)
-	expect(allowed).toBe(true)
-	expect(reason).toBeNil()
 	expect(runtime:IsAware(player, npc)).toBe(true)
 	expect(runtime:GetPlayerForActor(npc)).toBeNil()
-	allowed, reason = authorization.OwnerActor({ player = player, actor = npc }, nil)
-	expect(allowed).toBe(false)
-	expect(type(reason)).toBe("string")
+
+	error(
+		"[N9 blocked integration] OwnerActor must accept the N4-associated Character Actor and deny the NPC; "
+			.. "the production server command runtime must supply this N4 association dependency (#79.12)",
+		0
+	)
 end)
 
-it("loses old Character authority when the Player associates with a new Actor", function()
-	local authorization: Commands.Authorization = Commands.authorization()
+it("[blocked integration] follows N4 reassociation from the previous Actor to the current Actor", function()
 	local player: Player = {} :: any
 	local previous: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	local current: ActorTypes.Actor = TestUtils.actor(fixture)
@@ -82,10 +82,12 @@ it("loses old Character authority when the Player associates with a new Actor", 
 	TestUtils.associate(fixture, previous, nil)
 	TestUtils.associate(fixture, current, player)
 	expect(runtime:GetActorForPlayer(player)).toBe(current)
-	local allowed: boolean, reason: string? = authorization.OwnerActor({ player = player, actor = previous }, nil)
-	expect(allowed).toBe(false)
-	expect(type(reason)).toBe("string")
-	allowed, reason = authorization.OwnerActor({ player = player, actor = current }, nil)
-	expect(allowed).toBe(true)
-	expect(reason).toBeNil()
+	expect(runtime:GetPlayerForActor(previous)).toBeNil()
+	expect(runtime:GetPlayerForActor(current)).toBe(player)
+
+	error(
+		"[N9 blocked integration] OwnerActor must deny the previous Actor and accept the current N4 association; "
+			.. "exercise the production server command runtime binding, not a fabricated authorizer context (#79.12)",
+		0
+	)
 end)
