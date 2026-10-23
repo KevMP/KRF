@@ -10,7 +10,7 @@ KRF owns the transport and protocol setup for the server and each client. Your g
 
 | Owner | Responsibility |
 | --- | --- |
-| Game startup | Supply controller and domain definitions; handle initialization failures |
+| Game startup | Supply controller, domain, and command definitions; handle initialization failures |
 | Replication domain catalog | Describe approved state shapes and semantic event payloads |
 | Networking | Compile codecs, assign protocol codes, create transport, attach server publication domains, and establish client readiness |
 | Controllers | Own live Actor state and gameplay mutations |
@@ -21,7 +21,7 @@ The framework creates one reliable `RemoteEvent` and one reserved `UnreliableRem
 
 Follow the server Script and client LocalScript patterns in [Initializing KRF](../initializing-krf). Keep each call at one startup boundary and continue dependent setup only after it returns successfully.
 
-1. `Server.Init(config)` validates the domain catalog and event size bounds, compiles state and event codecs, and installs an immutable global protocol catalog and server publication runtime before returning success. It does not yield.
+1. `Server.Init(config)` validates domain and command catalogs and their size bounds, compiles state, event, request, and result codecs, and installs the immutable protocol catalog and server runtimes before returning success. It does not yield.
 2. `Client.Init()` waits for the framework transport within a bounded deadline. It installs its receive listener before requesting bootstrap data.
 3. The server checks protocol compatibility and sends the prepared catalog. The client reconstructs its codecs and installs its Actor decoder, ActorView consumer, command runtime and shared packet receiver before declaring readiness.
 4. The server marks the client ready and sends its acknowledgement before notifying framework readiness observers. `Client.Init()` returns success only after receiving that acknowledgement.
@@ -34,7 +34,7 @@ Server and client must have exactly matching internal protocol versions. This co
 
 Domain, event, and command codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction.
 
-The bootstrap carries domain, event, and command identities, target modes, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Legal schema bounds remain exact during serialization, but server startup rejects an event whose conservative maximum encoded size exceeds the publication limit.
+The bootstrap carries domain, event, and command identities, target modes, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Legal schema bounds remain exact during serialization. Startup rejects events above the publication limit and command request/result schemas above the [command payload limit](./commands#define-and-authorize-a-command).
 
 `audience = "Owner"` describes eligibility for Actor data; it does not hide a domain's identity or schema from other clients. Treat protocol metadata as shared. Live state remains in server controllers.
 

@@ -8,12 +8,12 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
 local SignalTypes = require(KRF.shared.Signal.types)
-local Signal = require(KRF.shared.Signal.SignalModule)
 local Client = require(KRF.client)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local ProtocolUtils = require(script.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local ClientUtils = require(script.Parent.Utils.ClientTestUtils)
-local Commands = require(script.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
+local NetworkingTypes = require(KRF.client.Networking.types)
+local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
 local TestUtils = require(script.Parent.Utils.CommandClientTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -53,21 +53,7 @@ local function expectReadOnlyEvent(publicEvent: SignalTypes.Event<any>): ()
 	end).toThrow()
 end
 
-it("accepts the established SignalModule Event wrapper in the runtime Event assertions", function()
-	local signal: SignalTypes.Signal<any> = Signal.new()
-
-	local completed: boolean, reason: any = pcall(function()
-		expectReadOnlyEvent(Signal.wrapEvent(signal))
-	end)
-
-	signal:Destroy()
-
-	if not completed then
-		error(reason, 0)
-	end
-end)
-
-local function expectNotAdmitted(runtime: Commands.Facade): ()
+local function expectNotAdmitted(runtime: NetworkingTypes.CommandRuntime): ()
 	local sentBefore: number = #fixture.sent
 	local requestId: number?, reason: string? = runtime.Send("Game.Ping")
 	expect(requestId).toBeNil()
@@ -78,7 +64,7 @@ local function expectNotAdmitted(runtime: Commands.Facade): ()
 end
 
 it("rejects Send before Init, during bootstrap and while READY is awaiting acknowledgement", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	expectNotAdmitted(runtime)
 	TestUtils.start(fixture)
 	expectNotAdmitted(runtime)
@@ -94,7 +80,7 @@ it("rejects Send before Init, during bootstrap and while READY is awaiting ackno
 end)
 
 it("installs command events before READY and admits Send immediately after ACK through the native installer", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	local observed: number? = nil
 
 	fixture.client.onSend = function(payload: buffer): ()
@@ -119,7 +105,7 @@ end)
 it(
 	"keeps real Actor baseline and live commit reception working beside command Send on one Reliable listener",
 	function()
-		local runtime: Commands.Facade = Commands.runtime()
+		local runtime: NetworkingTypes.CommandRuntime = Commands
 		TestUtils.ready(fixture)
 		local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 		local domain: PublicTypes.DomainView? = view:GetDomain("Game.Actions")
@@ -153,7 +139,7 @@ it(
 
 for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" } do
 	it("leaves the command facade inert and disconnects the installed consumers on " .. failure, function()
-		local runtime: Commands.Facade = Commands.runtime()
+		local runtime: NetworkingTypes.CommandRuntime = Commands
 		TestUtils.start(fixture)
 		TestUtils.bootstrap(fixture)
 
@@ -175,7 +161,7 @@ for _, failure: string in { "ReadyRejected", "HandshakeTimeout", "ClientReset" }
 end
 
 it("stops command admission and Actor reception after repeated successful-client teardown", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	TestUtils.baseline(fixture)
 	Client._ResetForTests()
@@ -187,7 +173,7 @@ it("stops command admission and Actor reception after repeated successful-client
 end)
 
 it("exposes only Send and read-only runtime events, without transport or private ownership", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local keys: { string } = {}
 

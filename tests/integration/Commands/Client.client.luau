@@ -196,7 +196,6 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId:
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()
-	assert(Commands ~= nil, "[N9 missing contract] client.Networking.CommandRuntime (#79.21)")
 	local requestId: number?, failure: string? = Commands.Send("Game.Ping")
 	assert(requestId == nil and type(failure) == "string", "Native Send before Init must fail locally")
 	local initialized: boolean, startupFailure: Client.StartupFailure? = Client.Init()

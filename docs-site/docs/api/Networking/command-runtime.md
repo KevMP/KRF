@@ -3,6 +3,7 @@
 `CommandRuntime` sends validated requests and reports their correlated outcomes after client startup.
 
 ```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Commands = require(ReplicatedStorage.Packages.KRF.client.Networking.CommandRuntime)
 ```
 
@@ -40,7 +41,7 @@ Fires once for a correlated definitive Accepted or Rejected result, including a 
 
 ### `OnCommandUncertain: Event<CommandResult>` {#uncertain}
 
-Fires at most once per admitted request with `status = "Unknown"`. Framework reasons include `CommandTimeout`, `CommandTransportFault`, `CommandConnectionClosed`, `CommandAuthorizationFault`, `CommandHandlerFault`, and `CommandResultFault`. Unknown never means rejection, cancellation, or rollback. A definitive result may follow timeout uncertainty within the same connection's grace window.
+Fires at most once per admitted request with `status = "Unknown"`. Framework reasons include `CommandTimeout`, `CommandTransportFault`, `CommandConnectionClosed`, `CommandAuthorizationFault`, `CommandHandlerFault`, and `CommandResultFault`. Unknown never means rejection, cancellation, or rollback. A definitive result may follow uncertainty within the same connection's grace window.
 
 Both events use KRF's read-only `Connect`, `Once`, and `Wait` surface. Their immutable payload has these fields:
 

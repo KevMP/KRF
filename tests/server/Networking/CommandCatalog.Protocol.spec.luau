@@ -15,7 +15,7 @@ local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Manifest = require(KRF.shared.Networking.ManifestCompiler)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local DomainUtils = require(script.Parent.Parent.Utils.Replication.ReplicationDomainTestUtils)
-local Commands = require(script.Parent.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
+local Commands = require(script.Parent.Parent.Utils.Networking.CommandRuntimeTestUtils)
 
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
 
@@ -25,7 +25,7 @@ afterEach(function()
 end)
 
 local function start(
-	commands: { Commands.Definition },
+	commands: { NetworkingTypes.CommandDefinition },
 	domains: { ReplicationTypes.ReplicationDomainDefinition }?
 ): SharedTypes.PreparedProtocol
 	Server._ResetForTests()
@@ -48,8 +48,8 @@ local function start(
 end
 
 it("assigns compact command codes and identical bootstrap bytes regardless of catalog declaration order", function()
-	local first: Commands.Definition = Commands.definition("Game.Zeta", "Actor")
-	local second: Commands.Definition = Commands.definition("Game.Alpha")
+	local first: NetworkingTypes.CommandDefinition = Commands.definition("Game.Zeta", "Actor")
+	local second: NetworkingTypes.CommandDefinition = Commands.definition("Game.Alpha")
 
 	first.request = Schema.U8
 	second.result = Schema.U32
@@ -58,14 +58,14 @@ it("assigns compact command codes and identical bootstrap bytes regardless of ca
 	local domainB: ReplicationTypes.ReplicationDomainDefinition = DomainUtils.createDomain("Game.DomainB")
 	local forward: SharedTypes.PreparedProtocol = start({ first, second }, { domainA, domainB })
 	local reverse: SharedTypes.PreparedProtocol = start({ second, first }, { domainB, domainA })
-	local metadata: Commands.Manifest = forward.manifest :: any
-	assert(metadata.commands ~= nil, "[N9 missing contract] Server.Init must include commands in N2 manifest (#79.5)")
+	local metadata: SharedTypes.ProtocolManifest = forward.manifest :: any
+	assert(metadata.commands ~= nil, "Expected startup command metadata")
 	expect(#metadata.commands).toBe(2)
 	expect(reverse.manifest).toEqual(forward.manifest)
 	expect(buffer.tostring(reverse.bootstrapBuffer)).toBe(buffer.tostring(forward.bootstrapBuffer))
 	local codes: { number } = {}
 
-	for _, command: Commands.ManifestCommand in metadata.commands do
+	for _, command: SharedTypes.ManifestCommand in metadata.commands do
 		table.insert(codes, command.code)
 	end
 
@@ -76,10 +76,11 @@ it("assigns compact command codes and identical bootstrap bytes regardless of ca
 	local reconstructed: SharedTypes.ClientProtocol?, reason: string? = Manifest.Reconstruct(metadata)
 	expect(reason).toBeNil()
 	assert(reconstructed ~= nil, "Expected N2 command codec reconstruction")
-	local serverProtocol: Commands.Protocol = forward.runtime :: any
-	local clientProtocol: Commands.Protocol = reconstructed :: any
+	local serverProtocol: SharedTypes.ClientProtocol = forward.runtime :: any
+	local clientProtocol: SharedTypes.ClientProtocol = reconstructed
+	assert(serverProtocol.commandsById ~= nil and clientProtocol.commandsById ~= nil, "Expected command codebooks")
 
-	for id: string, command: Commands.ClientCommand in serverProtocol.commandsById do
+	for id: string, command: SharedTypes.ClientCommand in serverProtocol.commandsById do
 		expect(clientProtocol.commandsById[id].code).toBe(command.code)
 		expect(clientProtocol.commandsById[id].target).toBe(command.target)
 	end
@@ -90,14 +91,14 @@ end)
 it("projects only wire metadata and owns immutable schemas after author tables change", function()
 	local fields: { [string]: SharedTypes.SchemaDefinition } = { count = Schema.U16 }
 
-	local definition: Commands.Definition = Commands.definition("Game.Projected", "Actor")
+	local definition: NetworkingTypes.CommandDefinition = Commands.definition("Game.Projected", "Actor")
 	definition.request = { kind = "Struct", fields = fields }
 	definition.result = Schema.U32
 
 	local protocol: SharedTypes.PreparedProtocol = start({ definition })
-	local metadata: Commands.Manifest = protocol.manifest :: any
-	assert(metadata.commands ~= nil, "[N9 missing contract] command schema projection in existing Bootstrap (#79.5)")
-	local projected: Commands.ManifestCommand = metadata.commands[1]
+	local metadata: SharedTypes.ProtocolManifest = protocol.manifest :: any
+	assert(metadata.commands ~= nil, "Expected command schema metadata")
+	local projected: SharedTypes.ManifestCommand = metadata.commands[1]
 	local code: number = projected.code
 
 	definition.id = "Game.Mutated"

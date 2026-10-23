@@ -8,7 +8,6 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
-local Commands = require(script.Parent.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -21,23 +20,6 @@ afterEach(function()
 	TestUtils.destroy(fixture)
 end)
 
-local function resolve(
-	runtime: NetworkingTypes.ActorAwarenessRuntime,
-	player: Player,
-	handle: number
-): (ActorTypes.Actor?, string?)
-	-- #79.9 requires this private reverse-map seam; its name is test-local and
-	-- does not add a public Actor/Networking API or another registry.
-	local resolver: Commands.TargetResolver = runtime :: any
-
-	assert(
-		type(resolver.ResolveActor) == "function",
-		"[N9 missing contract] N4 private live handle-to-Actor resolution (#79.9)"
-	)
-
-	return resolver:ResolveActor(player, handle)
-end
-
 local function handle(runtime: NetworkingTypes.ActorAwarenessRuntime, player: Player, actor: ActorTypes.Actor): number
 	local assigned: number? = runtime:GetHandle(player, actor)
 	assert(assigned ~= nil, "Fixture must have an actual N4 handle")
@@ -46,7 +28,7 @@ local function handle(runtime: NetworkingTypes.ActorAwarenessRuntime, player: Pl
 end
 
 local function expectUnavailable(runtime: NetworkingTypes.ActorAwarenessRuntime, player: Player, target: number): ()
-	local actor: ActorTypes.Actor?, reason: string? = resolve(runtime, player, target)
+	local actor: ActorTypes.Actor?, reason: string? = runtime:ResolveActor(player, target)
 	expect(actor).toBeNil()
 	expect(type(reason)).toBe("string")
 end
@@ -57,7 +39,7 @@ it("resolves the private connection-local handle to the exact authoritative Acto
 	TestUtils.ready(fixture, player)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	TestUtils.drain(fixture)
-	local resolved: ActorTypes.Actor?, reason: string? = resolve(runtime, player, handle(runtime, player, actor))
+	local resolved: ActorTypes.Actor?, reason: string? = runtime:ResolveActor(player, handle(runtime, player, actor))
 	expect(reason).toBeNil()
 	expect(resolved).toBe(actor)
 	expect(runtime:GetActorForPlayer(player)).toBe(actor)
@@ -77,7 +59,7 @@ it("does not import a handle from another Ready connection's different allocatio
 	TestUtils.drain(fixture)
 	expect(handle(runtime, second, live)).never.toBe(firstHandle)
 	expectUnavailable(runtime, second, firstHandle)
-	local resolved: ActorTypes.Actor?, reason: string? = resolve(runtime, first, firstHandle)
+	local resolved: ActorTypes.Actor?, reason: string? = runtime:ResolveActor(first, firstHandle)
 	expect(reason).toBeNil()
 	expect(resolved).toBe(live)
 end)

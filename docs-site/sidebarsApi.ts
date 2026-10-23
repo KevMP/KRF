@@ -69,6 +69,9 @@ const sidebarsApi: SidebarsConfig = {
       items: [
         'Networking/schema',
         'Networking/replication-domain-registry',
+        'Networking/command-registry',
+        'Networking/command-authorization',
+        'Networking/command-runtime',
       ],
     },
   ],

@@ -71,7 +71,7 @@ A command that does not address an Actor uses `target = "None"`. This catalog en
 
 Send it with `Commands.Send("Game.Ping")`. Passing an ActorView or a request value fails locally because this definition has neither target nor request schema.
 
-For a custom interaction policy, replace the first example's `authorize` field. This fragment combines N4 ownership with a server-authored game permission attribute:
+For a custom interaction policy, replace the first example's `authorize` field. This fragment combines Character ownership with a server-authored game permission attribute:
 
 ```lua
 authorize = function(context: Types.CommandContext): (boolean, string?)
@@ -163,7 +163,7 @@ else
 end
 ```
 
-The returned identity is the same sequence used by ActionsView. It does not promise that the activation is still running. Future input-driven Start/Stop commands can use this correlation primitive and then validate live activation state through ActionController; this example defines no framework Input payload or built-in Action command.
+The returned identity is the same sequence used by ActionsView. It does not promise that the activation is still running. A follow-up that operates on the activation must also validate its current state through ActionController.
 
 The history also retains known indeterminate executions as Unknown, without an accepted sequence identity. It has hard count, byte, and lifetime bounds; it is not durable gameplay state. Store long-lived ownership in the appropriate gameplay system.
 
@@ -173,7 +173,7 @@ For the requester, the result callback begins before Actor state and semantic ca
 
 A thrown or yielding callback, malformed handler return, invalid result, or publication failure escaping the handler produces Unknown rather than a false definitive rejection. Committed effects are not rolled back. Inspect authoritative gameplay state before retrying; blindly resending may repeat an operation.
 
-The client reports `CommandTimeout` after 10 seconds and retains a 10-second grace window for a late definitive result on the same connection. Timeout neither cancels server execution nor means rejection. A late Accepted/Rejected may follow that uncertainty once; duplicate definitive results are ignored. Closing the runtime reports remaining pending operations as Unknown and releases timers and metadata. The facade stops admitting requests after shutdown.
+The client reports `CommandTimeout` after 10 seconds without an outcome. Timeout neither cancels server execution nor means rejection. Any uncertainty starts a 10-second grace window for one late Accepted/Rejected on the same connection; duplicate definitive results are ignored. Closing the runtime reports remaining pending operations as Unknown and releases timers and metadata. A terminal receive-queue overflow ends the client connection, clears Actor consumers, and stops command admission. It does not restart initialization.
 
 Finite per-connection count/byte limits cover ingress, queued commands, pending correlations, history, outbound results, and temporarily held publications. Output capacity is reserved before author callbacks run. Capacity exhaustion can refuse execution without a reply; a locally admitted client then relies on its uncertainty timeout. Limits are internal policies, not gameplay quotas or a guarantee of delivery under overload.
 

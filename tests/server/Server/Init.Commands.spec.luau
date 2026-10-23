@@ -19,7 +19,7 @@ local Domains = require(KRF.server.Replication.ReplicationDomainRegistry)
 local Transport = require(KRF.shared.Networking.Transport)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
-local Commands = require(script.Parent.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
+local Commands = require(script.Parent.Parent.Utils.Networking.CommandRuntimeTestUtils)
 local Registry = require(KRF.server.Networking.CommandRegistry)
 
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
@@ -89,17 +89,16 @@ it("starts an explicitly empty command catalog without registering Action comman
 	local success: boolean, failure: ServerTypes.StartupFailure? = Server.Init({ commands = {} } :: any)
 	expect(success).toBe(true)
 	expect(failure).toBeNil()
-	local registry: Commands.Registry = Commands.registry()
-	expect(registry.IsLoaded()).toBe(true)
-	expect(registry.GetAll()).toEqual({})
-	expect(registry.Get("KRF.Action.Start")).toBeNil()
-	expect(registry.Get("KRF.Action.Stop")).toBeNil()
+	expect(Registry.IsLoaded()).toBe(true)
+	expect(Registry.GetAll()).toEqual({})
+	expect(Registry.Get("KRF.Action.Start")).toBeNil()
+	expect(Registry.Get("KRF.Action.Stop")).toBeNil()
 end)
 
 it("publishes valid None and Actor commands without executing author code at startup", function()
 	local calls: number = 0
-	local first: Commands.Definition = Commands.definition("Game.Ping")
-	local second: Commands.Definition = Commands.definition("Game.Interact", "Actor")
+	local first: NetworkingTypes.CommandDefinition = Commands.definition("Game.Ping")
+	local second: NetworkingTypes.CommandDefinition = Commands.definition("Game.Interact", "Actor")
 
 	first.authorize = function(): (boolean, string?)
 		calls += 1
@@ -115,17 +114,19 @@ it("publishes valid None and Actor commands without executing author code at sta
 	expect(success).toBe(true)
 	expect(failure).toBeNil()
 	expect(calls).toBe(0)
-	local registry: Commands.Registry = Commands.registry()
-	expect(#registry.GetAll()).toBe(2)
-	expect(registry.Get(first.id).target).toBe("None")
-	expect(registry.Get(second.id).target).toBe("Actor")
-	expect(registry.Get(first.id).authorize).toBe(first.authorize)
-	expect(registry.Get(second.id).handle).toBe(second.handle)
+	expect(#Registry.GetAll()).toBe(2)
+	local loadedFirst: NetworkingTypes.LoadedCommandDefinition? = Registry.Get(first.id)
+	local loadedSecond: NetworkingTypes.LoadedCommandDefinition? = Registry.Get(second.id)
+	assert(loadedFirst ~= nil and loadedSecond ~= nil, "Expected both published commands")
+	expect(loadedFirst.target).toBe("None")
+	expect(loadedSecond.target).toBe("Actor")
+	expect(loadedFirst.authorize).toBe(first.authorize)
+	expect(loadedSecond.handle).toBe(second.handle)
 end)
 
 it("rejects duplicate command ids deterministically and leaves all registries unpublished", function()
-	local first: Commands.Definition = Commands.definition("Game.Duplicate")
-	local second: Commands.Definition = Commands.definition("Game.Duplicate", "Actor")
+	local first: NetworkingTypes.CommandDefinition = Commands.definition("Game.Duplicate")
+	local second: NetworkingTypes.CommandDefinition = Commands.definition("Game.Duplicate", "Actor")
 	local reason: string = expectRejected({ first, second })
 	Server._ResetForTests()
 	expect(expectRejected({ second, first })).toBe(reason)
@@ -190,15 +191,14 @@ end
 it("owns frozen loaded definitions and nested schemas independently of author tables", function()
 	local fields: { [string]: SharedTypes.SchemaDefinition } = { count = Schema.U16 }
 
-	local definition: Commands.Definition = Commands.definition("Game.Immutable")
+	local definition: NetworkingTypes.CommandDefinition = Commands.definition("Game.Immutable")
 	definition.request = { kind = "Struct", fields = fields }
 	definition.result = Schema.Struct({ sequenceId = Schema.U32 })
 
 	local originalHandler: typeof(definition.handle) = definition.handle
 	local success: boolean = Server.Init({ commands = { definition } } :: any)
 	expect(success).toBe(true)
-	local registry: Commands.Registry = Commands.registry()
-	local loaded: any = registry.Get("Game.Immutable")
+	local loaded: any = Registry.Get("Game.Immutable")
 	assert(loaded ~= nil, "Successful startup must retain the command definition")
 	definition.id = "Game.Mutated"
 	definition.target = "Actor"
@@ -216,16 +216,16 @@ it("owns frozen loaded definitions and nested schemas independently of author ta
 	expect(table.isfrozen(loaded.result)).toBe(true)
 	expect(loaded.request.maxEncodedBytes).toBe(2)
 	expect(loaded.result.maxEncodedBytes).toBe(4)
-	expect(table.isfrozen(registry.GetAll())).toBe(true)
-	expect(registry.Get("Game.Mutated")).toBeNil()
+	expect(table.isfrozen(Registry.GetAll())).toBe(true)
+	expect(Registry.Get("Game.Mutated")).toBeNil()
 end)
 
 it("rolls back the command catalog with all N1-N8 registries when transport activation fails", function()
-	local registry: Commands.Registry = Commands.registry()
-
 	Networking.Publish = function(_protocol: SharedTypes.PreparedProtocol): (boolean, string?)
-		expect(registry.IsLoaded()).toBe(true)
-		expect(registry.Get("Game.Rollback").id).toBe("Game.Rollback")
+		expect(Registry.IsLoaded()).toBe(true)
+		local loaded: NetworkingTypes.LoadedCommandDefinition? = Registry.Get("Game.Rollback")
+		assert(loaded ~= nil, "Expected the staged command before transport activation")
+		expect(loaded.id).toBe("Game.Rollback")
 
 		return false, "TransportConflict"
 	end
@@ -236,7 +236,7 @@ it("rolls back the command catalog with all N1-N8 registries when transport acti
 	expect(success).toBe(false)
 	expect(failure).toEqual({ system = "Networking", reason = "TransportConflict" })
 	expectUnpublished()
-	expect(registry.IsLoaded()).toBe(false)
-	expect(registry.GetAll()).toEqual({})
-	expect(registry.Get("Game.Rollback")).toBeNil()
+	expect(Registry.IsLoaded()).toBe(false)
+	expect(Registry.GetAll()).toEqual({})
+	expect(Registry.Get("Game.Rollback")).toBeNil()
 end)

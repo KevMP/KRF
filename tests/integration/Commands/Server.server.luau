@@ -21,21 +21,7 @@ local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
 local Correlation = require(script.Parent.Utils.ServerCorrelation)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("CommandTestControl") :: RemoteEvent
 
--- Normalized test observations, not a proposed production codec API/layout.
--- The binding must obtain the kind and decode all fields from the actual N9
--- codec. No command-field offsets, private opcodes or module names are guessed.
 type Request = SharedTypes.CommandRequest
-
-type CommandWire = { requestKind: number, DecodeRequest: (buffer) -> (Request?, string?) }
-type CommandProtocol = SharedTypes.ClientProtocol & { commandsById: { [string]: { code: number } } }
-
-type TargetResolver = {
-	ResolveActor: (NetworkingTypes.ActorAwarenessRuntime, Player, number) -> (ActorTypes.Actor?, string?),
-}
-
-local function bindProductionCommandCodec(protocol: SharedTypes.ClientProtocol): CommandWire
-	return { requestKind = CommandConstants.REQUEST_KIND, DecodeRequest = CommandCodec.Compile(protocol).DecodeRequest }
-end
 
 Players.CharacterAutoLoads = false
 
@@ -44,8 +30,7 @@ local models: { Model } = {}
 local reports: { [Player]: boolean } = {}
 local requests: { [Player]: { Request } } = {}
 local requestIds: { [Player]: { number } } = {}
-local commandProtocol: CommandProtocol? = nil
-local commandWire: CommandWire? = nil
+local commandProtocol: SharedTypes.ClientProtocol? = nil
 local awareness: NetworkingTypes.ActorAwarenessRuntime? = nil
 local originalAwareness: typeof(Awareness.new) = Awareness.new
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
@@ -71,7 +56,7 @@ Awareness.new = function(
 end
 
 Networking.Publish = function(protocol: SharedTypes.PreparedProtocol): (boolean, string?)
-	commandProtocol = protocol.runtime :: any
+	commandProtocol = protocol.runtime
 
 	return originalPublish(protocol)
 end
@@ -251,8 +236,6 @@ task.delay(75, function(): ()
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()
-	assert(Authorization ~= nil, "[N9 missing contract] CommandAuthorization helpers (#79.11-12)")
-
 	local commands: { NetworkingTypes.CommandDefinition } = {
 		{
 			id = "Game.Ping",
@@ -281,10 +264,10 @@ local completed: boolean, reason: any = pcall(function(): ()
 		Server.Init({ commands = commands, actions = Correlation.Actions })
 
 	assert(initialized, if failure ~= nil then failure.reason else "Native Server.Init failed")
-	local protocol: CommandProtocol? = commandProtocol
-	assert(protocol ~= nil and protocol.commandsById ~= nil, "[N9 missing contract] Startup command codebook")
-	local wire: CommandWire = bindProductionCommandCodec(protocol)
-	commandWire = wire
+	local protocol: SharedTypes.ClientProtocol? = commandProtocol
+	assert(protocol ~= nil and protocol.commandsById ~= nil, "Expected startup command codebook")
+	local commandsById: { [string]: SharedTypes.ClientCommand } = protocol.commandsById
+	local codec: SharedTypes.CommandCodec = CommandCodec.Compile(protocol)
 	local owned: SharedTypes.OwnedTransport?, transportReason: string? = Transport.Locate(ReplicatedStorage)
 	assert(owned ~= nil, transportReason)
 	assert(#owned.root:GetDescendants() == 2, "N9 must reuse the existing Reliable and reserved Unreliable transports")
@@ -302,10 +285,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 				"Malformed Reliable envelope"
 			)
 
-			local installedWire: CommandWire? = commandWire
-			assert(installedWire ~= nil, "[N9 blocked integration] Production command codec must be installed")
-
-			if buffer.readu8(payload, 0) ~= installedWire.requestKind then
+			if buffer.readu8(payload, 0) ~= CommandConstants.REQUEST_KIND then
 				assert(
 					Protocol.Decode(payload) ~= nil or ResyncCodec.Decode(payload) ~= nil,
 					"Unknown Reliable packet kind is not command traffic"
@@ -314,7 +294,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 				return
 			end
 
-			local request: Request?, decodeReason: string? = installedWire.DecodeRequest(payload)
+			local request: Request?, decodeReason: string? = codec.DecodeRequest(payload)
 			assert(request ~= nil and decodeReason == nil, "Malformed CommandRequest must not count as command traffic")
 
 			assert(
@@ -329,7 +309,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 				assert(index == 3 or index == 8, "Expected one final native teardown probe per client")
 
 				assert(
-					request.commandCode == protocol.commandsById["Game.Ping"].code
+					request.commandCode == commandsById["Game.Ping"].code
 						and request.targetHandle == nil
 						and request.request == nil
 						and request.requestId > observed[index - 1].requestId,
@@ -347,10 +327,10 @@ local completed: boolean, reason: any = pcall(function(): ()
 				assert(index <= 7, "Unexpected correlation traffic")
 
 				assert(
-					protocol.commandsById["Game.Begin"].code == request.commandCode
-						or protocol.commandsById["Game.Interrupt"].code == request.commandCode
-						or protocol.commandsById["Game.Pulse"].code == request.commandCode
-						or protocol.commandsById["Game.Follow"].code == request.commandCode,
+					commandsById["Game.Begin"].code == request.commandCode
+						or commandsById["Game.Interrupt"].code == request.commandCode
+						or commandsById["Game.Pulse"].code == request.commandCode
+						or commandsById["Game.Follow"].code == request.commandCode,
 					"Expected registered generic correlation command"
 				)
 
@@ -374,7 +354,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 			local commandId: string = if index == 1 then "Game.Ping" else "Game.Interact"
 
 			assert(
-				request.commandCode == protocol.commandsById[commandId].code,
+				request.commandCode == commandsById[commandId].code,
 				"Decoded command code must match the startup codebook"
 			)
 
@@ -394,11 +374,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 					"Decoded target must equal this connection's private N4 handle"
 				)
 
-				local resolver: TargetResolver = runtime :: any
-				assert(type(resolver.ResolveActor) == "function", "[N9 missing contract] Private N4 ResolveActor")
-
-				local resolved: ActorTypes.Actor?, resolveReason: string? =
-					resolver.ResolveActor(runtime, player, target)
+				local resolved: ActorTypes.Actor?, resolveReason: string? = runtime:ResolveActor(player, target)
 
 				assert(
 					resolved == actor and resolveReason == nil,

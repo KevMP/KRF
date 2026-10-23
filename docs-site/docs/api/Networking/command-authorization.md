@@ -3,6 +3,7 @@
 `CommandAuthorization` supplies explicit policies for command definitions registered at startup.
 
 ```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Authorization = require(ReplicatedStorage.Packages.KRF.server.Networking.CommandAuthorization)
 ```
 

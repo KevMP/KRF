@@ -3,6 +3,7 @@
 `CommandRegistry` provides read access to the immutable command catalog owned by `Server.Init`.
 
 ```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Registry = require(ReplicatedStorage.Packages.KRF.server.Networking.CommandRegistry)
 ```
 

@@ -30,6 +30,19 @@ export type Fixture = {
 
 local TestUtils = {}
 
+function TestUtils.definition(id: string, target: ("None" | "Actor")?): Types.CommandDefinition
+	return {
+		id = id,
+		target = target or "None",
+		authorize = function(): (boolean, string?)
+			return true, nil
+		end,
+		handle = function(): Types.CommandHandlerResult
+			return { accepted = true }
+		end,
+	}
+end
+
 function TestUtils.new(definitions: { Types.CommandDefinition }, limits: Types.ServerCommandLimits?): Fixture
 	local base: AwarenessUtils.Fixture = AwarenessUtils.new()
 	AwarenessUtils.start(base)

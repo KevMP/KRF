@@ -9,7 +9,8 @@ local afterEach: any = JestGlobals.afterEach
 local PublicTypes = require(KRF.client.Actor.types)
 local Client = require(KRF.client)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
-local Commands = require(script.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
+local NetworkingTypes = require(KRF.client.Networking.types)
+local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
 local TestUtils = require(script.Parent.Utils.CommandClientTestUtils)
 
 local fixture: TestUtils.Fixture
@@ -22,7 +23,12 @@ afterEach(function()
 	fixture.cleanup()
 end)
 
-local function expectRejected(runtime: Commands.Facade, id: string, view: PublicTypes.ActorView?, payload: any): ()
+local function expectRejected(
+	runtime: NetworkingTypes.CommandRuntime,
+	id: string,
+	view: PublicTypes.ActorView?,
+	payload: any
+): ()
 	local sentBefore: number = #fixture.sent
 	local requestId: number?, reason: string? = runtime.Send(id, view, payload)
 	expect(requestId).toBeNil()
@@ -33,7 +39,7 @@ local function expectRejected(runtime: Commands.Facade, id: string, view: Public
 end
 
 it("admits the exact available registry-owned ActorView even when no Model is bound", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	expect(Registry.GetActorViewById(view:GetId())).toBe(view)
@@ -49,7 +55,7 @@ it("admits the exact available registry-owned ActorView even when no Model is bo
 end)
 
 it("rejects a forged view copying every public member of the exact live view", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	local forged: any = table.clone(view :: any)
@@ -59,7 +65,7 @@ it("rejects a forged view copying every public member of the exact live view", f
 end)
 
 it("rejects a genuine view owned by a previous Client.Init after the same Actor id reappears", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local previous: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	fixture.cleanup()
@@ -77,7 +83,7 @@ end)
 
 for _, terminal: string in { "ActorRemove", "ActorHalt", "RecoveryExhaustion" } do
 	it("rejects the formerly live view after " .. terminal .. " without transmitting", function()
-		local runtime: Commands.Facade = Commands.runtime()
+		local runtime: NetworkingTypes.CommandRuntime = Commands
 		TestUtils.ready(fixture)
 		local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 
@@ -103,7 +109,7 @@ for _, terminal: string in { "ActorRemove", "ActorHalt", "RecoveryExhaustion" } 
 end
 
 it("admits the exact still-available view while N5 retains last valid truth during recoverable desync", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	TestUtils.records(fixture, { { kind = "Commit", handle = 7, revision = 3, patches = {}, events = {} } })
@@ -115,7 +121,7 @@ it("admits the exact still-available view while N5 retains last valid truth duri
 end)
 
 it("rejects a retired view after removal and relearning the same id under a new private handle", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local retired: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	TestUtils.records(fixture, { { kind = "ActorRemove", handle = 7 } })
@@ -126,7 +132,7 @@ it("rejects a retired view after removal and relearning the same id under a new 
 end)
 
 it("requires the declared target presence and validates the request locally before transmission", function()
-	local runtime: Commands.Facade = Commands.runtime()
+	local runtime: NetworkingTypes.CommandRuntime = Commands
 	TestUtils.ready(fixture)
 	local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 	expectRejected(runtime, "Game.Unknown", nil, nil)
