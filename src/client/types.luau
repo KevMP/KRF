@@ -20,7 +20,9 @@ export type Dependencies = {
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
 		installActorReceiver: (((any) -> ()) -> ())?,
-		sendReliable: ((buffer) -> ())?
+		sendReliable: ((buffer) -> ())?,
+		isReady: (() -> boolean)?,
+		onTerminalFailure: (() -> ())?
 	) -> (boolean, string?, (() -> ())?),
 }
 

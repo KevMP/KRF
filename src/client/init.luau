@@ -3,6 +3,7 @@ local ClientTypes = require(script.types)
 local SharedNetworkingTypes = require(script.Parent.shared.Networking.types)
 local Constants = require(script.Parent.shared.Networking.utils.ProtocolConstants)
 local ActorConstants = require(script.Parent.shared.Networking.utils.ActorProtocolConstants)
+local CommandConstants = require(script.Parent.shared.Networking.utils.CommandConstants)
 local ProtocolCodec = require(script.Parent.shared.Networking.ProtocolCodec)
 local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompiler)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
@@ -89,9 +90,20 @@ function Client.Init(): (boolean, StartupFailure?)
 		end
 	end
 
+	local function terminate(reason: string): ()
+		initialized = false
+		readyProtocol = nil
+
+		if finished then
+			success = false
+			cleanup()
+		else
+			finish(false, reason)
+		end
+	end
+
 	shutdown = function(): ()
-		finish(false, "ClientReset")
-		cleanup()
+		terminate("ClientReset")
 	end
 
 	local discovered: boolean, endpoint: ClientTypes.ClientTransport?, discoveryReason: string? =
@@ -112,7 +124,10 @@ function Client.Init(): (boolean, StartupFailure?)
 					and select("#", ...) == 0
 					and typeof(payload) == "buffer"
 					and buffer.len(payload) > 0
-					and buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND
+					and (
+						buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND
+						or buffer.readu8(payload, 0) == CommandConstants.RESULT_KIND
+					)
 				then
 					receiveActors(payload)
 				end
@@ -179,7 +194,13 @@ function Client.Init(): (boolean, StartupFailure?)
 					function(receiver: (any) -> ())
 						receiveActors = receiver
 					end,
-					transport.SendReliable
+					transport.SendReliable,
+					function(): boolean
+						return initialized and success
+					end,
+					function(): ()
+						terminate("ReliableConsumerFailed")
+					end
 				)
 
 				if coroutine.status(installer) ~= "dead" then
@@ -214,7 +235,7 @@ function Client.Init(): (boolean, StartupFailure?)
 				local completed: boolean, reason: any = pcall(receive, payload, ...)
 
 				if not completed then
-					finish(false, "StartupInternalFailure:" .. tostring(reason))
+					terminate("StartupInternalFailure:" .. tostring(reason))
 				end
 			end)
 

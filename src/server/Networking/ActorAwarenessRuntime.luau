@@ -8,10 +8,13 @@ local Streams = require(script.Parent.utils.ActorRecipientStream)
 local Projections = require(script.Parent.utils.ActorRecipientProjection)
 local RecipientSelection = require(script.Parent.utils.ActorRecipientSelection)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
+local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
+local CommandEgress = require(script.Parent.utils.CommandEgress)
 
 type Stream = Streams.Stream
 
 type Connection = {
+	egress: CommandEgress.State,
 	player: Player,
 	nextHandle: number,
 	actors: { [ActorTypes.Actor]: Stream },
@@ -36,6 +39,7 @@ local ActorAwarenessRuntime = {}
 ActorAwarenessRuntime.__index = ActorAwarenessRuntime
 
 type RuntimeState = {
+	publication: Types.PublicationRuntime,
 	codec: SharedNetworkingTypes.ActorStreamCodec,
 	measuredRecords: { [Types.PublicationFilteredCommit]: number },
 	dependencies: Types.ActorAwarenessDependencies,
@@ -88,6 +92,67 @@ function ActorAwarenessRuntime._activate(self: Runtime, stream: Stream): ()
 	end
 end
 
+function ActorAwarenessRuntime._queueConnection(self: Runtime, connection: Connection): ()
+	if not connection.queued then
+		connection.queued = true
+		table.insert(self.active, connection)
+	end
+end
+
+function ActorAwarenessRuntime.ReserveCommandResult(
+	self: Runtime,
+	player: Player,
+	maxBytes: number
+): (Types.CommandReservation?, string?)
+	local connection: Connection? = self.connections[player]
+
+	if self.destroyed or connection == nil or not self.dependencies.IsClientReady(player) then
+		return nil, "ClientNotReady"
+	end
+
+	local reservation: Types.CommandReservation?, reason: string? = CommandEgress.Reserve(connection.egress, maxBytes)
+
+	if reservation ~= nil then
+		self:_queueConnection(connection)
+	end
+
+	return reservation, reason
+end
+
+function ActorAwarenessRuntime.ResolveActor(self: Runtime, player: Player, handle: number): (ActorTypes.Actor?, string?)
+	if type(handle) ~= "number" or handle <= 0 or handle > CommandConstants.MAX_COUNTER or handle % 1 ~= 0 then
+		return nil, "InvalidActorHandle"
+	end
+
+	local connection: Connection? = self.connections[player]
+
+	if self.destroyed or connection == nil or not self.dependencies.IsClientReady(player) then
+		return nil, "ClientNotReady"
+	end
+
+	local stream: Stream? = connection.handles[handle]
+
+	if stream == nil then
+		return nil, "UnknownActorHandle"
+	end
+
+	local actor: ActorTypes.Actor = stream.actor
+
+	if
+		stream.failed
+		or stream.removed
+		or connection.actors[actor] ~= stream
+		or not actor.enabled
+		or actor.model == nil
+		or self.models[actor.model] ~= actor
+		or not self.publication:IsActorAttached(actor)
+	then
+		return nil, "ActorUnavailable"
+	end
+
+	return actor, nil
+end
+
 function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, actor: ActorTypes.Actor): ()
 	if connection.actors[actor] ~= nil or not actor.enabled then
 		return
@@ -112,6 +177,9 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 	end
 
 	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.options, {
+		GetOrder = function(): number
+			return connection.egress.order
+		end,
 		Project = function(
 			projectedActor: ActorTypes.Actor,
 			player: Player
@@ -288,7 +356,61 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		local connection: Connection = table.remove(self.active, 1) :: Connection
 		connection.queued = false
 
-		local stream: Stream = table.remove(connection.active, 1) :: Stream
+		local front: CommandEgress.Entry? = connection.egress.queue[1]
+
+		if front ~= nil and front.payload ~= nil and currentPackets[connection] == nil then
+			local priorWork: boolean = false
+
+			for _, pending: Stream in connection.active do
+				if pending:HasWorkThrough(front.order) then
+					priorWork = true
+					break
+				end
+			end
+
+			if not priorWork and buffer.len(front.payload) <= maxBytes then
+				local resultPayload: buffer = front.payload
+
+				local completed: boolean, sent: boolean =
+					pcall(self.dependencies.SendReliable, connection.player, resultPayload)
+
+				maxBytes -= buffer.len(resultPayload)
+				maxRecords -= 1
+
+				if completed and sent then
+					CommandEgress.Release(connection.egress, front)
+				else
+					self:_close(connection.player)
+
+					if self.dependencies.CloseConnection ~= nil then
+						self.dependencies.CloseConnection(connection.player, "CommandResultSendFailed")
+					end
+				end
+			end
+		end
+
+		if self.connections[connection.player] ~= connection then
+			continue
+		end
+
+		if maxRecords <= 0 or maxBytes <= 0 then
+			if #connection.active > 0 or #connection.egress.queue > 0 then
+				self:_queueConnection(connection)
+			end
+
+			continue
+		end
+
+		local stream: Stream? = table.remove(connection.active, 1)
+
+		if stream == nil then
+			if #connection.egress.queue > 0 then
+				self:_queueConnection(connection)
+			end
+
+			continue
+		end
+
 		stream.active = false
 
 		if self.connections[connection.player] == connection then
@@ -305,7 +427,11 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 
 			if not visited[stream] then
 				visited[stream] = true
-				record, measuredBytes = stream:Prepare(maxBytes, canBegin, deliveryBudget)
+
+				local boundary: CommandEgress.Entry? = connection.egress.queue[1]
+
+				record, measuredBytes =
+					stream:Prepare(maxBytes, canBegin, deliveryBudget, if boundary ~= nil then boundary.order else nil)
 			end
 
 			if record ~= nil then
@@ -348,7 +474,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 				self:_activate(stream)
 			end
 
-			if #connection.active > 0 and not connection.queued then
+			if (#connection.active > 0 or #connection.egress.queue > 0) and not connection.queued then
 				connection.queued = true
 				table.insert(self.active, connection)
 			end
@@ -411,6 +537,7 @@ function ActorAwarenessRuntime._close(self: Runtime, player: Player): ()
 	end
 
 	self.connections[player] = nil
+	CommandEgress.Destroy(connection.egress)
 
 	for _, stream: Stream in connection.actors do
 		stream:Destroy()
@@ -471,6 +598,7 @@ function ActorAwarenessRuntime.new(
 	local codec: SharedNetworkingTypes.ActorStreamCodec = WireCodec.Compile(protocol, schemas)
 
 	local state: RuntimeState = {
+		publication = publication,
 		codec = codec,
 		measuredRecords = setmetatable({}, { __mode = "k" }),
 		dependencies = dependencies,
@@ -511,6 +639,13 @@ function ActorAwarenessRuntime.new(
 			end
 
 			local connection: Connection = {
+				egress = CommandEgress.new(function(): ()
+					self:_close(player)
+
+					if dependencies.CloseConnection ~= nil then
+						pcall(dependencies.CloseConnection, player, "CommandOutputExpired")
+					end
+				end),
 				player = player,
 				nextHandle = 1,
 				actors = {},
@@ -559,7 +694,15 @@ function ActorAwarenessRuntime.new(
 					then owner
 					else public
 
-				stream:Enqueue(projected)
+				if
+					connection.egress.scope == nil
+					or (#projected.patches == 0 and #projected.events == 0)
+					or CommandEgress.AdmitPublication(connection.egress, self:_measureRecord(projected))
+				then
+					stream:Enqueue(projected, connection.egress.order)
+				else
+					stream:Fault("CommandFenceOverloaded")
+				end
 			end
 		end)
 	)

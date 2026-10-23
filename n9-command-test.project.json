@@ -1,0 +1,41 @@
+{
+  "name": "KRF-N9-Commands",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": {
+        "$className": "Folder",
+        "KRF": {
+          "$path": "src"
+        }
+      },
+      "CommandTestControl": {
+        "$className": "RemoteEvent"
+      }
+    },
+    "ServerScriptService": {
+      "CommandTestServer": {
+        "$path": "tests/integration/Commands/Server.server.luau"
+      },
+      "Utils": {
+        "$className": "Folder",
+        "ServerCorrelation": {
+          "$path": "tests/integration/Commands/Utils/ServerCorrelation.luau"
+        }
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "CommandTestClient": {
+          "$path": "tests/integration/Commands/Client.client.luau"
+        },
+        "Utils": {
+          "$className": "Folder",
+          "ClientCorrelation": {
+            "$path": "tests/integration/Commands/Utils/ClientCorrelation.luau"
+          }
+        }
+      }
+    }
+  }
+}

@@ -17,6 +17,7 @@ A starter template with initialization already wired is not available yet. Use t
 | `resources` | Meter definitions, bounds, and regeneration |
 | `actions` | Action factories with declarative requirements, costs, and behavior |
 | `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
+| `commands` | [Command definitions](./Networking/commands) with target modes, optional schemas, explicit authorization, and handlers |
 
 Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 
@@ -58,15 +59,15 @@ end
 -- Continue your game's client startup here.
 ```
 
-A successful return means the client has installed the server's protocol catalog and ActorView runtime and received its readiness acknowledgement. Views become available as complete Actor baselines arrive; success does not guarantee that any view exists yet. See [ActorViews](./Networking/actor-views) for client state access and [Networking startup](./Networking/startup) for failure handling.
+A successful return means the client has installed the server's protocol catalog, ActorView runtime, and [CommandRuntime](./Networking/commands) and received its readiness acknowledgement. Views become available as complete Actor baselines arrive; success does not guarantee that any view exists yet. See [ActorViews](./Networking/actor-views) for client state access and [Networking startup](./Networking/startup) for failure handling.
 
 `Client.Init` accepts one attempt per client lifetime, including a failed attempt. Discovery and the handshake share a bounded deadline; handle a failure at your startup boundary rather than retrying initialization in a loop.
 
 ## Server startup guarantees
 
-`Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, and event size bounds before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
+`Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, event size bounds, and command definitions and schemas before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. Command authorization and handlers run only for received requests. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
 
-A domain validation failure uses `system = "ReplicationDomain"`; protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
+A domain validation failure uses `system = "ReplicationDomain"`, and a command catalog validation failure uses `system = "Command"`. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix configuration and restart after failure. An empty domain catalog still starts transport. Action registration does not start Actions; `autoGrant` only establishes their initial availability on each Actor.
 

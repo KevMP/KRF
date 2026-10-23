@@ -24,6 +24,7 @@ Combines built-in and game definitions, then prepares and publishes the registri
 - Returns `true, nil` when all registries and the transport are ready.
 - Returns `false, { system, reason }` when preparation or publication fails; partially published startup state is rolled back.
 - Networking failures use `system = "Networking"`, including `TransportConflict`, `BootstrapManifestTooLarge`, `InvalidProtocolManifest`, and `CodecCompilationFailure`.
+- Command catalog failures use `system = "Command"`. Supply `config.commands` as an array of [command definitions](/Networking/commands); omission means an empty catalog. Authorization and handlers are required even for commands without schemas.
 - Returns a `Server` failure with `ServerInitAlreadyAttempted` on a repeated attempt, including after a failed first attempt, or `CatalogAlreadyLoaded` when a registry was loaded before startup.
 
 ## Related

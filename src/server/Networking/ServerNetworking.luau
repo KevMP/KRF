@@ -18,6 +18,9 @@ local Scheduling = require(script.Parent.utils.AwarenessScheduling)
 local NativeAssociation = require(script.Parent.utils.NativePlayerAssociation)
 local ActorConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local Resync = require(script.Parent.ResyncRuntime)
+local CommandManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandManifest)
+local Commands = require(script.Parent.ServerCommandRuntime)
+local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 
 local ServerNetworking = {} :: Types.ServerNetworking
 local initialized: boolean = false
@@ -30,9 +33,12 @@ local awareness: Types.ActorAwarenessRuntime? = nil
 local association: Types.PlayerAssociationSource? = nil
 local stopDriver: (() -> ())? = nil
 local resync: Types.ResyncRuntime? = nil
+local commandRuntime: Types.ServerCommandRuntime? = nil
+local preparedCommands: Types.PreparedCommandCatalog? = nil
 
 function ServerNetworking.Prepare(
-	catalog: ReplicationTypes.PreparedReplicationDomainCatalog
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	commands: Types.PreparedCommandCatalog?
 ): (SharedNetworkingTypes.PreparedProtocol?, string?)
 	if ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME) ~= nil then
 		return nil, "TransportConflict"
@@ -91,7 +97,30 @@ function ServerNetworking.Prepare(
 	end
 
 	table.freeze(domains)
-	local manifest: SharedNetworkingTypes.ProtocolManifest = { version = Constants.PROTOCOL_VERSION, domains = domains }
+	local commandMetadata: { SharedNetworkingTypes.ManifestCommand } = {}
+
+	if commands ~= nil then
+		for index: number, definition: Types.LoadedCommandDefinition in commands.orderedDefinitions do
+			local projected: SharedNetworkingTypes.ManifestCommand = table.freeze({
+				id = definition.id,
+				code = index - 1,
+				target = definition.target,
+				request = if definition.request ~= nil then SchemaProjection.Definition(definition.request) else nil,
+				result = if definition.result ~= nil then SchemaProjection.Definition(definition.result) else nil,
+			})
+
+			table.insert(commandMetadata, projected)
+		end
+	end
+
+	table.freeze(commandMetadata)
+
+	local manifest: SharedNetworkingTypes.ProtocolManifest = {
+		version = Constants.PROTOCOL_VERSION,
+		domains = domains,
+		commands = if #commandMetadata > 0 then commandMetadata else nil,
+	}
+
 	table.freeze(manifest)
 
 	local bootstrapBuffer: buffer?, encodeReason: string? =
@@ -148,7 +177,19 @@ function ServerNetworking.Prepare(
 
 	table.freeze(domainsById)
 	table.freeze(domainsByCode)
-	local codecs: SharedNetworkingTypes.ClientProtocol = { domainsById = domainsById, domainsByCode = domainsByCode }
+	local commandsById, commandsByCode, commandReason = CommandManifest.Compile(manifest.commands)
+
+	if commandsById == nil or commandsByCode == nil then
+		return nil, commandReason or "CodecCompilationFailure"
+	end
+
+	local codecs: SharedNetworkingTypes.ClientProtocol = {
+		domainsById = domainsById,
+		domainsByCode = domainsByCode,
+		commandsById = commandsById,
+		commandsByCode = commandsByCode,
+	}
+
 	table.freeze(codecs)
 
 	local prepared: SharedNetworkingTypes.PreparedProtocol =
@@ -156,6 +197,7 @@ function ServerNetworking.Prepare(
 
 	table.freeze(prepared)
 	preparedCatalog = catalog
+	preparedCommands = commands
 
 	return prepared, nil
 end
@@ -198,6 +240,9 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 				SendReliable = ServerNetworking.SendReliable,
 				GetPlayerFromCharacter = source.GetPlayerFromCharacter,
 				ObserveAssociationChanged = source.ObserveAssociationChanged,
+				CloseConnection = function(player: Player, _reason: string): ()
+					handshake:Close(player)
+				end,
 				ReportFault = function(fault: Types.ActorAwarenessFault)
 					warn(
 						"[Networking] Actor stream halted actorId="
@@ -219,6 +264,22 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 			awareness = created
 			AwarenessLifecycle.Install(created)
+
+			local commandCatalog: Types.PreparedCommandCatalog = preparedCommands
+				or { definitionsById = {}, orderedDefinitions = {} }
+
+			commandRuntime = Commands.new(commandCatalog, protocol.runtime, {
+				Now = os.clock,
+				IsClientReady = ServerNetworking.IsClientReady,
+				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
+				awareness = created,
+				ReportFault = function(player: Player, faultReason: string): ()
+					warn("[Networking] command fault recipient=" .. tostring(player) .. " reason=" .. faultReason)
+				end,
+				CloseConnection = function(player: Player, _reason: string): ()
+					handshake:Close(player)
+				end,
+			})
 
 			resync = Resync.new({
 				Now = os.clock,
@@ -245,6 +306,13 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			transports.reliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
 				if initialized and player.Parent == Players then
 					if
+						commandRuntime ~= nil
+						and typeof(payload) == "buffer"
+						and buffer.len(payload) > 0
+						and buffer.readu8(payload, 0) == CommandConstants.REQUEST_KIND
+					then
+						commandRuntime:Handle(player, payload, ...)
+					elseif
 						resync ~= nil
 						and typeof(payload) == "buffer"
 						and buffer.len(payload) > 0
@@ -316,6 +384,11 @@ end
 function ServerNetworking.Destroy(): ()
 	initialized = false
 
+	if commandRuntime ~= nil then
+		commandRuntime:Destroy()
+		commandRuntime = nil
+	end
+
 	if resync ~= nil then
 		resync:Destroy()
 		resync = nil
@@ -346,6 +419,7 @@ function ServerNetworking.Destroy(): ()
 	end
 
 	preparedCatalog = nil
+	preparedCommands = nil
 
 	for _, listener: RBXScriptConnection in listeners do
 		listener:Disconnect()

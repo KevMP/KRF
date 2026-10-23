@@ -79,7 +79,7 @@ Sequence ids are unique, monotonic positive integers from 1 through 4,294,967,29
 
 At most 256 ClientVisible instances may be active on one Actor. Admission accounts for visible owners that the incoming Action will preempt; ServerOnly owners do not free visible slots. Exceeding the resulting bound rejects with `ActionVisibleInstanceLimitReached`, without partial payment or effects. Terminal paths never automatically refund accepted costs.
 
-ActionsView provides observation only. Client Action command transport and request/result correlation are not available here; a future accepted request result will correlate with the same authoritative sequence identity. Do not treat replicated activity as a local grant or permission to mutate gameplay.
+ActionsView provides observation only. Game-defined [commands](../Networking/commands) can return the same authoritative sequence identity for request/result correlation. Built-in Action Start/Stop commands and an input runtime are not supplied. Do not treat replicated activity as a local grant or permission to mutate gameplay.
 
 ## Related
 

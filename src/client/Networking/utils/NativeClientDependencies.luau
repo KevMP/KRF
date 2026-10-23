@@ -11,6 +11,9 @@ local Consumer = require(script.Parent.ActorStreamConsumer)
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.ActorStreamCodec)
 local SchemaCompiler = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.SchemaCompiler)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
+local Commands = require(script.Parent.Parent.ClientCommandRuntime)
+local CommandState = require(script.Parent.CommandRuntimeState)
+local ReliableConsumer = require(script.Parent.ReliableConsumer)
 
 local dependencies: ClientTypes.Dependencies
 
@@ -74,7 +77,9 @@ dependencies = {
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
 		installActorReceiver: (((any) -> ()) -> ())?,
-		sendReliable: ((buffer) -> ())?
+		sendReliable: ((buffer) -> ())?,
+		isReady: (() -> boolean)?,
+		onTerminalFailure: (() -> ())?
 	): (boolean, string?, (() -> ())?)
 		assert(manifest ~= nil and installActorReceiver ~= nil, "ActorInstallationMissing")
 		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
@@ -90,6 +95,8 @@ dependencies = {
 		local runtime: Types.ActorStreamRuntime? = nil
 		local views: Types.ActorViewRuntime? = nil
 		local active: boolean = true
+		local commands: Types.ClientCommandRuntime? = nil
+		local stopReceiver: (() -> ())? = nil
 
 		local function cleanup(): ()
 			if not active then
@@ -97,6 +104,20 @@ dependencies = {
 			end
 
 			active = false
+
+			if stopReceiver ~= nil then
+				stopReceiver()
+				stopReceiver = nil
+			end
+
+			CommandState.Install(nil)
+
+			if commands ~= nil then
+				commands:Destroy()
+				commands = nil
+			end
+
+			CommandState.Disconnect()
 
 			if runtime ~= nil then
 				runtime:Destroy()
@@ -137,12 +158,35 @@ dependencies = {
 			})
 
 			runtime = created
+			assert(sendReliable ~= nil, "CommandReliableEndpointMissing")
 
-			installActorReceiver(function(payload: any)
-				if active then
+			local commandRuntime: Types.ClientCommandRuntime = Commands.new(protocol, created, {
+				IsReady = isReady or function(): boolean
+					return false
+				end,
+				SendReliable = sendReliable,
+				ScheduleTimeout = dependencies.ScheduleTimeout,
+			})
+
+			commands = commandRuntime
+			CommandState.Install(commandRuntime)
+
+			local receive: (any) -> (), stop: () -> () = ReliableConsumer.new(
+				function(payload: any): ()
 					created:Handle(payload)
+				end,
+				commandRuntime,
+				function(): ()
+					if onTerminalFailure ~= nil then
+						onTerminalFailure()
+					end
+
+					cleanup()
 				end
-			end)
+			)
+
+			stopReceiver = stop
+			installActorReceiver(receive)
 		end)
 
 		if not success then

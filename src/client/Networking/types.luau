@@ -1,8 +1,41 @@
 --!strict
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local PublicTypes = require(script.Parent.Parent.Actor.types)
+local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 local types = {}
+
+export type CommandResult = {
+	read requestId: number,
+	read commandId: string,
+	read targetActorView: PublicTypes.ActorView?,
+	read status: "Accepted" | "Rejected" | "Unknown",
+	read result: any,
+	read reason: string?,
+}
+
+export type CommandRuntime = {
+	read Send: (string, PublicTypes.ActorView?, any?) -> (number?, string?),
+	read OnCommandResult: SignalTypes.Event<CommandResult>,
+	read OnCommandUncertain: SignalTypes.Event<CommandResult>,
+}
+
+export type ClientCommandOptions = {
+	IsReady: () -> boolean,
+	SendReliable: (buffer) -> (),
+	ScheduleTimeout: (number, () -> ()) -> () -> (),
+	maxRequestId: number?,
+	maxPending: number?,
+	maxPendingBytes: number?,
+	timeoutSeconds: number?,
+	graceSeconds: number?,
+}
+
+export type ClientCommandRuntime = {
+	Send: (self: ClientCommandRuntime, string, PublicTypes.ActorView?, any?) -> (number?, string?),
+	Handle: (self: ClientCommandRuntime, any) -> boolean,
+	Destroy: (self: ClientCommandRuntime) -> (),
+}
 
 -- Actor stream and Model discovery
 -- The Actor stream runtime owns one stable identity record per awareness lifetime and updates its Model

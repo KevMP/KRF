@@ -171,6 +171,12 @@ beforeEach(function()
 			): number?
 				return nil
 			end,
+			ResolveActor = function(_self, _player, _handle)
+				return nil, "UnknownActorHandle"
+			end,
+			ReserveCommandResult = function(_self, _player, _maximum)
+				return nil, "Unavailable"
+			end,
 			RequestReplacementBaseline = function(
 				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
 				_player: Player,

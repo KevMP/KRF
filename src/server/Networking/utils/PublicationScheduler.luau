@@ -4,7 +4,7 @@ local Types = require(script.Parent.Parent.types)
 local PublicationScheduler = {}
 PublicationScheduler.__index = PublicationScheduler
 
-type Pending = { commit: Types.PublicationFilteredCommit, bytes: number }
+type Pending = { commit: Types.PublicationFilteredCommit, bytes: number, order: number }
 
 type Stream = {
 	key: Types.PublicationStreamKey,
@@ -278,7 +278,8 @@ end
 function PublicationScheduler.Enqueue(
 	self: Runtime,
 	key: Types.PublicationStreamKey,
-	commit: Types.PublicationFilteredCommit
+	commit: Types.PublicationFilteredCommit,
+	order: number?
 ): (boolean, string?)
 	local stream: Stream = find(self, key, true) :: Stream
 
@@ -289,7 +290,7 @@ function PublicationScheduler.Enqueue(
 	local records = stream.records
 	local tail = records[#records]
 	local isEvent = #commit.events > 0
-	local canMerge = tail ~= nil and #tail.commit.events == 0
+	local canMerge = tail ~= nil and #tail.commit.events == 0 and tail.order == (order or 0)
 	local composed = if canMerge then combine(tail.commit, commit, truthBeforeTail(stream)) else commit
 	local newRecords = #records + (if canMerge or (#composed.patches == 0 and not isEvent) then 0 else 1)
 	local size = if #composed.patches == 0 and #composed.events == 0 then 0 else self.options.MeasureRecord(composed)
@@ -313,7 +314,7 @@ function PublicationScheduler.Enqueue(
 	end
 
 	if size > 0 then
-		table.insert(records, { commit = composed, bytes = size })
+		table.insert(records, { commit = composed, bytes = size, order = order or 0 })
 		stream.queuedBytes += size
 		stream.pendingEvents += #composed.events
 		stream.barriers += if #composed.events > 0 then 1 else 0
@@ -393,6 +394,13 @@ function PublicationScheduler.GetNextRecordBytes(self: Runtime, key: Types.Publi
 	local pending: Pending? = if stream ~= nil then stream.records[1] else nil
 
 	return if pending ~= nil then pending.bytes else nil
+end
+
+function PublicationScheduler.GetNextRecordOrder(self: Runtime, key: Types.PublicationStreamKey): number?
+	local stream: Stream? = find(self, key, false)
+	local pending: Pending? = if stream ~= nil then stream.records[1] else nil
+
+	return if pending ~= nil then pending.order else nil
 end
 
 function PublicationScheduler.DrainBudgeted(

@@ -1,19 +1,19 @@
 param(
     [string]$StudioPath,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 180,
-    [ValidateSet("n7", "n8")][string]$Suite = "n7"
+    [ValidateSet("n7", "n8", "n9")][string]$Suite = "n7"
 )
 
 $ErrorActionPreference = "Stop"
 $repository = Split-Path -Parent $PSScriptRoot
 $runDirectory = Join-Path $repository ("build\" + $Suite + "-native\" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
-$viewName = if ($Suite -eq "n8") { "ActionsView" } else { "ResourcesView" }
+$viewName = switch ($Suite) { "n9" { "Commands" } "n8" { "ActionsView" } default { "ResourcesView" } }
 $placeFile = Join-Path $runDirectory ($viewName + ".rbxl")
 $outputFile = Join-Path $runDirectory "result.log"
 $stdoutFile = Join-Path $runDirectory "studio.stdout.log"
 $stderrFile = Join-Path $runDirectory "studio.stderr.log"
-$launcherName = if ($Suite -eq "n8") { "run-n8-actions-view-tests.luau" } else { "run-n7-resources-view-tests.luau" }
+$launcherName = switch ($Suite) { "n9" { "run-n9-command-tests.luau" } "n8" { "run-n8-actions-view-tests.luau" } default { "run-n7-resources-view-tests.luau" } }
 $launcherFile = Join-Path $PSScriptRoot $launcherName
 
 if (-not $StudioPath) {
@@ -27,7 +27,7 @@ if (-not $StudioPath) {
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 
 Write-Host "Building native two-client $Suite fixture..."
-$projectName = if ($Suite -eq "n8") { "n8-actions-view-test.project.json" } else { "n7-resources-view-test.project.json" }
+$projectName = switch ($Suite) { "n9" { "n9-command-test.project.json" } "n8" { "n8-actions-view-test.project.json" } default { "n7-resources-view-test.project.json" } }
 & rojo build (Join-Path $repository $projectName) -o $placeFile
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -78,7 +78,20 @@ export type ManifestDomain = {
 	read events: { ManifestEvent },
 }
 
-export type ProtocolManifest = { read version: number, read domains: { ManifestDomain } }
+export type ManifestCommand = {
+	read id: string,
+	read code: number,
+	read target: "None" | "Actor",
+	read request: SchemaDefinition?,
+	read result: SchemaDefinition?,
+}
+
+export type ProtocolManifest = {
+	read version: number,
+	read domains: { ManifestDomain },
+	read commands: { ManifestCommand }?,
+}
+
 export type ClientEvent = { read id: string, read code: number, read codec: CompiledCodec }
 
 export type ClientDomain = {
@@ -92,7 +105,41 @@ export type ClientDomain = {
 export type ClientProtocol = {
 	read domainsById: { [string]: ClientDomain },
 	read domainsByCode: { [number]: ClientDomain },
+	read commandsById: { [string]: ClientCommand }?,
+	read commandsByCode: { [number]: ClientCommand }?,
 }
+
+export type ClientCommand = {
+	read id: string,
+	read code: number,
+	read target: "None" | "Actor",
+	read requestCodec: CompiledCodec?,
+	read resultCodec: CompiledCodec?,
+}
+
+export type CommandRequest = {
+	read commandCode: number,
+	read requestId: number,
+	read targetHandle: number?,
+	read request: any,
+}
+
+export type CommandResult = {
+	read commandCode: number,
+	read requestId: number,
+	read status: "Accepted" | "Rejected" | "Unknown",
+	read result: any,
+	read reason: string?,
+}
+
+export type CommandCodec = {
+	read EncodeRequest: (CommandRequest) -> (buffer?, string?),
+	read DecodeRequest: (any) -> (CommandRequest?, string?),
+	read EncodeResult: (CommandResult) -> (buffer?, string?),
+	read DecodeResult: (any) -> (CommandResult?, string?),
+}
+
+export type CommandCodecModule = { Compile: (ClientProtocol) -> CommandCodec }
 
 export type PreparedProtocol = {
 	read manifest: ProtocolManifest,

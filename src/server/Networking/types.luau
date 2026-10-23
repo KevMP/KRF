@@ -5,6 +5,92 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local types = {}
 
+-- Commands are startup definitions. Context and outcomes contain semantic data
+-- only; connection identities, handles, buffers and egress ownership stay private.
+export type CommandOutcome = {
+	read requestId: number,
+	read commandId: string,
+	read targetActor: ActorTypes.Actor?,
+	read status: "Accepted" | "Rejected" | "Unknown",
+	read result: any,
+	read reason: string?,
+}
+
+export type CommandContext = {
+	read player: Player,
+	read actor: ActorTypes.Actor?,
+	read requestId: number,
+	read commandId: string,
+	read GetPriorOutcome: (self: CommandContext, requestId: number) -> CommandOutcome?,
+}
+
+export type CommandHandlerResult = { accepted: boolean, result: any?, reason: string? }
+export type CommandAuthorize = (CommandContext, any) -> (boolean, string?)
+export type CommandHandler = (CommandContext, any) -> CommandHandlerResult
+
+export type CommandDefinition = {
+	id: string,
+	target: "None" | "Actor",
+	request: SharedNetworkingTypes.SchemaDefinition?,
+	result: SharedNetworkingTypes.SchemaDefinition?,
+	authorize: CommandAuthorize,
+	handle: CommandHandler,
+}
+
+export type LoadedCommandDefinition = {
+	read id: string,
+	read target: "None" | "Actor",
+	read request: SharedNetworkingTypes.CompiledSchema?,
+	read result: SharedNetworkingTypes.CompiledSchema?,
+	read authorize: CommandAuthorize,
+	read handle: CommandHandler,
+}
+
+export type PreparedCommandCatalog = {
+	read definitionsById: { [string]: LoadedCommandDefinition },
+	read orderedDefinitions: { LoadedCommandDefinition },
+}
+
+export type CommandReservation = {
+	read Commit: (buffer) -> boolean,
+	read Cancel: () -> (),
+}
+
+export type ServerCommandLimits = {
+	maxRequests: number?,
+	maxBytes: number?,
+	windowSeconds: number?,
+	maxQueuedRequests: number?,
+	maxQueuedBytes: number?,
+	maxHistory: number?,
+	maxHistoryBytes: number?,
+	historySeconds: number?,
+}
+
+export type ServerCommandDependencies = {
+	Now: () -> number,
+	ScheduleTimeout: ((number, () -> ()) -> () -> ())?,
+	IsClientReady: (Player) -> boolean,
+	ObserveClientClosed: ((Player) -> ()) -> () -> (),
+	awareness: ActorAwarenessRuntime,
+	ReportFault: (Player, string) -> (),
+	CloseConnection: (Player, string) -> (),
+}
+
+export type ServerCommandRuntime = {
+	Handle: (self: ServerCommandRuntime, Player, any, ...any) -> (boolean, string?),
+	Destroy: (self: ServerCommandRuntime) -> (),
+}
+
+export type ServerCommandRuntimeModule = {
+	new: (
+		PreparedCommandCatalog,
+		SharedNetworkingTypes.ClientProtocol,
+		ServerCommandDependencies,
+		ServerCommandLimits?
+	) -> ServerCommandRuntime,
+}
+
 -- Networking startup and handshake
 export type HandshakeDependencies = {
 	SendReliable: (player: Player, payload: buffer) -> (),
@@ -27,7 +113,8 @@ export type ServerHandshakeModule = {
 
 export type ServerNetworking = {
 	Prepare: (
-		catalog: ReplicationTypes.PreparedReplicationDomainCatalog
+		catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+		commands: PreparedCommandCatalog?
 	) -> (SharedNetworkingTypes.PreparedProtocol?, string?),
 	Publish: (protocol: SharedNetworkingTypes.PreparedProtocol) -> (boolean, string?),
 	IsClientReady: (player: Player) -> boolean,
@@ -77,6 +164,7 @@ export type PublicationFault = { read actorId: string, read domainId: string, re
 export type PublicationRuntimeOptions = { ReportFault: ((fault: PublicationFault) -> ())? }
 
 export type PublicationRuntime = {
+	IsActorAttached: (self: PublicationRuntime, actor: ActorTypes.Actor) -> boolean,
 	AttachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (),
 	GetActorSequence: (self: PublicationRuntime, actor: ActorTypes.Actor) -> number,
@@ -144,7 +232,8 @@ export type PublicationScheduler = {
 	Enqueue: (
 		self: PublicationScheduler,
 		stream: PublicationStreamKey,
-		commit: PublicationFilteredCommit
+		commit: PublicationFilteredCommit,
+		order: number?
 	) -> (boolean, string?),
 	MarkBaselinePending: (self: PublicationScheduler, stream: PublicationStreamKey) -> (),
 	-- Delivered visible truth permits cancellation of net-zero Map tail changes.
@@ -156,6 +245,7 @@ export type PublicationScheduler = {
 	RemoveStream: (self: PublicationScheduler, stream: PublicationStreamKey) -> (),
 	GetStreamStatus: (self: PublicationScheduler, stream: PublicationStreamKey) -> PublicationStreamStatus,
 	GetNextRecordBytes: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
+	GetNextRecordOrder: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
 	DrainBudgeted: (self: PublicationScheduler, maxBytes: number, maxRecords: number) -> PublicationDrainResult,
 	Destroy: (self: PublicationScheduler) -> (),
 }
@@ -166,6 +256,7 @@ export type PublicationSchedulerModule = { new: (options: PublicationSchedulerOp
 export type ActorAwarenessFault = { player: Player, actorId: string, reason: string }
 
 export type ActorAwarenessDependencies = {
+	CloseConnection: ((Player, string) -> ())?,
 	IsClientReady: (Player) -> boolean,
 	ObserveClientReady: ((Player) -> ()) -> () -> (),
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
@@ -188,6 +279,12 @@ export type ActorAwarenessOptions = {
 }
 
 export type ActorAwarenessRuntime = {
+	ResolveActor: (self: ActorAwarenessRuntime, player: Player, handle: number) -> (ActorTypes.Actor?, string?),
+	ReserveCommandResult: (
+		self: ActorAwarenessRuntime,
+		player: Player,
+		maxBytes: number
+	) -> (CommandReservation?, string?),
 	OnActorRegistered: (self: ActorAwarenessRuntime, actor: ActorTypes.Actor) -> (),
 	OnActorUnregistering: (self: ActorAwarenessRuntime, actor: ActorTypes.Actor) -> (),
 	RefreshPlayerAssociation: (self: ActorAwarenessRuntime, actor: ActorTypes.Actor) -> (),

@@ -5,8 +5,12 @@ local Signal = require(script.Parent.Parent.Parent.Parent.shared.Signal.SignalMo
 local byId: { [string]: Types.ActorView } = {}
 local byModel: { [Model]: Types.ActorView } = {}
 local models: { [Types.ActorView]: Model } = {}
+local identities: { [Types.ActorView]: boolean } = {}
 
 local owner: Types.ActorViewRegistryOwner = {
+	IsCurrent = function(view: Types.ActorView): boolean
+		return identities[view] == true
+	end,
 	GetActorViewById = function(actorId: string): Types.ActorView?
 		return byId[actorId]
 	end,
@@ -32,6 +36,7 @@ local owner: Types.ActorViewRegistryOwner = {
 		end
 
 		byId[view:GetId()] = view
+		identities[view] = true
 
 		if model ~= nil then
 			byModel[model] = view
@@ -62,6 +67,8 @@ local owner: Types.ActorViewRegistryOwner = {
 		return true, nil
 	end,
 	Remove = function(view: Types.ActorView): ()
+		identities[view] = nil
+
 		if byId[view:GetId()] == view then
 			byId[view:GetId()] = nil
 		end
@@ -78,6 +85,7 @@ local owner: Types.ActorViewRegistryOwner = {
 		table.clear(byId)
 		table.clear(byModel)
 		table.clear(models)
+		table.clear(identities)
 	end,
 	Added = Signal.new(),
 	Removing = Signal.new(),

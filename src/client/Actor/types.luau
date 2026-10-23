@@ -131,6 +131,7 @@ export type ActorViewModule = {
 }
 
 export type ActorViewRegistryOwner = {
+	IsCurrent: (view: ActorView) -> boolean,
 	GetActorViewById: (actorId: string) -> ActorView?,
 	GetActorViewByModel: (model: Model) -> ActorView?,
 	GetAllActorViews: () -> { ActorView },
