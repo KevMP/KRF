@@ -445,6 +445,10 @@ function PublicationRuntime.GetActorSequence(self: Runtime, actor: ActorTypes.Ac
 	return if attachment == nil then 0 else attachment.sequence
 end
 
+function PublicationRuntime.IsActorAttached(self: Runtime, actor: ActorTypes.Actor): boolean
+	return not self.destroyed and self.attachments[actor] ~= nil
+end
+
 function PublicationRuntime.GetAttachedActors(self: Runtime): { ActorTypes.Actor }
 	return table.clone(self.orderedActors)
 end

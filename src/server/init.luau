@@ -12,6 +12,7 @@ local TagValidator = require(script.Tags.TagValidator)
 local ResourceRegistry = require(script.Resource.ResourceRegistry)
 local ActionRegistry = require(script.Action.ActionRegistry)
 local ReplicationDomainRegistry = require(script.Replication.ReplicationDomainRegistry)
+local CommandRegistry = require(script.Networking.CommandRegistry)
 local BuiltInReplicationDomains = require(script.Replication.BuiltInReplicationDomains)
 local SchemaCollectionUtils = require(script.Parent.shared.Networking.utils.SchemaCollectionUtils)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
@@ -41,6 +42,7 @@ local initialized: boolean = false
 
 local function rollbackStartup(): ()
 	ServerNetworking.Destroy()
+	CommandRegistry._RollbackStartup()
 	ControllerRegistry._RollbackStartup()
 	TagRegistry._RollbackStartup()
 	ResourceRegistry._RollbackStartup()
@@ -81,6 +83,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		or ResourceRegistry.IsLoaded()
 		or ActionRegistry.IsLoaded()
 		or ReplicationDomainRegistry.IsLoaded()
+		or CommandRegistry.IsLoaded()
 	then
 		return false, { system = "Server", reason = "CatalogAlreadyLoaded" }
 	end
@@ -101,6 +104,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local tags: { TagDefinition } = config.tags or {}
 	local resources: { ResourceDefinition } = config.resources or {}
 	local actions: { ActionFactory } = if config.actions ~= nil then config.actions else {}
+
+	local preparedCommands, commandReason =
+		CommandRegistry.Prepare(if config.commands ~= nil then config.commands else {})
+
+	if preparedCommands == nil then
+		return false, { system = "Command", reason = commandReason :: string }
+	end
 
 	-- Own validated supporting definitions before Action factories run consumer
 	-- code. Later Load calls cannot observe mutation of the source catalogs.
@@ -221,7 +231,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 
 	local prepared: boolean, protocol: SharedNetworkingTypes.PreparedProtocol?, networkingReason: string? =
-		pcall(ServerNetworking.Prepare, preparedDomains)
+		pcall(ServerNetworking.Prepare, preparedDomains, preparedCommands)
 
 	if not prepared then
 		return false, { system = "Networking", reason = "StartupInternalFailure:" .. tostring(protocol) }
@@ -263,6 +273,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 		publicationSystem = "ReplicationDomain"
 		success, failure = ReplicationDomainRegistry.Publish(preparedDomains :: PreparedReplicationDomainCatalog)
+
+		if not success then
+			return false, failure
+		end
+
+		publicationSystem = "Command"
+		success, failure = CommandRegistry.Publish(preparedCommands)
 
 		if not success then
 			return false, failure

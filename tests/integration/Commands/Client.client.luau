@@ -6,12 +6,19 @@ local KRF = ReplicatedStorage.Packages.KRF
 local PublicTypes = require(KRF.client.Actor.types)
 local Client = require(KRF.client)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
-local commandModule: Instance? = KRF.client.Networking:FindFirstChild("CommandRuntime")
-local requireOptional: (ModuleScript) -> any = require :: any
-local Commands: any = if commandModule ~= nil then requireOptional(commandModule :: ModuleScript) else nil
+local NetworkingTypes = require(KRF.client.Networking.types)
+local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
+script.Parent:WaitForChild("Utils"):WaitForChild("ClientCorrelation")
+local Correlation = require(script.Parent.Utils.ClientCorrelation)
+local correlationGo: boolean = false
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("CommandTestControl") :: RemoteEvent
 local view: PublicTypes.ActorView? = nil
 local failed: boolean = false
+local outcomes: { [number]: NetworkingTypes.CommandResult } = {}
+
+Commands.OnCommandResult:Connect(function(result: NetworkingTypes.CommandResult): ()
+	outcomes[result.requestId] = result
+end)
 
 local function report(phase: string, failure: string?, sentIds: { number }?): ()
 	control:FireServer(phase, failure, sentIds)
@@ -26,11 +33,18 @@ local function waitFor(predicate: () -> boolean, reason: string): ()
 	end
 end
 
-control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
+control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId: string?, requester: boolean?): ()
 	if failed then
 		return
 	end
 
+	if phase == "Correlation" then
+		correlationGo = true
+
+		return
+	end
+
+	local reportPhase: string = phase
 	local sentIds: { number }? = nil
 
 	local completed: boolean, reason: any = pcall(function(): ()
@@ -50,6 +64,20 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 			second, failure = Commands.Send("Game.Interact", view, { choice = 7 })
 			assert(second ~= nil and failure == nil and second > first, "Expected installed private target mapping")
 			sentIds = { first, second }
+
+			waitFor(function(): boolean
+				return outcomes[first :: number] ~= nil and outcomes[second :: number] ~= nil
+			end, "Native results were not delivered")
+
+			assert(
+				outcomes[first].status == "Accepted" and outcomes[first].commandId == "Game.Ping",
+				"Expected correlated Ping acceptance"
+			)
+
+			assert(
+				outcomes[second].status == "Accepted" and outcomes[second].targetActorView == view,
+				"Expected N4-authorized exact Character target"
+			)
 
 			for _, event: any in { Commands.OnCommandResult, Commands.OnCommandUncertain } do
 				assert(
@@ -76,9 +104,19 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 
 			local allowed: { [string]: boolean } = { Send = true, OnCommandResult = true, OnCommandUncertain = true }
 
-			for key in Commands do
+			for key in next, Commands :: any do
 				assert(allowed[key], "Public command facade leaked private ownership or transport")
 			end
+		elseif phase == "PrepareCorrelation" then
+			assert(actorId ~= nil and otherId ~= nil, "Expected native correlation subjects")
+
+			Correlation.Run(actorId, otherId, requester == true, function(): ()
+				report("PrepareCorrelation")
+			end, function(): boolean
+				return correlationGo
+			end)
+
+			reportPhase = "Correlation"
 		elseif phase == "Retire" then
 			assert(view ~= nil, "Expected retained native view")
 
@@ -102,7 +140,7 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?): ()
 		failed = true
 	end
 
-	report(phase, if completed then nil else tostring(reason), sentIds)
+	report(reportPhase, if completed then nil else tostring(reason), sentIds)
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()

@@ -75,14 +75,22 @@ it("rejects a genuine view owned by a previous Client.Init after the same Actor 
 	expect(#fixture.sent).toBe(1)
 end)
 
-for _, terminal: string in { "ActorRemove", "ActorHalt", "RevisionGap" } do
+for _, terminal: string in { "ActorRemove", "ActorHalt", "RecoveryExhaustion" } do
 	it("rejects the formerly live view after " .. terminal .. " without transmitting", function()
 		local runtime: Commands.Facade = Commands.runtime()
 		TestUtils.ready(fixture)
 		local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 
-		if terminal == "RevisionGap" then
+		if terminal == "RecoveryExhaustion" then
 			TestUtils.records(fixture, { { kind = "Commit", handle = 7, revision = 3, patches = {}, events = {} } })
+			expect(view:IsAvailable()).toBe(true)
+
+			-- Complete the existing N5 adapter's five scheduled recovery opportunities.
+			for _ = 1, 5 do
+				local timeout: (() -> ())? = fixture.client.timeoutCallback
+				assert(timeout ~= nil, "Expected owned N5 recovery timer")
+				timeout()
+			end
 		elseif terminal == "ActorRemove" then
 			TestUtils.records(fixture, { { kind = "ActorRemove", handle = 7 } })
 		else
@@ -93,6 +101,18 @@ for _, terminal: string in { "ActorRemove", "ActorHalt", "RevisionGap" } do
 		expectRejected(runtime, "Game.Interact", view, { choice = 3 })
 	end)
 end
+
+it("admits the exact still-available view while N5 retains last valid truth during recoverable desync", function()
+	local runtime: Commands.Facade = Commands.runtime()
+	TestUtils.ready(fixture)
+	local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
+	TestUtils.records(fixture, { { kind = "Commit", handle = 7, revision = 3, patches = {}, events = {} } })
+	expect(Registry.GetActorViewById(view:GetId())).toBe(view)
+	expect(view:IsAvailable()).toBe(true)
+	local id: number?, reason: string? = runtime.Send("Game.Interact", view, { choice = 3 })
+	expect(reason).toBeNil()
+	expect(type(id)).toBe("number")
+end)
 
 it("rejects a retired view after removal and relearning the same id under a new private handle", function()
 	local runtime: Commands.Facade = Commands.runtime()

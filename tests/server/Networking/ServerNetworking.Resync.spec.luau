@@ -9,6 +9,7 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ActorTypes = require(KRF.server.Actor.types)
 local ServerNetworkingTypes = require(KRF.server.Networking.types)
+local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Transport: SharedNetworkingTypes.Transport = require(KRF.shared.Networking.Transport)
@@ -26,10 +27,24 @@ local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local SchemaUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.SchemaTestUtils)
+local Commands: ServerNetworkingTypes.ServerCommandRuntimeModule = require(KRF.server.Networking.ServerCommandRuntime)
+
+local Awareness: ServerNetworkingTypes.ActorAwarenessRuntimeModule =
+	require(KRF.server.Networking.ActorAwarenessRuntime)
+
+local CommandCodec = require(KRF.shared.Networking.CommandCodec)
+local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
+local Authorization = require(KRF.server.Networking.CommandAuthorization)
 
 local originalCreate: typeof(Transport.Create) = Transport.Create
 local originalStep: typeof(Scheduling.ObserveStep) = Scheduling.ObserveStep
 local originalControl: typeof(Control.new) = Control.new
+local originalCommands: typeof(Commands.new) = Commands.new
+local originalAwareness: typeof(Awareness.new) = Awareness.new
+local commandDependencies: ServerNetworkingTypes.ServerCommandDependencies? = nil
+local awarenessDependencies: ServerNetworkingTypes.ActorAwarenessDependencies? = nil
+local commandCodec: SharedNetworkingTypes.CommandCodec
+local commandCalls: number = 0
 local inbound: BindableEvent
 local barrier: BindableEvent
 local root: Folder
@@ -55,6 +70,33 @@ beforeEach(function()
 	destroyed = 0
 	handled = 0
 	step = nil
+	commandCalls = 0
+	commandDependencies = nil
+	awarenessDependencies = nil
+
+	Commands.new = function(
+		catalog: ServerNetworkingTypes.PreparedCommandCatalog,
+		protocol: SharedNetworkingTypes.ClientProtocol,
+		dependencies: ServerNetworkingTypes.ServerCommandDependencies,
+		options: ServerNetworkingTypes.ServerCommandLimits?
+	): ServerNetworkingTypes.ServerCommandRuntime
+		commandDependencies = dependencies
+		commandCodec = CommandCodec.Compile(protocol)
+
+		return originalCommands(catalog, protocol, dependencies, options)
+	end
+
+	Awareness.new = function(
+		publication: ServerNetworkingTypes.PublicationRuntime,
+		catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+		protocol: SharedNetworkingTypes.ClientProtocol,
+		dependencies: ServerNetworkingTypes.ActorAwarenessDependencies,
+		options: ServerNetworkingTypes.ActorAwarenessOptions
+	): ServerNetworkingTypes.ActorAwarenessRuntime
+		awarenessDependencies = dependencies
+
+		return originalAwareness(publication, catalog, protocol, dependencies, options)
+	end
 
 	Transport.Create = function(_parent: Instance): (SharedNetworkingTypes.OwnedTransport?, string?)
 		return {
@@ -110,6 +152,27 @@ beforeEach(function()
 	end
 
 	local success: boolean, failure: any = Server.Init({
+		commands = {
+			{
+				id = "Game.Probe",
+				target = "None",
+				result = Schema.U8,
+				authorize = Authorization.AnyReadyClient,
+				handle = function(): ServerNetworkingTypes.CommandHandlerResult
+					commandCalls += 1
+
+					return { accepted = true, result = 7 }
+				end,
+			},
+			{
+				id = "Game.Fault",
+				target = "None",
+				authorize = Authorization.AnyReadyClient,
+				handle = function(): ServerNetworkingTypes.CommandHandlerResult
+					error("InjectedCommandFault")
+				end,
+			},
+		},
 		replicationDomains = {
 			{
 				id = "Game.Recovery",
@@ -142,6 +205,8 @@ afterEach(function()
 	Transport.Create = originalCreate
 	Scheduling.ObserveStep = originalStep
 	Control.new = originalControl
+	Commands.new = originalCommands
+	Awareness.new = originalAwareness
 	inbound:Destroy()
 	barrier:Destroy()
 	root:Destroy()
@@ -260,4 +325,60 @@ it("destroys the owned recovery handler once and stops dispatch after server tea
 	emit(request(handle))
 	expect(destroyed).toBe(1)
 	expect(handled).toBe(0)
+end)
+
+it("dispatches command buffers separately from handshake and resync and queues validated results through N4", function()
+	local payload: buffer?, reason: string? = commandCodec.EncodeRequest({ commandCode = 1, requestId = 1 })
+	assert(payload ~= nil, reason)
+	emit(payload)
+	expect(commandCalls).toBe(0)
+	local handle: number = ready()
+	emit(payload)
+	emit(request(handle))
+	local faulty: buffer? = commandCodec.EncodeRequest({ commandCode = 0, requestId = 2 })
+	assert(faulty ~= nil, "Expected schema-valid faulting request")
+	emit(faulty)
+	expect(commandCalls).toBe(1)
+	expect(handled).toBe(1)
+	expect(sent).toEqual({})
+	assert(step ~= nil, "Expected production scheduler")
+
+	for _ = 1, 12 do
+		step()
+	end
+
+	local outcomes: { SharedNetworkingTypes.CommandResult } = {}
+
+	for _, packet: buffer in sent do
+		if buffer.readu8(packet, 0) == CommandConstants.RESULT_KIND then
+			local outcome: SharedNetworkingTypes.CommandResult? = commandCodec.DecodeResult(packet)
+			assert(outcome ~= nil, "Expected production result codec")
+			table.insert(outcomes, outcome)
+		end
+	end
+
+	expect(outcomes).toEqual({
+		{ commandCode = 1, requestId = 1, status = "Accepted", result = 7 },
+		{ commandCode = 0, requestId = 2, status = "Unknown", reason = "CommandHandlerFault" },
+	})
+
+	assert(commandDependencies ~= nil, "Expected startup-owned command dependencies")
+	commandDependencies.CloseConnection(player, "OutputUnavailable")
+	expect(Networking.IsClientReady(player)).toBe(false)
+	emit(payload)
+	expect(commandCalls).toBe(1)
+end)
+
+it("closes the same handshake connection when N4 reports an unrecoverable command-output failure", function()
+	ready()
+
+	assert(
+		awarenessDependencies ~= nil and awarenessDependencies.CloseConnection ~= nil,
+		"Expected private N4 connection cleanup"
+	)
+
+	awarenessDependencies.CloseConnection(player, "CommandOutputExpired")
+	expect(Networking.IsClientReady(player)).toBe(false)
+	assert(commandDependencies ~= nil, "Expected command runtime cleanup binding")
+	expect(commandDependencies.IsClientReady(player)).toBe(false)
 end)

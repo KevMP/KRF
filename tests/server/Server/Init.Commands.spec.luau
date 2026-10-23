@@ -20,6 +20,7 @@ local Transport = require(KRF.shared.Networking.Transport)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
 local Commands = require(script.Parent.Parent.Parent.shared.Utils.Networking.CommandTestUtils)
+local Registry = require(KRF.server.Networking.CommandRegistry)
 
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
 
@@ -30,6 +31,36 @@ end)
 afterEach(function()
 	Networking.Publish = originalPublish
 	Server._ResetForTests()
+end)
+
+it(
+	"preserves the published catalog when preparation or publication is repeated outside the startup transaction",
+	function()
+		local catalog: NetworkingTypes.PreparedCommandCatalog?, reason: string? = Registry.Prepare({})
+		assert(catalog ~= nil, reason)
+		expect((Registry.Publish(catalog))).toBe(true)
+		local repeated: NetworkingTypes.PreparedCommandCatalog? = nil
+		repeated, reason = Registry.Prepare({})
+		expect(repeated).toBeNil()
+		expect(reason).toBe("CommandDefinitionsAlreadyLoaded")
+		local published: boolean = false
+		published, reason = Registry.Publish(catalog)
+		expect(published).toBe(false)
+		expect(reason).toBe("CommandDefinitionsAlreadyLoaded")
+		expect(Registry.GetAll()).toBe(catalog.orderedDefinitions)
+		local started: boolean, failure: ServerTypes.StartupFailure? = Server.Init({})
+		expect(started).toBe(false)
+		expect(failure).toEqual({ system = "Server", reason = "CatalogAlreadyLoaded" })
+	end
+)
+
+it("rejects non-string command definition fields without publishing any catalog", function()
+	local invalid: any = Commands.definition("Game.Invalid")
+	invalid[1] = true
+	local catalog: NetworkingTypes.PreparedCommandCatalog?, reason: string? = Registry.Prepare({ invalid })
+	expect(catalog).toBeNil()
+	expect(reason).toBe("CommandFieldUnknown")
+	expect(Registry.IsLoaded()).toBe(false)
 end)
 
 local function expectUnpublished(): ()

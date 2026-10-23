@@ -2,6 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Constants = require(script.Parent.ProtocolConstants)
 local BufferUtils = require(script.Parent.CodecBufferUtils)
+local Collections = require(script.Parent.SchemaCollectionUtils)
 
 type Writer = { destination: buffer?, offset: number }
 type Reader = { source: buffer, offset: number, limit: number }
@@ -124,6 +125,44 @@ local function writeManifest(writer: Writer, manifest: Types.ProtocolManifest): 
 			writeString(writer, event.id)
 			writeUnsigned(writer, event.code, 2)
 			writeSchema(writer, event.payload, 1)
+		end
+	end
+
+	local commands: { Types.ManifestCommand } = manifest.commands or {}
+	local count: number? = if type(commands) == "table" then Collections.GetArrayLength(commands) else nil
+
+	if count == nil then
+		error("InvalidProtocolManifest", 0)
+	end
+
+	writeUnsigned(writer, count, 4)
+	local allowed: { [string]: boolean } = { id = true, code = true, target = true, request = true, result = true }
+
+	for _, command: Types.ManifestCommand in commands do
+		for field in next, command :: any do
+			if type(field) ~= "string" or not allowed[field] then
+				error("InvalidProtocolManifest", 0)
+			end
+		end
+
+		writeString(writer, command.id)
+		writeUnsigned(writer, command.code, 2)
+
+		if command.target ~= "None" and command.target ~= "Actor" then
+			error("InvalidProtocolManifest", 0)
+		end
+
+		writeUnsigned(writer, if command.target == "Actor" then 1 else 0, 1)
+		writeUnsigned(writer, if command.request ~= nil then 1 else 0, 1)
+
+		if command.request ~= nil then
+			writeSchema(writer, command.request, 1)
+		end
+
+		writeUnsigned(writer, if command.result ~= nil then 1 else 0, 1)
+
+		if command.result ~= nil then
+			writeSchema(writer, command.result, 1)
 		end
 	end
 end
@@ -261,11 +300,44 @@ function BootstrapCodec.Decode(source: buffer): Types.ProtocolManifest
 		table.insert(domains, { id = id, code = code, state = state, events = events })
 	end
 
+	local commands: { Types.ManifestCommand } = {}
+	local commandCount: number = readCount(reader, 9)
+
+	for _ = 1, commandCount do
+		local id: string = readString(reader)
+		local code: number = readUnsigned(reader, 2)
+		local target: number = readUnsigned(reader, 1)
+		local hasRequest: number = readUnsigned(reader, 1)
+
+		if target > 1 or hasRequest > 1 then
+			error("MalformedPacket", 0)
+		end
+
+		local request: Types.SchemaDefinition? = if hasRequest == 1 then readSchema(reader, 1) else nil
+		local hasResult: number = readUnsigned(reader, 1)
+
+		if hasResult > 1 then
+			error("MalformedPacket", 0)
+		end
+
+		local result: Types.SchemaDefinition? = if hasResult == 1 then readSchema(reader, 1) else nil
+
+		local command: Types.ManifestCommand = {
+			id = id,
+			code = code,
+			target = if target == 1 then "Actor" else "None",
+			request = request,
+			result = result,
+		}
+
+		table.insert(commands, command)
+	end
+
 	if reader.offset ~= reader.limit then
 		error("MalformedPacket", 0)
 	end
 
-	return { version = version, domains = domains }
+	return { version = version, domains = domains, commands = if commandCount > 0 then commands else nil }
 end
 
 return BootstrapCodec

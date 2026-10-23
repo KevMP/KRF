@@ -257,7 +257,9 @@ it("installs the private N5 consumer in the native phase and stops its retained 
 		ProtocolUtils.manifest(),
 		function(callback: (any) -> ())
 			receiver = callback
-		end
+		end,
+		function(_payload: buffer): () end,
+		nil
 	)
 
 	expect(success).toBe(true)
@@ -280,6 +282,6 @@ it("installs the private N5 consumer in the native phase and stops its retained 
 	expect(#fixture.baselines).toBe(1)
 	Consumer.Install(nil)
 	expect(Consumer.Get()).toBeNil()
-	local rejected: boolean = pcall(Native.InstallConsumers, fixture.protocol, nil, nil, nil)
+	local rejected: boolean = pcall(Native.InstallConsumers, fixture.protocol, nil, nil, nil, nil)
 	expect(rejected).toBe(false)
 end)

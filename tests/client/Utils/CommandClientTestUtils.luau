@@ -15,12 +15,15 @@ local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local ClientUtils = require(script.Parent.ClientTestUtils)
 local StreamUtils = require(script.Parent.ActorStreamTestUtils)
 local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
+local Manifest = require(KRF.shared.Networking.ManifestCompiler)
+local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 
 export type Fixture = {
 	client: ClientUtils.Fixture,
 	stream: StreamUtils.Fixture,
 	sent: { buffer },
 	cleanup: () -> (),
+	protocol: SharedTypes.ClientProtocol?,
 }
 
 local TestUtils = {}
@@ -103,6 +106,10 @@ function TestUtils.bootstrap(fixture: Fixture): ()
 		{ id = "Game.Ping", code = 1, target = "None" },
 	}
 
+	local protocol: SharedTypes.ClientProtocol?, compileReason: string? = Manifest.Reconstruct(metadata)
+	assert(protocol ~= nil, compileReason)
+	fixture.protocol = protocol
+
 	local payload: buffer?, reason: string? = Codec.Encode({ kind = "Bootstrap", manifest = metadata })
 	assert(payload ~= nil, reason)
 	ClientUtils.emit(fixture.client, payload)
@@ -113,6 +120,27 @@ function TestUtils.ready(fixture: Fixture): ()
 	TestUtils.bootstrap(fixture)
 	ClientUtils.acknowledge(fixture.client)
 	assert(fixture.client.result ~= nil and fixture.client.result.success, "Expected normal READY startup")
+end
+
+function TestUtils.result(
+	fixture: Fixture,
+	id: number,
+	status: "Accepted" | "Rejected" | "Unknown",
+	reason: string?,
+	commandId: string?
+): ()
+	local protocol: SharedTypes.ClientProtocol? = fixture.protocol
+	assert(protocol ~= nil and protocol.commandsById ~= nil, "Expected reconstructed command codebook")
+
+	local payload: buffer?, encodeReason: string? = CommandCodec.Compile(protocol).EncodeResult({
+		commandCode = protocol.commandsById[commandId or "Game.Ping"].code,
+		requestId = id,
+		status = status,
+		reason = reason,
+	})
+
+	assert(payload ~= nil, encodeReason)
+	ClientUtils.emit(fixture.client, payload)
 end
 
 function TestUtils.records(fixture: Fixture, records: { SharedTypes.ActorStreamRecord }): ()

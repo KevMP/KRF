@@ -15,19 +15,17 @@ local Protocol = require(KRF.shared.Networking.ProtocolCodec)
 local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local Awareness: NetworkingTypes.ActorAwarenessRuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
-local authorizationModule: Instance? = KRF.server:FindFirstChild("CommandAuthorization", true)
-local requireOptional: (ModuleScript) -> any = require :: any
-
-local Authorization: any = if authorizationModule ~= nil
-	then requireOptional(authorizationModule :: ModuleScript)
-	else nil
-
+local Authorization = require(KRF.server.Networking.CommandAuthorization)
+local CommandCodec = require(KRF.shared.Networking.CommandCodec)
+local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
+local Correlation = require(script.Parent.Utils.ServerCorrelation)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("CommandTestControl") :: RemoteEvent
 
 -- Normalized test observations, not a proposed production codec API/layout.
 -- The binding must obtain the kind and decode all fields from the actual N9
 -- codec. No command-field offsets, private opcodes or module names are guessed.
-type Request = { commandCode: number, requestId: number, targetHandle: number?, request: any }
+type Request = SharedTypes.CommandRequest
+
 type CommandWire = { requestKind: number, DecodeRequest: (buffer) -> (Request?, string?) }
 type CommandProtocol = SharedTypes.ClientProtocol & { commandsById: { [string]: { code: number } } }
 
@@ -35,13 +33,8 @@ type TargetResolver = {
 	ResolveActor: (NetworkingTypes.ActorAwarenessRuntime, Player, number) -> (ActorTypes.Actor?, string?),
 }
 
-local function bindProductionCommandCodec(_protocol: SharedTypes.ClientProtocol): CommandWire
-	-- Explicitly blocked until the production codec exists. Replace this binding
-	-- with its real exports; never substitute a test codec or count unknown bytes.
-	error(
-		"[N9 blocked integration] Production CommandRequest envelope codec/kind unavailable; native code/id/handle assertions require that codec (#79.49)",
-		0
-	)
+local function bindProductionCommandCodec(protocol: SharedTypes.ClientProtocol): CommandWire
+	return { requestKind = CommandConstants.REQUEST_KIND, DecodeRequest = CommandCodec.Compile(protocol).DecodeRequest }
 end
 
 Players.CharacterAutoLoads = false
@@ -190,7 +183,7 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 		if phase == "Startup" then
 			exercise()
 		elseif phase == "Exercise" then
-			for recipient: Player, actor: ActorTypes.Actor in actors do
+			for recipient: Player in actors do
 				local deadline: number = os.clock() + 5
 
 				while requests[recipient] == nil or #requests[recipient] < 2 do
@@ -209,7 +202,27 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 						"Decoded request id must equal Send's returned id"
 					)
 				end
+			end
 
+			local players: { Player } = Players:GetPlayers()
+			phase = "PrepareCorrelation"
+			reports = {}
+
+			for _, recipient: Player in players do
+				control:FireClient(
+					recipient,
+					phase,
+					actors[players[1]]:GetId(),
+					actors[players[2]]:GetId(),
+					recipient == players[1]
+				)
+			end
+		elseif phase == "PrepareCorrelation" then
+			phase = "Correlation"
+			reports = {}
+			control:FireAllClients(phase)
+		elseif phase == "Correlation" then
+			for _, actor: ActorTypes.Actor in actors do
 				Actors.UnregisterActor(actor)
 			end
 
@@ -234,33 +247,38 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 end)
 
 task.delay(75, function(): ()
-	finish(false, "Native command foundations timeout")
+	finish(false, "Native command timeout in " .. phase .. "")
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()
 	assert(Authorization ~= nil, "[N9 missing contract] CommandAuthorization helpers (#79.11-12)")
 
-	local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
-		commands = {
-			{
-				id = "Game.Ping",
-				target = "None",
-				authorize = Authorization.AnyReadyClient,
-				handle = function(): any
-					return { accepted = true }
-				end,
-			},
-			{
-				id = "Game.Interact",
-				target = "Actor",
-				request = Schema.Struct({ choice = Schema.U8 }),
-				authorize = Authorization.OwnerActor,
-				handle = function(): any
-					return { accepted = true }
-				end,
-			},
+	local commands: { NetworkingTypes.CommandDefinition } = {
+		{
+			id = "Game.Ping",
+			target = "None",
+			authorize = Authorization.AnyReadyClient,
+			handle = function(): any
+				return { accepted = true }
+			end,
 		},
-	} :: any)
+		{
+			id = "Game.Interact",
+			target = "Actor",
+			request = Schema.Struct({ choice = Schema.U8 }),
+			authorize = Authorization.OwnerActor,
+			handle = function(): any
+				return { accepted = true }
+			end,
+		},
+	}
+
+	for _, command: NetworkingTypes.CommandDefinition in Correlation.Commands(actors) do
+		table.insert(commands, command)
+	end
+
+	local initialized: boolean, failure: Server.StartupFailure? =
+		Server.Init({ commands = commands, actions = Correlation.Actions })
 
 	assert(initialized, if failure ~= nil then failure.reason else "Native Server.Init failed")
 	local protocol: CommandProtocol? = commandProtocol
@@ -306,7 +324,36 @@ local completed: boolean, reason: any = pcall(function(): ()
 
 			local observed: { Request } = requests[player] or {}
 			local index: number = #observed + 1
-			assert(index <= 2, "Unexpected command traffic, including after retired-view Send")
+
+			if index > 2 then
+				assert(phase == "Correlation", "Unexpected command traffic outside the correlation phase")
+				assert(index <= 7, "Unexpected correlation traffic")
+
+				assert(
+					protocol.commandsById["Game.Begin"].code == request.commandCode
+						or protocol.commandsById["Game.Interrupt"].code == request.commandCode
+						or protocol.commandsById["Game.Pulse"].code == request.commandCode
+						or protocol.commandsById["Game.Follow"].code == request.commandCode,
+					"Expected registered generic correlation command"
+				)
+
+				local runtime: NetworkingTypes.ActorAwarenessRuntime? = awareness
+				assert(runtime ~= nil and request.targetHandle ~= nil, "Expected real private target")
+				assert(runtime:ResolveActor(player, request.targetHandle) ~= nil, "Unknown private correlation target")
+
+				for _, actor: ActorTypes.Actor in actors do
+					assert(
+						not string.find(buffer.tostring(payload), actor:GetId(), 1, true),
+						"Correlation request leaked GUID"
+					)
+				end
+
+				table.insert(observed, request)
+				requests[player] = observed
+
+				return
+			end
+
 			local commandId: string = if index == 1 then "Game.Ping" else "Game.Interact"
 
 			assert(

@@ -10,6 +10,10 @@ local ActorTypes = require(KRF.server.Actor.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
 local TestUtils = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 
+local Commands = require(script.Parent.Parent.Utils.Networking.CommandRuntimeTestUtils)
+local Authorization = require(KRF.server.Networking.CommandAuthorization)
+local commands: Commands.Fixture? = nil
+
 local fixture: TestUtils.Fixture
 
 beforeEach(function()
@@ -17,14 +21,39 @@ beforeEach(function()
 end)
 
 afterEach(function()
+	if commands ~= nil then
+		commands.runtime:Destroy()
+		commands = nil
+	end
+
 	TestUtils.destroy(fixture)
 end)
 
--- The production server command runtime does not exist yet. Do not call the
--- helper with a made-up context: that would leave this N4 runtime disconnected
--- from authorization and could reward a direct Player.Character comparison.
--- These are intentional failing tests, not skipped tests or authorization proof.
-it("[blocked integration] denies an aware client with matching UserId when N4 associates another Player", function()
+local function execute(player: Player, other: Player, actor: ActorTypes.Actor, id: number): string
+	if commands == nil then
+		commands = Commands.bind(fixture, player, other, actor, {
+			{
+				id = "Game.Command",
+				target = "Actor",
+				authorize = Authorization.OwnerActor,
+				handle = function(
+					_context: NetworkingTypes.CommandContext,
+					_request: any
+				): NetworkingTypes.CommandHandlerResult
+					return { accepted = true }
+				end,
+			},
+		})
+	end
+
+	local current: Commands.Fixture = commands :: Commands.Fixture
+	Commands.send(current, id, nil, actor)
+	local results = Commands.results(current)
+
+	return results[#results].status
+end
+
+it("denies an aware client with matching UserId when N4 associates another Player", function()
 	local player: Player = { UserId = 42 } :: any
 	local other: Player = { UserId = 42 } :: any
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, other)
@@ -40,14 +69,10 @@ it("[blocked integration] denies an aware client with matching UserId when N4 as
 	expect(runtime:IsAware(player, actor)).toBe(true)
 	expect(runtime:GetPlayerForActor(actor)).toBe(other)
 
-	error(
-		"[N9 blocked integration] OwnerActor must deny this aware requester despite Character/UserId matches; "
-			.. "bind authorization through the production server command runtime to this N4 association dependency (#79.12)",
-		0
-	)
+	expect(execute(player, other, actor, 1)).toBe("Rejected")
 end)
 
-it("[blocked integration] accepts the N4-associated Character Actor and denies an unassociated NPC", function()
+it("accepts the N4-associated Character Actor and denies an unassociated NPC", function()
 	local player: Player = {} :: any
 	local character: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	local npc: ActorTypes.Actor = TestUtils.actor(fixture)
@@ -62,14 +87,11 @@ it("[blocked integration] accepts the N4-associated Character Actor and denies a
 	expect(runtime:IsAware(player, npc)).toBe(true)
 	expect(runtime:GetPlayerForActor(npc)).toBeNil()
 
-	error(
-		"[N9 blocked integration] OwnerActor must accept the N4-associated Character Actor and deny the NPC; "
-			.. "the production server command runtime must supply this N4 association dependency (#79.12)",
-		0
-	)
+	expect(execute(player, player, character, 1)).toBe("Accepted")
+	expect(execute(player, player, npc, 2)).toBe("Rejected")
 end)
 
-it("[blocked integration] follows N4 reassociation from the previous Actor to the current Actor", function()
+it("follows N4 reassociation from the previous Actor to the current Actor", function()
 	local player: Player = {} :: any
 	local previous: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	local current: ActorTypes.Actor = TestUtils.actor(fixture)
@@ -85,9 +107,6 @@ it("[blocked integration] follows N4 reassociation from the previous Actor to th
 	expect(runtime:GetPlayerForActor(previous)).toBeNil()
 	expect(runtime:GetPlayerForActor(current)).toBe(player)
 
-	error(
-		"[N9 blocked integration] OwnerActor must deny the previous Actor and accept the current N4 association; "
-			.. "exercise the production server command runtime binding, not a fabricated authorizer context (#79.12)",
-		0
-	)
+	expect(execute(player, player, previous, 1)).toBe("Rejected")
+	expect(execute(player, player, current, 2)).toBe("Accepted")
 end)

@@ -17,6 +17,7 @@ A starter template with initialization already wired is not available yet. Use t
 | `resources` | Meter definitions, bounds, and regeneration |
 | `actions` | Action factories with declarative requirements, costs, and behavior |
 | `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
+| `commands` | [Command definitions](./Networking/commands) with target modes, optional schemas, explicit authorization, and handlers |
 
 Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 

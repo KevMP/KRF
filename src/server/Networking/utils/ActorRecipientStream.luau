@@ -7,15 +7,17 @@ local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.u
 local ProjectionTypes = require(script.Parent.ActorRecipientProjection)
 
 export type Dependencies = {
+	GetOrder: (() -> number)?,
 	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
 	ReportFault: (Types.ActorAwarenessFault) -> (),
 	MeasureRecord: (Types.PublicationFilteredCommit) -> number,
 }
 
-type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks" }
+type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks", order: number }
 
 type StreamState = {
+	terminalOrder: number,
 	actor: ActorTypes.Actor,
 	player: Player,
 	handle: number,
@@ -42,6 +44,8 @@ ActorRecipientStream.__index = ActorRecipientStream
 export type Stream = typeof(setmetatable({} :: StreamState, ActorRecipientStream))
 
 function ActorRecipientStream.Fault(self: Stream, reason: string): ()
+	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
+
 	local reported: boolean = self.failed
 
 	self.failed = true
@@ -93,7 +97,14 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 
 	self.generation += 1
 	self.fence = sequence
-	self.baseline = { body = body, offset = 0, phase = "Begin" }
+
+	self.baseline = {
+		body = body,
+		offset = 0,
+		phase = "Begin",
+		order = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0,
+	}
+
 	self.recapture = false
 	self.blockedBudget = nil
 	self.scheduler:ResetAfterBaseline(self.key, projected.domains)
@@ -117,6 +128,7 @@ function ActorRecipientStream.new(
 	})
 
 	local state: StreamState = {
+		terminalOrder = 0,
 		actor = actor,
 		player = player,
 		handle = handle,
@@ -144,8 +156,13 @@ function ActorRecipientStream.Prepare(
 	self: Stream,
 	maxBytes: number,
 	canBegin: boolean,
-	deliveryBudget: number
+	deliveryBudget: number,
+	maxOrder: number?
 ): (SharedNetworkingTypes.ActorStreamRecord?, number?)
+	if maxOrder ~= nil and not self:HasWorkThrough(maxOrder) then
+		return nil, nil
+	end
+
 	if self.removed then
 		return { kind = "ActorRemove", handle = self.handle }, nil
 	end
@@ -242,7 +259,7 @@ function ActorRecipientStream.Prepare(
 			return nil, nil
 		end
 
-		return self:Prepare(maxBytes, canBegin, deliveryBudget)
+		return self:Prepare(maxBytes, canBegin, deliveryBudget, maxOrder)
 	end
 
 	self.blockedBudget = nil
@@ -299,7 +316,7 @@ function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.A
 	end
 end
 
-function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFilteredCommit): ()
+function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFilteredCommit, order: number?): ()
 	if self.failed or self.recapture or commit.sequence <= self.fence then
 		return
 	end
@@ -308,7 +325,7 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 		return
 	end
 
-	if not self.scheduler:Enqueue(self.key, commit) then
+	if not self.scheduler:Enqueue(self.key, commit, order) then
 		self.recapture = true
 		self.baseline = nil
 	end
@@ -317,6 +334,7 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 end
 
 function ActorRecipientStream.Retire(self: Stream): ()
+	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 	self.scheduler:Destroy()
 	self.baseline = nil
 	self.recapture = false
@@ -331,6 +349,28 @@ function ActorRecipientStream.HasWork(self: Stream): boolean
 		or self.removed
 		or self.haltPending
 		or self.scheduler:GetStreamStatus(self.key).pendingRecords > 0
+end
+
+function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boolean
+	if self.removed or self.haltPending then
+		return self.terminalOrder <= order
+	end
+
+	if self.failed then
+		return false
+	end
+
+	if self.recapture then
+		return (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0) <= order
+	end
+
+	if self.baseline ~= nil then
+		return self.baseline.order <= order
+	end
+
+	local nextOrder: number? = self.scheduler:GetNextRecordOrder(self.key)
+
+	return nextOrder ~= nil and nextOrder <= order
 end
 
 function ActorRecipientStream.Destroy(self: Stream): ()

@@ -6,19 +6,10 @@ local PublicTypes = require(KRF.client.Actor.types)
 local SharedTypes = require(KRF.shared.Networking.types)
 local SignalTypes = require(KRF.shared.Signal.types)
 
--- The public facade path is specified by #79. Server module locations are not;
--- find the named contracts without prescribing a new source-system layout.
-local registryModule: Instance? = KRF.server:FindFirstChild("CommandRegistry", true)
-local runtimeModule: Instance? = KRF.client.Networking:FindFirstChild("CommandRuntime")
--- Absent modules must not produce analyzer/import failures on a RED branch.
--- Existing modules still load normally; a broken import is a fixture regression.
-local requireOptional: (ModuleScript) -> any = require :: any
-local registry: any = if registryModule ~= nil then requireOptional(registryModule :: ModuleScript) else nil
+local registry = require(KRF.server.Networking.CommandRegistry)
+local runtime = require(KRF.client.Networking.CommandRuntime)
 
-local runtime: any = if runtimeModule ~= nil then requireOptional(runtimeModule :: ModuleScript) else nil
-
--- Test input contracts mirror #79 until production owns the N9 types. Any is
--- limited to schema-erased data and deliberately invalid inputs at the boundary.
+-- Boundary fixtures retain deliberately invalid target modes and schema-erased data.
 export type Definition = {
 	id: string,
 	target: string,
@@ -83,14 +74,10 @@ function TestUtils.definition(id: string, target: string?): Definition
 end
 
 function TestUtils.registry(): Registry
-	assert(registry ~= nil, "[N9 missing contract] CommandRegistry: immutable Server.Init command catalog (#79.1)")
-
 	return registry
 end
 
 function TestUtils.runtime(): Facade
-	assert(runtime ~= nil, "[N9 missing contract] client.Networking.CommandRuntime: Send and runtime events (#79.21)")
-
 	return runtime
 end
 
