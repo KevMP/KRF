@@ -78,7 +78,8 @@ dependencies = {
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
 		installActorReceiver: (((any) -> ()) -> ())?,
 		sendReliable: ((buffer) -> ())?,
-		isReady: (() -> boolean)?
+		isReady: (() -> boolean)?,
+		onTerminalFailure: (() -> ())?
 	): (boolean, string?, (() -> ())?)
 		assert(manifest ~= nil and installActorReceiver ~= nil, "ActorInstallationMissing")
 		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
@@ -170,9 +171,19 @@ dependencies = {
 			commands = commandRuntime
 			CommandState.Install(commandRuntime)
 
-			local receive: (any) -> (), stop: () -> () = ReliableConsumer.new(function(payload: any): ()
-				created:Handle(payload)
-			end, commandRuntime, cleanup)
+			local receive: (any) -> (), stop: () -> () = ReliableConsumer.new(
+				function(payload: any): ()
+					created:Handle(payload)
+				end,
+				commandRuntime,
+				function(): ()
+					if onTerminalFailure ~= nil then
+						onTerminalFailure()
+					end
+
+					cleanup()
+				end
+			)
 
 			stopReceiver = stop
 			installActorReceiver(receive)

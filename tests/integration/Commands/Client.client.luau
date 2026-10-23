@@ -5,6 +5,10 @@ packages:WaitForChild("KRF")
 local KRF = ReplicatedStorage.Packages.KRF
 local PublicTypes = require(KRF.client.Actor.types)
 local Client = require(KRF.client)
+local ClientTypes = require(KRF.client.types)
+local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
+local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
+local ActorConstants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local NetworkingTypes = require(KRF.client.Networking.types)
 local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
@@ -15,6 +19,44 @@ local control: RemoteEvent = ReplicatedStorage:WaitForChild("CommandTestControl"
 local view: PublicTypes.ActorView? = nil
 local failed: boolean = false
 local outcomes: { [number]: NetworkingTypes.CommandResult } = {}
+local injectTerminalFailure: boolean = false
+local disconnectCalls: number = 0
+local discoverTransport: typeof(Native.DiscoverTransport) = Native.DiscoverTransport
+
+-- Keep native transport discovery, its connection and the production installer.
+-- Inject overflow immediately after a real result so scheduler timing cannot hide it.
+Native.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransport?, string?)
+	local transport: ClientTypes.ClientTransport?, reason: string? = discoverTransport(deadline)
+
+	if transport ~= nil then
+		local connect: typeof(transport.ConnectReliable) = transport.ConnectReliable
+
+		transport.ConnectReliable = function(callback: (any, ...any) -> ()): () -> ()
+			local disconnect: () -> () = connect(function(payload: any, ...: any): ()
+				callback(payload, ...)
+
+				if
+					injectTerminalFailure
+					and typeof(payload) == "buffer"
+					and buffer.len(payload) > 0
+					and buffer.readu8(payload, 0) == CommandConstants.RESULT_KIND
+				then
+					injectTerminalFailure = false
+					local overflow: buffer = buffer.create(CommandConstants.MAX_FENCED_BYTES + 1)
+					buffer.writeu8(overflow, 0, ActorConstants.PACKET_KIND)
+					callback(overflow)
+				end
+			end)
+
+			return function(): ()
+				disconnectCalls += 1
+				disconnect()
+			end
+		end
+	end
+
+	return transport, reason
+end
 
 Commands.OnCommandResult:Connect(function(result: NetworkingTypes.CommandResult): ()
 	outcomes[result.requestId] = result
@@ -126,8 +168,18 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId:
 
 			local requestId: number?, failure: string? = Commands.Send("Game.Interact", view, { choice = 7 })
 			assert(requestId == nil and type(failure) == "string", "Retired ActorView must fail locally")
+			assert(Client._IsInitialized() and disconnectCalls == 0, "Expected live native client before overflow")
+			injectTerminalFailure = true
+			requestId, failure = Commands.Send("Game.Ping")
+			assert(requestId ~= nil and failure == nil, "Expected native result to trigger terminal overflow")
+
+			waitFor(function(): boolean
+				return not Client._IsInitialized() and disconnectCalls == 1
+			end, "Terminal consumer failure must revoke initialization and disconnect native Reliable reception")
+
 			Client._ResetForTests()
 			Client._ResetForTests()
+			assert(disconnectCalls == 1, "Repeated shutdown must not disconnect the Reliable listener twice")
 			requestId, failure = Commands.Send("Game.Ping")
 			assert(requestId == nil and type(failure) == "string", "Shutdown must revoke command admission")
 			assert(#Registry.GetAllActorViews() == 0, "Shutdown must clear Actor consumers")
@@ -151,5 +203,6 @@ local completed: boolean, reason: any = pcall(function(): ()
 	assert(initialized, if startupFailure ~= nil then startupFailure.reason else "Native Client.Init failed")
 end)
 
+Native.DiscoverTransport = discoverTransport
 failed = not completed
 report("Startup", if completed then nil else tostring(reason))

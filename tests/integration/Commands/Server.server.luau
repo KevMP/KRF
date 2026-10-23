@@ -325,6 +325,23 @@ local completed: boolean, reason: any = pcall(function(): ()
 			local observed: { Request } = requests[player] or {}
 			local index: number = #observed + 1
 
+			if phase == "Retire" then
+				assert(index == 3 or index == 8, "Expected one final native teardown probe per client")
+
+				assert(
+					request.commandCode == protocol.commandsById["Game.Ping"].code
+						and request.targetHandle == nil
+						and request.request == nil
+						and request.requestId > observed[index - 1].requestId,
+					"Expected decoded monotonic None-target teardown probe"
+				)
+
+				table.insert(observed, request)
+				requests[player] = observed
+
+				return
+			end
+
 			if index > 2 then
 				assert(phase == "Correlation", "Unexpected command traffic outside the correlation phase")
 				assert(index <= 7, "Unexpected correlation traffic")

@@ -27,6 +27,7 @@ type StreamState = {
 	identitySent: boolean,
 	baseline: Baseline?,
 	recapture: boolean,
+	recaptureOrder: number,
 	blockedBudget: number?,
 	removed: boolean,
 	failed: boolean,
@@ -102,7 +103,9 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 		body = body,
 		offset = 0,
 		phase = "Begin",
-		order = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0,
+		order = if self.recapture
+			then self.recaptureOrder
+			else if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0,
 	}
 
 	self.recapture = false
@@ -138,6 +141,7 @@ function ActorRecipientStream.new(
 		identitySent = false,
 		baseline = nil,
 		recapture = false,
+		recaptureOrder = 0,
 		blockedBudget = nil,
 		removed = false,
 		failed = false,
@@ -254,6 +258,7 @@ function ActorRecipientStream.Prepare(
 		end
 
 		self.recapture = true
+		self.recaptureOrder = self.scheduler:GetNextRecordOrder(self.key) or 0
 
 		if not self:Capture() then
 			return nil, nil
@@ -325,8 +330,18 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 		return
 	end
 
+	local pendingOrder: number? = if self.baseline ~= nil
+		then self.baseline.order
+		else self.scheduler:GetNextRecordOrder(self.key)
+
 	if not self.scheduler:Enqueue(self.key, commit, order) then
 		self.recapture = true
+
+		-- Replacement truth keeps the earliest work it supersedes ahead of newer results.
+		self.recaptureOrder = pendingOrder
+			or order
+			or (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0)
+
 		self.baseline = nil
 	end
 
@@ -361,7 +376,7 @@ function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boole
 	end
 
 	if self.recapture then
-		return (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0) <= order
+		return self.recaptureOrder <= order
 	end
 
 	if self.baseline ~= nil then

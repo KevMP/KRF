@@ -128,6 +128,46 @@ it("finishes older queued baselines before results and places command-created id
 	expect(observed[#observed]).toBe("BaselineEnd")
 end)
 
+for _, pressure: string in { "EventBacklog", "DeliveryBudget" } do
+	it("finishes an older replacement baseline before a newer result under " .. pressure, function()
+		local created: TestUtils.Fixture = TestUtils.new({
+			{
+				id = "Game.Command",
+				target = "None",
+				authorize = function(): (boolean, string?)
+					return true, nil
+				end,
+				handle = function(): Types.CommandHandlerResult
+					return { accepted = true }
+				end,
+			},
+		})
+
+		fixture = created
+
+		for value: number = 11, if pressure == "EventBacklog" then 16 else 11 do
+			publish(created, created.actor, value)
+		end
+
+		if pressure == "DeliveryBudget" then
+			created.awareness:Step(1, 1)
+		end
+
+		TestUtils.send(created, 1)
+
+		-- Force deferred budget recovery after reservation advances the egress order.
+		if pressure == "DeliveryBudget" then
+			created.awareness:Step(1, 1)
+		end
+
+		local observed: { string } = timeline(created, created.player)
+		expect(observed[1]).toBe("BaselineBegin")
+		expect(observed[#observed - 1]).toBe("BaselineEnd")
+		expect(observed[#observed]).toBe("Result:1")
+		expect(created.base.faults).toEqual({})
+	end)
+end
+
 it("separates successive command boundaries even when state-only publications could coalesce", function()
 	local created: TestUtils.Fixture = TestUtils.new({
 		{

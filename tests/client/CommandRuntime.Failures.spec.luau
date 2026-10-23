@@ -54,9 +54,11 @@ end)
 
 for _, bound: string in { "Records", "Bytes" } do
 	it(
-		"bounds deferred Reliable " .. bound .. " and releases pending requests and Actor consumers on overflow",
+		"terminates client readiness, Reliable reception and pending consumers on deferred " .. bound .. " overflow",
 		function()
 			TestUtils.ready(fixture)
+			expect(Client._IsInitialized()).toBe(true)
+			expect(fixture.client.listening).toBe(true)
 			local view: PublicTypes.ActorView = TestUtils.baseline(fixture)
 			Commands.Send("Game.Ping")
 			Commands.Send("Game.Ping")
@@ -71,6 +73,9 @@ for _, bound: string in { "Records", "Bytes" } do
 
 			expect(view:IsAvailable()).toBe(false)
 			expect(Registry.GetAllActorViews()).toEqual({})
+			expect(Client._IsInitialized()).toBe(false)
+			expect(fixture.client.listening).toBe(false)
+			expect(fixture.client.disconnectCalls).toBe(1)
 
 			expect(uncertain).toEqual({
 				{ requestId = 2, commandId = "Game.Ping", status = "Unknown", reason = "CommandConnectionClosed" },
@@ -79,8 +84,20 @@ for _, bound: string in { "Records", "Bytes" } do
 			local id: number?, reason: string? = Commands.Send("Game.Ping")
 			expect(id).toBeNil()
 			expect(reason).toBe("ClientNotReady")
+
+			-- A transport may retain a disconnected callback. It cannot revive consumers.
+			TestUtils.records(fixture, {
+				{ kind = "BaselineBegin", handle = 8, actorId = "AfterFailure", generation = 1, totalBytes = 1 },
+			})
+
+			ClientUtils.emit(fixture.client, payload)
 			task.wait()
+			expect(Registry.GetAllActorViews()).toEqual({})
+			expect(#uncertain).toBe(1)
 			expect(clock.Count()).toBe(0)
+			Client._ResetForTests()
+			Client._ResetForTests()
+			expect(fixture.client.disconnectCalls).toBe(1)
 		end
 	)
 end

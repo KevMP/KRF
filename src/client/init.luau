@@ -90,9 +90,20 @@ function Client.Init(): (boolean, StartupFailure?)
 		end
 	end
 
+	local function terminate(reason: string): ()
+		initialized = false
+		readyProtocol = nil
+
+		if finished then
+			success = false
+			cleanup()
+		else
+			finish(false, reason)
+		end
+	end
+
 	shutdown = function(): ()
-		finish(false, "ClientReset")
-		cleanup()
+		terminate("ClientReset")
 	end
 
 	local discovered: boolean, endpoint: ClientTypes.ClientTransport?, discoveryReason: string? =
@@ -186,6 +197,9 @@ function Client.Init(): (boolean, StartupFailure?)
 					transport.SendReliable,
 					function(): boolean
 						return initialized and success
+					end,
+					function(): ()
+						terminate("ReliableConsumerFailed")
 					end
 				)
 
@@ -221,7 +235,7 @@ function Client.Init(): (boolean, StartupFailure?)
 				local completed: boolean, reason: any = pcall(receive, payload, ...)
 
 				if not completed then
-					finish(false, "StartupInternalFailure:" .. tostring(reason))
+					terminate("StartupInternalFailure:" .. tostring(reason))
 				end
 			end)
 
