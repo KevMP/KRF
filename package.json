@@ -11,6 +11,7 @@
     "test:integration:n6": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n6-native.ps1",
     "test:integration:n7": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1",
     "test:integration:n8": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite n8",
+    "test:integration:n9": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite n9",
     "test:integration:tags-load": "powershell -ExecutionPolicy Bypass -File ./scripts/test-tags-load.ps1",
     "measure:tags": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-tags-publication.ps1",
     "measure:networking": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1",
