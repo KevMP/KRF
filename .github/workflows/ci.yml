@@ -41,6 +41,9 @@ jobs:
 
       - name: Test CI tooling
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+      - name: Test benchmark comparison tooling
+        run: npm run test:bench-tools
       
       - name: Typecheck
         run: npm run typecheck

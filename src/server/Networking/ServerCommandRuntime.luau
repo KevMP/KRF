@@ -6,9 +6,10 @@ local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.Co
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.CommandCodec)
 local Timer = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandTimer)
 local Context = require(script.Parent.utils.CommandContext)
+local Admission = require(script.Parent.utils.CommandAdmission)
 
 type History = { outcome: Types.CommandOutcome, bytes: number, expires: number }
-type Queued = { request: SharedTypes.CommandRequest, bytes: number }
+type Queued = { request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
 
 type Connection = {
 	player: Player,
@@ -55,14 +56,13 @@ type State = {
 	connections: { [Player]: Connection },
 	destroyed: boolean,
 	disconnect: (() -> ())?,
+	disconnectReady: (() -> ())?,
+	admission: Admission.Runtime,
 	active: Connection?,
 	activeCount: number,
 	pumping: boolean,
 	queued: number,
 	queuedBytes: number,
-	window: number,
-	count: number,
-	bytes: number,
 }
 
 type Runtime = typeof(setmetatable({} :: State, ServerCommandRuntime))
@@ -171,6 +171,7 @@ function ServerCommandRuntime._armExpiry(self: Runtime, player: Player, connecti
 end
 
 function ServerCommandRuntime._close(self: Runtime, player: Player): ()
+	self.admission:Closed(player)
 	local connection: Connection? = self.connections[player]
 
 	if connection == nil then
@@ -189,6 +190,11 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 	-- even if author code closes/reopens the connection or destroys the runtime.
 	self.queued -= #connection.queue
 	self.queuedBytes -= connection.queuedBytes
+
+	for _, queued in connection.queue do
+		self.admission:Release(queued.ticket)
+	end
+
 	table.clear(connection.queue)
 	table.clear(connection.history)
 	table.clear(connection.order)
@@ -423,16 +429,9 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 
 	-- Charge attempted ingress before decoding, including malformed and refused
 	-- requests. Draining or disconnecting must not reset the aggregate rate gate.
-	if now - self.window >= self.limits.window then
-		self.window, self.count, self.bytes = now, 0, 0
-	end
-
-	if self.count >= self.limits.globalRequests or size > self.limits.globalBytes - self.bytes then
+	if not self.admission:Attempt(player, size, now) then
 		return false, "CommandGlobalRateLimited"
 	end
-
-	self.count += 1
-	self.bytes += size
 
 	if select("#", ...) ~= 0 then
 		return false, "MalformedCommandEnvelope"
@@ -454,11 +453,13 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 		return false, "CommandQueueFull"
 	end
 
-	if self.queued >= self.limits.globalQueued or size > self.limits.globalQueuedBytes - self.queuedBytes then
+	local ticket = self.admission:Queue(player, size, self.queued, self.queuedBytes)
+
+	if ticket == nil then
 		return false, "CommandGlobalQueueFull"
 	end
 
-	table.insert(connection.queue, { request = request, bytes = size })
+	table.insert(connection.queue, { request = request, bytes = size, ticket = ticket })
 	connection.queuedBytes += size
 	self.queued += 1
 	self.queuedBytes += size
@@ -473,6 +474,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 	end
 
 	self.pumping = true
+	self.admission:Advance(self.dependencies.Now())
 	local dispatched, visits, unproductive = 0, 0, 0
 
 	while
@@ -536,6 +538,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 		if running ~= nil then
 			self.queued -= 1
 			self.queuedBytes -= (running :: Queued).bytes
+			self.admission:Release((running :: Queued).ticket)
 			unproductive = 0
 		else
 			unproductive += 1
@@ -566,6 +569,11 @@ function ServerCommandRuntime.Destroy(self: Runtime): ()
 
 	self.destroyed = true
 
+	if self.disconnectReady ~= nil then
+		pcall(self.disconnectReady)
+		self.disconnectReady = nil
+	end
+
 	if self.disconnect ~= nil then
 		pcall(self.disconnect)
 		self.disconnect = nil
@@ -574,6 +582,8 @@ function ServerCommandRuntime.Destroy(self: Runtime): ()
 	for player: Player in self.connections do
 		self:_close(player)
 	end
+
+	self.admission:Destroy()
 end
 
 function ServerCommandRuntime.new(
@@ -583,6 +593,14 @@ function ServerCommandRuntime.new(
 	options: Types.ServerCommandLimits?
 ): Types.ServerCommandRuntime
 	local limits: Types.ServerCommandLimits = options or {}
+	local maximumRequest = 11
+
+	for _, command in protocol.commandsByCode or {} do
+		maximumRequest = math.max(
+			maximumRequest,
+			11 + (if command.requestCodec ~= nil then command.requestCodec.maxSizeBytes else 0)
+		)
+	end
 
 	local state: State = {
 		catalog = catalog,
@@ -611,9 +629,15 @@ function ServerCommandRuntime.new(
 		pumping = false,
 		queued = 0,
 		queuedBytes = 0,
-		window = dependencies.Now(),
-		count = 0,
-		bytes = 0,
+		admission = Admission.new(
+			limits.maxGlobalRequests or Constants.MAX_GLOBAL_REQUESTS,
+			limits.maxGlobalBytes or Constants.MAX_GLOBAL_BYTES,
+			limits.maxGlobalQueuedRequests or Constants.MAX_GLOBAL_QUEUED_REQUESTS,
+			limits.maxGlobalQueuedBytes or Constants.MAX_GLOBAL_QUEUED_BYTES,
+			maximumRequest,
+			limits.windowSeconds or Constants.WINDOW_SECONDS,
+			dependencies.Now()
+		),
 	}
 
 	for _, limit: number in
@@ -654,6 +678,12 @@ function ServerCommandRuntime.new(
 
 	self.disconnect = dependencies.ObserveClientClosed(function(player: Player): ()
 		self:_close(player)
+	end)
+
+	self.disconnectReady = dependencies.ObserveClientReady(function(player: Player): ()
+		if not self.destroyed and dependencies.IsClientReady(player) then
+			self.admission:Ready(player)
+		end
 	end)
 
 	return self :: Types.ServerCommandRuntime

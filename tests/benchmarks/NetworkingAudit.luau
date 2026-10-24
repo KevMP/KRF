@@ -52,6 +52,7 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	local deliveries: { any } = {}
 	local players: { Player } = {}
 	local ready: ((Player) -> ())? = nil
+	local commandReady: ((Player) -> ())? = nil
 	local callbacks = 0
 
 	local definition: ReplicationTypes.ReplicationDomainDefinition = {
@@ -147,6 +148,11 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 		IsClientReady = function(): boolean
 			return true
 		end,
+		ObserveClientReady = function(callback: (Player) -> ()): () -> ()
+			commandReady = callback
+
+			return function() end
+		end,
 		ObserveClientClosed = function(): () -> ()
 			return function() end
 		end,
@@ -186,6 +192,10 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 		table.insert(players, player)
 		assert(ready ~= nil, "Expected awareness readiness subscription")
 		ready(player)
+
+		if commandReady ~= nil then
+			commandReady(player)
+		end
 
 		return player
 	end

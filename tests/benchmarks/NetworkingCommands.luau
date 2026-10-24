@@ -219,6 +219,13 @@ local function run(recipients: number, mode: string, ticks: number): any
 		IsClientReady = function(): boolean
 			return true
 		end,
+		ObserveClientReady = function(callback: (Player) -> ()): () -> ()
+			for _, player in players do
+				callback(player)
+			end
+
+			return function() end
+		end,
 		ObserveClientClosed = function(): () -> ()
 			return function() end
 		end,
@@ -304,11 +311,61 @@ local function run(recipients: number, mode: string, ticks: number): any
 	end
 
 	local ids: { [Player]: number } = {}
+	local firstTickAdmitted: { [Player]: number } = {}
+	local admissionWindows: { [Player]: { [number]: { offered: number, admitted: number } } } = {}
 	local offered = 0
 	measuring = true
 
+	local function submit(index: number, tick: number): ()
+		local player = players[index]
+
+		ids[player] = (ids[player] or 0) + 1
+
+		local id = ids[player]
+
+		starts[player][id] = pump
+
+		local payload = assert(codec.EncodeRequest({
+			commandCode = 0,
+			requestId = id,
+			targetHandle = awareness:GetHandle(player, actors[index]),
+			request = { serial = id, sentAt = now },
+		}))
+
+		local before = calls
+		local started = os.clock()
+		local accepted, reason = commands:Handle(player, payload)
+		table.insert(ingressUs, (os.clock() - started) * 1e6)
+		ingressHandlers += calls - before
+		offered += 1
+
+		if accepted then
+			admitted[player][id] = true
+			returned += 1
+
+			if tick == 1 then
+				firstTickAdmitted[player] = (firstTickAdmitted[player] or 0) + 1
+			end
+		else
+			rejections[reason or "Unknown"] = (rejections[reason or "Unknown"] or 0) + 1
+		end
+
+		local windows = admissionWindows[player] or {}
+
+		admissionWindows[player] = windows
+
+		local window = math.floor(now)
+		local current = windows[window] or { offered = 0, admitted = 0 }
+
+		windows[window] = current
+		current.offered += 1
+		current.admitted += if accepted then 1 else 0
+		sample()
+	end
+
 	for tick = 1, ticks do
-		-- Round-robin offered order holds the request plan constant across versions.
+		-- Late submits complete noisy bursts before the quiet client, without a
+		-- pump. Other plans retain their original interleaved offered order.
 		local offers: { number } = {}
 		local maximum = 0
 
@@ -317,40 +374,19 @@ local function run(recipients: number, mode: string, ticks: number): any
 			maximum = math.max(maximum, offers[index])
 		end
 
-		for ordinal = 1, maximum do
-			for index, player in players do
-				if ordinal > offers[index] then
-					continue
+		if mode == "Late" then
+			for index = 1, recipients do
+				for _ = 1, offers[index] do
+					submit(index, tick)
 				end
-
-				ids[player] = (ids[player] or 0) + 1
-
-				local id = ids[player]
-
-				starts[player][id] = pump
-
-				local payload = assert(codec.EncodeRequest({
-					commandCode = 0,
-					requestId = id,
-					targetHandle = awareness:GetHandle(player, actors[index]),
-					request = { serial = id, sentAt = now },
-				}))
-
-				local before = calls
-				local started = os.clock()
-				local accepted, reason = commands:Handle(player, payload)
-				table.insert(ingressUs, (os.clock() - started) * 1e6)
-				ingressHandlers += calls - before
-				offered += 1
-
-				if accepted then
-					admitted[player][id] = true
-					returned += 1
-				else
-					rejections[reason or "Unknown"] = (rejections[reason or "Unknown"] or 0) + 1
+			end
+		else
+			for ordinal = 1, maximum do
+				for index = 1, recipients do
+					if ordinal <= offers[index] then
+						submit(index, tick)
+					end
 				end
-
-				sample()
 			end
 		end
 
@@ -388,11 +424,54 @@ local function run(recipients: number, mode: string, ticks: number): any
 	local perClient = {}
 
 	for index, player in players do
-		table.insert(perClient, { client = index, executed = counts[player] or 0 })
+		local accepted = 0
+
+		for _ in admitted[player] do
+			accepted += 1
+		end
+
+		local windows = {}
+
+		for window = 0, math.floor(now) do
+			local current = if admissionWindows[player] ~= nil then admissionWindows[player][window] else nil
+
+			if current ~= nil then
+				table.insert(windows, { window = window, offered = current.offered, admitted = current.admitted })
+			end
+		end
+
+		table.insert(perClient, {
+			client = index,
+			offered = ids[player] or 0,
+			admitted = accepted,
+			executed = counts[player] or 0,
+			firstTickAdmitted = firstTickAdmitted[player] or 0,
+			admissionWindows = windows,
+		})
+	end
+
+	if internal.admission ~= nil then
+		local quiet = perClient[recipients]
+
+		if mode == "Late" then
+			assert(
+				quiet.firstTickAdmitted
+					>= math.min(8, math.floor(Constants.MAX_GLOBAL_QUEUED_REQUESTS / 4 / recipients)),
+				"Quiet client's protected burst opportunity was lost"
+			)
+		elseif mode == "Pressure" then
+			for _, window in quiet.admissionWindows do
+				assert(window.admitted > 0, "Quiet client excluded for an entire pressure window")
+			end
+		end
 	end
 
 	local result = {
 		mode = mode,
+		admissionPolicy = if internal.admission ~= nil
+			then "ProtectedShared"
+			elseif internal.Step ~= nil then "GlobalFirstCome"
+			else "N9",
 		recipients = recipients,
 		actors = #actors,
 		offered = offered,

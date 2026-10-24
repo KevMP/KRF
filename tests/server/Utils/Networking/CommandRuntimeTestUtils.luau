@@ -92,6 +92,15 @@ function TestUtils.bind(
 			return fixture.now
 		end,
 		IsClientReady = base.dependencies.IsClientReady,
+		ObserveClientReady = function(callback: (Player) -> ()): () -> ()
+			local disconnect = base.dependencies.ObserveClientReady(callback)
+
+			for recipient in base.readyPlayers do
+				callback(recipient)
+			end
+
+			return disconnect
+		end,
 		ObserveClientClosed = base.dependencies.ObserveClientClosed,
 		awareness = awareness,
 		ReportFault = function(_player: Player, fault: string): ()

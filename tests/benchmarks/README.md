@@ -7,6 +7,63 @@ The launchers print an ignored `build/<suite>/<run-id>/` directory containing
 Keep all generated observations, reports, coverage and diagnostics under `build/`.
 Do not commit individual run outputs or machine manifests.
 
+## Compare reference and candidate
+
+```powershell
+npm run bench:networking:compare
+# One short CPU pair against pinned merged N9; no native matrix by default.
+npm run bench:networking:compare -- --profile native --clients 2,8 --repetitions 2
+npm run bench:networking:compare -- --reference HEAD~1 --profile both --clients 8
+npm run bench:networking:compare -- --workload publication --profile native --clients 2,4,6,8
+npm run bench:networking:compare -- --full
+```
+
+The default is the commands workload, CPU profile, one reference/candidate pair.
+`--full` explicitly selects CPU plus 2/4/6/8 native clients and two repetitions.
+Explicit options override those defaults. `--workload` accepts `commands` or
+`publication`; `--profile` accepts `cpu`, `native` or `both`; `--clients` is a
+comma-separated subset of 2/4/6/8; `--repetitions` accepts 1..10. `--reference`
+accepts a local Git commit/ref and defaults to merged N9
+`a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a`. Use `--studio <exe>` to select an
+installed Studio explicitly. Publication CPU uses the existing short Networking
+profile; Audit, Observers and sustained N4 remain independent launchers below.
+
+The orchestrator resolves the reference once, chooses one Studio executable,
+alternates arm order, invokes the existing launchers serially and copies their
+verified results automatically. Each comparison has an ignored
+`build/networking-comparisons/<timestamp-id>/` directory:
+
+- `manifest.json`: the complete plan, statuses, revisions, hashes, log names and
+  original frozen run directories.
+- `raw/`: named result copies for the existing analyzers.
+- `analysis-*.json`: those analyzers' full distributions and per-trial evidence.
+- `comparison.json` and `comparison.md`: counts, per-client admission/execution,
+  latency quantiles, queue peaks, region costs, separate server/client OS CPU,
+  observed increases and measurement limits.
+
+Failures stop the comparison with nonzero exit status and a FAILED report.
+Planned trials cannot be silently dropped. Source, harness, workload, Studio,
+client-count and artifact mismatches are rejected; duplicate observations are not
+independent repetitions. Current uncommitted production source can be measured,
+but its hashes and dirty status remain recorded and it must stay unchanged for
+the entire comparison. Commit before the final checkpoint matrix for a convenient
+source identity. Run other Studio jobs and heavy checks outside measured trials.
+
+Rebuild reports without launching Studio:
+
+```powershell
+npm run bench:networking:compare -- --analyze build/networking-comparisons/<timestamp-id>
+```
+
+The report flags every observed increase in cost or p95; timings are not pass/fail
+gates and do not establish causation. Compare offered, wire-transmitted, admitted
+and executed work before discussing throughput. A lower cost from shedding is not
+a speedup. Native OS CPU columns contain ranges of per-trial medians in logical
+cores, not averaged quantiles; client cores sum all actual client processes. CPU
+profiles have region timings and virtual waits, without native OS-process samples.
+Publication has no command admission count or pending-command queue metric.
+Raw frames, heaps, host memory and remaining probes stay in the analysis records.
+
 ## Command dispatch comparisons
 
 Use the same offered request plan on both implementations. CPU profiles use
@@ -34,24 +91,39 @@ The shared plan offers 180 ticks at 30 Hz: Sustained sends one request every
 second tick per client; Uneven sends three every second tick for the hot client,
 one every sixth tick for middle clients, and four once per second for the last,
 intermittent client. Overload sends 80 requests per client in the first tick.
-CPU submission interleaves client identities; native clients independently pace
-against the same server epoch. CPU dispatch/outbound pumps occur twice per tick;
+Workload v2 adds Late (64/noisy client before eight quiet-client requests, then
+two quiet requests/sec) and Pressure (eight/noisy client every fourth tick;
+five quiet requests in the last fifth of each second). CPU Late submits complete
+noisy bursts before the quiet client without an intervening pump; other CPU
+plans retain interleaved identity order. Native Late delays the quiet first burst
+by 1 ms; transport/engine scheduling can change actual arrival order. All native
+clients otherwise pace against the same server epoch. CPU dispatch/outbound pumps occur twice per tick;
 their waits are virtual pump counts, not native frames or latency. A discarded
 CPU warmup uses the same handlers; native startup includes a quiet settling period.
+Native Overload/Late are followed by a 21-second quiet interval outside timed
+windows, allowing timeout/grace metadata to expire before the next offered plan.
+Both arms use that interval even if one refused less work. CPU cases instead own
+fresh independent runtimes. Native offered counts include public Send calls;
+wire counts and local refusals remain separate. Per-window admission counts use
+server ingress time. Small native counts may not exhaust the aggregate attempt
+budget because existing per-client rate limits also apply; 32-recipient CPU
+Pressure supplies that controlled experiment, without claiming 32 native clients.
 
-Copy successful results into `build/command-comparison/` with names
+For individual launches or importing older evidence, copy successful results into `build/command-comparison/` with names
 `<before|after>-cpu-run<number>.json` or
 `<before|after>-native-c<2|4|6|8>-run<number>.json`. Gzip JSON is accepted.
 
 ```powershell
 node scripts/analyze-command-dispatch.cjs build/command-comparison > build/command-comparison/summary.json
+# An optional final argument supplies a different resolved reference SHA.
 ```
 
 The analyzer validates pinned reference provenance, matching fixture/Studio
 versions, stable source within each arm, workload/count completeness, actual native
 client process witnesses and unique client identities. It rejects duplicate
 plain/gzip observations and checks the candidate's default job/byte/dispatch/visit
-bounds. Retain per-trial results alongside pooled raw timing distributions.
+bounds. Workload v1 inputs remain readable, but may not be mixed with v2 in one
+comparison. Retain per-trial results alongside pooled raw timing distributions.
 
 Record offered requests, local refusals, private runtime admission, authoritative
 execution, pre-effect unexecuted requests, admission reasons, blocked reservations,

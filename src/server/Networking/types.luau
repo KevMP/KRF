@@ -77,6 +77,7 @@ export type ServerCommandDependencies = {
 	Now: () -> number,
 	ScheduleTimeout: ((number, () -> ()) -> () -> ())?,
 	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
 	awareness: ActorAwarenessRuntime,
 	ReportFault: (Player, string) -> (),

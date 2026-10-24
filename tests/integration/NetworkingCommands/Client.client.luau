@@ -69,7 +69,7 @@ local uncertaintyConnection = Commands.OnCommandUncertain:Connect(function(resul
 	guard(function()
 		assert(result.status == "Unknown", "Capacity refusal must not fabricate a definitive rejection")
 
-		if measuring then
+		if measuring and starts[result.requestId] ~= nil then
 			uncertain += 1
 		end
 	end)
@@ -147,7 +147,10 @@ control.OnClientEvent:Connect(function(payload: buffer)
 			local sent = 0
 
 			for tick = 1, Scenario.ticks do
-				local remaining = epoch + (tick - 1) / Scenario.hz - workspace:GetServerTimeNow()
+				local remaining = epoch
+					+ (tick - 1) / Scenario.hz
+					+ Scenario.delay(tick, message.index, message.clients, message.mode)
+					- workspace:GetServerTimeNow()
 
 				if remaining > 0 then
 					task.wait(remaining)

@@ -9,6 +9,7 @@ function distribution(values) {
 	const sorted = values.toSorted((a, b) => a - b);
 	return {
 		count: sorted.length,
+		min: sorted[0] ?? 0,
 		median: quantile(sorted, 0.5),
 		p95: sorted.length >= 20 ? quantile(sorted, 0.95) : null,
 		p99: sorted.length >= 100 ? quantile(sorted, 0.99) : null,

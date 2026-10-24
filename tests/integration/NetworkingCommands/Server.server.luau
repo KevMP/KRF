@@ -120,7 +120,13 @@ Commands.new = function(
 
 		requests[player] = requests[player] or {}
 
-		local record = { at = os.clock(), accepted = false, executed = false, serial = request.request.serial }
+		local record = {
+			at = os.clock(),
+			accepted = false,
+			executed = false,
+			serial = request.request.serial,
+			window = math.max(0, math.floor(workspace:GetServerTimeNow() - epoch)),
+		}
 
 		requests[player][request.requestId] = record
 		local before, started = calls, os.clock()
@@ -407,9 +413,11 @@ else
 				end, "Missing sent reports")
 
 				local sent = 0
+				local sentByPlayer: { [Player]: number } = {}
 
-				for _, reply in replies do
+				for player, reply in replies do
 					sent += reply.sent
+					sentByPlayer[player] = reply.sent
 				end
 
 				waitFor(function(): boolean
@@ -454,18 +462,57 @@ else
 				measuring = false
 				local clients = {}
 
-				for _, reply in replies do
+				for player, reply in replies do
+					local windows: { [number]: { window: number, offered: number, admitted: number } } = {}
+
+					reply.offered, reply.admitted, reply.executed = 0, 0, 0
+					reply.planIndex = table.find(players, player)
+
+					for _, record in requests[player] do
+						reply.offered += 1
+						reply.admitted += if record.accepted then 1 else 0
+						reply.executed += if record.executed then 1 else 0
+
+						local current = windows[record.window] or { window = record.window, offered = 0, admitted = 0 }
+
+						windows[record.window] = current
+						current.offered += 1
+						current.admitted += if record.accepted then 1 else 0
+					end
+
+					reply.admissionWindows = {}
+					reply.wireOffered = reply.offered
+					reply.offered = sentByPlayer[player] + reply.localRefused
+
+					for window = 0, 10 do
+						if windows[window] ~= nil then
+							table.insert(reply.admissionWindows, windows[window])
+						end
+					end
+
 					table.insert(clients, reply)
+				end
+
+				local planned = 0
+
+				for _, reply in clients do
+					planned += reply.offered
 				end
 
 				table.insert(cases, {
 					mode = mode,
+					admissionPolicy = if (runtime :: any).admission ~= nil
+						then "ProtectedShared"
+						elseif (runtime :: any).Step ~= nil then "GlobalFirstCome"
+						else "N9",
 					recipients = clientCount,
 					actors = clientCount,
 					startedUnixMs = startedUnixMs,
 					endedUnixMs = DateTime.now().UnixTimestampMillis,
 					seconds = os.clock() - started,
-					offered = offered,
+					offered = planned,
+					wireOffered = offered,
+					localRefused = planned - offered,
 					admitted = admitted,
 					executed = calls,
 					unexecutedPreEffect = admitted - calls,
@@ -497,7 +544,14 @@ else
 					},
 				})
 
-				task.wait(1.1)
+				-- Keep the following offered workload independent of still-pending
+				-- correlations for silently refused requests. Both arms use the
+				-- same quiet interval, outside all timed case windows.
+				if (mode == "Overload" or mode == "Late") and #cases < #Scenario.modes then
+					task.wait(Constants.TIMEOUT_SECONDS + Constants.GRACE_SECONDS + 1)
+				else
+					task.wait(1.1)
+				end
 			end
 
 			for _, actor in actors do
