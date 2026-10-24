@@ -1,4 +1,4 @@
-function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$StudioPath) {
+function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$StudioPath, [string]$SourceDirectory = (Join-Path $Repository 'src')) {
     $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
     $computer = Get-CimInstance Win32_ComputerSystem
     $operatingSystem = Get-CimInstance Win32_OperatingSystem
@@ -13,6 +13,9 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
         'networking-baseline-test.project.json',
         'test.project.json',
         'rokit.toml'
+        'scripts/test-networking-baseline.ps1'
+        'scripts/run-networking-baseline-tests.luau'
+        'scripts/networking-host-monitor.ps1'
     )
     $hashes = [ordered]@{}
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -22,8 +25,8 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
     }
     $algorithm.Dispose()
     $sourceHashes = [ordered]@{}
-    foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Repository 'src') -Filter '*.luau' -Recurse) {
-        $relative = $file.FullName.Substring($Repository.Length + 1).Replace('\', '/')
+    foreach ($file in Get-ChildItem -LiteralPath $SourceDirectory -Filter '*.luau' -Recurse) {
+        $relative = 'src/' + $file.FullName.Substring($SourceDirectory.Length + 1).Replace('\', '/')
         $sourceHashes[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     }
     return [pscustomobject]@{

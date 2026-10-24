@@ -18,6 +18,10 @@ local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingBaselineC
 
 Players.CharacterAutoLoads = false
 
+local testArgs = StudioTestService:GetTestArgs()
+local clientCount = if type(testArgs) == "table" then testArgs.clientCount else 2
+assert(clientCount == 2 or clientCount == 4 or clientCount == 6 or clientCount == 8, "Unsupported client count")
+
 local subjects: { ActorTypes.Actor } = {}
 local models: { Model } = {}
 local ready: { [Player]: boolean } = {}
@@ -35,6 +39,9 @@ local phase = "Ready"
 local commits = 0
 local caseStart = 0
 local heap: { { number } } = {}
+local idleFrames: { number } = {}
+local idleMeasuring = false
+local idle: { any } = {}
 local originalSend = Networking.SendReliable
 local originalStep = Awareness.Step
 
@@ -62,6 +69,10 @@ Networking.SendReliable = function(player: Player, payload: buffer): (boolean, s
 end
 
 local heartbeat = RunService.Heartbeat:Connect(function(delta: number)
+	if idleMeasuring then
+		table.insert(idleFrames, delta * 1000)
+	end
+
 	if measuring then
 		table.insert(frames, delta * 1000)
 		table.insert(frameTimes, os.clock() - caseStart)
@@ -96,7 +107,9 @@ local function finish(success: boolean, reason: string?): ()
 		success = success and cleaned,
 		reason = reason or (if cleaned then nil else tostring(cleanupReason)),
 		phase = phase,
-		clients = 2,
+		clients = clientCount,
+		workloadVersion = 2,
+		idle = idle,
 		cases = cases,
 	})
 end
@@ -132,7 +145,7 @@ local function request(kind: string, extra: any?): ()
 	end
 
 	waitFor(function(): boolean
-		return replyCount() == 2
+		return replyCount() == clientCount
 	end, "Incomplete native " .. kind)
 end
 
@@ -150,7 +163,8 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 			assert(Networking.IsClientReady(player) and not ready[player], "Bad READY")
 			ready[player] = true
 		else
-			assert(report.phase == phase and replies[player] == nil, "Duplicate/wrong phase")
+			assert(ready[player] and report.phase == phase and replies[player] == nil, "Duplicate/wrong phase")
+			report.clientId = player.UserId
 			report.serverAckAt = os.clock()
 			replies[player] = report
 		end
@@ -225,8 +239,18 @@ else
 			waitFor(function(): boolean
 				local players = Players:GetPlayers()
 
-				return #players == 2 and ready[players[1]] == true and ready[players[2]] == true
-			end, "Expected two real clients")
+				if #players ~= clientCount then
+					return false
+				end
+
+				for _, player in players do
+					if not ready[player] then
+						return false
+					end
+				end
+
+				return true
+			end, "Expected all configured real clients")
 
 			local publication = Networking._GetPublicationRuntimeForTests()
 			assert(publication ~= nil, "Missing startup-owned N3 runtime")
@@ -257,7 +281,25 @@ else
 
 				generations = table.create(#subjects, 0)
 				request("Baseline", { actorIds = ids })
+				idleFrames = {}
+				local idleStartedUnixMs = DateTime.now().UnixTimestampMillis
+				idleMeasuring = true
 				request("Quiet")
+				idleMeasuring = false
+				local idleClients: { any } = {}
+
+				for _, reply in replies do
+					table.insert(idleClients, reply)
+				end
+
+				table.insert(idle, {
+					actors = #subjects,
+					startedUnixMs = idleStartedUnixMs,
+					endedUnixMs = DateTime.now().UnixTimestampMillis,
+					serverHeartbeatMs = Scenario.summarize(idleFrames),
+					clients = idleClients,
+				})
+
 				local beforeQuiet = commits
 
 				for _, actor in subjects do
@@ -278,6 +320,7 @@ else
 					local expected = 0
 					local beforeCommits = commits
 					caseStart = os.clock()
+					local startedUnixMs = DateTime.now().UnixTimestampMillis
 					measuring = true
 					replies = {}
 
@@ -316,7 +359,7 @@ else
 					end
 
 					waitFor(function(): boolean
-						return replyCount() == 2
+						return replyCount() == clientCount
 					end, "Lost native generations/events")
 
 					RunService.Heartbeat:Wait()
@@ -334,11 +377,17 @@ else
 							"Send/receive mismatch"
 						)
 
+						local clientObserved: { number } = {}
+
 						for index, times in reply.observed do
 							for ordinal, timestamp in times do
-								table.insert(observed, (timestamp - starts[index][ordinal]) * 1000)
+								local latency = (timestamp - starts[index][ordinal]) * 1000
+								table.insert(observed, latency)
+								table.insert(clientObserved, latency)
 							end
 						end
+
+						reply.observedMs = Scenario.summarize(clientObserved)
 
 						table.insert(clients, reply)
 					end
@@ -347,6 +396,11 @@ else
 						actors = #subjects,
 						modeledPlayers = population.players,
 						mode = mode,
+						recipients = clientCount,
+						hz = Scenario.hz,
+						ticks = #plan,
+						startedUnixMs = startedUnixMs,
+						endedUnixMs = DateTime.now().UnixTimestampMillis,
 						commits = expected,
 						seconds = os.clock() - caseStart,
 						mutationUs = Scenario.summarize(mutationUs),

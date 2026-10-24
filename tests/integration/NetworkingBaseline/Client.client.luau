@@ -7,6 +7,7 @@ local KRF = ReplicatedStorage.Packages.KRF
 local Types = require(KRF.client.Actor.types)
 local SignalTypes = require(KRF.shared.Signal.types)
 local Client = require(KRF.client)
+local ActorStream = require(KRF.client.Networking.ActorStreamRuntime)
 local Registry: Types.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local Transport = require(KRF.shared.Networking.Transport)
 local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
@@ -28,7 +29,24 @@ local audited: { any } = {}
 local actorEvents: { number } = {}
 local states, events, packets, bytes = 0, 0, 0, 0
 local frames: { number } = {}
+local handlerUs: { number } = {}
+local heapKiB: { number } = {}
+local renderMs: { number } = {}
 local epoch = 0
+local originalHandle = ActorStream.Handle
+
+-- Delegate to the installed production consumer, including decode/application.
+-- This excludes deferred public listeners and is elapsed wall time, not OS CPU.
+ActorStream.Handle = function(...: any): (boolean, string?)
+	local started = os.clock()
+	local success, reason = originalHandle(...)
+
+	if measuring then
+		table.insert(handlerUs, (os.clock() - started) * 1e6)
+	end
+
+	return success, reason
+end
 
 local function report(kind: string, extra: any?): ()
 	local message = extra or {}
@@ -73,6 +91,13 @@ end)
 local heartbeat = RunService.Heartbeat:Connect(function(delta: number)
 	if measuring then
 		table.insert(frames, delta * 1000)
+		table.insert(heapKiB, gcinfo())
+	end
+end)
+
+local render = RunService.RenderStepped:Connect(function(delta: number)
+	if measuring then
+		table.insert(renderMs, delta * 1000)
 	end
 end)
 
@@ -122,6 +147,11 @@ local function maybeComplete(): ()
 				observed = observed,
 				heartbeatMs = Scenario.summarize(frames),
 				rawHeartbeatMs = frames,
+				handlerUs = Scenario.summarize(handlerUs),
+				rawHandlerUs = handlerUs,
+				renderMs = Scenario.summarize(renderMs),
+				rawRenderMs = renderMs,
+				rawHeapKiB = heapKiB,
 			})
 		end)
 	end)
@@ -200,15 +230,22 @@ control.OnClientEvent:Connect(function(payload: any)
 			report("Baseline")
 		elseif message.kind == "Quiet" then
 			packets, bytes = 0, 0
+			frames, renderMs, heapKiB, handlerUs = {}, {}, {}, {}
 			measuring = true
-			task.wait(0.3)
+			task.wait(2)
 			measuring = false
 			assert(packets == 0 and bytes == 0, "Countdown traffic")
-			report("Quiet")
+
+			report("Quiet", {
+				heartbeatMs = Scenario.summarize(frames),
+				renderMs = Scenario.summarize(renderMs),
+				heapKiB = Scenario.summarize(heapKiB),
+			})
 		elseif message.kind == "Arm" then
 			epoch, previous = message.epoch, message.previous
 			expected = Scenario.counts(Scenario.plan(#subjects, message.mode), #subjects)
 			seen, observed, audited, frames = {}, {}, {}, {}
+			handlerUs, heapKiB, renderMs = {}, {}, {}
 			actorEvents = table.create(#subjects, 0)
 
 			for index = 1, #subjects do
@@ -238,6 +275,8 @@ control.OnClientEvent:Connect(function(payload: any)
 			assert(#Registry.GetAllActorViews() == 0, "Reset retained ActorViews")
 			endpoint:Disconnect()
 			heartbeat:Disconnect()
+			render:Disconnect()
+			ActorStream.Handle = originalHandle
 			report("Reset")
 		else
 			error("Unknown baseline phase", 0)

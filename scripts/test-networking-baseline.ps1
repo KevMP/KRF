@@ -1,5 +1,7 @@
 param(
     [string]$StudioPath,
+    [ValidateSet(2, 4, 6, 8)][int]$ClientCount = 2,
+    [string]$ImplementationRevision,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 300
 )
 
@@ -11,7 +13,9 @@ $placeFile = Join-Path $runDirectory "NetworkingBaseline.rbxl"
 $outputFile = Join-Path $runDirectory "result.log"
 $stdoutFile = Join-Path $runDirectory "studio.stdout.log"
 $stderrFile = Join-Path $runDirectory "studio.stderr.log"
-$launcherFile = Join-Path $PSScriptRoot "run-networking-baseline-tests.luau"
+$launcherFile = Join-Path $runDirectory "launcher.luau"
+$launcher = Get-Content -LiteralPath (Join-Path $PSScriptRoot "run-networking-baseline-tests.luau") -Raw
+[System.IO.File]::WriteAllText($launcherFile, $launcher.Replace('local clientCount = 2 --', "local clientCount = $ClientCount --"), [System.Text.UTF8Encoding]::new($false))
 
 if (-not $StudioPath) {
     $version = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "Roblox\Versions") -Directory |
@@ -23,11 +27,37 @@ if (-not $StudioPath) {
 }
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 . "$PSScriptRoot\networking-benchmark-environment.ps1"
-$environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath
+. "$PSScriptRoot\networking-host-monitor.ps1"
+$sourceDirectory = Join-Path $repository 'src'
+if ($ImplementationRevision) {
+    # Build the reference without modifying the checkout or historical harness.
+    $revision = & git -c "safe.directory=$repository" -C $repository rev-parse --verify "$ImplementationRevision^{commit}"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve implementation revision.' }
+    $archive = Join-Path $runDirectory 'implementation.zip'
+    & git -c "safe.directory=$repository" -C $repository archive --format=zip "--output=$archive" $revision src
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot archive implementation.' }
+    Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $runDirectory 'implementation')
+    $sourceDirectory = Join-Path $runDirectory 'implementation\src'
+}
+$environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath $sourceDirectory
+$environment | Add-Member -NotePropertyName harnessRevision -NotePropertyValue $environment.implementationRevision
+if ($ImplementationRevision) { $environment.implementationRevision = "$revision" }
+$environment | Add-Member -NotePropertyName requestedClients -NotePropertyValue $ClientCount
+$environment | Add-Member -NotePropertyName workingTreeStatus -NotePropertyValue (@(& git -c "safe.directory=$repository" -C $repository status --short) -join "`n")
+$project = Get-Content -LiteralPath (Join-Path $repository 'networking-baseline-test.project.json') -Raw | ConvertFrom-Json
+$project.tree.ReplicatedStorage.Packages.KRF.'$path' = $sourceDirectory
+$project.tree.ReplicatedStorage.NetworkingBaselineScenario.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Utils/Scenario.luau'
+$project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Server.server.luau'
+$project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Client.client.luau'
+$projectFile = Join-Path $runDirectory 'fixture.project.json'
+[System.IO.File]::WriteAllText($projectFile, ($project | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "Building native Networking baseline fixture..."
-& rojo build (Join-Path $repository "networking-baseline-test.project.json") -o $placeFile
+& rojo build $projectFile -o $placeFile
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$environment | Add-Member -NotePropertyName placeSHA256 -NotePropertyValue (Get-FileHash -LiteralPath $placeFile -Algorithm SHA256).Hash
+$environment | Add-Member -NotePropertyName launcherSHA256 -NotePropertyValue (Get-FileHash -LiteralPath $launcherFile -Algorithm SHA256).Hash
+$environment | ConvertTo-Json -Depth 25 | Set-Content -LiteralPath (Join-Path $runDirectory 'environment.json') -Encoding UTF8
 
 # RunScript executes in the Edit DataModel with Command Bar permissions. The
 # Luau launcher starts actual multiplayer simulation via StudioTestService.
@@ -41,9 +71,9 @@ $studioArguments = @(
 Write-Host "Running Studio; logs: $runDirectory"
 $studioProcess = Start-Process -FilePath $StudioPath -ArgumentList $studioArguments -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
-if (-not $studioProcess.WaitForExit($TimeoutSeconds * 1000)) {
-    # Only stop the process launched by this invocation, never an existing Studio.
-    Stop-Process -Id $studioProcess.Id -ErrorAction SilentlyContinue
+$hostMeasurements = Wait-NetworkingStudio $studioProcess $TimeoutSeconds $environment.logicalProcessors
+$hostMeasurements | ConvertTo-Json -Depth 10 -Compress | Set-Content -LiteralPath (Join-Path $runDirectory 'host.json') -Encoding UTF8
+if ($hostMeasurements.timedOut) {
     [Console]::Error.WriteLine("Native Networking baseline launcher timed out. Inspect $runDirectory. No test result was verified.")
     exit 2
 }
@@ -54,8 +84,9 @@ $encoded = ($resultBlock.Groups[1].Value -split '\r?\n') -join ''
 $result = $encoded | ConvertFrom-Json
 $environment | Add-Member -NotePropertyName completedAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
 $result | Add-Member -NotePropertyName environment -NotePropertyValue $environment
+$result | Add-Member -NotePropertyName hostMeasurements -NotePropertyValue $hostMeasurements
 $result | ConvertTo-Json -Depth 25 -Compress | Set-Content -LiteralPath (Join-Path $runDirectory 'result.json') -Encoding UTF8
-if ($result.success -ne $true -or -not [regex]::IsMatch($output, '(?m)^__KRF_NATIVE_NETWORKING_BASELINE_PASS__\r?$')) {
+if ($result.success -ne $true -or $result.clients -ne $ClientCount -or -not [regex]::IsMatch($output, '(?m)^__KRF_NATIVE_NETWORKING_BASELINE_PASS__\r?$')) {
     $result | Select-Object success, phase, reason | Format-List
     exit 1
 }

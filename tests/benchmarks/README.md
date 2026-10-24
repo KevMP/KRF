@@ -11,7 +11,7 @@ Do not commit individual run outputs or machine manifests.
 | --- | --- |
 | `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic domain profiles remain distinct. |
 | `npm run measure:networking-audit` | 1/16/64/128 Actors × 1/8/32 injected recipients; idle, hot Actor, state and event pressure; isolated command/resync/recovery load and queue/coalescing experiments. |
-| `npm run test:integration:networking-baseline` | The same activity shapes through normal server/client startup and real transports, with two native clients and delivery/privacy/teardown assertions. |
+| `npm run test:integration:networking-baseline` | The same activity shapes through normal server/client startup and real transports, with 2 native clients by default (2/4/6/8 supported) and delivery/privacy/teardown assertions on every client. |
 | `npm run measure:n4` | Sustained generic load at 75/90 Actors and 2/10/25/30 injected recipients: 30 seconds heavy, 15 seconds light, 75 seconds quiet recovery with ongoing sentinel traffic. Queue bounds, fairness, explicit replacement baselines and current truth are asserted. |
 | `npm run test:integration:n4-performance` | The original native server/client fixture with a Scenario wrapper selecting 75/90 Actors and 45 seconds of heavy Tags traffic; two native clients. |
 | `npm run test:integration:tags-load` | Separate native two-client Tags test at 25/50/100 Actors, paced and burst mutations. See [TagsLoad.md](./TagsLoad.md). |
@@ -60,7 +60,7 @@ node scripts/analyze-networking-baseline.cjs build/networking-analysis > build/n
 ```
 
 Both launchers accept `-StudioPath <absolute-path>` when invoked directly. Native
-delivery is measured with exactly two clients; injected recipients measure server
+delivery supports 2/4/6/8 actual Studio clients; injected recipients measure server
 CPU/fanout and serialized payloads, not native delivery at that recipient count.
 Virtual scheduling opportunities are not observed frames or network latency.
 Payload bytes exclude Roblox/NIC overhead. Heap samples include fixture allocations.
@@ -103,6 +103,64 @@ variant. This holds the sustained fixture constant without requiring historical
 measurement commits or saved results. Use a clean checkout and retain source hashes.
 
 ## Networking hardening audit
+
+### Native client-count comparisons
+
+Keep the default two-client regression and run the same nine traces (30/75/90
+Actors × Ordinary/Heavy/Burst) at each supported count in fresh processes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -ClientCount 8
+powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+```
+
+Repeat with `-ClientCount 2`, `4` and `6`. The reference option archives only
+production `src/` into the ignored run directory and builds it with the current
+fixture, without changing the checkout. Each run freezes its place and launcher
+and records their hashes, implementation/harness revisions, source hashes, Studio
+version and working-tree status before launch. Keep the same harness and Studio
+across comparisons; repeat trials and alternate reference/candidate order.
+
+Copy successful results to an analysis directory using
+`native-<candidate|n9>-c<count>-run<number>.json` (optionally gzip). The existing
+`analyze-networking-baseline.cjs` accepts these names, validates the recorded
+count and unique client identities, and separates count/implementation groups.
+It rejects mixed fixture/Studio hashes and source changes within an implementation
+group. Do not pool different implementations, client counts or pilot fixtures.
+
+Server measurements include mutation, awareness-pump elapsed time, Heartbeat,
+Lua heap, traffic and workload lateness. Each actual client records packet-handler
+elapsed time around the real installed consumer (decode/application), Heartbeat,
+RenderStepped intervals, Lua heap and mutation-to-public-notification latency.
+Public listeners and validation are deferred outside the handler timing; fixture
+allocation and wrapper overhead remain in the run. Inspect each client's tails,
+not just pooled latency. These region timings are wall time, not OS CPU time.
+
+The launcher samples Windows host CPU, busiest logical processor, available RAM,
+commit pressure and page inputs alongside the launched Studio process tree.
+Command-line `StartServer`/`StartClient` roles distinguish OS CPU consumption,
+working set and private memory for server, individual clients and Edit launcher.
+CPU cores equal process CPU seconds divided by elapsed seconds; divide by the
+recorded logical processor count for machine utilization. Working sets can share
+pages, so their sum is not unique physical memory. Page inputs include executable
+and asset reads and do not by themselves prove paging due to memory exhaustion.
+
+A two-second zero-packet quiet window at each population supplies a scene/engine
+reference. Unix-millisecond case windows correlate host samples to workloads;
+performance regions use monotonic clocks. Host counters target one-second
+sampling, have collection lag, and cannot explain sub-frame stalls. Monitor
+collection wall cost and its own process CPU are recorded; CIM-provider overhead
+is part of host load. `host.json` remains available even if a test fails.
+
+Compare active/quiet frame intervals, KRF region costs, per-process CPU and memory
+headroom before attributing client-count scaling to KRF. A busy logical processor,
+rendering/GPU pressure, engine scheduling or another application can limit a local
+multiclient host while overall CPU remains below 100%. This harness does not
+isolate GPU time, engine costs, remote-machine behavior, bandwidth-limited links
+or real WAN latency. Report uncertainty rather than treating all frame delay as
+framework work, and retain the original two-client correctness suites.
+
+### Server audit
 
 The reference implementation is final merged N9:
 `a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a`. Keep production `src/` at that
