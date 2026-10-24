@@ -10,6 +10,7 @@ Do not commit individual run outputs or machine manifests.
 | Command | Workload and boundary |
 | --- | --- |
 | `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic domain profiles remain distinct. |
+| `npm run measure:networking-audit` | 1/16/64/128 Actors × 1/8/32 injected recipients; idle, hot Actor, state and event pressure; isolated command/resync/recovery load and queue/coalescing experiments. |
 | `npm run test:integration:networking-baseline` | The same activity shapes through normal server/client startup and real transports, with two native clients and delivery/privacy/teardown assertions. |
 | `npm run measure:n4` | Sustained generic load at 75/90 Actors and 2/10/25/30 injected recipients: 30 seconds heavy, 15 seconds light, 75 seconds quiet recovery with ongoing sentinel traffic. Queue bounds, fairness, explicit replacement baselines and current truth are asserted. |
 | `npm run test:integration:n4-performance` | The original native server/client fixture with a Scenario wrapper selecting 75/90 Actors and 45 seconds of heavy Tags traffic; two native clients. |
@@ -100,3 +101,79 @@ modules restored from the baseline branch: `ActorAwarenessRuntime.luau`,
 `src/server/Networking/`. Restore the optimized modules before preparing the after
 variant. This holds the sustained fixture constant without requiring historical
 measurement commits or saved results. Use a clean checkout and retain source hashes.
+
+## Networking hardening audit
+
+The reference implementation is final merged N9:
+`a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a`. Keep production `src/` at that
+revision when measuring the reference with a newer harness. Use a separate clean
+checkout for the reference, copy only the benchmark fixtures, launchers and
+analysis tooling from the candidate, and verify `git diff <reference> -- src`
+is empty. Record the harness revision separately from the measured implementation.
+
+Run Studio jobs serially. Run the audit twice, the existing short CPU and sustained
+CPU workloads twice each, and native Networking baseline three times, each in a
+fresh process. The existing native N9 suite supplies actual command/result,
+callback-ordering and teardown coverage; the audit's opaque recipients exercise
+the production server runtimes without measuring native delivery at 8/32 clients.
+
+```powershell
+npm run measure:networking-audit
+# Repeat in a fresh process, retaining both printed run directories.
+New-Item -ItemType Directory -Force build/networking-analysis
+Copy-Item build/networking-cpu/<audit-run-1>/result.json build/networking-analysis/audit-run1.json
+Copy-Item build/networking-cpu/<audit-run-2>/result.json build/networking-analysis/audit-run2.json
+node scripts/analyze-networking-baseline.cjs build/networking-analysis > build/networking-analysis/summary.json
+```
+
+The audit uses a discarded 16-Actor pilot, then 120 deterministic workload pumps
+per scene with ascending Actor order. The generic domain has one U32 value and
+8 KiB of unchanged padding, producing multipart join/recovery baselines. This is
+a controlled schema fixture, not a built-in Action or Resource benchmark. A hot
+scene changes one Actor per pump; state/event scenes change every Actor. Separate
+passes run without probes and with benchmark-local method counters. Compare
+their per-trial distributions; fixed pass order and GC can affect the difference.
+These wrappers are not permanent diagnostics and do not count every internal loop.
+
+`queueWaitPumps` samples the interval from a stream becoming pending to its next
+Commit/BaselineEnd, with same-pump delivery equal to zero. It excludes unsatisfied
+samples and is neither per-event latency nor wall-clock/network latency. The older
+CPU fixture supplies per-commit wait distributions including its drain phase.
+Pending-byte samples are logical encoded liabilities (queued record estimates,
+full retained baseline bodies and reserved result bytes), not heap size or unique
+buffer allocations: shared baseline bodies count once per recipient. Samples occur
+before and after each pump; they are not allocation high-water instrumentation.
+Inspection and decoding occur outside timed pump/mutation regions. Physical send
+counts include the sink call and exclude Roblox engine/network overhead.
+
+Recovery uses an injected eight-event limit and 16 events before each pump; it
+reports capture attempts and completions during pressure, then asserts quiet drain
+converges. Command scenes submit 80 requests per recipient in one fixed rate window,
+without an intervening send pump. Malformed requests retain the command kind byte.
+Resync scenes repeat one valid handle while replacement is pending and distinguish
+accepted requests, pending dedupes and rate rejections. These are separate stress
+experiments, not a proof of combined-pressure fairness or a slow native connection.
+
+Queue experiments compare front removal with a head-cursor loop and time the
+existing pending-transfer counting shape (up to 16 entries). They are algorithm
+experiments, not measured runtime speedups. Result-order experiments count actual
+`HasWorkThrough` calls with newer Actor work behind a result. Coalescing experiments
+isolate the real publication scheduler at 16/128/512 Map entries and 0/8/64 event
+barriers; each of 30 samples contains 20 writes and uses a constant 64-byte size
+estimator, excluding codec cost. Timing quantiles stay per trial; the analyzer does
+not average quantiles or impose machine-time gates.
+
+Freeze each CPU trial before switching implementations:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Audit -PrepareOnly
+powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -PreparedRunDirectory <printed-directory>
+```
+
+Preparation saves the built place, workload, source/harness hashes, dirty-file
+status and environment before launch. Execution verifies the frozen place/workload
+hashes. Use a separate preparation per trial and the same Studio executable.
+Candidate comparisons must use identical workload versions and harness hashes.
+Raw observations stay under ignored `build/`; evidence and checkpoint decisions
+belong in the active PR description. Hint and combined-pressure measurements must
+be added once those primitives exist; they cannot be inferred from an N9 baseline.

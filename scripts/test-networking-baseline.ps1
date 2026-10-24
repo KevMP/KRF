@@ -22,6 +22,8 @@ if (-not $StudioPath) {
     $StudioPath = Join-Path $version.FullName "RobloxStudioBeta.exe"
 }
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
+. "$PSScriptRoot\networking-benchmark-environment.ps1"
+$environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath
 
 Write-Host "Building native Networking baseline fixture..."
 & rojo build (Join-Path $repository "networking-baseline-test.project.json") -o $placeFile
@@ -50,8 +52,8 @@ $resultBlock = [regex]::Match($output, '(?ms)^__KRF_NETWORKING_BASELINE_RESULT_S
 if (-not $resultBlock.Success) { throw "Studio produced no complete load result. Inspect $runDirectory." }
 $encoded = ($resultBlock.Groups[1].Value -split '\r?\n') -join ''
 $result = $encoded | ConvertFrom-Json
-. "$PSScriptRoot\networking-benchmark-environment.ps1"
-$result | Add-Member -NotePropertyName environment -NotePropertyValue (Get-NetworkingBenchmarkEnvironment $repository $StudioPath)
+$environment | Add-Member -NotePropertyName completedAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
+$result | Add-Member -NotePropertyName environment -NotePropertyValue $environment
 $result | ConvertTo-Json -Depth 25 -Compress | Set-Content -LiteralPath (Join-Path $runDirectory 'result.json') -Encoding UTF8
 if ($result.success -ne $true -or -not [regex]::IsMatch($output, '(?m)^__KRF_NATIVE_NETWORKING_BASELINE_PASS__\r?$')) {
     $result | Select-Object success, phase, reason | Format-List

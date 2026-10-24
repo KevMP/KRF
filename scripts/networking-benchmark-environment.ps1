@@ -5,11 +5,14 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
     $revision = & git -c "safe.directory=$Repository" -C $Repository rev-parse HEAD
     $harnessFiles = @(
         'tests/benchmarks/NetworkingBaseline.luau',
+        'tests/benchmarks/NetworkingAudit.luau',
         'tests/integration/NetworkingBaseline/Server.server.luau',
         'tests/integration/NetworkingBaseline/Client.client.luau',
         'tests/integration/NetworkingBaseline/Utils/Scenario.luau',
         'tests/integration/NetworkingBaseline/Utils/Probe.luau',
-        'networking-baseline-test.project.json'
+        'networking-baseline-test.project.json',
+        'test.project.json',
+        'rokit.toml'
     )
     $hashes = [ordered]@{}
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -18,6 +21,11 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
         $hashes[$relativePath] = [System.BitConverter]::ToString($digest).Replace('-', '')
     }
     $algorithm.Dispose()
+    $sourceHashes = [ordered]@{}
+    foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Repository 'src') -Filter '*.luau' -Recurse) {
+        $relative = $file.FullName.Substring($Repository.Length + 1).Replace('\', '/')
+        $sourceHashes[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    }
     return [pscustomobject]@{
         cpu = $processor.Name
         physicalCores = $processor.NumberOfCores
@@ -29,5 +37,6 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
         measuredAtUtc = [DateTime]::UtcNow.ToString('o')
         implementationRevision = "$revision"
         harnessSHA256 = $hashes
+        sourceSHA256 = $sourceHashes
     }
 }

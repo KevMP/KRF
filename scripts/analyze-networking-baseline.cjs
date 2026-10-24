@@ -20,15 +20,39 @@ function load(file) {
 	const bytes = fs.readFileSync(path.join(directory, file));
 	return JSON.parse((file.endsWith(".gz") ? zlib.gunzipSync(bytes) : bytes).toString("utf8").replace(/^\uFEFF/, ""));
 }
-const files = fs.readdirSync(directory).filter(file => /^(native|cpu)-run\d+\.json(\.gz)?$/.test(file)).sort();
+const files = fs.readdirSync(directory).filter(file => /^(native|cpu|audit)-run\d+\.json(\.gz)?$/.test(file)).sort();
+if (new Set(files.map(file => file.replace(/\.gz$/, ""))).size !== files.length) {
+	throw new Error("Duplicate plain/gzip observations would count the same trial twice");
+}
 if (!files.length) throw new Error(`No local benchmark runs in ${directory}`);
 const groups = new Map();
 const runs = [];
+let auditEnvironment;
 for (const file of files) {
 	const result = load(file);
 	if (result.success !== true) throw new Error(`Failed benchmark ${file}`);
+	if (file.startsWith("audit-")) {
+		const environment = result.environment;
+		const signature = JSON.stringify([result.workloadVersion, environment?.implementationRevision,
+			environment?.studioFileVersion,
+			Object.entries(environment?.harnessSHA256 ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+			Object.entries(environment?.sourceSHA256 ?? {}).sort(([a], [b]) => a.localeCompare(b))]);
+		if (!environment?.sourceSHA256 || !environment?.harnessSHA256?.["tests/benchmarks/NetworkingAudit.luau"]) {
+			throw new Error(`Missing audit source provenance: ${file}`);
+		}
+		if (auditEnvironment && auditEnvironment !== signature) throw new Error(`Mixed audit implementation/harness/Studio: ${file}`);
+		auditEnvironment = signature;
+	}
 	runs.push({ file, environment: result.environment, cases: result.cases.length });
 	for (const entry of result.cases) {
+		if (file.startsWith("audit-")) {
+			if (result.workloadVersion !== 1) throw new Error(`Unsupported audit workload: ${file}`);
+			const key = ["audit", entry.kind, entry.actors ?? entry.size ?? entry.width ?? 0, entry.recipients ?? entry.barriers ?? 1,
+				entry.mode ?? entry.malformed ?? "", entry.diagnostic ?? false].join("/");
+			if (!groups.has(key)) groups.set(key, []);
+			groups.get(key).push({ file, entry });
+			continue;
+		}
 		const kind = file.startsWith("cpu-") ? "cpu" : "native";
 		const key = [kind, entry.actors, entry.mode, entry.syntheticActionsLobbyWide ?? 0, entry.recipients ?? 2, entry.diagnostic ?? false].join("/");
 		if (!groups.has(key)) groups.set(key, []);
@@ -37,6 +61,11 @@ for (const file of files) {
 }
 const summaries = [];
 for (const [key, cases] of groups) {
+	if (key.startsWith("audit/")) {
+		// Audit quantiles are per trial. Never average p95/p99 and label them pooled.
+		summaries.push({ key, runs: cases.length, perRun: cases.map(({ file, entry }) => ({ file, ...entry })) });
+		continue;
+	}
 	const merge = name => cases.flatMap(({ entry }) => entry.raw[name] || []);
 	const stages = {};
 	for (const { entry } of cases) {
@@ -89,5 +118,5 @@ for (const [key, cases] of groups) {
 		})),
 	});
 }
-const output = { runs, quantiles: "nearest rank; pooled samples; p95 >= 20, p99 >= 100; no confidence intervals", summaries };
+const output = { runs, quantiles: "nearest rank; CPU/native pooled samples; audit per-trial summaries; p95 >= 20, p99 >= 100; no confidence intervals", summaries };
 process.stdout.write(JSON.stringify(output, null, 2) + "\n");

@@ -15,6 +15,7 @@
     "test:integration:tags-load": "powershell -ExecutionPolicy Bypass -File ./scripts/test-tags-load.ps1",
     "measure:tags": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-tags-publication.ps1",
     "measure:networking": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1",
+    "measure:networking-audit": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1 -Workload Audit",
     "measure:n4": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-n4-performance.ps1",
     "test:integration:n4-performance": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-n4-performance.ps1 -Profile Native",
     "test:integration:networking-baseline": "powershell -ExecutionPolicy Bypass -File ./scripts/test-networking-baseline.ps1",
