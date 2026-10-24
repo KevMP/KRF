@@ -55,11 +55,25 @@ function fixture(t, config = options([])) {
 			implementationRevision: trial.arm === "before" ? "reference" : "candidate", harnessRevision: "candidate", studioFileVersion: "studio",
 			sourceSHA256: { "src/runtime.luau": trial.arm === "before" ? "REFERENCE" : "CANDIDATE" },
 			harnessSHA256: { fixture: "COMMON" }, workloadSHA256: "COMMON", workloadSourcesSHA256: { fixture: "COMMON" },
+			schedulerBudget: { records: trial.arm === "after" ? config.candidateRecords : config.records, bytes: config.bytes },
 		} }));
 		trial.resultSHA256 = hash(file);
 	}
 	return { directory, manifest };
 }
+
+test("candidate record tuning preserves the reference capacity and verifies each arm", t => {
+	const config = options(["--candidate-records", "128"]);
+	assert.equal(config.records, 64);
+	assert.equal(config.candidateRecords, 128);
+	assert.throws(() => options(["--candidate-records", "0"]));
+	const { directory, manifest } = fixture(t, config);
+	verify(directory, manifest);
+	const trial = manifest.trials[0], file = contained(directory, trial.result), result = JSON.parse(fs.readFileSync(file, "utf8"));
+	result.environment.schedulerBudget.records = 128;
+	fs.writeFileSync(file, JSON.stringify(result)); trial.resultSHA256 = hash(file);
+	assert.throws(() => verify(directory, manifest), /Wrong scheduler budget/);
+});
 
 test("scheduler focus selects an explicit CPU publication subset and rejects other profiles", () => {
 	assert.equal(options(["--workload", "publication", "--focus", "scheduler"]).focus, "scheduler");

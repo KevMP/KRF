@@ -40,6 +40,14 @@ public configuration change is needed. Keep equal-budget revision comparisons
 separate from configuration experiments: changing capacity changes the work
 completed per pump and can affect packetization, CPU and latency.
 
+Use `--candidate-records <count>` to compare a proposed record default with the
+reference's `--records` value. Byte capacity stays equal. This is explicitly
+labelled a configuration experiment in JSON/Markdown; it cannot isolate an
+implementation speedup. Omitting the option keeps equal capacities. For example,
+`--records 64 --candidate-records 128 --bytes 32768` compares those service limits
+with the same offered workload. Fixture defaults remain 64/32768 for historical
+reproduction even when production defaults change.
+
 For short CPU budget experiments, `--focus scheduler` selects twelve existing
 publication cases: 90 Actors, 2/30 recipients, Ordinary/Heavy/Burst, 0/40 synthetic
 Actions, without diagnostic wrappers. Mutation plans and case timings are

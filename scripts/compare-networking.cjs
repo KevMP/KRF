@@ -19,7 +19,7 @@ function options(args) {
 	for (let index = 0; index < args.length; index++) {
 		const key = args[index];
 		if (["--help", "--full"].includes(key)) { values[key.slice(2)] = true; continue; }
-		if (!["--workload", "--profile", "--reference", "--clients", "--repetitions", "--studio", "--analyze", "--records", "--bytes", "--focus"].includes(key)) throw Error(`Unknown option: ${key}`);
+		if (!["--workload", "--profile", "--reference", "--clients", "--repetitions", "--studio", "--analyze", "--records", "--bytes", "--focus", "--candidate-records"].includes(key)) throw Error(`Unknown option: ${key}`);
 		if (index + 1 >= args.length || args[index + 1].startsWith("--")) throw Error(`Missing value: ${key}`);
 		values[key.slice(2)] = args[++index];
 	}
@@ -28,14 +28,14 @@ function options(args) {
 		reference: values.reference || N9, clients: (values.clients || (values.full ? "2,4,6,8" : "2")).split(",").map(Number),
 		repetitions: Number(values.repetitions || (values.full ? 2 : 1)), studio: values.studio,
 		help: values.help, analyze: values.analyze,
-		records: Number(values.records || 64), bytes: Number(values.bytes || 32768), focus: values.focus || "full",
+		records: Number(values.records || 64), candidateRecords: Number(values["candidate-records"] || values.records || 64), bytes: Number(values.bytes || 32768), focus: values.focus || "full",
 	};
 	if (!["commands", "publication", "audit"].includes(result.workload)) throw Error("--workload must be commands, publication or audit");
 	if (!["cpu", "native", "both"].includes(result.profile)) throw Error("--profile must be cpu, native or both");
 	if (!Number.isInteger(result.repetitions) || result.repetitions < 1 || result.repetitions > 10) throw Error("--repetitions must be 1..10");
 	if (!result.clients.length || new Set(result.clients).size !== result.clients.length || result.clients.some(n => ![2, 4, 6, 8].includes(n))) throw Error("--clients must contain unique counts from 2,4,6,8");
 	if (result.workload === "audit" && result.profile !== "cpu") throw Error("audit supports --profile cpu only");
-	if (!Number.isInteger(result.records) || result.records < 1 || result.records > 4096 || !Number.isInteger(result.bytes) || result.bytes < 1024 || result.bytes > 4194304) throw Error("Invalid --records (1..4096) or --bytes (1024..4194304)");
+	if (![result.records, result.candidateRecords].every(value => Number.isInteger(value) && value >= 1 && value <= 4096) || !Number.isInteger(result.bytes) || result.bytes < 1024 || result.bytes > 4194304) throw Error("Invalid --records/--candidate-records (1..4096) or --bytes (1024..4194304)");
 	if (!["full", "scheduler"].includes(result.focus) || result.focus !== "full" && (result.workload !== "publication" || result.profile !== "cpu")) throw Error("--focus scheduler requires --workload publication --profile cpu");
 	return result;
 }
@@ -103,7 +103,7 @@ function verify(directory, manifest, partial = false) {
 		if (environment.implementationRevision !== (trial.arm === "before" ? manifest.referenceRevision : manifest.candidateRevision)) throw Error(`Wrong implementation revision: ${trial.id}`);
 		if (environment.harnessRevision !== manifest.candidateRevision) throw Error(`Wrong harness revision: ${trial.id}`);
 		if (environment.studioFileVersion !== manifest.studioFileVersion) throw Error(`Mixed Studio: ${trial.id}`);
-		if (canonical(environment.schedulerBudget || { records: 64, bytes: 32768 }) !== canonical({ records: manifest.config.records ?? 64, bytes: manifest.config.bytes ?? 32768 })) throw Error(`Wrong scheduler budget: ${trial.id}`);
+		if (canonical(environment.schedulerBudget || { records: 64, bytes: 32768 }) !== canonical({ records: trial.arm === "after" ? manifest.config.candidateRecords ?? manifest.config.records ?? 64 : manifest.config.records ?? 64, bytes: manifest.config.bytes ?? 32768 })) throw Error(`Wrong scheduler budget: ${trial.id}`);
 		const focus = manifest.config.focus ?? "full";
 		if ((environment.benchmarkFocus ?? "full") !== focus) throw Error(`Wrong benchmark focus: ${trial.id}`);
 		if (focus === "scheduler" && (result.benchmarkFocus !== focus || result.cases?.length !== 12 ||
@@ -240,7 +240,7 @@ function report(manifest, cases) {
 		for (const [metric, b, a] of [["costUs", before.costUs, after.costUs], ["latencyP95", before.latency?.p95, after.latency?.p95]]) if (Number.isFinite(b) && Number.isFinite(a) && a > b) regressions.push({ case: entry.key, metric, reference: b, candidate: a, delta: a - b, percent: b ? (a / b - 1) * 100 : null,
 			equalExecutions: entry.kind === "commands" ? before.executed === after.executed : null, equalCommits: entry.kind === "publication" ? before.commits === after.commits : null });
 	}
-	lines.push("", "## Scheduler work", "", `Fixture budget: ${manifest.config.records ?? 64} logical records / ${manifest.config.bytes ?? 32768} bytes per pump in both arms; focus ${manifest.config.focus ?? "full"}. Work counters are candidate internal attempted-work accounting; legacy counts are retained separately in audit probes. Audit pending inspections occur outside the pump timer. No unmeasured legacy counter is treated as zero.`, "", "| Case | Arm | Pump p50 / p95 / p99 �s | Physical sends |", "| --- | --- | --- | --- |");
+	lines.push("", "## Scheduler work", "", `Fixture budget: reference ${manifest.config.records ?? 64} -> candidate ${manifest.config.candidateRecords ?? manifest.config.records ?? 64} logical records, ${manifest.config.bytes ?? 32768} bytes per pump; focus ${manifest.config.focus ?? "full"}. ${(manifest.config.candidateRecords ?? manifest.config.records ?? 64) === (manifest.config.records ?? 64) ? "Equal-configuration comparison." : "CONFIGURATION EXPERIMENT: record capacity differs; gains cannot be attributed solely to scheduler implementation."} Work counters are candidate internal attempted-work accounting; legacy counts are retained separately in audit probes. Audit pending inspections occur outside the pump timer. No unmeasured legacy counter is treated as zero.`, "", "| Case | Arm | Pump p50 / p95 / p99 µs | Physical sends |", "| --- | --- | --- | --- |");
 	for (const entry of cases) for (const arm of ["before", "after"]) if (entry[arm].pumpUs) lines.push(`| ${entry.key} | ${arm} | ${quantiles(entry[arm].pumpUs)} | ${entry[arm].physicalSends ?? entry[arm].perRun.reduce((sum, run) => sum + (run.physicalSends || 0), 0)} |`);
 	lines.push("", "## Observed increases and comparison limits", "", "Reduced execution from shedding is not throughput improvement. More completed work is also not an equal-work cost comparison. Region timers include probes, engine scheduling and GC; OS counters include engine/host overhead and have coarse sampling. Publication admission is not applicable. Every higher observed cost/p95 below is retained even when correctness passes; short/noisy trials do not establish causation.", "");
 	for (const item of regressions) lines.push(`- ${item.case}: ${item.metric} ${fmt(item.reference)} → ${fmt(item.candidate)} (${fmt(item.percent)}%); ${item.equalCommits ? "equal commit counts" : item.equalExecutions ? "equal executed counts" : "executed work differs"}.`);
@@ -261,14 +261,14 @@ function report(manifest, cases) {
 function summarize(directory, manifest) {
 	const outputs = analyze(directory, manifest), cases = normalize(outputs), rendered = report(manifest, cases);
 	save(path.join(directory, "comparison.json"), { status: "passed", referenceRevision: manifest.referenceRevision, candidateRevision: manifest.candidateRevision,
-		config: manifest.config, analysisToolSHA256: toolHashes(), quantiles: "nearest rank; p95 >=20 / p99 >=100; pooled raw samples; CPU ranges are per-trial medians", cases, regressions: rendered.regressions });
+		config: manifest.config, configurationExperiment: (manifest.config.candidateRecords ?? manifest.config.records ?? 64) !== (manifest.config.records ?? 64), analysisToolSHA256: toolHashes(), quantiles: "nearest rank; p95 >=20 / p99 >=100; pooled raw samples; CPU ranges are per-trial medians", cases, regressions: rendered.regressions });
 	fs.writeFileSync(path.join(directory, "comparison.md"), rendered.markdown);
 	return cases;
 }
 
 async function main(args) {
 	const config = options(args);
-	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication|audit] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--records 64] [--bytes 32768] [--focus full|scheduler] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
+	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication|audit] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--records 64] [--candidate-records <count>] [--bytes 32768] [--focus full|scheduler] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
 	if (config.analyze) {
 		const directory = path.resolve(config.analyze), manifest = read(path.join(directory, "manifest.json"));
 		try {
@@ -296,7 +296,7 @@ async function main(args) {
 			console.log(`START ${trial.id}`);
 			const script = trial.profile === "cpu" ? "scripts/measure-networking-baseline.ps1" : "scripts/test-networking-baseline.ps1";
 			const workload = config.workload === "audit" ? "Audit" : config.workload === "commands" ? "Commands" : trial.profile === "cpu" ? "Networking" : "Publication";
-			const parameters = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Workload", workload, "-StudioPath", manifest.studioPath, "-Records", String(config.records), "-Bytes", String(config.bytes)];
+			const parameters = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Workload", workload, "-StudioPath", manifest.studioPath, "-Records", String(trial.arm === "after" ? config.candidateRecords : config.records), "-Bytes", String(config.bytes)];
 			if (trial.profile === "cpu") parameters.push("-Focus", config.focus);
 			if (trial.clients) parameters.push("-ClientCount", String(trial.clients));
 			if (trial.arm === "before") parameters.push("-ImplementationRevision", manifest.referenceRevision);
