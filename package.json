@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Kevin's Roblox Framework: a server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions, and schema-defined replication.",
   "scripts": {
+    "bench:networking:compare": "node ./scripts/compare-networking.cjs",
     "prepare": "husky",
     "typecheck": "node ./scripts/typecheck.cjs",
     "test:lint": "stylua --check src tests && breathers --check src tests && selene src tests",
@@ -15,6 +16,7 @@
     "test:integration:tags-load": "powershell -ExecutionPolicy Bypass -File ./scripts/test-tags-load.ps1",
     "measure:tags": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-tags-publication.ps1",
     "measure:networking": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1",
+    "measure:networking-audit": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-networking-baseline.ps1 -Workload Audit",
     "measure:n4": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-n4-performance.ps1",
     "test:integration:n4-performance": "powershell -ExecutionPolicy Bypass -File ./scripts/measure-n4-performance.ps1 -Profile Native",
     "test:integration:networking-baseline": "powershell -ExecutionPolicy Bypass -File ./scripts/test-networking-baseline.ps1",
@@ -22,7 +24,8 @@
     "coverage:report": "npx nyc report",
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
-    "test": "npm run test:lint && npm run typecheck && npm run test:unit"
+    "test:bench-tools": "node --test scripts/compare-networking.spec.cjs",
+    "test": "npm run test:bench-tools && npm run test:lint && npm run typecheck && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": [

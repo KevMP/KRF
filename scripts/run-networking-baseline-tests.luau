@@ -2,7 +2,11 @@
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 assert(game:GetService("RunService"):IsEdit(), "Load launcher requires the Edit DataModel")
-local result: any = StudioTestService:ExecuteMultiplayerTestAsync(2, "KRFNetworkingBaseline")
+local clientCount = 2 -- Replaced in the run-local copy by the PowerShell launcher.
+local result: any = StudioTestService:ExecuteMultiplayerTestAsync(clientCount, {
+	testName = "KRFNetworkingBaseline",
+	clientCount = clientCount,
+})
 local encoded: string = HttpService:JSONEncode(result)
 print("__KRF_NETWORKING_BASELINE_RESULT_START__")
 for offset: number = 1, #encoded, 8000 do

@@ -65,12 +65,19 @@ export type ServerCommandLimits = {
 	maxHistory: number?,
 	maxHistoryBytes: number?,
 	historySeconds: number?,
+	maxGlobalRequests: number?,
+	maxGlobalBytes: number?,
+	maxGlobalQueuedRequests: number?,
+	maxGlobalQueuedBytes: number?,
+	maxDispatchRequests: number?,
+	maxDispatchVisits: number?,
 }
 
 export type ServerCommandDependencies = {
 	Now: () -> number,
 	ScheduleTimeout: ((number, () -> ()) -> () -> ())?,
 	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
 	awareness: ActorAwarenessRuntime,
 	ReportFault: (Player, string) -> (),
@@ -79,6 +86,8 @@ export type ServerCommandDependencies = {
 
 export type ServerCommandRuntime = {
 	Handle: (self: ServerCommandRuntime, Player, any, ...any) -> (boolean, string?),
+	Step: (self: ServerCommandRuntime) -> (number, number),
+	_GetPendingForTests: (self: ServerCommandRuntime) -> (number, number),
 	Destroy: (self: ServerCommandRuntime) -> (),
 }
 

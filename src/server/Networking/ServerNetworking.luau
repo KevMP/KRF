@@ -271,6 +271,7 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			commandRuntime = Commands.new(commandCatalog, protocol.runtime, {
 				Now = os.clock,
 				IsClientReady = ServerNetworking.IsClientReady,
+				ObserveClientReady = ServerNetworking.ObserveClientReady,
 				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
 				awareness = created,
 				ReportFault = function(player: Player, faultReason: string): ()
@@ -296,6 +297,15 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 			stopDriver = Scheduling.ObserveStep(function()
 				if initialized and awareness == created then
+					if commandRuntime ~= nil then
+						commandRuntime:Step()
+					end
+
+					-- A handler may tear Networking down during dispatch.
+					if not initialized or awareness ~= created then
+						return
+					end
+
 					created:Step(budget.maxBytes, budget.maxRecords)
 				end
 			end)
