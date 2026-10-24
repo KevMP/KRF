@@ -16,17 +16,28 @@ npm run bench:networking:compare -- --profile native --clients 2,8 --repetitions
 npm run bench:networking:compare -- --reference HEAD~1 --profile both --clients 8
 npm run bench:networking:compare -- --workload publication --profile native --clients 2,4,6,8
 npm run bench:networking:compare -- --full
+# Scheduler audit and equal-configuration budget experiments:
+npm run bench:networking:compare -- --workload audit --reference HEAD~1 --repetitions 2
+npm run bench:networking:compare -- --workload publication --reference HEAD~1 --records 128 --bytes 65536
 ```
 
 The default is the commands workload, CPU profile, one reference/candidate pair.
 `--full` explicitly selects CPU plus 2/4/6/8 native clients and two repetitions.
 Explicit options override those defaults. `--workload` accepts `commands` or
-`publication`; `--profile` accepts `cpu`, `native` or `both`; `--clients` is a
+`publication`, or `audit` (CPU only); `--profile` accepts `cpu`, `native` or `both`; `--clients` is a
 comma-separated subset of 2/4/6/8; `--repetitions` accepts 1..10. `--reference`
 accepts a local Git commit/ref and defaults to merged N9
 `a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a`. Use `--studio <exe>` to select an
 installed Studio explicitly. Publication CPU uses the existing short Networking
-profile; Audit, Observers and sustained N4 remain independent launchers below.
+profile. Observers and sustained N4 remain independent launchers below.
+
+`--records` (1..4096, default 64) and `--bytes` (1024..4194304, default 32768)
+set fixture-only pump budgets identically in both arms. Launchers capture these
+values in the built place and provenance; analysis rejects mismatched settings.
+Direct launchers accept `-Records` and `-Bytes` too. No production constants or
+public configuration change is needed. Keep equal-budget revision comparisons
+separate from configuration experiments: changing capacity changes the work
+completed per pump and can affect packetization, CPU and latency.
 
 The orchestrator resolves the reference once, chooses one Studio executable,
 alternates arm order, invokes the existing launchers serially and copies their
@@ -63,6 +74,13 @@ cores, not averaged quantiles; client cores sum all actual client processes. CPU
 profiles have region timings and virtual waits, without native OS-process samples.
 Publication has no command admission count or pending-command queue metric.
 Raw frames, heaps, host memory and remaining probes stay in the analysis records.
+Scheduler reports retain pump p50/p95/p99 and physical sends. Current runtimes
+also expose private attempted-work samples to the fixture after each timed Step;
+older revisions without those counters are marked unavailable, not zero.
+Audit probe passes count legacy eligibility/preparation calls separately from
+unwrapped timing passes. Audit pending inspections and packet decoding happen
+outside pump timers. Sample allocation/retention still affects the process heap
+and GC; compare raw controls and do not attribute host CPU entirely to KRF.
 
 ## Command dispatch comparisons
 
@@ -299,12 +317,10 @@ framework work, and retain the original two-client correctness suites.
 
 ### Server audit
 
-The reference implementation is final merged N9:
-`a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a`. Keep production `src/` at that
-revision when measuring the reference with a newer harness. Use a separate clean
-checkout for the reference, copy only the benchmark fixtures, launchers and
-analysis tooling from the candidate, and verify `git diff <reference> -- src`
-is empty. Record the harness revision separately from the measured implementation.
+Choose the desired local reference with `--reference`; merged N9 remains the
+default compatibility reference. The launcher archives reference production
+source and builds it with the current harness without changing the checkout.
+Both source and harness identities are verified independently.
 
 Run Studio jobs serially. Run the audit twice, the existing short CPU and sustained
 CPU workloads twice each, and native Networking baseline three times, each in a
@@ -313,19 +329,17 @@ callback-ordering and teardown coverage; the audit's opaque recipients exercise
 the production server runtimes without measuring native delivery at 8/32 clients.
 
 ```powershell
-npm run measure:networking-audit
-# Repeat in a fresh process, retaining both printed run directories.
-New-Item -ItemType Directory -Force build/networking-analysis
-Copy-Item build/networking-cpu/<audit-run-1>/result.json build/networking-analysis/audit-run1.json
-Copy-Item build/networking-cpu/<audit-run-2>/result.json build/networking-analysis/audit-run2.json
-node scripts/analyze-networking-baseline.cjs build/networking-analysis > build/networking-analysis/summary.json
+npm run bench:networking:compare -- --workload audit --reference HEAD~1 --repetitions 2
 ```
 
 The audit uses a discarded 16-Actor pilot, then 120 deterministic workload pumps
 per scene with ascending Actor order. The generic domain has one U32 value and
 8 KiB of unchanged padding, producing multipart join/recovery baselines. This is
 a controlled schema fixture, not a built-in Action or Resource benchmark. A hot
-scene changes one Actor per pump; state/event scenes change every Actor. Separate
+scene changes one Actor per pump; state/event scenes change every Actor. HotQuiet
+emits one event from Actor 1 every pump and events from every other Actor once
+per 30 pumps, retaining offered/completed counts per Actor and asserting every
+quiet Actor makes progress during pressure. Separate
 passes run without probes and with benchmark-local method counters. Compare
 their per-trial distributions; fixed pass order and GC can affect the difference.
 These wrappers are not permanent diagnostics and do not count every internal loop.

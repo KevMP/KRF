@@ -235,7 +235,7 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 		for _ = 1, 10000 do
 			local jobs = if commandState._GetPendingForTests ~= nil then commands:_GetPendingForTests() else 0
 
-			if #internal.active == 0 and jobs == 0 then
+			if Scenario.activeCount(internal) == 0 and jobs == 0 then
 				return
 			end
 
@@ -243,7 +243,7 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 				commands:Step()
 			end
 
-			runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+			runtime:Step(Scenario.budget())
 			table.clear(deliveries)
 		end
 
@@ -300,24 +300,44 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 	local counts: { [string]: number } = {}
 	probes = if diagnostic then counts else nil
 	local pumpUs, mutationUs, waits = {}, {}, {}
+	local workSamples, perActorOffered, perActorCompleted = {}, {}, {}
+
+	for index = 1, actorCount do
+		perActorOffered[index], perActorCompleted[index] = 0, 0
+	end
+
 	local bytes, sends, logical, completed, maxBytes, maxRecords = 0, 0, 0, 0, 0, 0
+	local completedByRecipient: { [Player]: { number } } = {}
 	local revisions: { [Player]: { [number]: number } } = {}
 	local created: { [Player]: { [number]: number } } = {}
 
 	for _, player in world.players do
 		revisions[player], created[player] = {}, {}
+		completedByRecipient[player] = table.create(actorCount, 0)
 	end
 
 	for tick = 1, 120 do
 		local started = os.clock()
 
-		if mode == "Hot" or mode == "Recovery" then
+		if mode == "HotQuiet" then
+			world.mutate(1, true)
+			perActorOffered[1] += 1
+
+			if tick % 30 == 0 then
+				for index = 2, actorCount do
+					world.mutate(index, true)
+					perActorOffered[index] += 1
+				end
+			end
+		elseif mode == "Hot" or mode == "Recovery" then
 			for _ = 1, (if mode == "Recovery" then 16 else 1) do
 				world.mutate(1, mode == "Recovery")
+				perActorOffered[1] += 1
 			end
 		elseif mode == "State" or mode == "Events" then
 			for index = 1, actorCount do
 				world.mutate(index, mode == "Events")
+				perActorOffered[index] += 1
 			end
 		end
 
@@ -332,8 +352,12 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 				local handle = assert(world.runtime:GetHandle(player, actor))
 
 				if
-					(mode == "State" or mode == "Events" or (index == 1 and mode ~= "Idle"))
-					and created[player][handle] == nil
+					(
+						mode == "State"
+						or mode == "Events"
+						or (mode == "HotQuiet" and (index == 1 or tick % 30 == 0))
+						or (index == 1 and mode ~= "Idle")
+					) and created[player][handle] == nil
 				then
 					created[player][handle] = tick
 				end
@@ -341,8 +365,9 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		end
 
 		started = os.clock()
-		world.runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+		world.runtime:Step(Scenario.budget())
 		table.insert(pumpUs, (os.clock() - started) * 1e6)
+		table.insert(workSamples, Scenario.work(world.runtime))
 		local afterBytes, afterRecords = world.pending()
 		maxBytes = math.max(maxBytes, afterBytes)
 		maxRecords = math.max(maxRecords, afterRecords)
@@ -355,6 +380,11 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 
 			for _, record in records do
 				if record.kind == "Commit" or record.kind == "BaselineEnd" then
+					if mode == "HotQuiet" and record.kind == "Commit" then
+						perActorCompleted[record.handle] += 1
+						completedByRecipient[delivery.player][record.handle] += 1
+					end
+
 					local previous = revisions[delivery.player][record.handle]
 
 					if previous ~= nil then
@@ -390,7 +420,30 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 	local drainedBytes, drainedRecords, drainedBaselines = world.pending()
 	assert(drainedBytes == 0 and drainedRecords == 0 and drainedBaselines == 0, "Audit retained drained work")
 
+	if mode == "HotQuiet" then
+		for _, vector in completedByRecipient do
+			for _, completedRecords in vector do
+				assert(
+					completedRecords >= 1,
+					"Quiet Actor starved for an eligible recipient during sustained hot traffic"
+				)
+			end
+		end
+	end
+
 	local result = {
+		raw = { pumpUs = pumpUs, waits = waits, work = workSamples },
+		perActorOffered = perActorOffered,
+		perActorCompleted = perActorCompleted,
+		completedByRecipient = (function(): { { number } }
+			local vectors = {}
+
+			for _, player in world.players do
+				table.insert(vectors, completedByRecipient[player])
+			end
+
+			return vectors
+		end)(),
 		kind = "Scene",
 		actors = actorCount,
 		recipients = recipients,
@@ -495,7 +548,7 @@ local function resultScan(actorCount: number): any
 	local counts: { [string]: number } = {}
 	probes = counts
 	local started = os.clock()
-	world.runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	world.runtime:Step(Scenario.budget())
 	local elapsed = (os.clock() - started) * 1e6
 	probes = nil
 	assert(buffer.readu8(world.deliveries[1].payload, 0) == 67, "Result fence regression")
@@ -676,7 +729,7 @@ local success, failure = pcall(function()
 
 		for _, actors in { 1, 16, 64, 128 } do
 			for _, recipients in { 1, 8, 32 } do
-				for _, mode in { "Idle", "Hot", "State", "Events" } do
+				for _, mode in { "Idle", "Hot", "State", "Events", "HotQuiet" } do
 					table.insert(cases, scene(actors, recipients, mode, diagnostic))
 				end
 			end

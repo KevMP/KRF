@@ -142,8 +142,9 @@ for (const [key, cases] of groups) {
 		queueWaitSteps: native ? undefined : distribution(merge("queueWaitSteps")),
 		packetBytes: distribution(merge("packetBytes")),
 		stageMeanUsPerCommit, stageWorkloadTickUs, n3EstimatedUsPerCommit, heapChanges,
+		work: merge("work").length ? Object.fromEntries(["connections", "streams", "checks", "prepares", "measurements", "encodes", "sends", "captures"].map(unit => [unit, distribution(merge("work").map(sample => sample[unit] || 0))])) : null,
 		perRun: cases.map(({ file, entry, host }) => ({
-			file, mutationMedianUs: entry.mutationUs.median,
+			file, work: entry.raw.work, mutationMedianUs: entry.mutationUs.median,
 			n4TotalUs: native ? entry.raw.n4Steps.reduce((sum, sample) => sum + sample[1], 0) : entry.stepUs.total,
 			mutationTotalUs: entry.mutationUs.total, drainSteps: entry.drainSteps,
 			packets: native ? entry.clients.reduce((sum, client) => sum + client.packets, 0) : entry.packets,

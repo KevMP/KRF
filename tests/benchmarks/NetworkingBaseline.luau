@@ -253,7 +253,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 			break
 		end
 
-		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+		runtime:Step(Scenario.budget())
 		baselineSteps += 1
 
 		for _, delivery in deliveries do
@@ -378,6 +378,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 	local authorityUs: { number } = {}
 	local stepUs: { number } = {}
 	local tickUs: { number } = {}
+	local workSamples: { any } = {}
 	local stages: { any } = {}
 	local heap: { number } = {}
 	local generations = table.create(population.actors, 0)
@@ -438,8 +439,9 @@ local function measure(population: any, mode: string, actionCount: number, recip
 		for _ = 1, 2 do
 			stepIndex += 1
 			local beforeStep = os.clock()
-			runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+			runtime:Step(Scenario.budget())
 			table.insert(stepUs, (os.clock() - beforeStep) * 1e6)
+			table.insert(workSamples, Scenario.work(runtime))
 		end
 
 		table.insert(tickUs, (os.clock() - tickStart) * 1e6)
@@ -470,8 +472,9 @@ local function measure(population: any, mode: string, actionCount: number, recip
 
 		local before = os.clock()
 		stepIndex += 1
-		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+		runtime:Step(Scenario.budget())
 		table.insert(stepUs, (os.clock() - before) * 1e6)
+		table.insert(workSamples, Scenario.work(runtime))
 
 		if diagnostic then
 			table.insert(stages, Probe.stop())
@@ -511,6 +514,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 		stepUs = Scenario.summarize(stepUs),
 		tickUs = Scenario.summarize(tickUs),
 		raw = {
+			work = workSamples,
 			mutationUs = mutationUs,
 			authorityInclusiveUs = authorityUs,
 			stepUs = stepUs,

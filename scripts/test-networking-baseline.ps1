@@ -3,6 +3,8 @@ param(
     [ValidateSet(2, 4, 6, 8)][int]$ClientCount = 2,
     [ValidateSet('Publication', 'Commands')][string]$Workload = 'Publication',
     [string]$ImplementationRevision,
+    [ValidateRange(1, 4096)][int]$Records = 64,
+    [ValidateRange(1024, 4194304)][int]$Bytes = 32768,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 300
 )
 
@@ -45,9 +47,12 @@ $environment | Add-Member -NotePropertyName harnessRevision -NotePropertyValue $
 if ($ImplementationRevision) { $environment.implementationRevision = "$revision" }
 $environment | Add-Member -NotePropertyName requestedClients -NotePropertyValue $ClientCount
 $environment | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
+$environment | Add-Member -NotePropertyName schedulerBudget -NotePropertyValue ([pscustomobject]@{ records = $Records; bytes = $Bytes })
 $environment | Add-Member -NotePropertyName workingTreeStatus -NotePropertyValue (@(& git -c "safe.directory=$repository" -C $repository status --short) -join "`n")
 $project = Get-Content -LiteralPath (Join-Path $repository 'networking-baseline-test.project.json') -Raw | ConvertFrom-Json
 $project.tree.ReplicatedStorage.Packages.KRF.'$path' = $sourceDirectory
+$project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingBenchmarkRecords -NotePropertyValue ([pscustomobject]@{ '$className' = 'IntValue'; '$properties' = @{ Value = $Records } })
+$project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingBenchmarkBytes -NotePropertyValue ([pscustomobject]@{ '$className' = 'IntValue'; '$properties' = @{ Value = $Bytes } })
 $project.tree.ReplicatedStorage.NetworkingBaselineScenario.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Utils/Scenario.luau'
 $project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Server.server.luau'
 $project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Client.client.luau'

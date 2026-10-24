@@ -23,6 +23,22 @@ test("invalid or ambiguous CLI inputs fail before launching Studio", () => {
 	assert.equal(options(["--reference", "HEAD~1", "--profile", "native", "--clients", "8", "--repetitions", "3"]).repetitions, 3);
 });
 
+test("budget experiments apply one validated configuration to both arms", () => {
+	const config = options(["--workload", "audit", "--records", "128", "--bytes", "65536", "--repetitions", "2"]);
+	assert.equal(config.records, 128);
+	assert.equal(config.bytes, 65536);
+	assert.equal(plan(config).length, 4);
+	assert.equal(destination(config, plan(config)[0]), "raw/audit/before/audit-run1.json");
+	for (const args of [["--records", "0"], ["--records", "1.5"], ["--bytes", "100"], ["--workload", "audit", "--profile", "native"]]) assert.throws(() => options(args));
+});
+
+test("audit comparisons pool raw observations and preserve unpooled legacy counters", () => {
+	const entry = { key: "audit/Scene/16/8/HotQuiet/true", runs: 1, perRun: [{ raw: { pumpUs: Array(120).fill(5), waits: Array(120).fill(2) }, probes: { eligibilityChecks: 80 }, logicalRecords: 30 }] };
+	const cases = normalize({ "audit-before": { summaries: [entry] }, "audit-after": { summaries: [entry] } });
+	assert.equal(cases[0].after.pumpUs.p99, 5);
+	assert.equal(cases[0].before.perRun[0].probes.eligibilityChecks, 80);
+});
+
 function fixture(t) {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "krf-comparison-"));
 	t.after(() => {
@@ -63,6 +79,7 @@ test("all planned observations must be complete, distinct and unchanged", t => {
 });
 
 for (const [field, value, message] of [["implementationRevision", "wrong", /Wrong implementation/], ["harnessRevision", "wrong", /Wrong harness/],
+	["schedulerBudget", { records: 128, bytes: 65536 }, /Wrong scheduler budget/],
 	["studioFileVersion", "wrong", /Mixed Studio/], ["harnessSHA256", { fixture: "WRONG" }, /Mixed harness/],
 	["workloadSHA256", "wrong", /Mixed cpu workload/], ["sourceSHA256", { source: "WRONG" }, /Candidate source differs/]]) {
 	test(`provenance rejects ${field} mismatches`, t => {

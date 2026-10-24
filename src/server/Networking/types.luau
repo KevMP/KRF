@@ -277,7 +277,10 @@ export type ActorAwarenessDependencies = {
 }
 
 -- Small injected limits exercise boundaries without large allocations. Defaults are private tuning.
+export type ReliableWorkLimits = { [string]: number }
+
 export type ActorAwarenessOptions = {
+	workLimits: ReliableWorkLimits?,
 	maxBaselineBytes: number,
 	maxChunkBytes: number,
 	maxQueuedBytes: number,

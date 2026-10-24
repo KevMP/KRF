@@ -100,6 +100,7 @@ function summarize(cases) {
 		dispatchWaitMs: distribution(raw("dispatchWaitMs")),
 		clientResultMs: distribution(cases.flatMap(entry => entry.clients?.flatMap(client => client.raw.resultMs) || [])),
 		perRun: cases.map(({ raw, ...entry }) => ({ ...entry,
+			work: raw.work,
 			ingressPlusDispatchUsPerOffered: (entry.ingressUs.total + entry.dispatchUs.total) / entry.offered,
 			clients: entry.clients?.map(({ raw, ...client }) => client),
 		})),

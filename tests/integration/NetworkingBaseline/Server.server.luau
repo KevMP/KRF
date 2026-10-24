@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local KRF = ReplicatedStorage.Packages.KRF
+local Scheduling = require(KRF.server.Networking.utils.AwarenessScheduling)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
@@ -15,6 +16,12 @@ local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Awareness = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Scenario = require(ReplicatedStorage.NetworkingBaselineScenario)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingBaselineControl") :: RemoteEvent
+
+Scheduling.GetBudget = function(): NetworkingTypes.AwarenessStepBudget
+	local bytes, records = Scenario.budget()
+
+	return { maxBytes = bytes, maxRecords = records }
+end
 
 Players.CharacterAutoLoads = false
 
@@ -34,6 +41,7 @@ local frames: { number } = {}
 local frameTimes: { number } = {}
 local packetSizes: { number } = {}
 local steps: { { number } } = {}
+local workSamples: { any } = {}
 local measuring, finished = false, false
 local phase = "Ready"
 local commits = 0
@@ -51,6 +59,7 @@ Awareness.Step = function(...: any): ()
 
 	if measuring then
 		table.insert(steps, { started - caseStart, (os.clock() - started) * 1e6 })
+		table.insert(workSamples, Scenario.work((...)))
 	end
 end
 
@@ -314,6 +323,7 @@ else
 					local epoch = workspace:GetServerTimeNow()
 					request("Arm", { mode = mode, epoch = epoch, previous = generations })
 					frames, frameTimes, heap, starts, sent, packetSizes, steps = {}, {}, {}, {}, {}, {}, {}
+					workSamples = {}
 					local mutationUs: { number } = {}
 					local tickCpuUs: { number } = {}
 					local tickTimes: { number } = {}
@@ -417,6 +427,7 @@ else
 							frameTimes = frameTimes,
 							heapKiB = heap,
 							n4Steps = steps,
+							work = workSamples,
 							observedMs = observed,
 							packetBytes = packetSizes,
 						},

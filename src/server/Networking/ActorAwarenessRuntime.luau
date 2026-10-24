@@ -10,6 +10,9 @@ local RecipientSelection = require(script.Parent.utils.ActorRecipientSelection)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local CommandEgress = require(script.Parent.utils.CommandEgress)
+local ActiveQueue = require(script.Parent.utils.ActiveQueue)
+local StreamOrder = require(script.Parent.utils.ActorStreamOrder)
+local WorkBudget = require(script.Parent.utils.ReliableWorkBudget)
 
 type Stream = Streams.Stream
 
@@ -19,14 +22,17 @@ type Connection = {
 	nextHandle: number,
 	actors: { [ActorTypes.Actor]: Stream },
 	handles: { [number]: Stream },
-	active: { Stream },
-	queued: boolean,
+	active: ActiveQueue.Queue<Stream>,
+	node: ActiveQueue.Node<Connection>?,
+	orders: { Stream },
+	waitEpoch: number,
+	transferCount: number,
 	-- Reserved work is staged; Pending may still occupy a client assembly after local recapture/fault.
 	-- A reliably queued End/Halt/Remove precedes new Begins; connection close also releases capacity.
 	transfers: { [Stream]: "Reserved" | "Pending" },
 }
 
-type Delivery = { stream: Stream, record: SharedNetworkingTypes.ActorStreamRecord }
+type Delivery = { stream: Stream, record: SharedNetworkingTypes.ActorStreamRecord, generation: number }
 
 type Packet = {
 	connection: Connection,
@@ -49,7 +55,11 @@ type RuntimeState = {
 	players: { [Player]: ActorTypes.Actor },
 	models: { [Model]: ActorTypes.Actor },
 	projections: Projections.Runtime,
-	active: { Connection },
+	active: ActiveQueue.Queue<Connection>,
+	deferred: { Stream },
+	waiting: { Connection },
+	epoch: number,
+	work: WorkBudget.Budget?,
 	disconnects: { () -> () },
 	destroyed: boolean,
 	stepping: boolean,
@@ -76,27 +86,49 @@ function ActorAwarenessRuntime._measureRecord(self: Runtime, commit: Types.Publi
 	return size
 end
 
-function ActorAwarenessRuntime._activate(self: Runtime, stream: Stream): ()
-	local connection: Connection? = self.connections[stream.player]
+function ActorAwarenessRuntime._activate(self: Runtime, connection: Connection, stream: Stream): ()
+	if self.connections[stream.player] ~= connection then
+		return
+	end
 
-	if connection == nil or (stream.failed and not stream.removed and not stream.haltPending) or stream.active then
+	StreamOrder.Update(connection.orders, stream)
+
+	if stream.active or not stream:HasWork() then
 		return
 	end
 
 	stream.active = true
-	table.insert(connection.active, stream)
 
-	if not connection.queued then
-		connection.queued = true
-		table.insert(self.active, connection)
+	local node: ActiveQueue.Node<Stream>? = stream.queueNode
+
+	if node == nil then
+		local created: ActiveQueue.Node<Stream> = ActiveQueue.node(stream :: Stream)
+
+		stream.queueNode = created
+		node = created
 	end
+
+	assert(node ~= nil, "Expected active stream node")
+	ActiveQueue.Push(connection.active, node)
+	self:_queueConnection(connection)
 end
 
 function ActorAwarenessRuntime._queueConnection(self: Runtime, connection: Connection): ()
-	if not connection.queued then
-		connection.queued = true
-		table.insert(self.active, connection)
+	if self.connections[connection.player] ~= connection then
+		return
 	end
+
+	local node: ActiveQueue.Node<Connection>? = connection.node
+
+	if node == nil then
+		local created: ActiveQueue.Node<Connection> = ActiveQueue.node(connection :: Connection)
+
+		connection.node = created
+		node = created
+	end
+
+	assert(node ~= nil, "Expected active connection node")
+	ActiveQueue.Push(self.active, node)
 end
 
 function ActorAwarenessRuntime.ReserveCommandResult(
@@ -166,7 +198,7 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 		return
 	end
 
-	if connection.nextHandle > self.options.maxHandle then
+	if connection.nextHandle > math.min(self.options.maxHandle, Constants.MAX_COUNTER) then
 		self.dependencies.ReportFault({
 			player = connection.player,
 			actorId = actor:GetId(),
@@ -187,7 +219,7 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 			return self.projections:Capture(projectedActor, self.owners[projectedActor] == player)
 		end,
 		Activate = function(active: Stream): ()
-			self:_activate(active)
+			self:_activate(connection, active)
 		end,
 		ReportFault = self.dependencies.ReportFault,
 		MeasureRecord = function(commit: Types.PublicationFilteredCommit): number
@@ -343,43 +375,43 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		return
 	end
 
-	local visits: number = 0
-	local deliveryBudget: number = maxBytes
-	local limit: number = maxRecords * 2
+	local work = self.work :: WorkBudget.Budget
+	local deliveryBudget = maxBytes
 	local packets: { Packet } = {}
 	local currentPackets: { [Connection]: Packet } = {}
-	local visited: { [Stream]: boolean } = {}
+	local reservedPackets = 0
 
-	while #self.active > 0 and maxRecords > 0 and maxBytes > 0 and visits < limit do
-		visits += 1
+	while self.active.count > 0 and maxRecords > 0 and maxBytes > 0 and WorkBudget.Take(work, "connections") do
+		local connection = ActiveQueue.Pop(self.active) :: Connection
 
-		local connection: Connection = table.remove(self.active, 1) :: Connection
-		connection.queued = false
+		if connection.waitEpoch ~= self.epoch then
+			connection.waitEpoch = self.epoch
+			table.insert(self.waiting, connection)
+		end
 
-		local front: CommandEgress.Entry? = connection.egress.queue[1]
+		local front = connection.egress.queue[1]
+		local sentResult = false
 
 		if front ~= nil and front.payload ~= nil and currentPackets[connection] == nil then
-			local priorWork: boolean = false
-
-			for _, pending: Stream in connection.active do
-				if pending:HasWorkThrough(front.order) then
-					priorWork = true
-					break
-				end
+			if not WorkBudget.Take(work, "checks") then
+				break
 			end
 
-			if not priorWork and buffer.len(front.payload) <= maxBytes then
-				local resultPayload: buffer = front.payload
-
-				local completed: boolean, sent: boolean =
-					pcall(self.dependencies.SendReliable, connection.player, resultPayload)
-
-				maxBytes -= buffer.len(resultPayload)
+			if
+				not StreamOrder.HasWorkThrough(connection.orders, front.order)
+				and buffer.len(front.payload) <= maxBytes
+				and work.used.sends + reservedPackets < work.limits.sends
+			then
+				local payload = front.payload
+				WorkBudget.Take(work, "sends")
+				local completed, sent = pcall(self.dependencies.SendReliable, connection.player, payload)
+				maxBytes -= buffer.len(payload)
 				maxRecords -= 1
+				sentResult = true
 
 				if completed and sent then
 					CommandEgress.Release(connection.egress, front)
-				else
+				elseif self.connections[connection.player] == connection then
 					self:_close(connection.player)
 
 					if self.dependencies.CloseConnection ~= nil then
@@ -394,134 +426,242 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		end
 
 		if maxRecords <= 0 or maxBytes <= 0 then
-			if #connection.active > 0 or #connection.egress.queue > 0 then
+			break
+		end
+
+		if connection.active.count == 0 then
+			if sentResult and #connection.egress.queue > 0 then
 				self:_queueConnection(connection)
 			end
 
 			continue
 		end
 
-		local stream: Stream? = table.remove(connection.active, 1)
-
-		if stream == nil then
-			if #connection.egress.queue > 0 then
-				self:_queueConnection(connection)
-			end
-
-			continue
+		if
+			not WorkBudget.Take(work, "streams")
+			or not WorkBudget.Available(work, "prepares")
+			or not WorkBudget.Available(work, "measurements")
+		then
+			break
 		end
 
-		stream.active = false
+		local stream = ActiveQueue.Pop(connection.active) :: Stream
+		-- Keep active membership while staged/blocked; reentrant publication cannot
+		-- insert it again. Resume once, after all packet acknowledgements unwind.
+		table.insert(self.deferred, stream)
+		local packet = currentPackets[connection]
+		local nextBytes = stream.scheduler:GetNextRecordBytes(stream.key)
 
-		if self.connections[connection.player] == connection then
-			-- Stage at most one record per Actor in this pass. Physical packets can batch Actors.
-			local count: number = 0
+		if packet ~= nil and nextBytes ~= nil and nextBytes > Constants.MAX_PACKET_BYTES - packet.bytes then
+			packet = nil
+		end
 
-			for _ in connection.transfers do
-				count += 1
-			end
+		local canStage = packet ~= nil
+			or (work.used.sends + reservedPackets < work.limits.sends and reservedPackets < work.limits.encodes)
 
-			local canBegin: boolean = connection.transfers[stream] ~= nil or count < Constants.MAX_PENDING_BASELINES
-			local record: SharedNetworkingTypes.ActorStreamRecord? = nil
-			local measuredBytes: number? = nil
+		if canStage then
+			local boundary = connection.egress.queue[1]
 
-			if not visited[stream] then
-				visited[stream] = true
+			local available =
+				math.min(maxBytes, Constants.MAX_PACKET_BYTES - (if packet ~= nil then packet.bytes else 0))
 
-				local boundary: CommandEgress.Entry? = connection.egress.queue[1]
+			stream.stagedOrder = stream:GetNextOrder()
 
-				record, measuredBytes =
-					stream:Prepare(maxBytes, canBegin, deliveryBudget, if boundary ~= nil then boundary.order else nil)
+			local staged = false
+
+			local record, measuredBytes = stream:Prepare(
+				available,
+				connection.transfers[stream] ~= nil or connection.transferCount < Constants.MAX_PENDING_BASELINES,
+				deliveryBudget,
+				if boundary ~= nil then boundary.order else nil,
+				work
+			)
+
+			if self.connections[connection.player] ~= connection then
+				stream.stagedOrder = nil
+				continue
 			end
 
 			if record ~= nil then
-				local size: number? = measuredBytes
-				local reason: string? = nil
+				local size, reason = measuredBytes, nil :: string?
 
-				if size == nil then
+				if size == nil and WorkBudget.Take(work, "measurements") then
 					size, reason = self.codec.Measure({ record })
 				end
 
 				if size == nil then
 					stream:Fault(reason or "InvalidActorPacket")
-				elseif size <= maxBytes then
-					local packet: Packet? = currentPackets[connection]
-
-					if packet == nil or packet.bytes + size > Constants.MAX_PACKET_BYTES then
-						local created: Packet = { connection = connection, bytes = 0, records = {}, deliveries = {} }
-						packet = created
-						currentPackets[connection] = created
-						table.insert(packets, created)
+				elseif size <= available then
+					if packet == nil then
+						packet = { connection = connection, bytes = 0, records = {}, deliveries = {} }
+						currentPackets[connection] = packet
+						table.insert(packets, packet)
+						reservedPackets += 1
 					end
 
-					assert(packet ~= nil, "Expected staged packet")
+					assert(packet ~= nil, "Expected staged Actor packet")
 
-					if record.kind == "BaselineBegin" then
-						if connection.transfers[stream] == nil then
-							connection.transfers[stream] = "Reserved"
-						end
+					if record.kind == "BaselineBegin" and connection.transfers[stream] == nil then
+						connection.transfers[stream] = "Reserved"
+						connection.transferCount += 1
 					end
 
 					packet.bytes += size
 					table.insert(packet.records, record)
-					table.insert(packet.deliveries, { stream = stream, record = record })
+
+					table.insert(
+						packet.deliveries,
+						{ stream = stream, record = record, generation = stream.generation }
+					)
+
+					staged = true
 					maxBytes -= size
 					maxRecords -= 1
 				end
 			end
 
-			if stream:HasWork() then
-				self:_activate(stream)
-			end
+			if not staged then
+				stream.stagedOrder = nil
 
-			if (#connection.active > 0 or #connection.egress.queue > 0) and not connection.queued then
-				connection.queued = true
-				table.insert(self.active, connection)
+				if self.connections[connection.player] == connection then
+					StreamOrder.Update(connection.orders, stream)
+				end
 			end
+		end
+
+		if connection.active.count > 0 then
+			self:_queueConnection(connection)
 		end
 	end
 
-	for _, packet: Packet in packets do
-		if self.connections[packet.connection.player] ~= packet.connection then
+	for _, packet in packets do
+		local connection = packet.connection
+
+		if self.connections[connection.player] ~= connection then
 			continue
 		end
 
-		local payload: buffer?, reason: string? = self.codec.Encode(packet.records)
-		local sent: boolean = false
+		-- Earlier sends can retire, fault or replace another staged stream. Only
+		-- current records enter the immutable Actor envelope; superseded history
+		-- keeps its earliest position in recaptureOrder before the stage clears.
+		local records: { SharedNetworkingTypes.ActorStreamRecord } = {}
+		local deliveries: { Delivery } = {}
 
-		if payload ~= nil then
-			sent, reason = self.dependencies.SendReliable(packet.connection.player, payload)
+		for _, delivery in packet.deliveries do
+			local stream, record = delivery.stream, delivery.record
+
+			local valid = if record.kind == "ActorRemove"
+				then stream.removed
+				else if record.kind == "ActorHalt"
+					then stream.haltPending and not stream.removed
+					else not stream.removed
+						and not stream.failed
+						and not stream.recapture
+						and delivery.generation == stream.generation
+
+			if valid then
+				table.insert(records, record)
+				table.insert(deliveries, delivery)
+			else
+				stream.stagedOrder = nil
+
+				if connection.transfers[stream] == "Reserved" then
+					connection.transfers[stream] = nil
+					connection.transferCount -= 1
+				end
+
+				StreamOrder.Update(connection.orders, stream)
+			end
 		end
 
-		for _, delivery: Delivery in packet.deliveries do
+		if #records == 0 then
+			continue
+		end
+
+		-- A packet slot reserved both opportunities before any live record drained.
+		WorkBudget.Take(work, "encodes")
+		local payload, reason = self.codec.Encode(records)
+		local sent = false
+
+		if payload ~= nil then
+			WorkBudget.Take(work, "sends")
+			local completed, delivered, failure = pcall(self.dependencies.SendReliable, connection.player, payload)
+			sent = completed and delivered
+			reason = if completed then failure else "ActorSendFailed"
+		end
+
+		if self.connections[connection.player] ~= connection then
+			continue
+		end
+
+		for _, delivery in deliveries do
+			if self.connections[connection.player] ~= connection then
+				break
+			end
+
+			local stream, record = delivery.stream, delivery.record
+			stream.stagedOrder = nil
+
 			if sent then
-				local record: SharedNetworkingTypes.ActorStreamRecord = delivery.record
-
 				if record.kind == "BaselineBegin" then
-					packet.connection.transfers[delivery.stream] = "Pending"
+					connection.transfers[stream] = "Pending"
 				elseif record.kind == "BaselineEnd" or record.kind == "ActorRemove" or record.kind == "ActorHalt" then
-					packet.connection.transfers[delivery.stream] = nil
+					if connection.transfers[stream] ~= nil then
+						connection.transfers[stream] = nil
+						connection.transferCount -= 1
+					end
 				end
 
-				delivery.stream:Sent(record)
+				stream:Sent(record)
 			else
-				if packet.connection.transfers[delivery.stream] == "Reserved" then
-					packet.connection.transfers[delivery.stream] = nil
+				if connection.transfers[stream] == "Reserved" then
+					connection.transfers[stream] = nil
+					connection.transferCount -= 1
 				end
 
-				delivery.stream:Fault(reason or "ActorSendFailed")
+				stream:Fault(reason or "ActorSendFailed")
+			end
+
+			if self.connections[connection.player] == connection then
+				StreamOrder.Update(connection.orders, stream)
 			end
 		end
 	end
 end
 
 function ActorAwarenessRuntime.Step(self: Runtime, maxBytes: number, maxRecords: number): ()
-	if self.stepping then
+	if self.stepping or self.destroyed then
 		return
 	end
 
+	assert(maxBytes < math.huge and maxRecords < math.huge, "InvalidReliableStepBudget")
+
+	if maxBytes <= 0 or maxRecords <= 0 or self.active.count == 0 then
+		self.work = nil
+
+		return
+	end
+
+	self.work = WorkBudget.new(math.max(0, maxRecords), self.options.workLimits)
+	self.epoch += 1
 	self.stepping = true
-	local success: boolean, failure: any = pcall(self._step, self, maxBytes, maxRecords)
+	local success, failure = pcall(self._step, self, maxBytes, maxRecords)
+
+	-- This epilogue also runs after an injected dependency throws. Nothing staged
+	-- or blocked is reselected within its pump, and remaining active work survives.
+	for _, stream in self.deferred do
+		stream.active = false
+		stream.dependencies.Activate(stream)
+	end
+
+	for _, connection in self.waiting do
+		if connection.active.count > 0 or #connection.egress.queue > 0 then
+			self:_queueConnection(connection)
+		end
+	end
+
+	table.clear(self.deferred)
+	table.clear(self.waiting)
 	self.stepping = false
 
 	if not success then
@@ -539,23 +679,17 @@ function ActorAwarenessRuntime._close(self: Runtime, player: Player): ()
 	self.connections[player] = nil
 	CommandEgress.Destroy(connection.egress)
 
-	for _, stream: Stream in connection.actors do
-		stream:Destroy()
+	if connection.node ~= nil then
+		ActiveQueue.Remove(connection.node)
 	end
 
-	for _, stream: Stream in connection.active do
-		stream:Destroy()
-	end
-
-	table.clear(connection.transfers)
-	table.clear(connection.actors)
-	table.clear(connection.handles)
-	table.clear(connection.active)
-	local index: number? = table.find(self.active, connection)
-
-	if index ~= nil then
-		table.remove(self.active, index)
-	end
+	-- Streams own only tables/buffers, not observers or timers. Detach their owner
+	-- atomically rather than traversing every aware Actor on a pump send fault.
+	-- Staged deliveries retain the old owner only until this pump unwinds; Activate
+	-- checks that identity, including close/re-Ready of the same Player.
+	connection.transfers, connection.actors, connection.handles, connection.orders = {}, {}, {}, {}
+	connection.active = ActiveQueue.new()
+	connection.transferCount = 0
 end
 
 function ActorAwarenessRuntime.Destroy(self: Runtime): ()
@@ -579,7 +713,8 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	table.clear(self.models)
 	self.projections:Destroy()
 	table.clear(self.measuredRecords)
-	table.clear(self.active)
+	self.active = ActiveQueue.new()
+	self.deferred, self.waiting = {}, {}
 end
 
 function ActorAwarenessRuntime.new(
@@ -608,7 +743,10 @@ function ActorAwarenessRuntime.new(
 		players = {},
 		models = {},
 		projections = Projections.new(publication, catalog, codec),
-		active = {},
+		active = ActiveQueue.new(),
+		deferred = {},
+		waiting = {},
+		epoch = 0,
 		disconnects = {},
 		destroyed = false,
 		stepping = false,
@@ -650,8 +788,10 @@ function ActorAwarenessRuntime.new(
 				nextHandle = 1,
 				actors = {},
 				handles = {},
-				active = {},
-				queued = false,
+				active = ActiveQueue.new(),
+				orders = {},
+				waitEpoch = 0,
+				transferCount = 0,
 				transfers = {},
 			}
 

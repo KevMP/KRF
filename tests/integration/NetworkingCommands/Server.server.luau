@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
 local KRF = ReplicatedStorage.Packages.KRF
+local Scheduling = require(KRF.server.Networking.utils.AwarenessScheduling)
 local Types = require(KRF.server.Networking.types)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
@@ -13,14 +14,24 @@ local Server = require(KRF.server)
 local Actors = require(KRF.server.Actor.ActorRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
 local Commands = require(KRF.server.Networking.ServerCommandRuntime)
+local Awareness = require(KRF.server.Networking.ActorAwarenessRuntime)
+local ActorConstants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 local Authorization = require(KRF.server.Networking.CommandAuthorization)
 local Scenario = require(ReplicatedStorage.NetworkingCommandScenario)
+local Baseline = require(ReplicatedStorage.NetworkingBaselineScenario)
 local Constants = require(KRF.shared.Networking.utils.CommandConstants)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingBaselineControl") :: RemoteEvent
 local args = StudioTestService:GetTestArgs()
 local clientCount = if type(args) == "table" then args.clientCount else 2
 assert(clientCount == 2 or clientCount == 4 or clientCount == 6 or clientCount == 8, "Invalid native count")
+
+Scheduling.GetBudget = function(): Types.AwarenessStepBudget
+	local bytes, records = Baseline.budget()
+
+	return { maxBytes = bytes, maxRecords = records }
+end
+
 Players.CharacterAutoLoads = false
 
 local ready: { [Player]: boolean } = {}
@@ -45,6 +56,42 @@ local others: { [Player]: number } = {}
 local maxOthers = 0
 local blockedReservations = 0
 local originalNew = Commands.new
+local originalStep = Awareness.Step
+local originalSend = Networking.SendReliable
+local egressUs, workSamples = {}, {}
+local sendAttempts, physicalSends, logicalActorRecords, resultRecords, payloadBytes = 0, 0, 0, 0, 0
+
+Awareness.Step = function(...: any): ()
+	local started = os.clock()
+	originalStep(...)
+	local elapsed = (os.clock() - started) * 1e6
+
+	if measuring then
+		table.insert(egressUs, elapsed)
+		table.insert(workSamples, Baseline.work((...)))
+	end
+end
+
+Networking.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
+	local sent, reason = originalSend(player, payload)
+
+	if measuring then
+		sendAttempts += 1
+
+		if sent then
+			physicalSends += 1
+			payloadBytes += buffer.len(payload)
+
+			if buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND then
+				logicalActorRecords += buffer.readu32(payload, 5)
+			else
+				resultRecords += 1
+			end
+		end
+	end
+
+	return sent, reason
+end
 
 local function pending(): number
 	if runtime == nil then
@@ -184,6 +231,8 @@ local function finish(success: boolean, reason: string?): ()
 
 	finished, measuring = true, false
 	Commands.new = originalNew
+	Awareness.Step = originalStep
+	Networking.SendReliable = originalSend
 	heartbeat:Disconnect()
 
 	local cleaned, cleanupReason = pcall(function()
@@ -383,6 +432,8 @@ else
 			for _, mode in Scenario.modes do
 				requests, executed, last, rejected, others = {}, {}, {}, {}, {}
 				ingressUs, dispatchUs, handlerUs, dispatchWaitMs, frames, heap = {}, {}, {}, {}, {}, {}
+				egressUs, workSamples = {}, {}
+				sendAttempts, physicalSends, logicalActorRecords, resultRecords, payloadBytes = 0, 0, 0, 0, 0
 				dispatchCounts, dispatchVisits = {}, {}
 				calls, offered, admitted, ingressHandlers = 0, 0, 0, 0
 				peakJobs, peakBytes, peakResults, peakResultBytes, maxOthers = 0, 0, 0, 0, 0
@@ -510,6 +561,12 @@ else
 					startedUnixMs = startedUnixMs,
 					endedUnixMs = DateTime.now().UnixTimestampMillis,
 					seconds = os.clock() - started,
+					sendAttempts = sendAttempts,
+					physicalSends = physicalSends,
+					logicalActorRecords = logicalActorRecords,
+					resultRecords = resultRecords,
+					payloadBytes = payloadBytes,
+					egressUs = Scenario.summarize(egressUs),
 					offered = planned,
 					wireOffered = offered,
 					localRefused = planned - offered,
@@ -533,6 +590,8 @@ else
 					dispatchesPerPump = Scenario.summarize(dispatchCounts),
 					visitsPerPump = Scenario.summarize(dispatchVisits),
 					raw = {
+						egressUs = egressUs,
+						work = workSamples,
 						ingressUs = ingressUs,
 						dispatchUs = dispatchUs,
 						handlerUs = handlerUs,

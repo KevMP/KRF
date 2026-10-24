@@ -19,11 +19,13 @@ local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 local Constants = require(KRF.shared.Networking.utils.CommandConstants)
 local ActorConstants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
+local Baseline = require(ReplicatedStorage.NetworkingBaselineScenario)
 local Scenario = require(ReplicatedStorage.NetworkingCommandScenario)
 
 local cases: { any } = {}
 
 local function run(recipients: number, mode: string, ticks: number): any
+	local workSamples: { any } = {}
 	local players: { Player } = {}
 	local actors: { ActorTypes.Actor } = {}
 	local values: { [ActorTypes.Actor]: number } = {}
@@ -258,14 +260,14 @@ local function run(recipients: number, mode: string, ticks: number): any
 	local outbound: any = awareness
 
 	for _ = 1, 10000 do
-		if #outbound.active == 0 then
+		if Baseline.activeCount(outbound) == 0 then
 			break
 		end
 
-		awareness:Step(ActorConstants.STEP_BYTES, ActorConstants.STEP_RECORDS)
+		awareness:Step(Baseline.budget())
 	end
 
-	assert(#outbound.active == 0, "Join did not drain")
+	assert(Baseline.activeCount(outbound) == 0, "Join did not drain")
 
 	local function sample(): ()
 		local jobs, queuedBytes = 0, 0
@@ -305,8 +307,9 @@ local function run(recipients: number, mode: string, ticks: number): any
 		table.insert(perPump, calls - before)
 		sample()
 		started = os.clock()
-		awareness:Step(ActorConstants.STEP_BYTES, ActorConstants.STEP_RECORDS)
+		awareness:Step(Baseline.budget())
 		table.insert(egressUs, (os.clock() - started) * 1e6)
+		table.insert(workSamples, Baseline.work(awareness))
 		table.insert(heap, gcinfo())
 	end
 
@@ -401,14 +404,14 @@ local function run(recipients: number, mode: string, ticks: number): any
 	beforePump = calls
 
 	for _ = 1, 10000 do
-		if #outbound.active == 0 and (internal.Step == nil or calls == returned) then
+		if Baseline.activeCount(outbound) == 0 and (internal.Step == nil or calls == returned) then
 			break
 		end
 
 		step()
 	end
 
-	assert(resultCount == calls and #outbound.active == 0, "Executed results did not converge")
+	assert(resultCount == calls and Baseline.activeCount(outbound) == 0, "Executed results did not converge")
 
 	if internal.Step ~= nil then
 		assert(calls == returned, "Admitted jobs did not converge")
@@ -500,6 +503,7 @@ local function run(recipients: number, mode: string, ticks: number): any
 		dispatchesPerPump = Scenario.summarize(perPump),
 		visitsPerPump = Scenario.summarize(visits),
 		raw = {
+			work = workSamples,
 			ingressUs = ingressUs,
 			dispatchUs = dispatchUs,
 			egressUs = egressUs,

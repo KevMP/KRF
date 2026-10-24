@@ -5,6 +5,8 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.
 local Scheduler = require(script.Parent.PublicationScheduler)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local ProjectionTypes = require(script.Parent.ActorRecipientProjection)
+local ActiveQueue = require(script.Parent.ActiveQueue)
+local WorkBudget = require(script.Parent.ReliableWorkBudget)
 
 export type Dependencies = {
 	GetOrder: (() -> number)?,
@@ -17,6 +19,10 @@ export type Dependencies = {
 type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks", order: number }
 
 type StreamState = {
+	queueNode: ActiveQueue.Node<Stream>?,
+	orderIndex: number,
+	pendingOrder: number,
+	stagedOrder: number?,
 	terminalOrder: number,
 	actor: ActorTypes.Actor,
 	player: Player,
@@ -131,6 +137,8 @@ function ActorRecipientStream.new(
 	})
 
 	local state: StreamState = {
+		orderIndex = 0,
+		pendingOrder = 0,
 		terminalOrder = 0,
 		actor = actor,
 		player = player,
@@ -156,13 +164,39 @@ function ActorRecipientStream.new(
 	return setmetatable(state, ActorRecipientStream)
 end
 
+function ActorRecipientStream._begin(self: Stream, canBegin: boolean): SharedNetworkingTypes.ActorStreamRecord?
+	if not canBegin then
+		return nil
+	end
+
+	local pending = self.baseline
+	assert(pending ~= nil, "Expected captured baseline")
+
+	return {
+		kind = "BaselineBegin",
+		handle = self.handle,
+		actorId = if self.identitySent then nil else self.actor:GetId(),
+		generation = self.generation,
+		totalBytes = buffer.len(pending.body),
+	}
+end
+
 function ActorRecipientStream.Prepare(
 	self: Stream,
 	maxBytes: number,
 	canBegin: boolean,
 	deliveryBudget: number,
-	maxOrder: number?
+	maxOrder: number?,
+	work: WorkBudget.Budget
 ): (SharedNetworkingTypes.ActorStreamRecord?, number?)
+	if not WorkBudget.Take(work, "prepares") then
+		return nil, nil
+	end
+
+	if maxOrder ~= nil and not WorkBudget.Take(work, "checks") then
+		return nil, nil
+	end
+
 	if maxOrder ~= nil and not self:HasWorkThrough(maxOrder) then
 		return nil, nil
 	end
@@ -179,26 +213,21 @@ function ActorRecipientStream.Prepare(
 		return nil, nil
 	end
 
-	if self.recapture and not self:Capture() then
-		return nil, nil
+	if self.recapture then
+		if not WorkBudget.Take(work, "captures") then
+			return nil, nil
+		end
+
+		if not self:Capture() then
+			return nil, nil
+		end
 	end
 
 	local pending: Baseline? = self.baseline
 
 	if pending ~= nil then
 		if pending.phase == "Begin" then
-			if not canBegin then
-				return nil, nil
-			end
-
-			return {
-				kind = "BaselineBegin",
-				handle = self.handle,
-				actorId = if self.identitySent then nil else self.actor:GetId(),
-				generation = self.generation,
-				totalBytes = buffer.len(pending.body),
-			},
-				nil
+			return self:_begin(canBegin), nil
 		elseif pending.offset < buffer.len(pending.body) then
 			-- Header and fixed Chunk framing consume 26 bytes in a single-record packet.
 			local length: number =
@@ -260,11 +289,15 @@ function ActorRecipientStream.Prepare(
 		self.recapture = true
 		self.recaptureOrder = self.scheduler:GetNextRecordOrder(self.key) or 0
 
+		if not WorkBudget.Take(work, "captures") then
+			return nil, nil
+		end
+
 		if not self:Capture() then
 			return nil, nil
 		end
 
-		return self:Prepare(maxBytes, canBegin, deliveryBudget, maxOrder)
+		return self:_begin(canBegin), nil
 	end
 
 	self.blockedBudget = nil
@@ -334,6 +367,10 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 		then self.baseline.order
 		else self.scheduler:GetNextRecordOrder(self.key)
 
+	if self.stagedOrder ~= nil then
+		pendingOrder = math.min(pendingOrder or math.huge, self.stagedOrder)
+	end
+
 	if not self.scheduler:Enqueue(self.key, commit, order) then
 		self.recapture = true
 
@@ -366,24 +403,24 @@ function ActorRecipientStream.HasWork(self: Stream): boolean
 		or self.scheduler:GetStreamStatus(self.key).pendingRecords > 0
 end
 
-function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boolean
+function ActorRecipientStream.GetNextOrder(self: Stream): number?
 	if self.removed or self.haltPending then
-		return self.terminalOrder <= order
+		return self.terminalOrder
 	end
 
 	if self.failed then
-		return false
+		return nil
 	end
 
-	if self.recapture then
-		return self.recaptureOrder <= order
-	end
+	local order = if self.recapture
+		then self.recaptureOrder
+		else if self.baseline ~= nil then self.baseline.order else self.scheduler:GetNextRecordOrder(self.key)
 
-	if self.baseline ~= nil then
-		return self.baseline.order <= order
-	end
+	return if self.stagedOrder ~= nil then math.min(order or math.huge, self.stagedOrder) else order
+end
 
-	local nextOrder: number? = self.scheduler:GetNextRecordOrder(self.key)
+function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boolean
+	local nextOrder = self:GetNextOrder()
 
 	return nextOrder ~= nil and nextOrder <= order
 end

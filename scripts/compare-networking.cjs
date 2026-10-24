@@ -19,7 +19,7 @@ function options(args) {
 	for (let index = 0; index < args.length; index++) {
 		const key = args[index];
 		if (["--help", "--full"].includes(key)) { values[key.slice(2)] = true; continue; }
-		if (!["--workload", "--profile", "--reference", "--clients", "--repetitions", "--studio", "--analyze"].includes(key)) throw Error(`Unknown option: ${key}`);
+		if (!["--workload", "--profile", "--reference", "--clients", "--repetitions", "--studio", "--analyze", "--records", "--bytes"].includes(key)) throw Error(`Unknown option: ${key}`);
 		if (index + 1 >= args.length || args[index + 1].startsWith("--")) throw Error(`Missing value: ${key}`);
 		values[key.slice(2)] = args[++index];
 	}
@@ -28,11 +28,14 @@ function options(args) {
 		reference: values.reference || N9, clients: (values.clients || (values.full ? "2,4,6,8" : "2")).split(",").map(Number),
 		repetitions: Number(values.repetitions || (values.full ? 2 : 1)), studio: values.studio,
 		help: values.help, analyze: values.analyze,
+		records: Number(values.records || 64), bytes: Number(values.bytes || 32768),
 	};
-	if (!["commands", "publication"].includes(result.workload)) throw Error("--workload must be commands or publication");
+	if (!["commands", "publication", "audit"].includes(result.workload)) throw Error("--workload must be commands, publication or audit");
 	if (!["cpu", "native", "both"].includes(result.profile)) throw Error("--profile must be cpu, native or both");
 	if (!Number.isInteger(result.repetitions) || result.repetitions < 1 || result.repetitions > 10) throw Error("--repetitions must be 1..10");
 	if (!result.clients.length || new Set(result.clients).size !== result.clients.length || result.clients.some(n => ![2, 4, 6, 8].includes(n))) throw Error("--clients must contain unique counts from 2,4,6,8");
+	if (result.workload === "audit" && result.profile !== "cpu") throw Error("audit supports --profile cpu only");
+	if (!Number.isInteger(result.records) || result.records < 1 || result.records > 4096 || !Number.isInteger(result.bytes) || result.bytes < 1024 || result.bytes > 4194304) throw Error("Invalid --records (1..4096) or --bytes (1024..4194304)");
 	return result;
 }
 
@@ -68,6 +71,7 @@ function sourceHashes() {
 }
 
 function destination(config, trial) {
+	if (config.workload === "audit") return `raw/audit/${trial.arm}/audit-run${trial.repetition}.json`;
 	if (config.workload === "commands") return `raw/commands/${trial.id}.json`;
 	if (trial.profile === "native") return `raw/publication/native-${trial.arm === "before" ? "n9" : "candidate"}-c${trial.clients}-run${trial.repetition}.json`;
 	return `raw/publication/cpu-${trial.arm}/cpu-run${trial.repetition}.json`;
@@ -98,6 +102,7 @@ function verify(directory, manifest, partial = false) {
 		if (environment.implementationRevision !== (trial.arm === "before" ? manifest.referenceRevision : manifest.candidateRevision)) throw Error(`Wrong implementation revision: ${trial.id}`);
 		if (environment.harnessRevision !== manifest.candidateRevision) throw Error(`Wrong harness revision: ${trial.id}`);
 		if (environment.studioFileVersion !== manifest.studioFileVersion) throw Error(`Mixed Studio: ${trial.id}`);
+		if (canonical(environment.schedulerBudget || { records: 64, bytes: 32768 }) !== canonical({ records: manifest.config.records ?? 64, bytes: manifest.config.bytes ?? 32768 })) throw Error(`Wrong scheduler budget: ${trial.id}`);
 		const source = canonical(environment.sourceSHA256);
 		if (sources.has(trial.arm) && sources.get(trial.arm) !== source) throw Error(`Mixed ${trial.arm} source: ${trial.id}`);
 		sources.set(trial.arm, source);
@@ -135,7 +140,10 @@ function analyze(directory, manifest) {
 		if (result.status !== 0) throw Error(`Analyzer failed (${name}): ${result.stderr}`);
 		outputs[name] = read(file);
 	}
-	if (manifest.config.workload === "commands") run("commands", "analyze-command-dispatch.cjs", [path.join(directory, "raw/commands"), manifest.referenceRevision]);
+	if (manifest.config.workload === "audit") {
+		for (const arm of ["before", "after"]) run(`audit-${arm}`, "analyze-networking-baseline.cjs", [path.join(directory, `raw/audit/${arm}`)]);
+	}
+	else if (manifest.config.workload === "commands") run("commands", "analyze-command-dispatch.cjs", [path.join(directory, "raw/commands"), manifest.referenceRevision]);
 	else {
 		if (manifest.config.profile !== "cpu") run("publication-native", "analyze-networking-baseline.cjs", [path.join(directory, "raw/publication")]);
 		if (manifest.config.profile !== "native") for (const arm of ["before", "after"]) run(`publication-cpu-${arm}`, "analyze-networking-baseline.cjs", [path.join(directory, `raw/publication/cpu-${arm}`)]);
@@ -143,6 +151,11 @@ function analyze(directory, manifest) {
 	return outputs;
 }
 
+function distribution(values) {
+	const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+	const q = p => sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] ?? null;
+	return { count: sorted.length, median: q(.5), p95: sorted.length >= 20 ? q(.95) : null, p99: sorted.length >= 100 ? q(.99) : null, max: sorted.at(-1) ?? null, total: sorted.reduce((a, b) => a + b, 0) };
+}
 const max = (runs, key) => Math.max(0, ...runs.map(run => run[key] || 0));
 const range = values => { values = values.filter(Number.isFinite); return values.length ? [Math.min(...values), Math.max(...values)] : null; };
 function normalize(outputs) {
@@ -151,6 +164,7 @@ function normalize(outputs) {
 			const value = entry[arm];
 			if (!value) throw Error(`Missing comparison arm: ${entry.key}`);
 			return [arm, {
+				pumpUs: value.egressUs, physicalSends: value.perRun.reduce((sum, run) => sum + (run.physicalSends ?? run.packets ?? 0), 0),
 				trials: value.trials, offered: value.offered, admitted: value.admitted, executed: value.executed,
 				wireOffered: value.perRun.reduce((sum, run) => sum + (run.wireOffered ?? run.offered), 0),
 				localRefused: value.perRun.reduce((sum, run) => sum + (run.localRefused ?? 0), 0),
@@ -166,6 +180,24 @@ function normalize(outputs) {
 			}];
 		})),
 	}));
+	if (outputs["audit-before"]) {
+		const cases = new Map();
+		for (const arm of ["before", "after"]) for (const entry of outputs[`audit-${arm}`].summaries) {
+			if (!cases.has(entry.key)) cases.set(entry.key, { key: entry.key, kind: "audit" });
+			const runs = entry.perRun;
+			const pumps = runs.flatMap(run => run.raw?.pumpUs || (Number.isFinite(run.pumpUs) ? [run.pumpUs] : []));
+			const waits = runs.flatMap(run => run.raw?.waits || []);
+			cases.get(entry.key)[arm] = { trials: entry.runs, commits: null, perRun: runs,
+				costUs: distribution(pumps).p95 ?? distribution(pumps).median,
+				pumpUs: distribution(pumps), latency: distribution(waits), latencyUnit: "virtual pumps",
+				peakPending: max(runs, "peakPendingRecords"), peakPendingBytes: max(runs, "peakPendingBytes") };
+		}
+		for (const entry of cases.values()) {
+			if (!entry.before || !entry.after) throw Error(`Missing audit arm: ${entry.key}`);
+			if (JSON.stringify(entry.before.perRun.map(run => run.perActorOffered)) !== JSON.stringify(entry.after.perRun.map(run => run.perActorOffered))) throw Error(`Unequal audit offered work: ${entry.key}`);
+		}
+		return [...cases.values()];
+	}
 	const cases = new Map();
 	for (const [name, output] of Object.entries(outputs)) for (const entry of output.summaries) {
 		const parts = entry.key.split("/");
@@ -173,7 +205,8 @@ function normalize(outputs) {
 		const key = parts.join("/");
 		if (!cases.has(key)) cases.set(key, { key, kind: "publication" });
 		cases.get(key)[arm] = {
-			trials: entry.runs, commits: entry.commits, costUs: entry.n4StepUs.p95,
+			trials: entry.runs, commits: entry.commits, costUs: entry.n4StepUs.p95, pumpUs: entry.n4StepUs,
+			work: entry.work, physicalSends: entry.perRun.reduce((sum, run) => sum + run.packets, 0),
 			latency: entry.observedMs || entry.queueWaitSteps, latencyUnit: key.startsWith("native") ? "ms" : "virtual pumps",
 			peakPending: null, peakPendingBytes: null,
 			serverCores: range(entry.perRun.map(run => run.host?.roles.server.cpuCores.median)),
@@ -196,11 +229,13 @@ function report(manifest, cases) {
 		"| Case | Offered / wire / admitted / executed (or commits) | Cost µs | Result/observation p50 / p95 / p99 | Peak pending jobs / bytes | Server / client CPU cores |", "| --- | --- | --- | --- | --- | --- |"];
 	for (const entry of cases) {
 		const { before, after } = entry;
-		const counts = value => entry.kind === "commands" ? `${value.offered}/${value.wireOffered ?? value.offered}/${value.admitted}/${value.executed}` : `${value.commits} commits`;
+		const counts = value => entry.kind === "commands" ? `${value.offered}/${value.wireOffered ?? value.offered}/${value.admitted}/${value.executed}` : entry.kind === "audit" ? `${value.perRun.reduce((sum, run) => sum + (run.logicalRecords || 0), 0)} records` : `${value.commits} commits`;
 		lines.push(`| ${entry.key} | ${counts(before)} → ${counts(after)} | ${fmt(before.costUs)} → ${fmt(after.costUs)} | ${quantiles(before.latency)} → ${quantiles(after.latency)} ${after.latencyUnit} | ${before.peakPending ?? "—"}/${before.peakPendingBytes ?? "—"} → ${after.peakPending ?? "—"}/${after.peakPendingBytes ?? "—"} | ${span(before.serverCores)} / ${span(before.clientCores)} → ${span(after.serverCores)} / ${span(after.clientCores)} |`);
 		for (const [metric, b, a] of [["costUs", before.costUs, after.costUs], ["latencyP95", before.latency?.p95, after.latency?.p95]]) if (Number.isFinite(b) && Number.isFinite(a) && a > b) regressions.push({ case: entry.key, metric, reference: b, candidate: a, delta: a - b, percent: b ? (a / b - 1) * 100 : null,
 			equalExecutions: entry.kind === "commands" ? before.executed === after.executed : null, equalCommits: entry.kind === "publication" ? before.commits === after.commits : null });
 	}
+	lines.push("", "## Scheduler work", "", `Fixture budget: ${manifest.config.records ?? 64} logical records / ${manifest.config.bytes ?? 32768} bytes per pump in both arms. Work counters are candidate internal attempted-work accounting; legacy counts are retained separately in audit probes. Audit pending inspections occur outside the pump timer. No unmeasured legacy counter is treated as zero.`, "", "| Case | Arm | Pump p50 / p95 / p99 �s | Physical sends |", "| --- | --- | --- | --- |");
+	for (const entry of cases) for (const arm of ["before", "after"]) if (entry[arm].pumpUs) lines.push(`| ${entry.key} | ${arm} | ${quantiles(entry[arm].pumpUs)} | ${entry[arm].physicalSends ?? entry[arm].perRun.reduce((sum, run) => sum + (run.physicalSends || 0), 0)} |`);
 	lines.push("", "## Observed increases and comparison limits", "", "Reduced execution from shedding is not throughput improvement. More completed work is also not an equal-work cost comparison. Region timers include probes, engine scheduling and GC; OS counters include engine/host overhead and have coarse sampling. Publication admission is not applicable. Every higher observed cost/p95 below is retained even when correctness passes; short/noisy trials do not establish causation.", "");
 	for (const item of regressions) lines.push(`- ${item.case}: ${item.metric} ${fmt(item.reference)} → ${fmt(item.candidate)} (${fmt(item.percent)}%); ${item.equalCommits ? "equal commit counts" : item.equalExecutions ? "equal executed counts" : "executed work differs"}.`);
 	if (!regressions.length) lines.push("No higher cost/p95 observations in these trials; this is not proof of no regression.");
@@ -227,7 +262,7 @@ function summarize(directory, manifest) {
 
 async function main(args) {
 	const config = options(args);
-	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
+	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication|audit] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--records 64] [--bytes 32768] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
 	if (config.analyze) {
 		const directory = path.resolve(config.analyze), manifest = read(path.join(directory, "manifest.json"));
 		try {
@@ -254,8 +289,8 @@ async function main(args) {
 			trial.status = "running"; trial.startedAt = new Date().toISOString(); save(manifestFile, manifest);
 			console.log(`START ${trial.id}`);
 			const script = trial.profile === "cpu" ? "scripts/measure-networking-baseline.ps1" : "scripts/test-networking-baseline.ps1";
-			const workload = config.workload === "commands" ? "Commands" : trial.profile === "cpu" ? "Networking" : "Publication";
-			const parameters = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Workload", workload, "-StudioPath", manifest.studioPath];
+			const workload = config.workload === "audit" ? "Audit" : config.workload === "commands" ? "Commands" : trial.profile === "cpu" ? "Networking" : "Publication";
+			const parameters = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Workload", workload, "-StudioPath", manifest.studioPath, "-Records", String(config.records), "-Bytes", String(config.bytes)];
 			if (trial.clients) parameters.push("-ClientCount", String(trial.clients));
 			if (trial.arm === "before") parameters.push("-ImplementationRevision", manifest.referenceRevision);
 			const output = await capture("powershell", parameters, path.join(directory, `${trial.id}.log`));
