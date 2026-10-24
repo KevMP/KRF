@@ -19,6 +19,7 @@ npm run bench:networking:compare -- --full
 # Scheduler audit and equal-configuration budget experiments:
 npm run bench:networking:compare -- --workload audit --reference HEAD~1 --repetitions 2
 npm run bench:networking:compare -- --workload publication --reference HEAD~1 --records 128 --bytes 65536
+npm run bench:networking:compare -- --workload publication --focus scheduler --reference HEAD~1 --records 128 --bytes 32768 --repetitions 2
 ```
 
 The default is the commands workload, CPU profile, one reference/candidate pair.
@@ -38,6 +39,14 @@ Direct launchers accept `-Records` and `-Bytes` too. No production constants or
 public configuration change is needed. Keep equal-budget revision comparisons
 separate from configuration experiments: changing capacity changes the work
 completed per pump and can affect packetization, CPU and latency.
+
+For short CPU budget experiments, `--focus scheduler` selects twelve existing
+publication cases: 90 Actors, 2/30 recipients, Ordinary/Heavy/Burst, 0/40 synthetic
+Actions, without diagnostic wrappers. Mutation plans and case timings are
+unchanged. Both arms use the same subset; provenance and all twelve identities
+are verified. This option requires the publication workload and CPU profile.
+The default remains the complete matrix, including 10/25/30 recipient fanout;
+native 2/4/6/8 regressions always use the full native fixture.
 
 The orchestrator resolves the reference once, chooses one Studio executable,
 alternates arm order, invokes the existing launchers serially and copies their
@@ -356,8 +365,10 @@ Inspection and decoding occur outside timed pump/mutation regions. Physical send
 counts include the sink call and exclude Roblox engine/network overhead.
 
 Recovery uses an injected eight-event limit and 16 events before each pump; it
-reports capture attempts and completions during pressure, then asserts quiet drain
-converges. Command scenes submit 80 requests per recipient in one fixed rate window,
+reports capture attempts, successful generations per recipient and completions
+during pressure, asserts every recipient gets a capture opportunity, then asserts
+quiet drain converges. Fewer replacement attempts can reflect deferral rather
+than more completed work. Command scenes submit 80 requests per recipient in one fixed rate window,
 without an intervening send pump. Malformed requests retain the command kind byte.
 Resync scenes repeat one valid handle while replacement is pending and distinguish
 accepted requests, pending dedupes and rate rejections. These are separate stress

@@ -65,4 +65,20 @@ function ActiveQueue.Pop<T>(queue: Queue<T>): T?
 	return first.value
 end
 
+function ActiveQueue.Prioritize<T>(queue: Queue<T>, node: Node<T>): ()
+	assert(node.queue == queue, "Expected owned queue node")
+
+	if queue.first == node then
+		return
+	end
+
+	ActiveQueue.Remove(node)
+	local first = queue.first
+	assert(first ~= nil, "Expected remaining queue membership")
+	node.queue, node.following = queue, first
+	first.previous = node
+	queue.first = node
+	queue.count += 1
+end
+
 return ActiveQueue

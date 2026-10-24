@@ -416,6 +416,20 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 
 	probes = nil
 	local retainedBytes, retainedRecords, pendingBaselines = world.pending()
+	local recoveryCapturesByRecipient: { number } = {}
+
+	if mode == "Recovery" then
+		local internal: any = world.runtime
+
+		for _, player in world.players do
+			local stream = internal.connections[player].actors[world.actors[1]]
+			-- One initial join generation preceded the measured pressure window.
+			local captures = stream.generation - 1
+			assert(captures > 0, "A recipient received no recovery capture opportunity")
+			table.insert(recoveryCapturesByRecipient, captures)
+		end
+	end
+
 	world.drain()
 	local drainedBytes, drainedRecords, drainedBaselines = world.pending()
 	assert(drainedBytes == 0 and drainedRecords == 0 and drainedBaselines == 0, "Audit retained drained work")
@@ -435,6 +449,7 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		raw = { pumpUs = pumpUs, waits = waits, work = workSamples },
 		perActorOffered = perActorOffered,
 		perActorCompleted = perActorCompleted,
+		recoveryCapturesByRecipient = recoveryCapturesByRecipient,
 		completedByRecipient = (function(): { { number } }
 			local vectors = {}
 

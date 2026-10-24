@@ -2,7 +2,17 @@
 local Types = require(script.Parent.Parent.types)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
-export type Unit = "connections" | "streams" | "checks" | "prepares" | "measurements" | "encodes" | "sends" | "captures"
+export type Unit =
+	"connections"
+	| "streams"
+	| "checks"
+	| "prepares"
+	| "measurements"
+	| "encodes"
+	| "sends"
+	| "captures"
+	| "priorities"
+
 export type Budget = { limits: { [string]: number }, used: { [string]: number } }
 
 local ReliableWorkBudget = {}
@@ -17,6 +27,7 @@ function ReliableWorkBudget.new(records: number, overrides: Types.ReliableWorkLi
 		encodes = records,
 		sends = records,
 		captures = Constants.STEP_CAPTURES,
+		priorities = 1,
 	}
 
 	local used: { [string]: number } = {}
@@ -37,11 +48,13 @@ function ReliableWorkBudget.Available(budget: Budget, unit: Unit): boolean
 end
 
 function ReliableWorkBudget.Take(budget: Budget, unit: Unit): boolean
-	if not ReliableWorkBudget.Available(budget, unit) then
+	local used = budget.used[unit]
+
+	if used >= budget.limits[unit] then
 		return false
 	end
 
-	budget.used[unit] += 1
+	budget.used[unit] = used + 1
 
 	return true
 end

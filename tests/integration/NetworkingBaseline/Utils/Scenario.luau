@@ -23,6 +23,12 @@ function Scenario.activeCount(runtime: any): number
 	return if runtime.active.count ~= nil then runtime.active.count else #runtime.active
 end
 
+function Scenario.focus(): string
+	local value = ReplicatedStorage:FindFirstChild("NetworkingBenchmarkFocus") :: StringValue?
+
+	return if value ~= nil then value.Value else "full"
+end
+
 function Scenario.work(runtime: any): any
 	if runtime.active.count == nil then
 		return nil -- Legacy implementation has no attempted-work accounting.

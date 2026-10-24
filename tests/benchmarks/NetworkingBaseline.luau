@@ -546,18 +546,35 @@ TagController._setAutomaticSteppingEnabledForTests(false)
 
 local ok, failure = pcall(function()
 	local cases: { any } = {}
+	local focused = Scenario.focus() == "scheduler"
 	-- Warm up compilation and VM paths; discard this case.
 	measure({ actors = 30, players = 10 }, "Ordinary", 0, 2, false)
 
 	for _, diagnostic in { false, true } do
+		if focused and diagnostic then
+			continue
+		end
+
 		if diagnostic then
 			Probe.install()
 		end
 
 		for _, population in Scenario.populations do
+			if focused and population.actors ~= 90 then
+				continue
+			end
+
 			for _, mode in Scenario.modes do
 				for _, actions in { 0, 20, 40 } do
+					if focused and actions == 20 then
+						continue
+					end
+
 					for _, recipients in { 0, 2, population.players } do
+						if focused and recipients == 0 then
+							continue
+						end
+
 						-- Diagnostics need only the target fanout; keep primary timings separate.
 						if not diagnostic or recipients == population.players then
 							print("CPU baseline", population.actors, mode, actions, recipients, diagnostic)
@@ -569,7 +586,7 @@ local ok, failure = pcall(function()
 		end
 	end
 
-	local encoded = HttpService:JSONEncode({ success = true, cases = cases })
+	local encoded = HttpService:JSONEncode({ success = true, cases = cases, benchmarkFocus = Scenario.focus() })
 	print("__KRF_NETWORKING_CPU_START__")
 
 	for offset = 1, #encoded, 8000 do

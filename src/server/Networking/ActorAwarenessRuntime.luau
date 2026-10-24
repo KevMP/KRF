@@ -23,6 +23,8 @@ type Connection = {
 	actors: { [ActorTypes.Actor]: Stream },
 	handles: { [number]: Stream },
 	active: ActiveQueue.Queue<Stream>,
+	captures: ActiveQueue.Queue<Stream>,
+	captureNode: ActiveQueue.Node<Connection>?,
 	node: ActiveQueue.Node<Connection>?,
 	orders: { Stream },
 	waitEpoch: number,
@@ -56,6 +58,7 @@ type RuntimeState = {
 	models: { [Model]: ActorTypes.Actor },
 	projections: Projections.Runtime,
 	active: ActiveQueue.Queue<Connection>,
+	captures: ActiveQueue.Queue<Connection>,
 	deferred: { Stream },
 	waiting: { Connection },
 	epoch: number,
@@ -92,6 +95,7 @@ function ActorAwarenessRuntime._activate(self: Runtime, connection: Connection, 
 	end
 
 	StreamOrder.Update(connection.orders, stream)
+	self:_indexCapture(connection, stream)
 
 	if stream.active or not stream:HasWork() then
 		return
@@ -111,6 +115,114 @@ function ActorAwarenessRuntime._activate(self: Runtime, connection: Connection, 
 	assert(node ~= nil, "Expected active stream node")
 	ActiveQueue.Push(connection.active, node)
 	self:_queueConnection(connection)
+end
+
+-- Reference-only opportunity membership. Payloads remain in each stream's N3
+-- queue; capture itself still runs through Prepare under the same causal gate.
+function ActorAwarenessRuntime._indexCapture(self: Runtime, connection: Connection, stream: Stream): ()
+	if stream.recapture then
+		local node: ActiveQueue.Node<Stream>? = stream.captureNode
+
+		if node == nil then
+			local created: ActiveQueue.Node<Stream> = ActiveQueue.node(stream :: Stream)
+			stream.captureNode, node = created, created
+		end
+
+		assert(node ~= nil, "Expected capture stream node")
+		ActiveQueue.Push(connection.captures, node)
+		local owner: ActiveQueue.Node<Connection>? = connection.captureNode
+
+		if owner == nil then
+			local created: ActiveQueue.Node<Connection> = ActiveQueue.node(connection :: Connection)
+			connection.captureNode, owner = created, created
+		end
+
+		assert(owner ~= nil, "Expected capture connection node")
+		ActiveQueue.Push(self.captures, owner)
+	else
+		if stream.captureNode ~= nil then
+			ActiveQueue.Remove(stream.captureNode)
+		end
+
+		if connection.captures.count == 0 and connection.captureNode ~= nil then
+			ActiveQueue.Remove(connection.captureNode)
+		end
+	end
+end
+
+function ActorAwarenessRuntime._claimCapture(
+	self: Runtime,
+	connection: Connection,
+	stream: Stream,
+	work: WorkBudget.Budget
+): boolean
+	if
+		self.connections[stream.player] ~= connection
+		or self.captures.first == nil
+		or self.captures.first.value ~= connection
+		or connection.captures.first == nil
+		or connection.captures.first.value ~= stream
+		or not WorkBudget.Take(work, "captures")
+	then
+		return false
+	end
+
+	ActiveQueue.Pop(connection.captures)
+	ActiveQueue.Pop(self.captures)
+
+	if connection.captures.count > 0 then
+		ActiveQueue.Push(self.captures, connection.captureNode :: ActiveQueue.Node<Connection>)
+	end
+
+	return true
+end
+
+function ActorAwarenessRuntime._yieldCapture(self: Runtime, connection: Connection, stream: Stream): ()
+	if self.connections[stream.player] ~= connection or not stream.recapture then
+		return
+	end
+
+	if connection.captures.first ~= nil and connection.captures.first.value == stream then
+		ActiveQueue.Pop(connection.captures)
+		ActiveQueue.Push(connection.captures, stream.captureNode :: ActiveQueue.Node<Stream>)
+	end
+
+	if self.captures.first ~= nil and self.captures.first.value == connection then
+		ActiveQueue.Pop(self.captures)
+		ActiveQueue.Push(self.captures, connection.captureNode :: ActiveQueue.Node<Connection>)
+	end
+end
+
+function ActorAwarenessRuntime._prioritizeCapture(self: Runtime, work: WorkBudget.Budget, maxRecords: number): ()
+	if
+		maxRecords < 2
+		or self.captures.first == nil
+		or not WorkBudget.Available(work, "captures")
+		or not WorkBudget.Take(work, "priorities")
+	then
+		return
+	end
+
+	local connection = self.captures.first.value
+	local first = connection.captures.first
+	assert(first ~= nil, "Expected indexed capture opportunity")
+	local stream = first.value
+	local boundary = connection.egress.queue[1]
+
+	if boundary ~= nil and not stream:HasWorkThrough(boundary.order) then
+		self:_yieldCapture(connection, stream)
+
+		return
+	end
+
+	local node, owner = stream.queueNode, connection.node
+
+	if node ~= nil and owner ~= nil and node.queue == connection.active and owner.queue == self.active then
+		-- One promoted capture opportunity cannot consume the whole record budget;
+		-- all actual preparation/serialization still uses the normal bounded drain.
+		ActiveQueue.Prioritize(connection.active, node)
+		ActiveQueue.Prioritize(self.active, owner)
+	end
 end
 
 function ActorAwarenessRuntime._queueConnection(self: Runtime, connection: Connection): ()
@@ -211,6 +323,12 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.options, {
 		GetOrder = function(): number
 			return connection.egress.order
+		end,
+		ClaimCapture = function(active: Stream, work: WorkBudget.Budget): boolean
+			return self:_claimCapture(connection, active, work)
+		end,
+		YieldCapture = function(active: Stream): ()
+			self:_yieldCapture(connection, active)
 		end,
 		Project = function(
 			projectedActor: ActorTypes.Actor,
@@ -376,6 +494,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 	end
 
 	local work = self.work :: WorkBudget.Budget
+	self:_prioritizeCapture(work, maxRecords)
 	local deliveryBudget = maxBytes
 	local packets: { Packet } = {}
 	local currentPackets: { [Connection]: Packet } = {}
@@ -544,10 +663,12 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		-- Earlier sends can retire, fault or replace another staged stream. Only
 		-- current records enter the immutable Actor envelope; superseded history
 		-- keeps its earliest position in recaptureOrder before the stage clears.
-		local records: { SharedNetworkingTypes.ActorStreamRecord } = {}
-		local deliveries: { Delivery } = {}
+		local records, deliveries = packet.records, packet.deliveries
+		local retained = 0
+		local preparedCount = #deliveries
 
-		for _, delivery in packet.deliveries do
+		for index = 1, preparedCount do
+			local delivery = deliveries[index]
 			local stream, record = delivery.stream, delivery.record
 
 			local valid = if record.kind == "ActorRemove"
@@ -560,8 +681,9 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 						and delivery.generation == stream.generation
 
 			if valid then
-				table.insert(records, record)
-				table.insert(deliveries, delivery)
+				retained += 1
+				records[retained] = record
+				deliveries[retained] = delivery
 			else
 				stream.stagedOrder = nil
 
@@ -572,6 +694,10 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 
 				StreamOrder.Update(connection.orders, stream)
 			end
+		end
+
+		for index = preparedCount, retained + 1, -1 do
+			records[index], deliveries[index] = nil, nil
 		end
 
 		if #records == 0 then
@@ -683,12 +809,17 @@ function ActorAwarenessRuntime._close(self: Runtime, player: Player): ()
 		ActiveQueue.Remove(connection.node)
 	end
 
+	if connection.captureNode ~= nil then
+		ActiveQueue.Remove(connection.captureNode)
+	end
+
 	-- Streams own only tables/buffers, not observers or timers. Detach their owner
 	-- atomically rather than traversing every aware Actor on a pump send fault.
 	-- Staged deliveries retain the old owner only until this pump unwinds; Activate
 	-- checks that identity, including close/re-Ready of the same Player.
 	connection.transfers, connection.actors, connection.handles, connection.orders = {}, {}, {}, {}
 	connection.active = ActiveQueue.new()
+	connection.captures = ActiveQueue.new()
 	connection.transferCount = 0
 end
 
@@ -714,6 +845,7 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	self.projections:Destroy()
 	table.clear(self.measuredRecords)
 	self.active = ActiveQueue.new()
+	self.captures = ActiveQueue.new()
 	self.deferred, self.waiting = {}, {}
 end
 
@@ -744,6 +876,7 @@ function ActorAwarenessRuntime.new(
 		models = {},
 		projections = Projections.new(publication, catalog, codec),
 		active = ActiveQueue.new(),
+		captures = ActiveQueue.new(),
 		deferred = {},
 		waiting = {},
 		epoch = 0,
@@ -789,6 +922,7 @@ function ActorAwarenessRuntime.new(
 				actors = {},
 				handles = {},
 				active = ActiveQueue.new(),
+				captures = ActiveQueue.new(),
 				orders = {},
 				waitEpoch = 0,
 				transferCount = 0,

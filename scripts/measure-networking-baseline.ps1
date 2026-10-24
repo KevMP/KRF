@@ -5,10 +5,12 @@ param(
     [string]$ImplementationRevision,
     [ValidateRange(1, 4096)][int]$Records = 64,
     [ValidateRange(1024, 4194304)][int]$Bytes = 32768,
+    [ValidateSet('full', 'scheduler')][string]$Focus = 'full',
     [switch]$PrepareOnly,
     [string]$PreparedRunDirectory
 )
 $ErrorActionPreference = 'Stop'
+if ($Focus -ne 'full' -and $Workload -ne 'Networking') { throw 'Scheduler focus requires the Networking workload.' }
 $repository = Split-Path -Parent $PSScriptRoot
 if ($PreparedRunDirectory) {
     $runDirectory = (Resolve-Path -LiteralPath $PreparedRunDirectory).Path
@@ -53,6 +55,7 @@ if (-not $PreparedRunDirectory) {
     $environment | Add-Member -NotePropertyName sourceStatus -NotePropertyValue @(& git -c "safe.directory=$repository" -C $repository status --porcelain)
     $environment | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
     $environment | Add-Member -NotePropertyName schedulerBudget -NotePropertyValue ([pscustomobject]@{ records = $Records; bytes = $Bytes })
+    $environment | Add-Member -NotePropertyName benchmarkFocus -NotePropertyValue $Focus
     $environment | Add-Member -NotePropertyName studioPath -NotePropertyValue $StudioPath
     $project = Get-Content -LiteralPath (Join-Path $repository 'test.project.json') -Raw | ConvertFrom-Json
     # Preserve every existing project mapping while anchoring run-local paths.
@@ -66,6 +69,7 @@ if (-not $PreparedRunDirectory) {
     $project.tree.ReplicatedStorage.Packages.KRF.'$path' = $sourceDirectory
     $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingBenchmarkRecords -NotePropertyValue ([pscustomobject]@{ '$className' = 'IntValue'; '$properties' = @{ Value = $Records } })
     $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingBenchmarkBytes -NotePropertyValue ([pscustomobject]@{ '$className' = 'IntValue'; '$properties' = @{ Value = $Bytes } })
+    $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingBenchmarkFocus -NotePropertyValue ([pscustomobject]@{ '$className' = 'StringValue'; '$properties' = @{ Value = $Focus } })
     $projectFile = Join-Path $runDirectory 'fixture.project.json'
     [System.IO.File]::WriteAllText($projectFile, ($project | ConvertTo-Json -Depth 25), [System.Text.UTF8Encoding]::new($false))
     & rojo build $projectFile -o $placeFile

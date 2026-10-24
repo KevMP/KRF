@@ -39,14 +39,13 @@ test("audit comparisons pool raw observations and preserve unpooled legacy count
 	assert.equal(cases[0].before.perRun[0].probes.eligibilityChecks, 80);
 });
 
-function fixture(t) {
+function fixture(t, config = options([])) {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "krf-comparison-"));
 	t.after(() => {
 		assert.equal(path.dirname(path.resolve(directory)), path.resolve(os.tmpdir()));
 		assert.match(path.basename(directory), /^krf-comparison-/);
 		fs.rmSync(directory, { recursive: true, force: true });
 	});
-	const config = options([]);
 	const manifest = { version: 1, config, referenceRevision: "reference", candidateRevision: "candidate", studioFileVersion: "studio",
 		candidateSourceSHA256: { "src/runtime.luau": "CANDIDATE" }, trials: plan(config) };
 	for (const trial of manifest.trials) {
@@ -61,6 +60,25 @@ function fixture(t) {
 	}
 	return { directory, manifest };
 }
+
+test("scheduler focus selects an explicit CPU publication subset and rejects other profiles", () => {
+	assert.equal(options(["--workload", "publication", "--focus", "scheduler"]).focus, "scheduler");
+	for (const args of [["--focus", "unknown"], ["--focus", "scheduler"], ["--focus", "scheduler", "--workload", "publication", "--profile", "native"]]) assert.throws(() => options(args));
+});
+
+test("scheduler focus rejects missing or incompatible selected cases", t => {
+	const { directory, manifest } = fixture(t, options(["--workload", "publication", "--focus", "scheduler"]));
+	for (const trial of manifest.trials) {
+		const file = contained(directory, trial.result), result = JSON.parse(fs.readFileSync(file, "utf8"));
+		result.benchmarkFocus = result.environment.benchmarkFocus = "scheduler";
+		result.cases = ["Ordinary", "Heavy", "Burst"].flatMap(mode => [2, 30].flatMap(recipients => [0, 40].map(syntheticActionsLobbyWide => ({ mode, recipients, syntheticActionsLobbyWide, actors: 90, diagnostic: false }))));
+		fs.writeFileSync(file, JSON.stringify(result)); trial.resultSHA256 = hash(file);
+	}
+	verify(directory, manifest);
+	const trial = manifest.trials[1], file = contained(directory, trial.result), result = JSON.parse(fs.readFileSync(file, "utf8"));
+	result.cases.pop(); fs.writeFileSync(file, JSON.stringify(result)); trial.resultSHA256 = hash(file);
+	assert.throws(() => verify(directory, manifest), /Incomplete scheduler focus/);
+});
 
 test("all planned observations must be complete, distinct and unchanged", t => {
 	const { directory, manifest } = fixture(t);
@@ -80,6 +98,7 @@ test("all planned observations must be complete, distinct and unchanged", t => {
 
 for (const [field, value, message] of [["implementationRevision", "wrong", /Wrong implementation/], ["harnessRevision", "wrong", /Wrong harness/],
 	["schedulerBudget", { records: 128, bytes: 65536 }, /Wrong scheduler budget/],
+	["benchmarkFocus", "scheduler", /Wrong benchmark focus/],
 	["studioFileVersion", "wrong", /Mixed Studio/], ["harnessSHA256", { fixture: "WRONG" }, /Mixed harness/],
 	["workloadSHA256", "wrong", /Mixed cpu workload/], ["sourceSHA256", { source: "WRONG" }, /Candidate source differs/]]) {
 	test(`provenance rejects ${field} mismatches`, t => {

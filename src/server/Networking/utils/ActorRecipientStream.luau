@@ -14,12 +14,15 @@ export type Dependencies = {
 	Activate: (Stream) -> (),
 	ReportFault: (Types.ActorAwarenessFault) -> (),
 	MeasureRecord: (Types.PublicationFilteredCommit) -> number,
+	ClaimCapture: (Stream, WorkBudget.Budget) -> boolean,
+	YieldCapture: (Stream) -> (),
 }
 
 type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks", order: number }
 
 type StreamState = {
 	queueNode: ActiveQueue.Node<Stream>?,
+	captureNode: ActiveQueue.Node<Stream>?,
 	orderIndex: number,
 	pendingOrder: number,
 	stagedOrder: number?,
@@ -69,9 +72,7 @@ function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 
 	self.scheduler:Destroy()
 
-	if self.haltPending or self.removed then
-		self.dependencies.Activate(self)
-	end
+	self.dependencies.Activate(self)
 
 	if not reported then
 		self.dependencies.ReportFault({ player = self.player, actorId = self.actor:GetId(), reason = reason })
@@ -198,6 +199,8 @@ function ActorRecipientStream.Prepare(
 	end
 
 	if maxOrder ~= nil and not self:HasWorkThrough(maxOrder) then
+		self.dependencies.YieldCapture(self)
+
 		return nil, nil
 	end
 
@@ -214,7 +217,7 @@ function ActorRecipientStream.Prepare(
 	end
 
 	if self.recapture then
-		if not WorkBudget.Take(work, "captures") then
+		if not self.dependencies.ClaimCapture(self, work) then
 			return nil, nil
 		end
 
@@ -288,8 +291,9 @@ function ActorRecipientStream.Prepare(
 
 		self.recapture = true
 		self.recaptureOrder = self.scheduler:GetNextRecordOrder(self.key) or 0
+		self.dependencies.Activate(self)
 
-		if not WorkBudget.Take(work, "captures") then
+		if not self.dependencies.ClaimCapture(self, work) then
 			return nil, nil
 		end
 
