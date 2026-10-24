@@ -1,6 +1,7 @@
 param(
     [string]$StudioPath,
     [ValidateSet(2, 4, 6, 8)][int]$ClientCount = 2,
+    [ValidateSet('Publication', 'Commands')][string]$Workload = 'Publication',
     [string]$ImplementationRevision,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 300
 )
@@ -43,12 +44,18 @@ $environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath $sourc
 $environment | Add-Member -NotePropertyName harnessRevision -NotePropertyValue $environment.implementationRevision
 if ($ImplementationRevision) { $environment.implementationRevision = "$revision" }
 $environment | Add-Member -NotePropertyName requestedClients -NotePropertyValue $ClientCount
+$environment | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
 $environment | Add-Member -NotePropertyName workingTreeStatus -NotePropertyValue (@(& git -c "safe.directory=$repository" -C $repository status --short) -join "`n")
 $project = Get-Content -LiteralPath (Join-Path $repository 'networking-baseline-test.project.json') -Raw | ConvertFrom-Json
 $project.tree.ReplicatedStorage.Packages.KRF.'$path' = $sourceDirectory
 $project.tree.ReplicatedStorage.NetworkingBaselineScenario.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Utils/Scenario.luau'
 $project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Server.server.luau'
 $project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Client.client.luau'
+if ($Workload -eq 'Commands') {
+    $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingCommandScenario -NotePropertyValue ([pscustomobject]@{ '$path' = (Join-Path $repository 'tests/integration/NetworkingCommands/Utils/Scenario.luau') })
+    $project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingCommands/Server.server.luau'
+    $project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingCommands/Client.client.luau'
+}
 $projectFile = Join-Path $runDirectory 'fixture.project.json'
 [System.IO.File]::WriteAllText($projectFile, ($project | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
 

@@ -220,9 +220,17 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	end
 
 	local function drain(): ()
+		local commandState: any = commands
+
 		for _ = 1, 10000 do
-			if #internal.active == 0 then
+			local jobs = if commandState._GetPendingForTests ~= nil then commands:_GetPendingForTests() else 0
+
+			if #internal.active == 0 and jobs == 0 then
 				return
+			end
+
+			if commandState.Step ~= nil then
+				commands:Step()
 			end
 
 			runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
@@ -452,6 +460,7 @@ local function commandLoad(recipients: number, malformed: boolean): any
 
 	assert(world.callbacks() == executedBeforeReturn, "Handler escaped synchronous ingress")
 	world.drain()
+	result.handlersAfterDrain = world.callbacks()
 	world.destroy()
 
 	return result

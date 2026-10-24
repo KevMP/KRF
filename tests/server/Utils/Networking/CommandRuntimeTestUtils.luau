@@ -140,13 +140,18 @@ function TestUtils.send(
 	commandId: string?,
 	player: Player?
 ): (boolean, string?)
-	return fixture.runtime:Handle(
+	local admitted: boolean, reason: string? = fixture.runtime:Handle(
 		player or fixture.player,
 		TestUtils.request(fixture, id, commandId, player, actor, payload)
 	)
+
+	fixture.runtime:Step()
+
+	return admitted, reason
 end
 
 function TestUtils.results(fixture: Fixture, player: Player?): { SharedTypes.CommandResult }
+	fixture.runtime:Step()
 	AwarenessUtils.drain(fixture.base)
 	local results: { SharedTypes.CommandResult } = {}
 

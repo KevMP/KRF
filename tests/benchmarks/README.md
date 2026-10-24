@@ -7,6 +7,71 @@ The launchers print an ignored `build/<suite>/<run-id>/` directory containing
 Keep all generated observations, reports, coverage and diagnostics under `build/`.
 Do not commit individual run outputs or machine manifests.
 
+## Command dispatch comparisons
+
+Use the same offered request plan on both implementations. CPU profiles use
+128 Model-backed Actors and 2/8/32 opaque recipients, production command and
+publication runtimes, real result reservations and encoded-buffer egress. Native
+profiles use 2/4/6/8 actual clients, normal startup and public command sends that
+mutate owned Tags. Requester result callbacks must precede their state callbacks;
+every executed command must produce exactly one state change, semantic event and
+correlated result. Native retirement/reset uses the installed consumers.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Commands
+powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Commands -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -Workload Commands -ClientCount 8
+powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -Workload Commands -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+```
+
+Repeat CPU trials twice and native trials twice at each count, serially in fresh
+processes, alternating reference/candidate order. The reference option builds
+archived production source with the current fixture without changing the checkout.
+Use the same Studio executable and retain source/harness hashes. The default
+native publication workload remains available without `-Workload Commands`.
+
+The shared plan offers 180 ticks at 30 Hz: Sustained sends one request every
+second tick per client; Uneven sends three every second tick for the hot client,
+one every sixth tick for middle clients, and four once per second for the last,
+intermittent client. Overload sends 80 requests per client in the first tick.
+CPU submission interleaves client identities; native clients independently pace
+against the same server epoch. CPU dispatch/outbound pumps occur twice per tick;
+their waits are virtual pump counts, not native frames or latency. A discarded
+CPU warmup uses the same handlers; native startup includes a quiet settling period.
+
+Copy successful results into `build/command-comparison/` with names
+`<before|after>-cpu-run<number>.json` or
+`<before|after>-native-c<2|4|6|8>-run<number>.json`. Gzip JSON is accepted.
+
+```powershell
+node scripts/analyze-command-dispatch.cjs build/command-comparison > build/command-comparison/summary.json
+```
+
+The analyzer validates pinned reference provenance, matching fixture/Studio
+versions, stable source within each arm, workload/count completeness, actual native
+client process witnesses and unique client identities. It rejects duplicate
+plain/gzip observations and checks the candidate's default job/byte/dispatch/visit
+bounds. Retain per-trial results alongside pooled raw timing distributions.
+
+Record offered requests, local refusals, private runtime admission, authoritative
+execution, pre-effect unexecuted requests, admission reasons, blocked reservations,
+pending jobs/bytes, result reservations and per-client progress separately. The
+reference private `Handle` can return true yet execute no handler if result
+capacity is full; the queued dispatcher defers that head before effects instead.
+Neither path invents a definitive rejection. Latencies conditional on completed
+requests must not disguise shed work or be advertised as throughput gains.
+
+Server region timers measure elapsed wall time, including probe/fixture overhead;
+the native launcher separately samples OS CPU/memory. Client result latency is
+measured from public Send to its correlated callback on the same client clock.
+Eligibility-gap probes count other handlers while an admitted FIFO head has
+result capacity; blocked heads are excluded and reported separately. This probe
+inspects private runtime state and adds fixture overhead. Heap samples include
+verification allocations. The CPU fixture also creates publication/egress pressure;
+it is not an isolated handler microbenchmark. Native counts above eight, WAN and
+slow-device behavior are not supplied. Use the existing publication and built-in
+command regressions alongside these profiles; keep results/limitations in the PR.
+
 | Command | Workload and boundary |
 | --- | --- |
 | `npm run measure:networking` | Deterministic ordinary/heavy/AoE traces at 30/75/90 Actors, using real publication, scheduling and codec paths with injected recipient identities and a serialized-buffer sink. Tags-only and synthetic domain profiles remain distinct. |

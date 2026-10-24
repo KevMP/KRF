@@ -296,6 +296,15 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 			stopDriver = Scheduling.ObserveStep(function()
 				if initialized and awareness == created then
+					if commandRuntime ~= nil then
+						commandRuntime:Step()
+					end
+
+					-- A handler may tear Networking down during dispatch.
+					if not initialized or awareness ~= created then
+						return
+					end
+
 					created:Step(budget.maxBytes, budget.maxRecords)
 				end
 			end)

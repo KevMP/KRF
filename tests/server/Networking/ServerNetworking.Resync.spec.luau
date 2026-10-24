@@ -338,7 +338,7 @@ it("dispatches command buffers separately from handshake and resync and queues v
 	local faulty: buffer? = commandCodec.EncodeRequest({ commandCode = 0, requestId = 2 })
 	assert(faulty ~= nil, "Expected schema-valid faulting request")
 	emit(faulty)
-	expect(commandCalls).toBe(1)
+	expect(commandCalls).toBe(0)
 	expect(handled).toBe(1)
 	expect(sent).toEqual({})
 	assert(step ~= nil, "Expected production scheduler")
@@ -346,6 +346,8 @@ it("dispatches command buffers separately from handshake and resync and queues v
 	for _ = 1, 12 do
 		step()
 	end
+
+	expect(commandCalls).toBe(1)
 
 	local outcomes: { SharedNetworkingTypes.CommandResult } = {}
 

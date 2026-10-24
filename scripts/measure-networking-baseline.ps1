@@ -1,7 +1,8 @@
 param(
     [string]$StudioPath,
     [ValidateRange(60, 1200)][int]$TimeoutSeconds = 600,
-    [ValidateSet('Networking', 'Observers', 'Audit')][string]$Workload = 'Networking',
+    [ValidateSet('Networking', 'Observers', 'Audit', 'Commands')][string]$Workload = 'Networking',
+    [string]$ImplementationRevision,
     [switch]$PrepareOnly,
     [string]$PreparedRunDirectory
 )
@@ -25,7 +26,19 @@ if (-not $StudioPath) {
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 . "$PSScriptRoot\networking-benchmark-environment.ps1"
 if (-not $PreparedRunDirectory) {
-    $environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath
+    $sourceDirectory = Join-Path $repository 'src'
+    if ($ImplementationRevision) {
+        $revision = & git -c "safe.directory=$repository" -C $repository rev-parse --verify "$ImplementationRevision^{commit}"
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve implementation revision.' }
+        $archive = Join-Path $runDirectory 'implementation.zip'
+        & git -c "safe.directory=$repository" -C $repository archive --format=zip "--output=$archive" $revision src
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot archive implementation.' }
+        Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $runDirectory 'implementation')
+        $sourceDirectory = Join-Path $runDirectory 'implementation\src'
+    }
+    $environment = Get-NetworkingBenchmarkEnvironment $repository $StudioPath $sourceDirectory
+    $environment | Add-Member -NotePropertyName harnessRevision -NotePropertyValue $environment.implementationRevision
+    if ($ImplementationRevision) { $environment.implementationRevision = "$revision" }
     $hashes = [ordered]@{}
     $files = @(Get-ChildItem -LiteralPath (Join-Path $repository 'tests\benchmarks') -File -Filter '*.luau')
     $files += Get-Item -LiteralPath $PSCommandPath
@@ -38,11 +51,24 @@ if (-not $PreparedRunDirectory) {
     $environment | Add-Member -NotePropertyName sourceStatus -NotePropertyValue @(& git -c "safe.directory=$repository" -C $repository status --porcelain)
     $environment | Add-Member -NotePropertyName workload -NotePropertyValue $Workload
     $environment | Add-Member -NotePropertyName studioPath -NotePropertyValue $StudioPath
-    & rojo build (Join-Path $repository 'test.project.json') -o $placeFile
+    $project = Get-Content -LiteralPath (Join-Path $repository 'test.project.json') -Raw | ConvertFrom-Json
+    # Preserve every existing project mapping while anchoring run-local paths.
+    function Set-AbsoluteProjectPaths($Node) {
+        foreach ($property in $Node.PSObject.Properties) {
+            if ($property.Name -eq '$path') { $property.Value = Join-Path $repository $property.Value }
+            elseif ($property.Value -is [pscustomobject]) { Set-AbsoluteProjectPaths $property.Value }
+        }
+    }
+    Set-AbsoluteProjectPaths $project
+    $project.tree.ReplicatedStorage.Packages.KRF.'$path' = $sourceDirectory
+    $projectFile = Join-Path $runDirectory 'fixture.project.json'
+    [System.IO.File]::WriteAllText($projectFile, ($project | ConvertTo-Json -Depth 25), [System.Text.UTF8Encoding]::new($false))
+    & rojo build $projectFile -o $placeFile
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $sourceScript = switch ($Workload) {
         'Observers' { 'tests\benchmarks\MutationObservers.luau' }
         'Audit' { 'tests\benchmarks\NetworkingAudit.luau' }
+        'Commands' { 'tests\benchmarks\NetworkingCommands.luau' }
         default { 'tests\benchmarks\NetworkingBaseline.luau' }
     }
     Copy-Item -LiteralPath (Join-Path $repository $sourceScript) -Destination (Join-Path $runDirectory 'workload.luau')

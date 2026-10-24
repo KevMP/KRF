@@ -6,6 +6,10 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
     $harnessFiles = @(
         'tests/benchmarks/NetworkingBaseline.luau',
         'tests/benchmarks/NetworkingAudit.luau',
+        'tests/benchmarks/NetworkingCommands.luau',
+        'tests/integration/NetworkingCommands/Server.server.luau',
+        'tests/integration/NetworkingCommands/Client.client.luau',
+        'tests/integration/NetworkingCommands/Utils/Scenario.luau',
         'tests/integration/NetworkingBaseline/Server.server.luau',
         'tests/integration/NetworkingBaseline/Client.client.luau',
         'tests/integration/NetworkingBaseline/Utils/Scenario.luau',
