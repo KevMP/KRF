@@ -5,6 +5,50 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local types = {}
 
+-- Disposable presentation definitions; callbacks remain server-local.
+export type HintContext = {
+	read player: Player,
+	read actor: ActorTypes.Actor?,
+	read hintId: string,
+}
+
+export type HintAuthorize = (HintContext, any) -> (boolean, string?)
+export type HintReceive = (HintContext, any) -> ()
+
+export type HintDefinition = {
+	id: string,
+	direction: SharedNetworkingTypes.HintDirection,
+	target: SharedNetworkingTypes.HintTarget,
+	mode: SharedNetworkingTypes.HintMode,
+	payload: SharedNetworkingTypes.SchemaDefinition,
+	authorize: HintAuthorize?,
+	receive: HintReceive?,
+}
+
+export type LoadedHintDefinition = {
+	read id: string,
+	read direction: SharedNetworkingTypes.HintDirection,
+	read target: SharedNetworkingTypes.HintTarget,
+	read mode: SharedNetworkingTypes.HintMode,
+	read payload: SharedNetworkingTypes.CompiledSchema,
+	read authorize: HintAuthorize?,
+	read receive: HintReceive?,
+}
+
+export type PreparedHintCatalog = {
+	read definitionsById: { [string]: LoadedHintDefinition },
+	read orderedDefinitions: { LoadedHintDefinition },
+}
+
+export type HintRegistry = {
+	read Prepare: ({ HintDefinition }) -> (PreparedHintCatalog?, string?),
+	read Publish: (PreparedHintCatalog) -> (boolean, string?),
+	read Get: (string) -> LoadedHintDefinition?,
+	read GetAll: () -> { LoadedHintDefinition },
+	read IsLoaded: () -> boolean,
+	read _RollbackStartup: () -> (),
+}
+
 -- Commands are startup definitions. Context and outcomes contain semantic data
 -- only; connection identities, handles, buffers and egress ownership stay private.
 export type CommandOutcome = {
@@ -123,7 +167,8 @@ export type ServerHandshakeModule = {
 export type ServerNetworking = {
 	Prepare: (
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-		commands: PreparedCommandCatalog?
+		commands: PreparedCommandCatalog?,
+		hints: PreparedHintCatalog?
 	) -> (SharedNetworkingTypes.PreparedProtocol?, string?),
 	Publish: (protocol: SharedNetworkingTypes.PreparedProtocol) -> (boolean, string?),
 	IsClientReady: (player: Player) -> boolean,

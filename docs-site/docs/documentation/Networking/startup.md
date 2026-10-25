@@ -4,7 +4,7 @@ sidebar_position: 0
 
 # Networking startup
 
-KRF owns the transport and protocol setup for the server and each client. Your game supplies bounded domain and command definitions during server startup and calls `Client.Init()` once on each client.
+KRF owns the transport and protocol setup for the server and each client. Your game supplies bounded domain, command and Hint definitions during server startup and calls `Client.Init()` once on each client.
 
 ## Ownership
 
@@ -32,7 +32,7 @@ Server and client must have exactly matching internal protocol versions. This co
 
 ## Understand the catalog boundary
 
-Domain, event, and command codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction.
+Domain, event, command and Hint codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction. [Hint payload codecs](./hints) compile before READY; Hint send/receive delivery is not installed yet.
 
 The bootstrap carries domain, event, and command identities, target modes, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Legal schema bounds remain exact during serialization. Startup rejects events above the publication limit and command request/result schemas above the [command payload limit](./commands#define-and-authorize-a-command).
 

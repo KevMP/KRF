@@ -90,6 +90,29 @@ export type ProtocolManifest = {
 	read version: number,
 	read domains: { ManifestDomain },
 	read commands: { ManifestCommand }?,
+	read hints: { ManifestHint }?,
+}
+
+export type HintDirection = "ClientToServer" | "ServerToClient"
+export type HintTarget = "None" | "Actor"
+export type HintMode = "Latest" | "Pulse"
+
+export type ManifestHint = {
+	read id: string,
+	read code: number,
+	read direction: HintDirection,
+	read target: HintTarget,
+	read mode: HintMode,
+	read payload: SchemaDefinition,
+}
+
+export type ClientHint = {
+	read id: string,
+	read code: number,
+	read direction: HintDirection,
+	read target: HintTarget,
+	read mode: HintMode,
+	read payloadCodec: CompiledCodec,
 }
 
 export type ClientEvent = { read id: string, read code: number, read codec: CompiledCodec }
@@ -107,6 +130,8 @@ export type ClientProtocol = {
 	read domainsByCode: { [number]: ClientDomain },
 	read commandsById: { [string]: ClientCommand }?,
 	read commandsByCode: { [number]: ClientCommand }?,
+	read hintsById: { [string]: ClientHint }?,
+	read hintsByCode: { [number]: ClientHint }?,
 }
 
 export type ClientCommand = {

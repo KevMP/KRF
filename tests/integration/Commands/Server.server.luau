@@ -260,12 +260,33 @@ local completed: boolean, reason: any = pcall(function(): ()
 		table.insert(commands, command)
 	end
 
-	local initialized: boolean, failure: Server.StartupFailure? =
-		Server.Init({ commands = commands, actions = Correlation.Actions })
+	local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
+		commands = commands,
+		actions = Correlation.Actions,
+		hints = {
+			{
+				id = "Game.Look",
+				direction = "ClientToServer",
+				target = "Actor",
+				mode = "Latest",
+				payload = Schema.U8,
+				authorize = function(): (boolean, string?)
+					return true, nil
+				end,
+				receive = function(): ()
+					error("Hint receive runtime is not installed in this fixture")
+				end,
+			},
+			{ id = "Game.VFX", direction = "ServerToClient", target = "None", mode = "Pulse", payload = Schema.U16 },
+		},
+	})
 
 	assert(initialized, if failure ~= nil then failure.reason else "Native Server.Init failed")
 	local protocol: SharedTypes.ClientProtocol? = commandProtocol
 	assert(protocol ~= nil and protocol.commandsById ~= nil, "Expected startup command codebook")
+	assert(protocol.hintsById ~= nil and protocol.hintsByCode ~= nil, "Expected startup Hint codebooks")
+	assert(protocol.hintsById["Game.Look"].code == 0, "Expected deterministic Hint codes")
+	assert(protocol.hintsByCode[1].id == "Game.VFX", "Expected both Hint directions in bootstrap")
 	local commandsById: { [string]: SharedTypes.ClientCommand } = protocol.commandsById
 	local codec: SharedTypes.CommandCodec = CommandCodec.Compile(protocol)
 	local owned: SharedTypes.OwnedTransport?, transportReason: string? = Transport.Locate(ReplicatedStorage)

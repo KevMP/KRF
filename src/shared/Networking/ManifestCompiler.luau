@@ -6,6 +6,7 @@ local CodecCompiler = require(script.Parent.CodecCompiler)
 local CollectionUtils = require(script.Parent.utils.SchemaCollectionUtils)
 local BufferUtils = require(script.Parent.utils.CodecBufferUtils)
 local Commands = require(script.Parent.utils.CommandManifest)
+local Hints = require(script.Parent.utils.HintManifest)
 
 local ManifestCompiler = {} :: Types.ManifestCompiler
 
@@ -40,7 +41,7 @@ local function codecFor(definition: Types.SchemaDefinition): (Types.CompiledCode
 end
 
 function ManifestCompiler.Reconstruct(manifest: Types.ProtocolManifest): (Types.ClientProtocol?, string?)
-	if not onlyFields(manifest, { version = true, domains = true, commands = true }) then
+	if not onlyFields(manifest, { version = true, domains = true, commands = true, hints = true }) then
 		return nil, "MalformedBootstrap"
 	end
 
@@ -144,11 +145,19 @@ function ManifestCompiler.Reconstruct(manifest: Types.ProtocolManifest): (Types.
 		return nil, commandReason
 	end
 
+	local hintsById, hintsByCode, hintReason = Hints.Compile(manifest.hints)
+
+	if hintsById == nil or hintsByCode == nil then
+		return nil, hintReason
+	end
+
 	local runtime: Types.ClientProtocol = {
 		domainsById = domainsById,
 		domainsByCode = domainsByCode,
 		commandsById = commandsById,
 		commandsByCode = commandsByCode,
+		hintsById = hintsById,
+		hintsByCode = hintsByCode,
 	}
 
 	table.freeze(runtime)

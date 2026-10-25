@@ -18,6 +18,7 @@ A starter template with initialization already wired is not available yet. Use t
 | `actions` | Action factories with declarative requirements, costs, and behavior |
 | `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
 | `commands` | [Command definitions](./Networking/commands) with target modes, optional schemas, explicit authorization, and handlers |
+| `hints` | [Hint definitions](./Networking/hints) with direction, target, mode, bounded payload and explicit client-origin authorization/receive callbacks; registration and bootstrap only |
 
 Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 
@@ -67,7 +68,7 @@ A successful return means the client has installed the server's protocol catalog
 
 `Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, event size bounds, and command definitions and schemas before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. Command authorization and handlers run only for received requests. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
 
-A domain validation failure uses `system = "ReplicationDomain"`, and a command catalog validation failure uses `system = "Command"`. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
+A domain validation failure uses `system = "ReplicationDomain"`, a command catalog failure uses `system = "Command"`, and a Hint catalog failure uses `system = "Hint"`. Hint callbacks are not invoked during startup. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix configuration and restart after failure. An empty domain catalog still starts transport. Action registration does not start Actions; `autoGrant` only establishes their initial availability on each Actor.
 

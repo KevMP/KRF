@@ -6,6 +6,9 @@ local KRF = ReplicatedStorage.Packages.KRF
 local PublicTypes = require(KRF.client.Actor.types)
 local Client = require(KRF.client)
 local ClientTypes = require(KRF.client.types)
+local SharedTypes = require(KRF.shared.Networking.types)
+local Manifest = require(KRF.shared.Networking.ManifestCompiler)
+local Protocol = require(KRF.shared.Networking.ProtocolCodec)
 local Native: ClientTypes.Dependencies = require(KRF.client.Networking.utils.NativeClientDependencies)
 local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
 local ActorConstants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
@@ -22,6 +25,16 @@ local outcomes: { [number]: NetworkingTypes.CommandResult } = {}
 local injectTerminalFailure: boolean = false
 local disconnectCalls: number = 0
 local discoverTransport: typeof(Native.DiscoverTransport) = Native.DiscoverTransport
+local reconstruct: typeof(Manifest.Reconstruct) = Manifest.Reconstruct
+local installedProtocol: SharedTypes.ClientProtocol? = nil
+
+-- Observe actual client reconstruction; retain the production consumer installer.
+Manifest.Reconstruct = function(metadata: SharedTypes.ProtocolManifest): (SharedTypes.ClientProtocol?, string?)
+	local protocol, reason = reconstruct(metadata)
+	installedProtocol = protocol
+
+	return protocol, reason
+end
 
 -- Keep native transport discovery, its connection and the production installer.
 -- Inject overflow immediately after a real result so scheduler timing cannot hide it.
@@ -29,6 +42,38 @@ Native.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransp
 	local transport: ClientTypes.ClientTransport?, reason: string? = discoverTransport(deadline)
 
 	if transport ~= nil then
+		local send = transport.SendReliable
+
+		transport.SendReliable = function(payload: buffer): ()
+			local message = Protocol.Decode(payload)
+
+			if message ~= nil and message.kind == "Ready" then
+				local protocol = installedProtocol
+
+				assert(
+					protocol ~= nil and protocol.hintsById ~= nil and protocol.hintsByCode ~= nil,
+					"Hints must compile before READY"
+				)
+
+				local hint = protocol.hintsById["Game.Look"]
+
+				assert(
+					hint.code == 0
+						and hint.direction == "ClientToServer"
+						and hint.target == "Actor"
+						and hint.mode == "Latest",
+					"Expected Hint metadata"
+				)
+
+				assert(hint.payloadCodec.Measure(255) == 1, "Expected compiled N1 Hint payload codec")
+				assert(protocol.hintsByCode[1].id == "Game.VFX", "Expected S2C Hint codebook")
+				assert(table.isfrozen(protocol.hintsById) and table.isfrozen(hint), "Hint codebooks must be immutable")
+				assert(not Client._IsInitialized(), "READY must follow private protocol installation")
+			end
+
+			send(payload)
+		end
+
 		local connect: typeof(transport.ConnectReliable) = transport.ConnectReliable
 
 		transport.ConnectReliable = function(callback: (any, ...any) -> ()): () -> ()
@@ -203,5 +248,6 @@ local completed: boolean, reason: any = pcall(function(): ()
 end)
 
 Native.DiscoverTransport = discoverTransport
+Manifest.Reconstruct = reconstruct
 failed = not completed
 report("Startup", if completed then nil else tostring(reason))

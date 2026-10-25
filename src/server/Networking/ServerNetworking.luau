@@ -19,6 +19,7 @@ local NativeAssociation = require(script.Parent.utils.NativePlayerAssociation)
 local ActorConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local Resync = require(script.Parent.ResyncRuntime)
 local CommandManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandManifest)
+local HintManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.HintManifest)
 local Commands = require(script.Parent.ServerCommandRuntime)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 
@@ -38,7 +39,8 @@ local preparedCommands: Types.PreparedCommandCatalog? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-	commands: Types.PreparedCommandCatalog?
+	commands: Types.PreparedCommandCatalog?,
+	hints: Types.PreparedHintCatalog?
 ): (SharedNetworkingTypes.PreparedProtocol?, string?)
 	if ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME) ~= nil then
 		return nil, "TransportConflict"
@@ -114,11 +116,30 @@ function ServerNetworking.Prepare(
 	end
 
 	table.freeze(commandMetadata)
+	local hintMetadata: { SharedNetworkingTypes.ManifestHint } = {}
+
+	if hints ~= nil then
+		for index: number, definition: Types.LoadedHintDefinition in hints.orderedDefinitions do
+			local projected: SharedNetworkingTypes.ManifestHint = table.freeze({
+				id = definition.id,
+				code = index - 1,
+				direction = definition.direction,
+				target = definition.target,
+				mode = definition.mode,
+				payload = SchemaProjection.Definition(definition.payload),
+			})
+
+			table.insert(hintMetadata, projected)
+		end
+	end
+
+	table.freeze(hintMetadata)
 
 	local manifest: SharedNetworkingTypes.ProtocolManifest = {
 		version = Constants.PROTOCOL_VERSION,
 		domains = domains,
 		commands = if #commandMetadata > 0 then commandMetadata else nil,
+		hints = if #hintMetadata > 0 then hintMetadata else nil,
 	}
 
 	table.freeze(manifest)
@@ -183,11 +204,19 @@ function ServerNetworking.Prepare(
 		return nil, commandReason or "CodecCompilationFailure"
 	end
 
+	local hintsById, hintsByCode, hintReason = HintManifest.Compile(manifest.hints)
+
+	if hintsById == nil or hintsByCode == nil then
+		return nil, hintReason or "CodecCompilationFailure"
+	end
+
 	local codecs: SharedNetworkingTypes.ClientProtocol = {
 		domainsById = domainsById,
 		domainsByCode = domainsByCode,
 		commandsById = commandsById,
 		commandsByCode = commandsByCode,
+		hintsById = hintsById,
+		hintsByCode = hintsByCode,
 	}
 
 	table.freeze(codecs)

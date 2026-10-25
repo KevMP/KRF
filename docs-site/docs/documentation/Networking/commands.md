@@ -52,7 +52,7 @@ The game supplies the `Interact.Door` and `Interact.Chest` Action definitions an
 
 `handle(context, request)` must also complete without yielding. It returns `{ accepted = true, result = ... }` or `{ accepted = false, reason = ... }`. A rejected outcome has no result. Reasons are nonempty and at most 64 bytes. Keep detailed diagnostics on the server. Treat a deliberate rejection as a pre-effect decision; returning rejection after mutating gameplay does not undo that mutation.
 
-Startup validates and owns immutable copies of definitions and schemas without calling either callback. Invalid catalogs fail the startup transaction. Command identities, target modes, codes, and schemas are shared bootstrap metadata; callbacks and live state remain server-side. Declaration order does not affect codes. The combined domain/event/command bootstrap must fit within 65,536 bytes.
+Startup validates and owns immutable copies of definitions and schemas without calling either callback. Invalid catalogs fail the startup transaction. Command identities, target modes, codes, and schemas are shared bootstrap metadata; callbacks and live state remain server-side. Declaration order does not affect codes. The combined domain/event/command/Hint bootstrap must fit within 65,536 bytes.
 
 ## None targets and custom policies
 
