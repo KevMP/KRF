@@ -180,6 +180,15 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 		return false
 	end
 
+	-- N3 already measured the anchored visible truth. An invalid baseline must
+	-- fault before a backlog refusal can turn it into permanent recovery work.
+	if projected.encodedSizeBytes > self.options.maxBaselineBytes then
+		self.dependencies.DiscardProjection(self.actor, projected)
+		self:Fault("ActorBaselineTooLarge")
+
+		return false
+	end
+
 	local charge = self.dependencies.Backlog:Acquire(
 		self.key,
 		projected,

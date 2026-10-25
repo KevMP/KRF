@@ -126,7 +126,7 @@ it("does not retain an unadmitted oversized baseline in the reusable projection 
 	local actor = Awareness.actor(created, nil)
 	local runtime = Awareness.start(created)
 	Awareness.ready(created, Awareness.player(created))
-	-- Actual recipient size is checked during the budgeted projection turn.
+	-- Canonical size metadata rejects this anchor before backlog admission.
 	runtime:Step(32768, 128)
 	expect(created.faults[1].reason).toBe("ActorBaselineTooLarge")
 	expect((runtime :: any).backlog.records).toBe(0)

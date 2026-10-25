@@ -6,6 +6,7 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.
 
 export type Projection = {
 	sequence: number,
+	encodedSizeBytes: number,
 	retainedBytes: number,
 	canonical: Types.PublicationBaseline?,
 	isOwner: boolean,
@@ -61,11 +62,14 @@ function ActorRecipientProjection.Anchor(
 	local projected: Projection? = if isOwner then cache.owner else cache.public
 
 	if projected == nil then
+		local encodedSizeBytes = self.publication:GetBaselineWeight(actor, not isOwner)
+
 		-- Reserve canonical retained weight plus the largest possible recipient
 		-- body before retaining either. This one charge survives materialization.
 		local created: Projection = {
 			sequence = captured.sequence,
-			retainedBytes = self.publication:GetBaselineWeight(actor, not isOwner) * 2,
+			encodedSizeBytes = encodedSizeBytes,
+			retainedBytes = encodedSizeBytes * 2,
 			canonical = captured,
 			isOwner = isOwner,
 			domains = captured.domains,

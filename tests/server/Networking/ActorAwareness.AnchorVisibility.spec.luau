@@ -46,6 +46,105 @@ afterEach(function()
 	TestUtils.destroy(fixture)
 end)
 
+it("faults an oversized owner baseline before default backlog admission instead of retrying forever", function()
+	local owner = TestUtils.player(fixture)
+	local actor = TestUtils.actor(fixture, owner)
+	local runtime = TestUtils.start(fixture)
+	local internal: any = runtime
+	local encodes = 0
+	local codec: SharedTypes.ActorStreamCodec = internal.codec
+	local encode = codec.EncodeBaseline
+
+	codec.EncodeBaseline = function(domains: { [string]: SharedTypes.ActorDomainTruth }): (buffer?, string?)
+		encodes += 1
+
+		return encode(domains)
+	end
+
+	expect(fixture.options.maxBaselineBytes).toBe(Constants.MAX_BASELINE_BYTES)
+	expect(internal.backlog.limits.actorBytes).toBe(Constants.BACKLOG_ACTOR_BYTES)
+	expect(fixture.publication:GetBaselineWeight(actor) > Constants.MAX_BASELINE_BYTES).toBe(true)
+	expect(fixture.publication:GetBaselineWeight(actor) * 2 > Constants.BACKLOG_ACTOR_BYTES).toBe(true)
+	TestUtils.ready(fixture, owner)
+
+	for _ = 1, 128 do
+		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	end
+
+	expect(fixture.faults).toEqual({ { player = owner, actorId = actor:GetId(), reason = "ActorBaselineTooLarge" } })
+	expect(encodes).toBe(0)
+	expect(TestUtils.records(fixture, owner)).toEqual({})
+	expect(internal.connections[owner].actors[actor].failed).toBe(true)
+	expect(internal.connections[owner].actors[actor].recapture).toBe(false)
+	expect(internal.projections.baselines[actor]).toBeNil()
+	expect(internal.backlog.records).toBe(0)
+	expect(internal.backlog.bytes).toBe(0)
+end)
+
+it("halts a known Actor when association exposes an oversized baseline even if backlog has room", function()
+	fixture.ownerDomain.value = string.rep("s", 300000)
+
+	local owner = TestUtils.player(fixture)
+	local actor = TestUtils.actor(fixture, nil)
+	local runtime = TestUtils.start(fixture)
+	local internal: any = runtime
+	TestUtils.ready(fixture, owner)
+
+	for _ = 1, 128 do
+		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	end
+
+	expect(#TestUtils.kind(fixture, owner, "BaselineEnd")).toBe(1)
+	fixture.deliveries = {}
+	expect(fixture.publication:GetBaselineWeight(actor) > Constants.MAX_BASELINE_BYTES).toBe(true)
+	expect(fixture.publication:GetBaselineWeight(actor) * 2 < Constants.BACKLOG_ACTOR_BYTES).toBe(true)
+	TestUtils.associate(fixture, actor, owner)
+	local captured, reason = runtime:RequestReplacementBaseline(owner, assert(runtime:GetHandle(owner, actor)))
+	expect(captured).toBe(false)
+	expect(reason).toBe("ActorStreamHalted")
+
+	for _ = 1, 128 do
+		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	end
+
+	expect(fixture.faults).toEqual({ { player = owner, actorId = actor:GetId(), reason = "ActorBaselineTooLarge" } })
+	expect(#TestUtils.kind(fixture, owner, "ActorHalt")).toBe(1)
+	expect(#TestUtils.kind(fixture, owner, "BaselineBegin")).toBe(0)
+	expect(internal.projections.baselines[actor]).toBeNil()
+	expect(internal.backlog.records).toBe(0)
+	expect(internal.backlog.bytes).toBe(0)
+end)
+
+it("retries a supported owner baseline after temporary capacity pressure without reporting a size fault", function()
+	fixture.ownerDomain.value = string.rep("s", 100000)
+
+	local owner = TestUtils.player(fixture)
+	local actor = TestUtils.actor(fixture, owner)
+	local runtime = TestUtils.start(fixture)
+	local internal: any = runtime
+	expect(fixture.publication:GetBaselineWeight(actor) < Constants.MAX_BASELINE_BYTES).toBe(true)
+	internal.backlog.limits.maxBytes = 1
+	TestUtils.ready(fixture, owner)
+
+	for _ = 1, 128 do
+		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	end
+
+	expect(fixture.faults).toEqual({})
+	expect(internal.connections[owner].actors[actor].recapture).toBe(true)
+	expect(internal.backlog.bytes).toBe(0)
+	internal.backlog.limits.maxBytes = Constants.BACKLOG_BYTES
+
+	for _ = 1, 128 do
+		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+	end
+
+	expect(#TestUtils.kind(fixture, owner, "BaselineEnd")).toBe(1)
+	expect(fixture.faults).toEqual({})
+	expect(internal.backlog.records).toBe(0)
+	expect(internal.backlog.bytes).toBe(0)
+end)
+
 it("admits a small public anchor despite a permanently oversized private domain under default limits", function()
 	local owner = TestUtils.player(fixture)
 	local observer = TestUtils.player(fixture)
