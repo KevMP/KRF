@@ -10,8 +10,9 @@ local function counter(value: any): boolean
 	return type(value) == "number" and value > 0 and BufferUtils.IsOffset(value, Constants.MAX_COUNTER)
 end
 
-function HintCodec.Compile(protocol: Types.ClientProtocol): Types.HintCodec
+function HintCodec.Compile(protocol: Types.ClientProtocol, direction: Types.HintDirection?): Types.HintCodec
 	local hints: { [number]: Types.ClientHint } = protocol.hintsByCode or {}
+	local expectedDirection: Types.HintDirection = direction or "ClientToServer"
 
 	return {
 		EncodeRecord = function(record: Types.HintRecord): (buffer?, string?)
@@ -19,7 +20,7 @@ function HintCodec.Compile(protocol: Types.ClientProtocol): Types.HintCodec
 
 			if hint == nil then
 				return nil, "UnknownHintCode"
-			elseif hint.direction ~= "ClientToServer" then
+			elseif hint.direction ~= expectedDirection then
 				return nil, "HintDirectionMismatch"
 			elseif
 				(hint.target == "Actor" and not counter(record.targetHandle))
@@ -130,7 +131,7 @@ function HintCodec.Compile(protocol: Types.ClientProtocol): Types.HintCodec
 
 			if hint == nil then
 				return nil, "UnknownHintCode"
-			elseif hint.direction ~= "ClientToServer" then
+			elseif hint.direction ~= expectedDirection then
 				return nil, "HintDirectionMismatch"
 			end
 

@@ -35,6 +35,37 @@ local HintConstants = {
 	GLOBAL_PENDING_BYTES = 115200,
 	-- Retained receiver sequence keys across live connections; no historical eviction.
 	GLOBAL_LATEST_KEYS = 1024,
+	-- S2C recipient admission counts encoded record bytes. Global bounds include
+	-- staged send ownership. Pump bytes count complete physical packet payloads.
+	SEND = table.freeze({
+		windowSeconds = 1,
+		maxAttempts = 256,
+		maxBytes = 65536,
+		maxGlobalAttempts = 2048,
+		maxGlobalBytes = 524288,
+		maxPending = 64,
+		maxPendingBytes = 16384,
+		maxGlobalPending = 512,
+		maxGlobalPendingBytes = 131072,
+		maxLatestKeys = 128,
+		maxGlobalLatestKeys = 1024,
+		maxSequence = 4294967295,
+		maxRecords = 32,
+		maxConnectionRecords = 8,
+		maxSends = 4,
+		maxStepBytes = 3600,
+	}),
+	-- Per-client S2C ingress: attempted packets/window, full packet bytes,
+	-- retained complete packets/bytes, attempted dispatch records/pump and live keys.
+	RECEIVE = table.freeze({
+		windowSeconds = 1,
+		maxPackets = 64,
+		maxBytes = 57600,
+		maxPendingPackets = 8,
+		maxPendingBytes = 7200,
+		maxRecords = 32,
+		maxLatestKeys = 128,
+	}),
 }
 
 function HintConstants.RecordBytes(payloadBytes: number, target: Types.HintTarget, mode: Types.HintMode): number

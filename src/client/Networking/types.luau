@@ -5,7 +5,35 @@ local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 local types = {}
 
-export type HintRuntime = { read Send: (string, PublicTypes.ActorView?, any?) -> (boolean, string?) }
+export type HintReceived = { read hintId: string, read actorView: PublicTypes.ActorView?, read payload: any? }
+
+export type HintRuntime = {
+	read Send: (string, PublicTypes.ActorView?, any?) -> (boolean, string?),
+	read OnHintReceived: SignalTypes.Event<HintReceived>,
+}
+
+export type HintReceiveLimits = {
+	windowSeconds: number,
+	maxPackets: number,
+	maxBytes: number,
+	maxPendingPackets: number,
+	maxPendingBytes: number,
+	maxRecords: number,
+	maxLatestKeys: number,
+}
+
+export type HintReceiveDependencies = {
+	Now: () -> number,
+	IsReady: () -> boolean,
+	Notify: (HintReceived) -> (),
+}
+
+export type HintReceiverRuntime = {
+	Handle: (self: HintReceiverRuntime, any, ...any) -> (boolean, string?),
+	Step: (self: HintReceiverRuntime) -> (number, number),
+	ForgetActor: (self: HintReceiverRuntime, PublicTypes.ActorView) -> (),
+	Destroy: (self: HintReceiverRuntime) -> (),
+}
 
 export type ClientHintLimits = {
 	maxPending: number?,

@@ -4,6 +4,7 @@ local PublicTypes = require(script.Parent.Parent.Actor.types)
 local State = require(script.Parent.utils.HintRuntimeState)
 
 local facade: Types.HintRuntime = {
+	OnHintReceived = State.OnHintReceived,
 	Send = function(id: string, actor: PublicTypes.ActorView?, payload: any?): (boolean, string?)
 		local runtime = State.Get()
 

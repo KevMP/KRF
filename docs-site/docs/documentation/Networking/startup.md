@@ -15,7 +15,7 @@ KRF owns the transport and protocol setup for the server and each client. Your g
 | Networking | Compile codecs, assign protocol codes, create transport, attach server publication domains, and establish client readiness |
 | Controllers | Own live Actor state and gameplay mutations |
 
-The framework creates one reliable `RemoteEvent` and one `UnreliableRemoteEvent`. The handshake, Actor publications, and commands share the reliable transport; ClientToServer Hints use the unreliable transport for disposable presentation. All framework packets, including the bootstrap catalog, are buffers. Games do not create, rename, replace, or send directly through these remotes, and KRF creates no `RemoteFunction` for startup.
+The framework creates one reliable `RemoteEvent` and one `UnreliableRemoteEvent`. The handshake, Actor publications, and commands share the reliable transport; Hints in both directions use the unreliable transport for disposable presentation. All framework packets, including the bootstrap catalog, are buffers. Games do not create, rename, replace, or send directly through these remotes, and KRF creates no `RemoteFunction` for startup.
 
 ## Initialize both sides
 
@@ -32,7 +32,7 @@ Server and client must have exactly matching internal protocol versions. This co
 
 ## Understand the catalog boundary
 
-Domain, event, command and Hint codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction. [Hint payload codecs](./hints) compile before READY; ClientToServer Hint owners install before READY. ServerToClient delivery is not available yet.
+Domain, event, command and Hint codebooks are deterministic and independent of declaration order. Every client receives the same catalog. KRF reuses the prepared bootstrap buffer across clients and compiles codecs once per schema on the server and once during each client's reconstruction. [Hint payload codecs](./hints) compile before READY; Hint send/receive owners and the unreliable client listener install before READY. Traffic received before readiness is disposable.
 
 The bootstrap carries domain, event, and command identities, target modes, protocol codes, and semantic schema definitions. It does not carry server callbacks, controllers, Actors, or current gameplay values. Legal schema bounds remain exact during serialization. Startup rejects events above the publication limit and command request/result schemas above the [command payload limit](./commands#define-and-authorize-a-command).
 

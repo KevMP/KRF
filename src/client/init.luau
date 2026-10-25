@@ -201,7 +201,8 @@ function Client.Init(): (boolean, StartupFailure?)
 					function(): ()
 						terminate("ReliableConsumerFailed")
 					end,
-					transport.SendUnreliable
+					transport.SendUnreliable,
+					transport.ConnectUnreliable
 				)
 
 				if coroutine.status(installer) ~= "dead" then

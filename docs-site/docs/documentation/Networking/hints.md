@@ -6,7 +6,7 @@ sidebar_position: 5
 
 Hints describe disposable, non-authoritative presentation messages. Supply definitions through the `hints` catalog in [server startup](../initializing-krf), then inspect the immutable catalog through [HintRegistry](/api/Networking/hint-registry).
 
-ClientToServer hints support local sending and explicitly authorized server callbacks. ServerToClient definitions can be registered and bootstrapped, but server delivery and client receive events are not available yet. Registering a definition alone sends no Hint traffic.
+ClientToServer hints support local sending and explicitly authorized server callbacks. ServerToClient hints use explicit recipient sends and a client receipt event. Registering a definition alone sends no Hint traffic.
 
 ## Definition fields
 
@@ -72,3 +72,13 @@ A true return means local admission only. Delivery, authorization and callback s
 The server validates framing, definition, connection-local Actor handle and payload before authorization. Callbacks receive a frozen context and schema-owned immutable payload. [HintAuthorization](/api/Networking/hint-authorization) provides `AnyReadyClient` and `OwnerActor`; custom policies must be non-yielding and return true explicitly. Awareness alone does not grant permission. Authorization errors or yields deny the sample; receive errors or yields are isolated from reliable traffic.
 
 Pending work, bytes, attempts and live Latest streams have private bounds. Limits can shed traffic; they do not guarantee admission or delivery fairness. Actor retirement and client teardown discard their pending samples and sequence state. Latest sequences never wrap; an exhausted live stream stops accepting samples until its lifetime ends. Hints use the framework's single unreliable transport, may batch within one bounded packet, and are never fragmented.
+
+## Send to an explicit client
+
+Declare a separate ServerToClient definition, then call `server.Networking.HintRuntime.SendTo(player, hintId, actor, payload)` for each selected recipient. Actor targets use that recipient's awareness mapping; pass nil for None targets. Admission validates direction, target and payload. Receiving a client Hint never automatically forwards it.
+
+On the client, subscribe to `HintRuntime.OnHintReceived` with a callback taking one receipt. Read `receipt.hintId`, `receipt.actorView` and `receipt.payload`; the receipt and decoded payload are immutable. See [HintRuntime](/api/Networking/hint-runtime) for exact signatures and failure returns.
+
+Server Latest samples coalesce separately per definition, target and recipient. Pulse retains bounded independent occurrences. Scheduling gives admitted eligible recipients turns within aggregate work, byte and send limits, after reliable work. Global or local pressure can refuse admission; there is no delivery or admission guarantee.
+
+Unreliable traffic has no ordering relationship with reliable baselines. An Actor Hint may arrive before its view is installed or while it is unavailable; the client drops it without buffering for recovery. Removal, connection closure and teardown clear obsolete sequence metadata. Never depend on a Hint to establish Actor truth or reliably announce lifecycle changes.

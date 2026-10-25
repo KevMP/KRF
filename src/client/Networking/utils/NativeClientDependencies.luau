@@ -17,6 +17,7 @@ local Commands = require(script.Parent.Parent.ClientCommandRuntime)
 local CommandState = require(script.Parent.CommandRuntimeState)
 local ReliableConsumer = require(script.Parent.ReliableConsumer)
 local Hints = require(script.Parent.Parent.ClientHintRuntime)
+local HintReceiver = require(script.Parent.HintReceiver)
 local HintState = require(script.Parent.HintRuntimeState)
 local ViewRegistry = require(script.Parent.Parent.Parent.Actor.ActorViewRegistry)
 
@@ -56,6 +57,13 @@ dependencies = {
 					end,
 					SendReliable = function(payload: buffer): ()
 						reliable:FireServer(payload)
+					end,
+					ConnectUnreliable = function(callback: (any, ...any) -> ()): () -> ()
+						local connection = transports.unreliable.OnClientEvent:Connect(callback)
+
+						return function(): ()
+							connection:Disconnect()
+						end
 					end,
 					SendUnreliable = function(payload: buffer): ()
 						transports.unreliable:FireServer(payload)
@@ -97,7 +105,8 @@ dependencies = {
 		sendReliable: ((buffer) -> ())?,
 		isReady: (() -> boolean)?,
 		onTerminalFailure: (() -> ())?,
-		sendUnreliable: ((buffer) -> ())?
+		sendUnreliable: ((buffer) -> ())?,
+		connectUnreliable: ClientTypes.ClientUnreliableObserver?
 	): (boolean, string?, (() -> ())?)
 		assert(manifest ~= nil and installActorReceiver ~= nil, "ActorInstallationMissing")
 		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
@@ -116,6 +125,8 @@ dependencies = {
 		local commands: Types.ClientCommandRuntime? = nil
 		local stopReceiver: (() -> ())? = nil
 		local hints: Types.ClientHintRuntime? = nil
+		local hintReceiver: Types.HintReceiverRuntime? = nil
+		local stopUnreliable: (() -> ())? = nil
 		local stopHints: (() -> ())? = nil
 		local removedHintActor: SignalTypes.Connection? = nil
 
@@ -126,6 +137,17 @@ dependencies = {
 
 			active = false
 			HintState.Install(nil)
+			HintState.Disconnect()
+
+			if stopUnreliable ~= nil then
+				stopUnreliable()
+				stopUnreliable = nil
+			end
+
+			if hintReceiver ~= nil then
+				hintReceiver:Destroy()
+				hintReceiver = nil
+			end
 
 			if stopHints ~= nil then
 				stopHints()
@@ -207,12 +229,13 @@ dependencies = {
 
 			commands = commandRuntime
 			CommandState.Install(commandRuntime)
-			local hasC2S = false
+			local hasC2S, hasS2C = false, false
 
 			for _, hint in protocol.hintsById or {} do
 				if hint.direction == "ClientToServer" then
 					hasC2S = true
-					break
+				else
+					hasS2C = true
 				end
 			end
 
@@ -227,16 +250,46 @@ dependencies = {
 
 				hints = hintRuntime
 				HintState.Install(hintRuntime)
+			end
 
+			if hasS2C then
+				assert(connectUnreliable ~= nil and isReady ~= nil, "HintUnreliableEndpointMissing")
+
+				local receiver = HintReceiver.new(protocol, created, {
+					Now = dependencies.Now,
+					IsReady = isReady,
+					Notify = HintState.Notify,
+				})
+
+				hintReceiver = receiver :: Types.HintReceiverRuntime
+
+				stopUnreliable = connectUnreliable(function(payload: any, ...: any): ()
+					receiver:Handle(payload, ...)
+				end)
+			end
+
+			if hasC2S or hasS2C then
 				removedHintActor = ViewRegistry.OnActorViewRemoving:Connect(function(actor): ()
-					hintRuntime:ForgetActor(actor)
+					if hints ~= nil then
+						hints:ForgetActor(actor)
+					end
+
+					if hintReceiver ~= nil then
+						hintReceiver:ForgetActor(actor)
+					end
 				end)
 
 				local observe = dependencies.ObserveStep
 
 				if observe ~= nil then
 					stopHints = observe(function(): ()
-						hintRuntime:Step()
+						if hints ~= nil then
+							hints:Step()
+						end
+
+						if hintReceiver ~= nil then
+							hintReceiver:Step()
+						end
 					end)
 				end
 			end

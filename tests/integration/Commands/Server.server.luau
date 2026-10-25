@@ -17,6 +17,8 @@ local Awareness: NetworkingTypes.ActorAwarenessRuntimeModule = require(KRF.serve
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Authorization = require(KRF.server.Networking.CommandAuthorization)
 local HintAuthorization = require(KRF.server.Networking.HintAuthorization)
+local Hints: NetworkingTypes.HintRuntime = require(KRF.server.Networking.HintRuntime)
+local HintSender = require(KRF.server.Networking.utils.HintSender)
 local HintOwner = require(KRF.server.Networking.ServerHintRuntime)
 local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
@@ -41,6 +43,18 @@ local finished: boolean = false
 local listener: RBXScriptConnection? = nil
 local hintRuntime: any = nil
 local originalHints = HintOwner.new
+local recipientTokens: { [Player]: number } = {}
+local hintTargetsReady: { [Player]: boolean } = {}
+local senderOwner: HintSender.Runtime? = nil
+local originalSender = HintSender.new
+
+HintSender.new = function(protocol, dependencies, limits)
+	local created = originalSender(protocol, dependencies, limits)
+	senderOwner = created
+
+	return created
+end
+
 local hintSeen: { [Player]: { look: boolean, pulse: boolean, reported: boolean } } = {}
 
 HintOwner.new = function(catalog, protocol, dependencies, limits)
@@ -103,6 +117,7 @@ local function finish(success: boolean, reason: string?): ()
 	Awareness.new = originalAwareness
 	Networking.Publish = originalPublish
 	HintOwner.new = originalHints
+	HintSender.new = originalSender
 
 	local cleaned: boolean, cleanupReason: any = pcall(function(): ()
 		if listener ~= nil then
@@ -114,6 +129,11 @@ local function finish(success: boolean, reason: string?): ()
 		end
 
 		Networking.Destroy()
+
+		assert(
+			senderOwner == nil or (senderOwner.pendingBytes == 0 and senderOwner.latestCount == 0),
+			"S2C teardown must release recipient ownership"
+		)
 
 		assert(
 			hintRuntime == nil or (hintRuntime.latestCount == 0 and hintRuntime.pendingBytes == 0),
@@ -177,8 +197,9 @@ local function exercise(): ()
 	phase = "Exercise"
 	reports = {}
 
-	for _, player: Player in players do
-		control:FireClient(player, phase, actors[player]:GetId())
+	for index, player: Player in players do
+		recipientTokens[player] = index
+		control:FireClient(player, phase, actors[player]:GetId(), nil, nil, index)
 	end
 end
 
@@ -188,6 +209,22 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 	end
 
 	local completed: boolean, reason: any = pcall(function(): ()
+		if reportPhase == "HintTargetsReady" then
+			assert(phase == "Exercise" and not hintTargetsReady[player], "Expected one S2C eligibility barrier")
+			hintTargetsReady[player] = true
+
+			for sample = 1, 4 do
+				local value = recipientTokens[player] * 16 + sample
+				assert(Hints.SendTo(player, "Game.VFX", nil, value), "Expected None Pulse admission")
+				assert(Hints.SendTo(player, "Game.ZLook", actors[player], value), "Expected Actor Latest admission")
+				assert(Hints.SendTo(player, "Game.ZPulse", actors[player], value), "Expected Actor Pulse admission")
+				assert(Hints.SendTo(player, "Game.ZSample", nil, value), "Expected None Latest admission")
+				task.wait(0.03)
+			end
+
+			return
+		end
+
 		assert(failure == nil, tostring(failure))
 		assert(reportPhase == phase, "Unexpected native command test phase")
 		assert(not reports[player], "Duplicate native client report")
@@ -257,6 +294,11 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 			Networking.Destroy()
 
 			assert(
+				senderOwner == nil or (senderOwner.pendingBytes == 0 and senderOwner.latestCount == 0),
+				"S2C teardown must release recipient ownership"
+			)
+
+			assert(
 				ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME) == nil,
 				"Framework transport must be removed at shutdown"
 			)
@@ -322,6 +364,15 @@ local completed: boolean, reason: any = pcall(function(): ()
 				receive = receiveHint,
 			},
 			{ id = "Game.VFX", direction = "ServerToClient", target = "None", mode = "Pulse", payload = Schema.U16 },
+			{ id = "Game.ZLook", direction = "ServerToClient", target = "Actor", mode = "Latest", payload = Schema.U8 },
+			{ id = "Game.ZPulse", direction = "ServerToClient", target = "Actor", mode = "Pulse", payload = Schema.U8 },
+			{
+				id = "Game.ZSample",
+				direction = "ServerToClient",
+				target = "None",
+				mode = "Latest",
+				payload = Schema.U8,
+			},
 		},
 	})
 

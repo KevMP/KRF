@@ -37,6 +37,10 @@ beforeEach(function()
 		table.insert(sent, payload)
 	end
 
+	fixture.client.transport.ConnectUnreliable = function(_callback: (any, ...any) -> ()): () -> ()
+		return function(): () end
+	end
+
 	Native.ObserveStep = function(callback: () -> ()): () -> ()
 		tick = callback
 
@@ -114,7 +118,7 @@ local function flush(): ()
 end
 
 local function records(): { SharedTypes.HintRecord }
-	local codec = Wire.Compile(assert(fixture.protocol, "Expected installed protocol"))
+	local codec = Wire.Compile(assert(fixture.protocol, "Expected installed protocol"), "ClientToServer")
 	local result: { SharedTypes.HintRecord } = {}
 
 	for _, packet in sent do

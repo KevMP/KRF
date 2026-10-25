@@ -13,6 +13,7 @@ local ActorTypes = require(KRF.server.Actor.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
+local Hints: Types.HintRuntime = require(KRF.server.Networking.HintRuntime)
 local Transport = require(KRF.shared.Networking.Transport)
 local Scheduling = require(KRF.server.Networking.utils.AwarenessScheduling)
 local Authorization = require(KRF.server.Networking.HintAuthorization)
@@ -30,6 +31,7 @@ local player: Player
 local protocol: SharedTypes.PreparedProtocol?
 local tick: (() -> ())?
 local received: { { context: Types.HintContext, payload: any } }
+local outbound: { { player: Player, payload: buffer } }
 local instances: { Instance } = {}
 
 beforeEach(function()
@@ -42,6 +44,7 @@ beforeEach(function()
 	player.Parent = Players
 	instances = { reliable, unreliable, barrier, player }
 	protocol, tick, received = nil, nil, {}
+	outbound = {}
 
 	Transport.Create = function(): (SharedTypes.OwnedTransport?, string?)
 		local root = Instance.new("Folder")
@@ -50,7 +53,12 @@ beforeEach(function()
 		return {
 			root = root,
 			reliable = { OnServerEvent = reliable.Event, FireClient = function() end } :: any,
-			unreliable = { OnServerEvent = unreliable.Event } :: any,
+			unreliable = {
+				OnServerEvent = unreliable.Event,
+				FireClient = function(_self: UnreliableRemoteEvent, recipient: Player, payload: buffer): ()
+					table.insert(outbound, { player = recipient, payload = payload })
+				end,
+			} :: any,
 			Destroy = function(): ()
 				root:Destroy()
 			end,
@@ -132,6 +140,35 @@ local function sample(sequence: number): buffer
 
 	return packet
 end
+
+it("installs frozen explicit-recipient sends and revokes the facade on teardown", function()
+	local accepted, reason = Hints.SendTo(player, "A.Server", nil, 7)
+	expect(accepted).toBe(false)
+	expect(reason).toBe("ClientNotReady")
+	ready()
+	expect(table.isfrozen(Hints)).toBe(true)
+	accepted, reason = Hints.SendTo(player, "B.Sample", nil, 7)
+	expect(accepted).toBe(false)
+	expect(reason).toBe("HintDirectionMismatch")
+	expect((Hints.SendTo(player, "A.Server", nil, 7))).toBe(true)
+	expect(outbound).toEqual({})
+	local step = assert(tick, "Expected production Hint scheduler")
+	step()
+	expect(#outbound).toBe(1)
+	expect(outbound[1].player).toBe(player)
+	local prepared = assert(protocol, "Expected published codebooks")
+	local codec = Wire.Compile(prepared.runtime, "ServerToClient")
+	local cursor = assert(codec.Open(outbound[1].payload))
+	expect((codec.Read(cursor))).toEqual({ hintCode = 0, payload = 7 })
+	player.Parent = nil
+	Hints.SendTo(player, "A.Server", nil, 8)
+	step()
+	expect(#outbound).toBe(1)
+	Server._ResetForTests()
+	accepted, reason = Hints.SendTo(player, "A.Server", nil, 9)
+	expect(accepted).toBe(false)
+	expect(reason).toBe("NetworkingNotInitialized")
+end)
 
 it("installs the existing unreliable lane and defers validated delivery to the reliable scheduler's tail", function()
 	local step = assert(tick, "Expected production scheduler")

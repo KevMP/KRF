@@ -23,6 +23,8 @@ local HintManifest = require(script.Parent.Parent.Parent.shared.Networking.utils
 local Commands = require(script.Parent.ServerCommandRuntime)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local Hints = require(script.Parent.ServerHintRuntime)
+local HintSender = require(script.Parent.utils.HintSender)
+local HintState = require(script.Parent.utils.HintRuntimeState)
 
 local ServerNetworking = {} :: Types.ServerNetworking
 local initialized: boolean = false
@@ -39,6 +41,7 @@ local commandRuntime: Types.ServerCommandRuntime? = nil
 local preparedCommands: Types.PreparedCommandCatalog? = nil
 local preparedHints: Types.PreparedHintCatalog? = nil
 local hintRuntime: Types.ServerHintRuntime? = nil
+local hintSender: Types.HintSenderRuntime? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
@@ -329,12 +332,14 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			local budget: Types.AwarenessStepBudget = Scheduling.GetBudget()
 
 			local hasC2S = false
+			local hasS2C = false
 			local hintCatalog = preparedHints
 
 			for _, definition in if hintCatalog ~= nil then hintCatalog.orderedDefinitions else {} do
 				if definition.direction == "ClientToServer" then
 					hasC2S = true
-					break
+				else
+					hasS2C = true
 				end
 			end
 
@@ -349,6 +354,27 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 					end,
 					awareness = created,
 				})
+			end
+
+			if hasS2C then
+				local sender = HintSender.new(protocol.runtime, {
+					Now = os.clock,
+					IsClientReady = ServerNetworking.IsClientReady,
+					ObserveClientReady = ServerNetworking.ObserveClientReady,
+					ObserveClientClosed = ServerNetworking.ObserveClientClosed,
+					ObserveActorRemoved = function(callback): () -> ()
+						return created:ObserveActorRemoved(callback)
+					end,
+					SendUnreliable = function(player: Player, payload: buffer): ()
+						if initialized and player.Parent == Players then
+							transports.unreliable:FireClient(player, payload)
+						end
+					end,
+					awareness = created,
+				})
+
+				hintSender = sender :: Types.HintSenderRuntime
+				HintState.Install(hintSender)
 			end
 
 			stopDriver = Scheduling.ObserveStep(function()
@@ -366,6 +392,10 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 					if initialized and awareness == created and hintRuntime ~= nil then
 						hintRuntime:Step()
+					end
+
+					if initialized and awareness == created and hintSender ~= nil then
+						hintSender:Step()
 					end
 				end
 			end)
@@ -463,6 +493,12 @@ end
 
 function ServerNetworking.Destroy(): ()
 	initialized = false
+	HintState.Install(nil)
+
+	if hintSender ~= nil then
+		hintSender:Destroy()
+		hintSender = nil
+	end
 
 	if hintRuntime ~= nil then
 		hintRuntime:Destroy()

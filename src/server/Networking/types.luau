@@ -5,6 +5,46 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local types = {}
 
+export type HintRuntime = {
+	read SendTo: (Player, string, ActorTypes.Actor?, any?) -> (boolean, string?),
+}
+
+export type HintSendLimits = {
+	windowSeconds: number,
+	maxAttempts: number,
+	maxBytes: number,
+	maxGlobalAttempts: number,
+	maxGlobalBytes: number,
+	maxPending: number,
+	maxPendingBytes: number,
+	maxGlobalPending: number,
+	maxGlobalPendingBytes: number,
+	maxLatestKeys: number,
+	maxGlobalLatestKeys: number,
+	maxSequence: number,
+	maxRecords: number,
+	maxConnectionRecords: number,
+	maxSends: number,
+	maxStepBytes: number,
+}
+
+export type HintSendDependencies = {
+	Now: () -> number,
+	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
+	ObserveClientClosed: ((Player) -> ()) -> () -> (),
+	ObserveActorRemoved: ((ActorTypes.Actor) -> ()) -> () -> (),
+	SendUnreliable: (Player, buffer) -> (),
+	awareness: ActorAwarenessRuntime,
+}
+
+export type HintSenderRuntime = {
+	SendTo: (self: HintSenderRuntime, Player, string, ActorTypes.Actor?, any?) -> (boolean, string?),
+	Step: (self: HintSenderRuntime) -> (number, number),
+	ForgetActor: (self: HintSenderRuntime, ActorTypes.Actor) -> (),
+	Destroy: (self: HintSenderRuntime) -> (),
+}
+
 -- Disposable presentation definitions; callbacks remain server-local.
 export type HintContext = {
 	read player: Player,
