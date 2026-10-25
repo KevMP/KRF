@@ -43,7 +43,7 @@ function ActorRecipientProjection.Anchor(
 	actor: ActorTypes.Actor,
 	isOwner: boolean
 ): (number?, Projection?, string?)
-	local captured: Types.PublicationBaseline? = self.publication:CaptureBaseline(actor)
+	local captured: Types.PublicationBaseline? = self.publication:CaptureBaseline(actor, not isOwner)
 
 	if captured == nil then
 		return nil, nil, "ActorBaselineMissing"
@@ -65,7 +65,7 @@ function ActorRecipientProjection.Anchor(
 		-- body before retaining either. This one charge survives materialization.
 		local created: Projection = {
 			sequence = captured.sequence,
-			retainedBytes = self.publication:GetBaselineWeight(actor) * 2,
+			retainedBytes = self.publication:GetBaselineWeight(actor, not isOwner) * 2,
 			canonical = captured,
 			isOwner = isOwner,
 			domains = captured.domains,
