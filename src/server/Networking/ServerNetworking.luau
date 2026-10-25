@@ -22,6 +22,7 @@ local CommandManifest = require(script.Parent.Parent.Parent.shared.Networking.ut
 local HintManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.HintManifest)
 local Commands = require(script.Parent.ServerCommandRuntime)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
+local Hints = require(script.Parent.ServerHintRuntime)
 
 local ServerNetworking = {} :: Types.ServerNetworking
 local initialized: boolean = false
@@ -36,6 +37,8 @@ local stopDriver: (() -> ())? = nil
 local resync: Types.ResyncRuntime? = nil
 local commandRuntime: Types.ServerCommandRuntime? = nil
 local preparedCommands: Types.PreparedCommandCatalog? = nil
+local preparedHints: Types.PreparedHintCatalog? = nil
+local hintRuntime: Types.ServerHintRuntime? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
@@ -227,6 +230,7 @@ function ServerNetworking.Prepare(
 	table.freeze(prepared)
 	preparedCatalog = catalog
 	preparedCommands = commands
+	preparedHints = hints
 
 	return prepared, nil
 end
@@ -324,6 +328,29 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 			local budget: Types.AwarenessStepBudget = Scheduling.GetBudget()
 
+			local hasC2S = false
+			local hintCatalog = preparedHints
+
+			for _, definition in if hintCatalog ~= nil then hintCatalog.orderedDefinitions else {} do
+				if definition.direction == "ClientToServer" then
+					hasC2S = true
+					break
+				end
+			end
+
+			if hasC2S and hintCatalog ~= nil then
+				hintRuntime = Hints.new(hintCatalog, protocol.runtime, {
+					Now = os.clock,
+					IsClientReady = ServerNetworking.IsClientReady,
+					ObserveClientReady = ServerNetworking.ObserveClientReady,
+					ObserveClientClosed = ServerNetworking.ObserveClientClosed,
+					ObserveActorRemoved = function(callback): () -> ()
+						return created:ObserveActorRemoved(callback)
+					end,
+					awareness = created,
+				})
+			end
+
 			stopDriver = Scheduling.ObserveStep(function()
 				if initialized and awareness == created then
 					if commandRuntime ~= nil then
@@ -336,6 +363,10 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 					end
 
 					created:Step(budget.maxBytes, budget.maxRecords)
+
+					if initialized and awareness == created and hintRuntime ~= nil then
+						hintRuntime:Step()
+					end
 				end
 			end)
 		end
@@ -372,7 +403,17 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 			end)
 		)
 
-		-- The unreliable lane is reserved. No message kinds or consumers exist on it.
+		if hintRuntime ~= nil then
+			table.insert(
+				listeners,
+				transports.unreliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
+					if initialized and player.Parent == Players and hintRuntime ~= nil then
+						hintRuntime:Handle(player, payload, ...)
+					end
+				end)
+			)
+		end
+
 		initialized = true
 	end)
 
@@ -423,6 +464,11 @@ end
 function ServerNetworking.Destroy(): ()
 	initialized = false
 
+	if hintRuntime ~= nil then
+		hintRuntime:Destroy()
+		hintRuntime = nil
+	end
+
 	if commandRuntime ~= nil then
 		commandRuntime:Destroy()
 		commandRuntime = nil
@@ -459,6 +505,7 @@ function ServerNetworking.Destroy(): ()
 
 	preparedCatalog = nil
 	preparedCommands = nil
+	preparedHints = nil
 
 	for _, listener: RBXScriptConnection in listeners do
 		listener:Disconnect()

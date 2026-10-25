@@ -4,10 +4,12 @@ local SharedNetworkingTypes = require(script.Parent.Parent.shared.Networking.typ
 local types = {}
 
 export type StartupFailure = { system: string, reason: string }
+export type ClientStepObserver = (callback: () -> ()) -> () -> ()
 
 export type ClientTransport = {
 	ConnectReliable: (callback: (any, ...any) -> ()) -> () -> (),
 	SendReliable: (payload: buffer) -> (),
+	SendUnreliable: ((payload: buffer) -> ())?,
 }
 
 -- Framework-private adapters for deterministic startup tests; no consumer hook.
@@ -16,13 +18,15 @@ export type Dependencies = {
 	DiscoverTransport: (deadline: number) -> (ClientTransport?, string?),
 	ScheduleTimeout: (seconds: number, callback: () -> ()) -> () -> (),
 	Resume: (thread) -> (),
+	ObserveStep: ClientStepObserver?,
 	InstallConsumers: (
 		protocol: SharedNetworkingTypes.ClientProtocol,
 		manifest: SharedNetworkingTypes.ProtocolManifest?,
 		installActorReceiver: (((any) -> ()) -> ())?,
 		sendReliable: ((buffer) -> ())?,
 		isReady: (() -> boolean)?,
-		onTerminalFailure: (() -> ())?
+		onTerminalFailure: (() -> ())?,
+		sendUnreliable: ((buffer) -> ())?
 	) -> (boolean, string?, (() -> ())?),
 }
 

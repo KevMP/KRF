@@ -134,6 +134,16 @@ export type ClientProtocol = {
 	read hintsByCode: { [number]: ClientHint }?,
 }
 
+export type HintRecord = { read hintCode: number, read targetHandle: number?, read sequence: number?, read payload: any? }
+export type HintCursor = { source: buffer, offset: number, remaining: number }
+
+export type HintCodec = {
+	read EncodeRecord: (HintRecord) -> (buffer?, string?),
+	read Pack: ({ buffer }) -> (buffer?, string?),
+	read Open: (any) -> (HintCursor?, string?),
+	read Read: (HintCursor) -> (HintRecord?, string?),
+}
+
 export type ClientCommand = {
 	read id: string,
 	read code: number,

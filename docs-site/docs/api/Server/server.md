@@ -25,7 +25,7 @@ Combines built-in and game definitions, then prepares and publishes the registri
 - Returns `false, { system, reason }` when preparation or publication fails; partially published startup state is rolled back.
 - Networking failures use `system = "Networking"`, including `TransportConflict`, `BootstrapManifestTooLarge`, `InvalidProtocolManifest`, and `CodecCompilationFailure`.
 - Command catalog failures use `system = "Command"`. Supply `config.commands` as an array of [command definitions](/Networking/commands); omission means an empty catalog. Authorization and handlers are required even for commands without schemas.
-- Hint catalog failures use `system = "Hint"`. Supply `config.hints` as an array of [Hint definitions](/Networking/hints); omission means an empty catalog. Hint registration and bootstrap do not install send/receive delivery.
+- Hint catalog failures use `system = "Hint"`. Supply `config.hints` as an array of [Hint definitions](/Networking/hints); omission means an empty catalog. ClientToServer Hint callbacks receive validated presentation samples after explicit authorization. ServerToClient delivery is not available yet.
 - Returns a `Server` failure with `ServerInitAlreadyAttempted` on a repeated attempt, including after a failed first attempt, or `CatalogAlreadyLoaded` when a registry was loaded before startup.
 
 ## Related

@@ -66,6 +66,7 @@ type RuntimeState = {
 	work: WorkBudget.Budget?,
 	backlog: Types.ReliableBacklog,
 	disconnects: { () -> () },
+	actorRemovedObservers: { (ActorTypes.Actor) -> () },
 	destroyed: boolean,
 	stepping: boolean,
 }
@@ -452,6 +453,22 @@ function ActorAwarenessRuntime.OnActorUnregistering(self: Runtime, actor: ActorT
 		connection.actors[actor] = nil
 		connection.handles[stream.handle] = nil
 		stream:Retire()
+	end
+
+	for _, callback in table.clone(self.actorRemovedObservers) do
+		pcall(callback, actor)
+	end
+end
+
+function ActorAwarenessRuntime.ObserveActorRemoved(self: Runtime, callback: (ActorTypes.Actor) -> ()): () -> ()
+	table.insert(self.actorRemovedObservers, callback)
+
+	return function(): ()
+		local index = table.find(self.actorRemovedObservers, callback)
+
+		if index ~= nil then
+			table.remove(self.actorRemovedObservers, index)
+		end
 	end
 end
 
@@ -870,6 +887,7 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	end
 
 	table.clear(self.disconnects)
+	table.clear(self.actorRemovedObservers)
 	table.clear(self.owners)
 	table.clear(self.players)
 	table.clear(self.models)
@@ -922,6 +940,7 @@ function ActorAwarenessRuntime.new(
 		waiting = {},
 		epoch = 0,
 		disconnects = {},
+		actorRemovedObservers = {},
 		destroyed = false,
 		stepping = false,
 	}

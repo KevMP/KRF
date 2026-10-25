@@ -16,6 +16,8 @@ local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local Awareness: NetworkingTypes.ActorAwarenessRuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Authorization = require(KRF.server.Networking.CommandAuthorization)
+local HintAuthorization = require(KRF.server.Networking.HintAuthorization)
+local HintOwner = require(KRF.server.Networking.ServerHintRuntime)
 local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
 local Correlation = require(script.Parent.Utils.ServerCorrelation)
@@ -37,6 +39,37 @@ local originalPublish: typeof(Networking.Publish) = Networking.Publish
 local phase: string = "Startup"
 local finished: boolean = false
 local listener: RBXScriptConnection? = nil
+local hintRuntime: any = nil
+local originalHints = HintOwner.new
+local hintSeen: { [Player]: { look: boolean, pulse: boolean, reported: boolean } } = {}
+
+HintOwner.new = function(catalog, protocol, dependencies, limits)
+	local created = originalHints(catalog, protocol, dependencies, limits)
+	hintRuntime = created
+
+	return created
+end
+
+local function receiveHint(context: NetworkingTypes.HintContext, value: number): ()
+	assert(value >= 1 and value <= 4 and table.isfrozen(context), "Expected validated immutable Hint context")
+	local seen = hintSeen[context.player] or { look = false, pulse = false, reported = false }
+
+	hintSeen[context.player] = seen
+
+	if context.hintId == "Game.Look" then
+		assert(context.actor == actors[context.player], "C2S OwnerActor must reject another Player's aware Actor")
+		seen.look = true
+	else
+		assert(context.actor == nil, "None-target Pulse must not carry Actor identity")
+		seen.pulse = true
+	end
+
+	if seen.look and seen.pulse and not seen.reported then
+		seen.reported = true
+		-- Harness-only observation, not an acknowledgement in the Hint protocol.
+		control:FireClient(context.player, "HintSeen")
+	end
+end
 
 -- Capture the real startup owners without replacing their dependencies or
 -- consumer installation. N4 receives NativePlayerAssociation from production.
@@ -69,6 +102,7 @@ local function finish(success: boolean, reason: string?): ()
 	finished = true
 	Awareness.new = originalAwareness
 	Networking.Publish = originalPublish
+	HintOwner.new = originalHints
 
 	local cleaned: boolean, cleanupReason: any = pcall(function(): ()
 		if listener ~= nil then
@@ -80,6 +114,11 @@ local function finish(success: boolean, reason: string?): ()
 		end
 
 		Networking.Destroy()
+
+		assert(
+			hintRuntime == nil or (hintRuntime.latestCount == 0 and hintRuntime.pendingBytes == 0),
+			"Hint teardown must release keys and queued wire capacity"
+		)
 
 		for _, model: Model in models do
 			model:Destroy()
@@ -270,12 +309,17 @@ local completed: boolean, reason: any = pcall(function(): ()
 				target = "Actor",
 				mode = "Latest",
 				payload = Schema.U8,
-				authorize = function(): (boolean, string?)
-					return true, nil
-				end,
-				receive = function(): ()
-					error("Hint receive runtime is not installed in this fixture")
-				end,
+				authorize = HintAuthorization.OwnerActor,
+				receive = receiveHint,
+			},
+			{
+				id = "Game.Pulse",
+				direction = "ClientToServer",
+				target = "None",
+				mode = "Pulse",
+				payload = Schema.U8,
+				authorize = HintAuthorization.AnyReadyClient,
+				receive = receiveHint,
 			},
 			{ id = "Game.VFX", direction = "ServerToClient", target = "None", mode = "Pulse", payload = Schema.U16 },
 		},
@@ -286,7 +330,7 @@ local completed: boolean, reason: any = pcall(function(): ()
 	assert(protocol ~= nil and protocol.commandsById ~= nil, "Expected startup command codebook")
 	assert(protocol.hintsById ~= nil and protocol.hintsByCode ~= nil, "Expected startup Hint codebooks")
 	assert(protocol.hintsById["Game.Look"].code == 0, "Expected deterministic Hint codes")
-	assert(protocol.hintsByCode[1].id == "Game.VFX", "Expected both Hint directions in bootstrap")
+	assert(protocol.hintsByCode[2].id == "Game.VFX", "Expected both Hint directions in bootstrap")
 	local commandsById: { [string]: SharedTypes.ClientCommand } = protocol.commandsById
 	local codec: SharedTypes.CommandCodec = CommandCodec.Compile(protocol)
 	local owned: SharedTypes.OwnedTransport?, transportReason: string? = Transport.Locate(ReplicatedStorage)

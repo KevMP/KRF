@@ -1,6 +1,8 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local ClientTypes = require(script.Parent.Parent.Parent.types)
+local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
 local Transport = require(script.Parent.Parent.Parent.Parent.shared.Networking.Transport)
 local Types = require(script.Parent.Parent.types)
@@ -14,11 +16,23 @@ local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.u
 local Commands = require(script.Parent.Parent.ClientCommandRuntime)
 local CommandState = require(script.Parent.CommandRuntimeState)
 local ReliableConsumer = require(script.Parent.ReliableConsumer)
+local Hints = require(script.Parent.Parent.ClientHintRuntime)
+local HintState = require(script.Parent.HintRuntimeState)
+local ViewRegistry = require(script.Parent.Parent.Parent.Actor.ActorViewRegistry)
 
 local dependencies: ClientTypes.Dependencies
 
 dependencies = {
 	Now = os.clock,
+	ObserveStep = function(callback: () -> ()): () -> ()
+		local connection = RunService.Heartbeat:Connect(function(_deltaTime: number): ()
+			callback()
+		end)
+
+		return function(): ()
+			connection:Disconnect()
+		end
+	end,
 	Resume = function(waitingThread: thread): ()
 		task.defer(waitingThread)
 	end,
@@ -42,6 +56,9 @@ dependencies = {
 					end,
 					SendReliable = function(payload: buffer): ()
 						reliable:FireServer(payload)
+					end,
+					SendUnreliable = function(payload: buffer): ()
+						transports.unreliable:FireServer(payload)
 					end,
 				},
 					nil
@@ -79,7 +96,8 @@ dependencies = {
 		installActorReceiver: (((any) -> ()) -> ())?,
 		sendReliable: ((buffer) -> ())?,
 		isReady: (() -> boolean)?,
-		onTerminalFailure: (() -> ())?
+		onTerminalFailure: (() -> ())?,
+		sendUnreliable: ((buffer) -> ())?
 	): (boolean, string?, (() -> ())?)
 		assert(manifest ~= nil and installActorReceiver ~= nil, "ActorInstallationMissing")
 		local schemas: SharedNetworkingTypes.ActorSchemaCatalog = {}
@@ -97,6 +115,9 @@ dependencies = {
 		local active: boolean = true
 		local commands: Types.ClientCommandRuntime? = nil
 		local stopReceiver: (() -> ())? = nil
+		local hints: Types.ClientHintRuntime? = nil
+		local stopHints: (() -> ())? = nil
+		local removedHintActor: SignalTypes.Connection? = nil
 
 		local function cleanup(): ()
 			if not active then
@@ -104,6 +125,22 @@ dependencies = {
 			end
 
 			active = false
+			HintState.Install(nil)
+
+			if stopHints ~= nil then
+				stopHints()
+				stopHints = nil
+			end
+
+			if removedHintActor ~= nil then
+				removedHintActor:Disconnect()
+				removedHintActor = nil
+			end
+
+			if hints ~= nil then
+				hints:Destroy()
+				hints = nil
+			end
 
 			if stopReceiver ~= nil then
 				stopReceiver()
@@ -170,6 +207,39 @@ dependencies = {
 
 			commands = commandRuntime
 			CommandState.Install(commandRuntime)
+			local hasC2S = false
+
+			for _, hint in protocol.hintsById or {} do
+				if hint.direction == "ClientToServer" then
+					hasC2S = true
+					break
+				end
+			end
+
+			if hasC2S then
+				assert(sendUnreliable ~= nil and isReady ~= nil, "HintUnreliableEndpointMissing")
+
+				local hintRuntime = Hints.new(protocol, created, {
+					Now = dependencies.Now,
+					IsReady = isReady,
+					SendUnreliable = sendUnreliable,
+				})
+
+				hints = hintRuntime
+				HintState.Install(hintRuntime)
+
+				removedHintActor = ViewRegistry.OnActorViewRemoving:Connect(function(actor): ()
+					hintRuntime:ForgetActor(actor)
+				end)
+
+				local observe = dependencies.ObserveStep
+
+				if observe ~= nil then
+					stopHints = observe(function(): ()
+						hintRuntime:Step()
+					end)
+				end
+			end
 
 			local receive: (any) -> (), stop: () -> () = ReliableConsumer.new(
 				function(payload: any): ()
@@ -198,4 +268,4 @@ dependencies = {
 	end,
 }
 
-return dependencies
+return dependencies :: ClientTypes.Dependencies

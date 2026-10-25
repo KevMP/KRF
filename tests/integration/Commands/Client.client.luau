@@ -15,6 +15,7 @@ local ActorConstants = require(KRF.shared.Networking.utils.ActorProtocolConstant
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local NetworkingTypes = require(KRF.client.Networking.types)
 local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
+local Hints: NetworkingTypes.HintRuntime = require(KRF.client.Networking.HintRuntime)
 script.Parent:WaitForChild("Utils"):WaitForChild("ClientCorrelation")
 local Correlation = require(script.Parent.Utils.ClientCorrelation)
 local correlationGo: boolean = false
@@ -27,6 +28,7 @@ local disconnectCalls: number = 0
 local discoverTransport: typeof(Native.DiscoverTransport) = Native.DiscoverTransport
 local reconstruct: typeof(Manifest.Reconstruct) = Manifest.Reconstruct
 local installedProtocol: SharedTypes.ClientProtocol? = nil
+local hintSeen = false
 
 -- Observe actual client reconstruction; retain the production consumer installer.
 Manifest.Reconstruct = function(metadata: SharedTypes.ProtocolManifest): (SharedTypes.ClientProtocol?, string?)
@@ -66,7 +68,7 @@ Native.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransp
 				)
 
 				assert(hint.payloadCodec.Measure(255) == 1, "Expected compiled N1 Hint payload codec")
-				assert(protocol.hintsByCode[1].id == "Game.VFX", "Expected S2C Hint codebook")
+				assert(protocol.hintsByCode[2].id == "Game.VFX", "Expected S2C Hint codebook")
 				assert(table.isfrozen(protocol.hintsById) and table.isfrozen(hint), "Hint codebooks must be immutable")
 				assert(not Client._IsInitialized(), "READY must follow private protocol installation")
 			end
@@ -121,6 +123,12 @@ local function waitFor(predicate: () -> boolean, reason: string): ()
 end
 
 control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId: string?, requester: boolean?): ()
+	if phase == "HintSeen" then
+		hintSeen = true
+
+		return
+	end
+
 	if failed then
 		return
 	end
@@ -145,8 +153,31 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId:
 			end, "Normal client consumers did not install Actor views")
 
 			view = Registry.GetActorViewById(actorId :: string)
+			assert(view ~= nil, "Expected installed Hint target")
+
+			for _, candidate in Registry.GetAllActorViews() do
+				if candidate ~= view then
+					assert(
+						Hints.Send("Game.Look", candidate, 1),
+						"Aware foreign targets may be offered but must fail server authorization"
+					)
+				end
+			end
+
+			-- Offer distinct samples/occurrences, not retries of a promised delivery.
+			for value = 1, 4 do
+				assert(Hints.Send("Game.Look", view, value), "Expected native Latest admission")
+				assert(Hints.Send("Game.Pulse", nil, value), "Expected native Pulse admission")
+				task.wait(0.03)
+			end
+
+			waitFor(function(): boolean
+				return hintSeen
+			end, "Production C2S Hint path did not deliver both modes")
+
 			local first: number?, failure: string? = Commands.Send("Game.Ping")
 			assert(first ~= nil and failure == nil and first > 0, "Expected raw request id after READY")
+			assert(first == 1, "Hints must not allocate command request ids")
 			local second: number? = nil
 			second, failure = Commands.Send("Game.Interact", view, { choice = 7 })
 			assert(second ~= nil and failure == nil and second > first, "Expected installed private target mapping")
@@ -241,6 +272,8 @@ control.OnClientEvent:Connect(function(phase: string, actorId: string?, otherId:
 end)
 
 local completed: boolean, reason: any = pcall(function(): ()
+	local hintAccepted, hintReason = Hints.Send("Game.Look", nil, 1)
+	assert(not hintAccepted and hintReason == "ClientNotReady", "Hint Send before Init must fail locally")
 	local requestId: number?, failure: string? = Commands.Send("Game.Ping")
 	assert(requestId == nil and type(failure) == "string", "Native Send before Init must fail locally")
 	local initialized: boolean, startupFailure: Client.StartupFailure? = Client.Init()

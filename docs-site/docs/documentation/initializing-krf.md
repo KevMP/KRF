@@ -18,7 +18,7 @@ A starter template with initialization already wired is not available yet. Use t
 | `actions` | Action factories with declarative requirements, costs, and behavior |
 | `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
 | `commands` | [Command definitions](./Networking/commands) with target modes, optional schemas, explicit authorization, and handlers |
-| `hints` | [Hint definitions](./Networking/hints) with direction, target, mode, bounded payload and explicit client-origin authorization/receive callbacks; registration and bootstrap only |
+| `hints` | [Hint definitions](./Networking/hints) with direction, target, mode, bounded payload and explicit client-origin authorization/receive callbacks; ClientToServer sending and authorized server receipt |
 
 Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 

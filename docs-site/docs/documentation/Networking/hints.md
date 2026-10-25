@@ -2,11 +2,11 @@
 sidebar_position: 5
 ---
 
-# Hint definitions
+# Hints
 
 Hints describe disposable, non-authoritative presentation messages. Supply definitions through the `hints` catalog in [server startup](../initializing-krf), then inspect the immutable catalog through [HintRegistry](/api/Networking/hint-registry).
 
-This branch supports registration, schema validation and protocol bootstrap. Hint sending, receiving, coalescing and delivery events are not installed yet. Registering a definition does not invoke its callbacks or send traffic.
+ClientToServer hints support local sending and explicitly authorized server callbacks. ServerToClient definitions can be registered and bootstrapped, but server delivery and client receive events are not available yet. Registering a definition alone sends no Hint traffic.
 
 ## Definition fields
 
@@ -26,7 +26,7 @@ An Actor target identifies the subject of presentation data; awareness alone doe
 
 ## Declare a catalog
 
-This module declares a server-originated cosmetic cue without exposing transport details:
+This catalog accepts a disposable cosmetic sample for the sending Player's associated Actor:
 
 ```lua
 --!strict
@@ -34,14 +34,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 local Types = require(KRF.server.Networking.types)
 local Schema = require(KRF.shared.Networking.Schema)
+local Authorization = require(KRF.server.Networking.HintAuthorization)
 
 local hints: { Types.HintDefinition } = {
 	{
-		id = "Game.CosmeticBurst",
-		direction = "ServerToClient",
+		id = "Game.CosmeticLook",
+		direction = "ClientToServer",
 		target = "Actor",
-		mode = "Pulse",
-		payload = Schema.Struct({ style = Schema.Enum({ "Dust", "Spark" }) }),
+		mode = "Latest",
+		payload = Schema.Struct({ yaw = Schema.U16 }),
+		authorize = Authorization.OwnerActor,
+		receive = function(context: Types.HintContext, payload: any): ()
+			-- Consume payload.yaw for server-local cosmetic presentation only.
+		end,
 	},
 }
 
@@ -57,3 +62,13 @@ Startup owns frozen definitions and nested schema metadata independently of the 
 Invalid Hint catalogs fail startup with `system = "Hint"`, without publishing partial registries or transport. Failures include `DuplicateHintId`, `HintDirectionInvalid`, `HintTargetInvalid`, `HintModeInvalid`, `HintAuthorizationRequired`, `HintReceiverRequired`, schema-validation reasons and `HintRecordTooLarge`.
 
 Each definition's conservative schema maximum must fit one private unreliable packet budget, including the envelope, hint code, optional Actor handle and Latest sequence allowance. Oversized definitions fail startup rather than relying on compression or fragmentation. The combined domain, command and Hint bootstrap also has one bounded byte budget. These are internal bounds, not game networking-rate settings.
+
+## Send a cosmetic sample
+
+Require `client.Networking.HintRuntime` and call `Send("Game.CosmeticLook", actorView, { yaw = 120 })` with a current, available ActorView. Pass nil for definitions targeting `None`. See [HintRuntime](/api/Networking/hint-runtime) for local failure returns.
+
+A true return means local admission only. Delivery, authorization and callback success are not acknowledged. Do not retry an occurrence to obtain reliability. Latest replaces the unsent sample for the same definition and Actor, and stale or duplicate arrivals are suppressed. Pulse retains independent occurrences only within bounded pending capacity. Either mode can be dropped under pressure. Neither changes Actor revisions, requests recovery, allocates command request ids or automatically relays to other clients.
+
+The server validates framing, definition, connection-local Actor handle and payload before authorization. Callbacks receive a frozen context and schema-owned immutable payload. [HintAuthorization](/api/Networking/hint-authorization) provides `AnyReadyClient` and `OwnerActor`; custom policies must be non-yielding and return true explicitly. Awareness alone does not grant permission. Authorization errors or yields deny the sample; receive errors or yields are isolated from reliable traffic.
+
+Pending work, bytes, attempts and live Latest streams have private bounds. Limits can shed traffic; they do not guarantee admission or delivery fairness. Actor retirement and client teardown discard their pending samples and sequence state. Latest sequences never wrap; an exhausted live stream stops accepting samples until its lifetime ends. Hints use the framework's single unreliable transport, may batch within one bounded packet, and are never fragmented.

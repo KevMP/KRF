@@ -49,6 +49,37 @@ export type HintRegistry = {
 	read _RollbackStartup: () -> (),
 }
 
+export type ServerHintLimits = {
+	maxPackets: number?,
+	maxBytes: number?,
+	maxGlobalPackets: number?,
+	maxGlobalBytes: number?,
+	maxPendingPackets: number?,
+	maxPendingBytes: number?,
+	maxGlobalPendingPackets: number?,
+	maxGlobalPendingBytes: number?,
+	maxRecords: number?,
+	maxLatestKeys: number?,
+	maxGlobalLatestKeys: number?,
+	windowSeconds: number?,
+}
+
+export type ServerHintDependencies = {
+	Now: () -> number,
+	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
+	ObserveClientClosed: ((Player) -> ()) -> () -> (),
+	ObserveActorRemoved: (((ActorTypes.Actor) -> ()) -> () -> ())?,
+	awareness: ActorAwarenessRuntime,
+}
+
+export type ServerHintRuntime = {
+	Handle: (self: ServerHintRuntime, Player, any, ...any) -> (boolean, string?),
+	Step: (self: ServerHintRuntime) -> (number, number),
+	ForgetActor: (self: ServerHintRuntime, ActorTypes.Actor) -> (),
+	Destroy: (self: ServerHintRuntime) -> (),
+}
+
 -- Commands are startup definitions. Context and outcomes contain semantic data
 -- only; connection identities, handles, buffers and egress ownership stay private.
 export type CommandOutcome = {
@@ -365,6 +396,7 @@ export type ActorAwarenessOptions = {
 }
 
 export type ActorAwarenessRuntime = {
+	ObserveActorRemoved: (self: ActorAwarenessRuntime, (ActorTypes.Actor) -> ()) -> () -> (),
 	ResolveActor: (self: ActorAwarenessRuntime, player: Player, handle: number) -> (ActorTypes.Actor?, string?),
 	ReserveCommandResult: (
 		self: ActorAwarenessRuntime,
