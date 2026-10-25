@@ -122,7 +122,7 @@ end
 -- Reference-only opportunity membership. Payloads remain in each stream's N3
 -- queue; capture itself still runs through Prepare under the same causal gate.
 function ActorAwarenessRuntime._indexCapture(self: Runtime, connection: Connection, stream: Stream): ()
-	if stream.recapture and stream:CanCapture() then
+	if stream:NeedsCapture() and stream:CanCapture() then
 		local node: ActiveQueue.Node<Stream>? = stream.captureNode
 
 		if node == nil then
@@ -181,7 +181,7 @@ function ActorAwarenessRuntime._claimCapture(
 end
 
 function ActorAwarenessRuntime._yieldCapture(self: Runtime, connection: Connection, stream: Stream): ()
-	if self.connections[stream.player] ~= connection or not stream.recapture then
+	if self.connections[stream.player] ~= connection or not stream:NeedsCapture() then
 		return
 	end
 
@@ -343,11 +343,18 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 		YieldCapture = function(active: Stream): ()
 			self:_yieldCapture(connection, active)
 		end,
-		Project = function(
+		Anchor = function(
 			projectedActor: ActorTypes.Actor,
 			player: Player
 		): (number?, Projections.Projection?, string?)
-			return self.projections:Capture(projectedActor, self.owners[projectedActor] == player)
+			return self.projections:Anchor(projectedActor, self.owners[projectedActor] == player)
+		end,
+		Project = function(
+			projectedActor: ActorTypes.Actor,
+			_player: Player,
+			projection: Projections.Projection
+		): (number?, Projections.Projection?, string?)
+			return self.projections:Project(projectedActor, projection)
 		end,
 		Activate = function(active: Stream): ()
 			self:_activate(connection, active)
@@ -497,10 +504,10 @@ function ActorAwarenessRuntime.RequestReplacementBaseline(
 		return false, "ActorStreamHalted"
 	end
 
-	local captured: boolean = stream:Capture()
+	local anchored: boolean = stream:Capture()
 
-	return captured,
-		if captured
+	return anchored,
+		if anchored
 			then nil
 			else if stream.recapture and not stream.failed then "ActorBaselineCapacity" else "ActorStreamHalted"
 end

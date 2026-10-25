@@ -28,13 +28,14 @@ beforeEach(function()
 	TestUtils.drain(fixture)
 	fixture.deliveries = {}
 	stream = internal.connections[player].actors[actor]
-	local project = stream.dependencies.Project
+	local anchor = stream.dependencies.Anchor
 	attempts = 0
 
-	stream.dependencies.Project = function(target: ActorTypes.Actor, recipient: Player): (any, any, any)
+	-- Capacity refusals now stop at the cheap anchor; count actual retry attempts.
+	stream.dependencies.Anchor = function(target: ActorTypes.Actor, recipient: Player): (any, any, any)
 		attempts += 1
 
-		return project(target, recipient)
+		return anchor(target, recipient)
 	end
 end)
 

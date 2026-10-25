@@ -168,7 +168,9 @@ export type PublicationCommit = {
 
 -- The wrapper preserves a present domain whose Optional state is nil.
 export type PublicationDomainTruth = SharedNetworkingTypes.ActorDomainTruth
+
 export type PublicationBaseline = { read sequence: number, read domains: { [string]: PublicationDomainTruth } }
+
 export type PublicationFault = { read actorId: string, read domainId: string, read reason: string }
 export type PublicationRuntimeOptions = { ReportFault: ((fault: PublicationFault) -> ())? }
 
@@ -177,6 +179,7 @@ export type PublicationRuntime = {
 	AttachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (),
 	GetActorSequence: (self: PublicationRuntime, actor: ActorTypes.Actor) -> number,
+	GetBaselineWeight: (self: PublicationRuntime, actor: ActorTypes.Actor) -> number,
 	GetAttachedActors: (self: PublicationRuntime) -> { ActorTypes.Actor },
 	CaptureBaseline: (self: PublicationRuntime, actor: ActorTypes.Actor) -> PublicationBaseline?,
 	ObserveCommits: (self: PublicationRuntime, observer: (commit: PublicationCommit) -> ()) -> () -> (),
@@ -272,7 +275,9 @@ export type PublicationScheduler = {
 	ResetAfterBaseline: (
 		self: PublicationScheduler,
 		stream: PublicationStreamKey,
-		domains: { [string]: PublicationDomainTruth }
+		domains: { [string]: PublicationDomainTruth },
+		preserveQueued: boolean?,
+		owned: boolean?
 	) -> (),
 	RemoveStream: (self: PublicationScheduler, stream: PublicationStreamKey) -> (),
 	GetStreamStatus: (self: PublicationScheduler, stream: PublicationStreamKey) -> PublicationStreamStatus,

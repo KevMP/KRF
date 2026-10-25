@@ -413,3 +413,35 @@ it("enforces the non-yield contract before an Actor is attached", function()
 	resource.callbacks[actor]()
 	expect(commits[1].sequence).toBe(1)
 end)
+
+it("keeps anchor weight atomic and shares frozen canonical values across later mutations", function()
+	runtime:Destroy()
+
+	local names: TestUtils.DomainFixture =
+		TestUtils.createDomain("Game.Names", Schema.Map(Schema.String(8), Schema.String(64), 4), { first = "one" })
+
+	runtime = TestUtils.createRuntime({ names.definition })
+	attach()
+	local initial = assert(runtime:CaptureBaseline(actor))
+	local originalWeight = runtime:GetBaselineWeight(actor)
+	expect(table.isfrozen(initial.domains["Game.Names"].value)).toBe(true)
+	local repeated = assert(runtime:CaptureBaseline(actor))
+	expect(initial.domains["Game.Names"].value == repeated.domains["Game.Names"].value).toBe(true)
+	names.value.first = "longer name"
+	names.callbacks[actor]()
+	expect(runtime:GetBaselineWeight(actor)).toBe(originalWeight + #"longer name" - #"one")
+	expect(initial.domains["Game.Names"].value.first).toBe("one")
+	local admittedWeight = runtime:GetBaselineWeight(actor)
+
+	local completed = pcall(function()
+		runtime:WithActorCommit(actor, function()
+			names.value.first = string.rep("x", 65)
+			names.callbacks[actor]()
+		end)
+	end)
+
+	expect(completed).toBe(false)
+	expect(runtime:GetBaselineWeight(actor)).toBe(admittedWeight)
+	runtime:DetachActor(actor)
+	expect(runtime:GetBaselineWeight(actor)).toBe(0)
+end)

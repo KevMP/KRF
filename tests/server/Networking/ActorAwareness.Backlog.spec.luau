@@ -241,8 +241,12 @@ it("does not charge a replacement owner when projection closes and readies its o
 	local stream: any = (runtime :: any).connections[player].actors[actor]
 	local project = stream.dependencies.Project
 
-	stream.dependencies.Project = function(target: ActorTypes.Actor, recipient: Player): (any, any, any)
-		local sequence, projected, reason = project(target, recipient)
+	stream.dependencies.Project = function(
+		target: ActorTypes.Actor,
+		recipient: Player,
+		projection: any
+	): (any, any, any)
+		local sequence, projected, reason = project(target, recipient, projection)
 		TestUtils.close(fixture, player)
 		TestUtils.ready(fixture, player)
 
@@ -250,7 +254,8 @@ it("does not charge a replacement owner when projection closes and readies its o
 	end
 
 	local accepted = runtime:RequestReplacementBaseline(player, assert(runtime:GetHandle(player, actor)))
-	expect(accepted).toBe(false)
+	expect(accepted).toBe(true)
+	runtime:Step(32768, 128)
 	expect((runtime :: any).backlog.records).toBe(1)
 	TestUtils.drain(fixture)
 	expect((runtime :: any).backlog.records).toBe(0)

@@ -28,6 +28,7 @@ for _, ownerOnly: boolean in { false, true } do
 		"expires both reusable projections without changing in-flight bodies for ownerOnly=" .. tostring(ownerOnly),
 		function()
 			fixture.options.maxChunkBytes = 1
+			fixture.options.workLimits = { captures = 4 }
 
 			local owner: Player = TestUtils.player(fixture)
 			local observer: Player = TestUtils.player(fixture)
@@ -41,9 +42,9 @@ for _, ownerOnly: boolean in { false, true } do
 			local initial: CachedBaseline = reusable[actor]
 			local other: CachedBaseline = reusable[unaffected]
 			assert(initial.public ~= nil and initial.owner ~= nil, "Expected cached public and Owner projections")
+			runtime:Step(512, 4)
 			local publicBytes: string = buffer.tostring(initial.public.body)
 			local ownerBytes: string = buffer.tostring(initial.owner.body)
-			runtime:Step(512, 4)
 			expect(#TestUtils.kind(fixture, owner, "BaselineBegin")).toBe(2)
 			expect(TestUtils.kind(fixture, owner, "BaselineEnd")).toEqual({})
 

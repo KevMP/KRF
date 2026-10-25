@@ -371,23 +371,30 @@ end
 function PublicationScheduler.ResetAfterBaseline(
 	self: Runtime,
 	key: Types.PublicationStreamKey,
-	domains: { [string]: Types.PublicationDomainTruth }
+	domains: { [string]: Types.PublicationDomainTruth },
+	preserveQueued: boolean?,
+	owned: boolean?
 ): ()
 	local stream: Stream = find(self, key, true) :: Stream
 
-	for _, pending in stream.records do
-		if pending.charge ~= nil then
-			pending.charge.release()
+	if not preserveQueued then
+		for _, pending in stream.records do
+			if pending.charge ~= nil then
+				pending.charge.release()
+			end
 		end
+
+		table.clear(stream.records)
+		stream.pendingEvents = 0
+		stream.queuedBytes = 0
+		stream.barriers = 0
+		deactivate(self, stream)
 	end
 
-	table.clear(stream.records)
-	stream.pendingEvents = 0
-	stream.queuedBytes = 0
-	stream.barriers = 0
 	stream.needsBaseline = false
-	stream.delivered = copy(domains)
-	deactivate(self, stream)
+	-- N3 canonical values are already frozen and owned; applying a patch copies
+	-- changed paths. Only the top-level delivered index must be writable here.
+	stream.delivered = if owned then table.clone(domains) else copy(domains)
 end
 
 function PublicationScheduler.RemoveStream(self: Runtime, key: Types.PublicationStreamKey): ()

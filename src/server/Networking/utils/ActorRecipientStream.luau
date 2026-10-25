@@ -14,7 +14,8 @@ export type Dependencies = {
 	DiscardProjection: (ActorTypes.Actor, ProjectionTypes.Projection) -> (),
 	GetOrder: (() -> number)?,
 	GetEpoch: () -> number,
-	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
+	Anchor: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
+	Project: (ActorTypes.Actor, Player, ProjectionTypes.Projection) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
 	ReportFault: (Types.ActorAwarenessFault) -> (),
 	MeasureRecord: (Types.PublicationFilteredCommit) -> number,
@@ -23,7 +24,8 @@ export type Dependencies = {
 }
 
 type Baseline = {
-	body: buffer,
+	body: buffer?,
+	projection: ProjectionTypes.Projection,
 	offset: number,
 	phase: "Begin" | "Chunks",
 	order: number,
@@ -73,6 +75,10 @@ end
 
 function ActorRecipientStream.CanCapture(self: Stream): boolean
 	return self.dependencies.Current() and self.dependencies.GetEpoch() >= self.retryAt
+end
+
+function ActorRecipientStream.NeedsCapture(self: Stream): boolean
+	return self.recapture or (self.baseline ~= nil and self.baseline.body == nil)
 end
 
 function ActorRecipientStream._backoff(self: Stream): ()
@@ -146,24 +152,17 @@ function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 	end
 end
 
+-- Preserve the synchronous N4 boundary using only N3-owned value references.
+-- Recipient projection/encoding runs later under _prepareBaseline's work claim.
 function ActorRecipientStream.Capture(self: Stream): boolean
 	local earliest = self:GetNextOrder()
 		or (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0)
 
 	local sequence: number?, projected: ProjectionTypes.Projection?, reason: string? =
-		self.dependencies.Project(self.actor, self.player)
+		self.dependencies.Anchor(self.actor, self.player)
 
-	if sequence == nil or projected == nil or projected.body == nil then
+	if sequence == nil or projected == nil then
 		self:Fault(reason or "InvalidActorBaseline")
-
-		return false
-	end
-
-	local body: buffer = projected.body
-
-	if buffer.len(body) > self.options.maxBaselineBytes then
-		self.dependencies.DiscardProjection(self.actor, projected)
-		self:Fault("ActorBaselineTooLarge")
 
 		return false
 	end
@@ -184,7 +183,7 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 	local charge = self.dependencies.Backlog:Acquire(
 		self.key,
 		projected,
-		buffer.len(body),
+		projected.retainedBytes,
 		if self.baseline ~= nil and self.baseline.charge ~= self.stagedBaselineCharge then self.baseline.charge else nil,
 		true,
 		function(): ()
@@ -213,7 +212,8 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 
 	self.baseline = {
 		charge = charge,
-		body = body,
+		projection = projected,
+		body = projected.body,
 		offset = 0,
 		phase = "Begin",
 		order = earliest,
@@ -221,8 +221,52 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 
 	self.recapture = false
 	self.blockedBudget = nil
-	self.scheduler:ResetAfterBaseline(self.key, projected.domains)
+	self.scheduler:ResetAfterBaseline(self.key, projected.domains, false, true)
 	self.dependencies.Activate(self)
+
+	return true
+end
+
+function ActorRecipientStream._prepareBaseline(self: Stream, work: WorkBudget.Budget): boolean
+	if not self:CanCapture() then
+		return false
+	end
+
+	self.dependencies.Activate(self)
+
+	if not self.dependencies.ClaimCapture(self, work) then
+		return false
+	end
+
+	if self.recapture and not self:Capture() then
+		return false
+	end
+
+	local pending = self.baseline
+	assert(pending ~= nil, "Expected anchored baseline")
+	self:StageBaseline()
+	local _, projected, reason = self.dependencies.Project(self.actor, self.player, pending.projection)
+
+	-- Projection dependencies can invalidate/replace the selected generation.
+	if self.baseline ~= pending or not self.dependencies.Current() then
+		return false
+	end
+
+	if projected == nil or projected.body == nil then
+		self:Fault(reason or "InvalidActorBaseline")
+
+		return false
+	end
+
+	if buffer.len(projected.body) > self.options.maxBaselineBytes then
+		self:Fault("ActorBaselineTooLarge")
+
+		return false
+	end
+
+	pending.body = projected.body
+	-- Retain every commit queued after the synchronous anchor's fence.
+	self.scheduler:ResetAfterBaseline(self.key, projected.domains, true, true)
 
 	return true
 end
@@ -286,7 +330,7 @@ function ActorRecipientStream._begin(self: Stream, canBegin: boolean): SharedNet
 		handle = self.handle,
 		actorId = if self.identitySent then nil else self.actor:GetId(),
 		generation = self.generation,
-		totalBytes = buffer.len(pending.body),
+		totalBytes = buffer.len(assert(pending.body, "Expected encoded baseline")),
 	}
 end
 
@@ -324,19 +368,8 @@ function ActorRecipientStream.Prepare(
 		return nil, nil
 	end
 
-	if self.recapture then
-		if not self:CanCapture() then
-			return nil, nil
-		end
-
-		-- Eligibility is indexed through the existing bounded active visit; no retry scan.
-		self.dependencies.Activate(self)
-
-		if not self.dependencies.ClaimCapture(self, work) then
-			return nil, nil
-		end
-
-		if not self:Capture() then
+	if self:NeedsCapture() then
+		if not self:_prepareBaseline(work) then
 			return nil, nil
 		end
 	end
@@ -345,20 +378,21 @@ function ActorRecipientStream.Prepare(
 
 	if pending ~= nil then
 		self:StageBaseline()
+		local body = assert(pending.body, "Expected encoded baseline")
 
 		if pending.phase == "Begin" then
 			return self:_begin(canBegin), nil
-		elseif pending.offset < buffer.len(pending.body) then
+		elseif pending.offset < buffer.len(body) then
 			-- Header and fixed Chunk framing consume 26 bytes in a single-record packet.
 			local length: number =
-				math.min(self.options.maxChunkBytes, buffer.len(pending.body) - pending.offset, maxBytes - 26)
+				math.min(self.options.maxChunkBytes, buffer.len(body) - pending.offset, maxBytes - 26)
 
 			if length <= 0 then
 				return nil, nil
 			end
 
 			local chunk: buffer = buffer.create(length)
-			buffer.copy(chunk, 0, pending.body, pending.offset, length)
+			buffer.copy(chunk, 0, body, pending.offset, length)
 
 			return {
 				kind = "BaselineChunk",
@@ -411,11 +445,7 @@ function ActorRecipientStream.Prepare(
 		self.scheduler:MarkBaselinePending(self.key)
 		self.dependencies.Activate(self)
 
-		if not self.dependencies.ClaimCapture(self, work) then
-			return nil, nil
-		end
-
-		if not self:Capture() then
+		if not self:_prepareBaseline(work) then
 			return nil, nil
 		end
 

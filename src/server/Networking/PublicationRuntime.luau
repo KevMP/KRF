@@ -10,6 +10,7 @@ PublicationRuntime.__index = PublicationRuntime
 
 type Attachment = {
 	sequence: number,
+	baselineBytes: number,
 	captures: { [string]: Types.PublicationCaptureResult },
 	disconnects: { { domainId: string, callback: () -> () } },
 	active: boolean,
@@ -259,6 +260,7 @@ local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attac
 	end
 
 	for domainId, captured in staged do
+		attachment.baselineBytes += captured.encodedSizeBytes - attachment.captures[domainId].encodedSizeBytes
 		attachment.captures[domainId] = captured
 	end
 
@@ -351,6 +353,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 
 	local attachment: Attachment = {
 		sequence = 0,
+		baselineBytes = 4,
 		captures = {},
 		disconnects = {},
 		active = true,
@@ -364,6 +367,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 	local success, failure = pcall(function()
 		for _, domain in self.domains do
 			attachment.captures[domain.id] = captureDomain(self, actor, domain, nil)
+			attachment.baselineBytes += 4 + attachment.captures[domain.id].encodedSizeBytes
 
 			if domain.observe ~= nil then
 				local ok, kind, disconnect = runSync(function(): (() -> ())?
@@ -447,6 +451,14 @@ end
 
 function PublicationRuntime.IsActorAttached(self: Runtime, actor: ActorTypes.Actor): boolean
 	return not self.destroyed and self.attachments[actor] ~= nil
+end
+
+-- Full canonical wire weight is maintained alongside admitted frozen values.
+-- Capturing a shallow anchor never has to measure or encode those values again.
+function PublicationRuntime.GetBaselineWeight(self: Runtime, actor: ActorTypes.Actor): number
+	local attachment = self.attachments[actor]
+
+	return if attachment ~= nil then attachment.baselineBytes else 0
 end
 
 function PublicationRuntime.GetAttachedActors(self: Runtime): { ActorTypes.Actor }

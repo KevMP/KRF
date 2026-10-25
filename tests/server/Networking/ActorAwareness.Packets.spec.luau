@@ -50,6 +50,9 @@ it("batches different Actors' baseline and live records while preserving each st
 end)
 
 it("completes a large join within packet and concurrent baseline limits", function()
+	-- Fill all transfer slots while testing packetization, independently of capture fairness.
+	fixture.options.workLimits = { captures = Constants.MAX_PENDING_BASELINES }
+
 	local player: Player = TestUtils.player(fixture)
 	local actors: { ActorTypes.Actor } = {}
 
