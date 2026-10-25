@@ -65,10 +65,11 @@ ActorRecipientStream.__index = ActorRecipientStream
 export type Stream = typeof(setmetatable({} :: StreamState, ActorRecipientStream))
 
 function ActorRecipientStream._clearBaseline(self: Stream): ()
-	if self.baseline ~= nil and self.baseline.charge ~= nil then
+	if self.baseline ~= nil and self.baseline.charge ~= nil and self.baseline.charge ~= self.stagedBaselineCharge then
 		self.baseline.charge.release()
 	end
 
+	-- A selected transfer remains owned by the pump even after invalidation.
 	self.baseline = nil
 end
 
@@ -86,8 +87,15 @@ function ActorRecipientStream.ReleaseStaged(self: Stream): ()
 	end
 
 	if self.stagedBaselineCharge ~= nil then
-		self.stagedBaselineCharge.resume()
+		local charge = self.stagedBaselineCharge
+
 		self.stagedBaselineCharge = nil
+
+		if self.baseline ~= nil and self.baseline.charge == charge then
+			charge.resume()
+		else
+			charge.release()
+		end
 	end
 end
 
@@ -156,7 +164,7 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 		self.key,
 		projected,
 		buffer.len(body),
-		if self.baseline ~= nil then self.baseline.charge else nil,
+		if self.baseline ~= nil and self.baseline.charge ~= self.stagedBaselineCharge then self.baseline.charge else nil,
 		true,
 		function(): ()
 			self.dependencies.DiscardProjection(self.actor, projected)
@@ -516,7 +524,7 @@ end
 
 function ActorRecipientStream.Destroy(self: Stream): ()
 	self:_clearBaseline()
-	self:ReleaseStaged()
+	-- Only the pump epilogue releases staged ownership, including reentrant teardown.
 	self.scheduler:Destroy()
 end
 

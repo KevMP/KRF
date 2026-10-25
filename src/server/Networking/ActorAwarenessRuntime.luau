@@ -800,6 +800,10 @@ function ActorAwarenessRuntime.Step(self: Runtime, maxBytes: number, maxRecords:
 		end
 	end
 
+	if self.destroyed then
+		self.backlog:Destroy()
+	end
+
 	table.clear(self.deferred)
 	table.clear(self.waiting)
 	self.stepping = false
@@ -858,11 +862,19 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	table.clear(self.players)
 	table.clear(self.models)
 	self.projections:Destroy()
-	self.backlog:Destroy()
+
+	-- A reentrant teardown must leave selected charges to the pump epilogue.
+	if not self.stepping then
+		self.backlog:Destroy()
+	end
+
 	table.clear(self.measuredRecords)
 	self.active = ActiveQueue.new()
 	self.captures = ActiveQueue.new()
-	self.deferred, self.waiting = {}, {}
+
+	if not self.stepping then
+		self.deferred, self.waiting = {}, {}
+	end
 end
 
 function ActorAwarenessRuntime.new(
