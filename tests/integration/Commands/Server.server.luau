@@ -10,6 +10,7 @@ local SharedTypes = require(KRF.shared.Networking.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
+local Diagnostics = require(KRF.server.Networking.NetworkingDiagnostics)
 local Transport = require(KRF.shared.Networking.Transport)
 local Protocol = require(KRF.shared.Networking.ProtocolCodec)
 local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
@@ -291,7 +292,53 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 			reports = {}
 			control:FireAllClients(phase)
 		elseif phase == "Retire" then
+			local snapshot = assert(Diagnostics.GetServerSnapshot(), "Expected live server diagnostics")
+			assert(snapshot.scope == "Server" and table.isfrozen(snapshot), "Expected immutable server snapshot")
+			assert(snapshot.gauges.connections.current == 2, "Expected two tracked native connections")
+
+			assert(
+				snapshot.counters.reliableSendAttempts > 0 and snapshot.counters.reliableEncodedBytes > 0,
+				"Expected reliable transport observations"
+			)
+
+			assert(snapshot.counters.reliableLogicalRecords > 0, "Expected reliable logical record observations")
+
+			assert(
+				snapshot.counters.unreliableSendAttempts > 0 and snapshot.counters.unreliableLogicalRecords > 0,
+				"Expected S2C transport observations"
+			)
+
+			assert(
+				snapshot.counters.commandsAdmitted > 0 and snapshot.counters.hintPacketsAdmitted > 0,
+				"Expected ingress admission observations"
+			)
+
+			local reliableCalls, unreliableCalls = 0, 0
+
+			for recipient in reports do
+				local connection =
+					assert(Diagnostics.GetConnectionSnapshot(recipient), "Expected local connection diagnostics")
+
+				assert(connection.scope == "Connection", "Expected connection scope")
+				reliableCalls += connection.counters.reliableSendAttempts
+				unreliableCalls += connection.counters.unreliableSendAttempts
+			end
+
+			assert(
+				reliableCalls == snapshot.counters.reliableSendAttempts
+					and unreliableCalls == snapshot.counters.unreliableSendAttempts,
+				"Expected aggregate native transport accounting"
+			)
+
 			Networking.Destroy()
+			assert(Diagnostics.GetServerSnapshot() == nil, "Shutdown must revoke diagnostic snapshots")
+
+			for recipient in reports do
+				assert(
+					Diagnostics.GetConnectionSnapshot(recipient) == nil,
+					"Shutdown must release Player diagnostic lookups"
+				)
+			end
 
 			assert(
 				senderOwner == nil or (senderOwner.pendingBytes == 0 and senderOwner.latestCount == 0),

@@ -2,6 +2,8 @@
 local Types = require(script.Parent.Parent.types)
 local PublicTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Registry = require(script.Parent.Parent.Parent.Actor.utils.ActorViewRegistryState)
@@ -13,6 +15,7 @@ local HintReceiver = {}
 HintReceiver.__index = HintReceiver
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.HintCodec,
 	stream: Types.ActorStreamRuntime,
@@ -40,11 +43,15 @@ function HintReceiver._release(self: Runtime, packet: Packet): ()
 
 	packet.held = false
 	self.pendingCount -= 1
+	Metrics.Adjust(self.diagnostics, "hintReceivePackets", -1)
 	self.pendingBytes -= packet.bytes
+	Metrics.Adjust(self.diagnostics, "hintReceiveBytes", -packet.bytes)
 end
 
 function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, string?)
 	if self.destroyed or not self.dependencies.IsReady() then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, "ClientNotReady"
 	end
 
@@ -55,24 +62,32 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 	end
 
 	if self.attempts >= self.limits.maxPackets then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
 	self.attempts += 1
 
 	if select("#", ...) ~= 0 then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, "MalformedHintPacket"
 	end
 
 	local cursor, reason = self.codec.Open(payload)
 
 	if cursor == nil then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, reason
 	end
 
 	local bytes = buffer.len(cursor.source)
 
 	if self.rateBytes + bytes > self.limits.maxBytes then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -82,6 +97,8 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 		self.pendingCount >= self.limits.maxPendingPackets
 		or self.pendingBytes + bytes > self.limits.maxPendingBytes
 	then
+		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -90,7 +107,11 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 	cursor.source = owned
 	table.insert(self.packets, { cursor = cursor, bytes = bytes, held = true })
 	self.pendingCount += 1
+	Metrics.Adjust(self.diagnostics, "hintReceivePackets", 1)
 	self.pendingBytes += bytes
+	Metrics.Adjust(self.diagnostics, "hintReceiveBytes", bytes)
+
+	Metrics.Count(self.diagnostics, "hintPacketsAdmitted", 1)
 
 	return true, nil
 end
@@ -241,6 +262,7 @@ function HintReceiver.new(
 	end
 
 	local state: State = {
+		diagnostics = Diagnostics.Get(),
 		protocol = protocol,
 		stream = stream,
 		dependencies = dependencies,

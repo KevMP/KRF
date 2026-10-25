@@ -24,6 +24,8 @@ local Commands = require(script.Parent.ServerCommandRuntime)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local Hints = require(script.Parent.ServerHintRuntime)
 local HintSender = require(script.Parent.utils.HintSender)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
+local SendMetrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local HintState = require(script.Parent.utils.HintRuntimeState)
 
 local ServerNetworking = {} :: Types.ServerNetworking
@@ -250,6 +252,7 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 	end
 
 	owned = transports
+	Diagnostics.Start()
 
 	local completed: boolean, failure: any = pcall(function()
 		if preparedCatalog ~= nil then
@@ -259,11 +262,13 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 
 		local handshake: Types.ServerHandshake = Handshake.new(protocol, {
 			SendReliable = function(player: Player, payload: buffer): ()
+				SendMetrics.Record(Diagnostics.GetConnection(player), true, payload)
 				transports.reliable:FireClient(player, payload)
 			end,
 		})
 
 		runtime = handshake
+		handshake:ObserveClientClosed(Diagnostics.Close)
 
 		if publication ~= nil and preparedCatalog ~= nil then
 			local source: Types.PlayerAssociationSource = NativeAssociation.new()
@@ -367,6 +372,7 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 					end,
 					SendUnreliable = function(player: Player, payload: buffer): ()
 						if initialized and player.Parent == Players then
+							SendMetrics.Record(Diagnostics.GetConnection(player), false, payload)
 							transports.unreliable:FireClient(player, payload)
 						end
 					end,
@@ -558,6 +564,8 @@ function ServerNetworking.Destroy(): ()
 		(owned :: SharedNetworkingTypes.OwnedTransport).Destroy()
 		owned = nil
 	end
+
+	Diagnostics.Stop()
 end
 
 function ServerNetworking._IsInitialized(): boolean

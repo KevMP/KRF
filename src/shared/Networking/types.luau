@@ -256,4 +256,90 @@ export type ActorStreamCodecModule = {
 	Compile: (protocol: ClientProtocol, schemas: ActorSchemaCatalog) -> ActorStreamCodec,
 }
 
+-- Private diagnostics: counters saturate at the largest exact integer. Gauges
+-- include staged ownership until its existing owner releases it.
+-- Transport counters count calls before handoff (including failed calls), not
+-- delivery. Bytes are KRF buffer lengths, never platform wire bandwidth.
+-- Logical records: Actor envelopes, command request/results and resync; bootstrap
+-- control messages contribute sends/bytes but zero logical records.
+-- Work counters count admission calls/charges, not authoritative outcomes.
+-- Server/Connection: commandRequests/Bytes are admitted request ownership;
+-- reliableRecords are ledger charges, DeliveryBytes sum their accounting weights.
+-- Server only: RetainedBytes deduplicates shared ledger payload accounting;
+-- connections counts tracked transport lifetimes, including pre-Ready/rejected.
+-- Both sides: hintSend* counts encoded records/bytes excluding packet envelopes;
+-- hintReceive* counts owned complete wire packets/bytes including envelopes.
+-- Refused Hint work counts local admission drops, not later stale/transport loss.
+-- Scope-inapplicable fields stay zero; this is a private foundation inventory,
+-- not a promise that all Networking ownership or outcomes are instrumented.
+export type DiagnosticScope = "Server" | "Connection" | "Client"
+
+export type DiagnosticCounter =
+	"reliableSendAttempts"
+	| "reliableEncodedBytes"
+	| "reliableLogicalRecords"
+	| "unreliableSendAttempts"
+	| "unreliableEncodedBytes"
+	| "unreliableLogicalRecords"
+	| "commandsAdmitted"
+	| "commandsRefused"
+	| "hintRecordsAdmitted"
+	| "hintRecordsRefused"
+	| "hintPacketsAdmitted"
+	| "hintPacketsRefused"
+	| "reliableChargesAdmitted"
+	| "reliableChargesRefused"
+
+export type DiagnosticGauge =
+	"connections"
+	| "reliableRecords"
+	| "reliableRetainedBytes"
+	| "reliableDeliveryBytes"
+	| "commandRequests"
+	| "commandBytes"
+	| "hintSendRecords"
+	| "hintSendBytes"
+	| "hintReceivePackets"
+	| "hintReceiveBytes"
+
+export type DiagnosticGaugeSnapshot = { read current: number, read highWater: number }
+
+export type DiagnosticSnapshot = {
+	read scope: DiagnosticScope,
+	read counters: {
+		read reliableSendAttempts: number,
+		read reliableEncodedBytes: number,
+		read reliableLogicalRecords: number,
+		read unreliableSendAttempts: number,
+		read unreliableEncodedBytes: number,
+		read unreliableLogicalRecords: number,
+		read commandsAdmitted: number,
+		read commandsRefused: number,
+		read hintRecordsAdmitted: number,
+		read hintRecordsRefused: number,
+		read hintPacketsAdmitted: number,
+		read hintPacketsRefused: number,
+		read reliableChargesAdmitted: number,
+		read reliableChargesRefused: number,
+	},
+	read gauges: {
+		read connections: DiagnosticGaugeSnapshot,
+		read reliableRecords: DiagnosticGaugeSnapshot,
+		read reliableRetainedBytes: DiagnosticGaugeSnapshot,
+		read reliableDeliveryBytes: DiagnosticGaugeSnapshot,
+		read commandRequests: DiagnosticGaugeSnapshot,
+		read commandBytes: DiagnosticGaugeSnapshot,
+		read hintSendRecords: DiagnosticGaugeSnapshot,
+		read hintSendBytes: DiagnosticGaugeSnapshot,
+		read hintReceivePackets: DiagnosticGaugeSnapshot,
+		read hintReceiveBytes: DiagnosticGaugeSnapshot,
+	},
+}
+
+export type DiagnosticCollector = {
+	Count: (self: DiagnosticCollector, DiagnosticCounter, number) -> (),
+	Adjust: (self: DiagnosticCollector, DiagnosticGauge, number) -> (),
+	Snapshot: (self: DiagnosticCollector) -> DiagnosticSnapshot,
+}
+
 return types

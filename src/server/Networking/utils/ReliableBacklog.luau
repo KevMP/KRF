@@ -1,8 +1,17 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
-type Account = { records: number, bytes: number, pending: { [Charge]: boolean }, closed: boolean }
+type Account = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
+	records: number,
+	bytes: number,
+	pending: { [Charge]: boolean },
+	closed: boolean,
+}
 
 type Charge = {
 	release: () -> (),
@@ -19,6 +28,7 @@ type Charge = {
 type Payload = { references: number, bytes: number, onUnused: (() -> ())? }
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	maxStreamRecords: number,
 	maxStreamBytes: number,
 	limits: { [string]: number },
@@ -45,6 +55,8 @@ local function release(self: Runtime, charge: Charge): ()
 	charge.active = false
 	self.charges[charge], charge.owner.pending[charge] = nil, nil
 	self.records -= 1
+	Metrics.Adjust(charge.owner.diagnostics, "reliableRecords", -1)
+	Metrics.Adjust(charge.owner.diagnostics, "reliableDeliveryBytes", -charge.bytes)
 	charge.owner.records -= 1
 	charge.owner.bytes -= charge.bytes
 	charge.actor.records -= 1
@@ -64,6 +76,7 @@ local function release(self: Runtime, charge: Charge): ()
 	if payload.references == 0 then
 		self.payloads[charge.payload] = nil
 		self.bytes -= payload.bytes
+		Metrics.Adjust(self.diagnostics, "reliableRetainedBytes", -payload.bytes)
 
 		if payload.onUnused ~= nil then
 			payload.onUnused()
@@ -91,6 +104,7 @@ function ReliableBacklog.new(overrides: Types.ReliableBacklogLimits?, baselineBy
 	end
 
 	local state: State = {
+		diagnostics = Diagnostics.GetServer(),
 		-- One blocked recipient/Actor cannot fill the whole Actor allowance.
 		maxStreamRecords = math.max(0, math.floor((limits.actorRecords - 1) / 4)),
 		maxStreamBytes = math.max(0, math.floor((limits.actorBytes - baselineBytes) / 4)),
@@ -162,6 +176,14 @@ function ReliableBacklog.Acquire(
 			and (if actor ~= nil then actor.bytes else 0) + localBytes > limits.actorBytes - localByteReserve
 		)
 	then
+		Metrics.Count(
+			if owner ~= nil
+				then owner.diagnostics
+				else (if self.diagnostics ~= nil then Diagnostics.GetConnection(key.recipient) else nil),
+			"reliableChargesRefused",
+			1
+		)
+
 		return nil
 	end
 
@@ -173,12 +195,20 @@ function ReliableBacklog.Acquire(
 	owner, actor = self.recipients[key.recipient], self.actors[key.actor]
 
 	if owner == nil then
-		owner = { records = 0, bytes = 0, pending = {}, closed = false }
+		owner = {
+			diagnostics = if self.diagnostics ~= nil then Diagnostics.GetConnection(key.recipient) else nil,
+			records = 0,
+			bytes = 0,
+			pending = {},
+			closed = false,
+		}
+
 		self.recipients[key.recipient] = owner
 	end
 
 	if actor == nil then
-		actor = { records = 0, bytes = 0, pending = {}, closed = false }
+		local created: Account = { diagnostics = nil, records = 0, bytes = 0, pending = {}, closed = false }
+		actor = created
 		self.actors[key.actor] = actor
 	end
 
@@ -188,11 +218,15 @@ function ReliableBacklog.Acquire(
 		retained = { references = 0, bytes = bytes, onUnused = onUnused }
 		self.payloads[payload] = retained
 		self.bytes += bytes
+		Metrics.Adjust(self.diagnostics, "reliableRetainedBytes", bytes)
 	end
 
 	assert(retained.bytes == bytes, "ReliableBacklogPayloadChanged")
 	retained.references += 1
 	self.records += 1
+	Metrics.Count(owner.diagnostics, "reliableChargesAdmitted", 1)
+	Metrics.Adjust(owner.diagnostics, "reliableRecords", 1)
+	Metrics.Adjust(owner.diagnostics, "reliableDeliveryBytes", bytes)
 	owner.records += 1
 	owner.bytes += bytes
 	actor.records += 1

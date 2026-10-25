@@ -5,6 +5,11 @@ local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 local types = {}
 
+-- Private local introspection; absent outside the owning runtime lifetime.
+export type NetworkingDiagnostics = {
+	read GetClientSnapshot: () -> SharedNetworkingTypes.DiagnosticSnapshot?,
+}
+
 export type HintReceived = { read hintId: string, read actorView: PublicTypes.ActorView?, read payload: any? }
 
 export type HintRuntime = {

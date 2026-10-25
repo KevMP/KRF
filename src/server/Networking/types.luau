@@ -5,6 +5,12 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local types = {}
 
+-- Private local introspection; absent outside the owning runtime lifetime.
+export type NetworkingDiagnostics = {
+	read GetServerSnapshot: () -> SharedNetworkingTypes.DiagnosticSnapshot?,
+	read GetConnectionSnapshot: (Player) -> SharedNetworkingTypes.DiagnosticSnapshot?,
+}
+
 export type HintRuntime = {
 	read SendTo: (Player, string, ActorTypes.Actor?, any?) -> (boolean, string?),
 }

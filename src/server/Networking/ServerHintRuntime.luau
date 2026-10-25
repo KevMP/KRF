@@ -2,6 +2,8 @@
 local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Queue = require(script.Parent.utils.ActiveQueue)
@@ -11,6 +13,7 @@ type Packet = { cursor: SharedTypes.HintCursor, bytes: number, held: boolean }
 type Latest = { actor: ActorTypes.Actor?, sequence: number }
 
 type Connection = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	player: Player,
 	node: Queue.Node<Connection>?,
 	packets: { Packet },
@@ -60,7 +63,9 @@ function ServerHintRuntime._release(self: Runtime, connection: Connection, packe
 
 	packet.held = false
 	self.pendingCount -= 1
+	Metrics.Adjust(connection.diagnostics, "hintReceivePackets", -1)
 	self.pendingBytes -= packet.bytes
+	Metrics.Adjust(connection.diagnostics, "hintReceiveBytes", -packet.bytes)
 	connection.bytes -= packet.bytes
 end
 
@@ -102,8 +107,11 @@ end
 
 function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, ...: any): (boolean, string?)
 	local connection = self.connections[player]
+	local diagnosticOwner = if connection ~= nil then connection.diagnostics else nil
 
 	if connection == nil or not self:_current(connection) then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, "ClientNotReady"
 	end
 
@@ -118,6 +126,8 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	end
 
 	if connection.attempts >= self.limits.maxPackets or self.attempts >= self.limits.maxGlobalPackets then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -125,18 +135,24 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	self.attempts += 1
 
 	if select("#", ...) ~= 0 then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, "MalformedHintPacket"
 	end
 
 	local cursor, reason = self.codec.Open(payload)
 
 	if cursor == nil then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, reason
 	end
 
 	local bytes = buffer.len(cursor.source)
 
 	if connection.rateBytes + bytes > self.limits.maxBytes or self.rateBytes + bytes > self.limits.maxGlobalBytes then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -149,6 +165,8 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 		or self.pendingCount >= self.limits.maxGlobalPendingPackets
 		or self.pendingBytes + bytes > self.limits.maxGlobalPendingBytes
 	then
+		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -159,11 +177,15 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	table.insert(connection.packets, { cursor = cursor, bytes = bytes, held = true })
 	connection.bytes += bytes
 	self.pendingCount += 1
+	Metrics.Adjust(connection.diagnostics, "hintReceivePackets", 1)
 	self.pendingBytes += bytes
+	Metrics.Adjust(connection.diagnostics, "hintReceiveBytes", bytes)
 
 	local node = connection.node
 	assert(node ~= nil, "Expected Hint connection node")
 	Queue.Push(self.active, node)
+
+	Metrics.Count(connection.diagnostics, "hintPacketsAdmitted", 1)
 
 	return true, nil
 end
@@ -370,6 +392,7 @@ function ServerHintRuntime.new(
 			end
 
 			local connection: Connection = {
+				diagnostics = Diagnostics.GetConnection(player),
 				player = player,
 				packets = {},
 				bytes = 0,

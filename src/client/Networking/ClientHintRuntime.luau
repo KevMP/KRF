@@ -2,6 +2,8 @@
 local Types = require(script.Parent.types)
 local PublicTypes = require(script.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
@@ -13,6 +15,7 @@ local ClientHintRuntime = {}
 ClientHintRuntime.__index = ClientHintRuntime
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.HintCodec,
 	stream: Types.ActorStreamRuntime,
@@ -48,7 +51,9 @@ end
 
 function ClientHintRuntime._release(self: Runtime, job: Job): ()
 	self.pendingCount -= 1
+	Metrics.Adjust(self.diagnostics, "hintSendRecords", -1)
 	self.pendingBytes -= buffer.len(job.bytes)
+	Metrics.Adjust(self.diagnostics, "hintSendBytes", -buffer.len(job.bytes))
 end
 
 function ClientHintRuntime.ForgetActor(self: Runtime, actor: PublicTypes.ActorView): ()
@@ -76,6 +81,8 @@ function ClientHintRuntime.Send(
 	payload: any?
 ): (boolean, string?)
 	if self.destroyed or not self.dependencies.IsReady() then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "ClientNotReady"
 	end
 
@@ -86,6 +93,8 @@ function ClientHintRuntime.Send(
 	end
 
 	if self.attempts >= self.limits.maxAttempts then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -94,8 +103,12 @@ function ClientHintRuntime.Send(
 	local hint = if self.protocol.hintsById ~= nil then self.protocol.hintsById[id] else nil
 
 	if hint == nil then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "UnknownHint"
 	elseif hint.direction ~= "ClientToServer" then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "HintDirectionMismatch"
 	end
 
@@ -103,17 +116,23 @@ function ClientHintRuntime.Send(
 
 	if hint.target == "Actor" then
 		if actor == nil or not Registry.IsCurrent(actor) or not actor:IsAvailable() then
+			Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 			return false, "ActorViewUnavailable"
 		end
 
 		local record = self.stream:GetByActorId(actor:GetId())
 
 		if record == nil or self.stream:GetByHandle(record.handle) ~= record then
+			Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 			return false, "ActorViewUnavailable"
 		end
 
 		handle = record.handle
 	elseif actor ~= nil then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "UnexpectedActorTarget"
 	end
 
@@ -122,10 +141,14 @@ function ClientHintRuntime.Send(
 
 	if hint.mode == "Latest" then
 		if latest == nil and self.latestCount >= self.limits.maxLatestKeys then
+			Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 			return false, "HintLatestKeysFull"
 		end
 
 		if latest ~= nil and latest.sequence >= self.limits.maxSequence then
+			Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 			return false, "HintSequenceExhausted"
 		end
 	end
@@ -133,6 +156,8 @@ function ClientHintRuntime.Send(
 	local previous = if latest ~= nil then latest.job else nil
 
 	if previous == nil and self.pendingCount >= self.limits.maxPending then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -142,12 +167,16 @@ function ClientHintRuntime.Send(
 		self.codec.EncodeRecord({ hintCode = hint.code, targetHandle = handle, sequence = sequence, payload = payload })
 
 	if encoded == nil then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, reason
 	end
 
 	local bytes = buffer.len(encoded)
 
 	if self.rateBytes + bytes > self.limits.maxBytes then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -155,6 +184,8 @@ function ClientHintRuntime.Send(
 		self.pendingBytes + bytes - (if previous ~= nil then buffer.len(previous.bytes) else 0)
 		> self.limits.maxPendingBytes
 	then
+		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -173,17 +204,22 @@ function ClientHintRuntime.Send(
 
 	if previous ~= nil then
 		self.pendingBytes += bytes - buffer.len(previous.bytes)
+		Metrics.Adjust(self.diagnostics, "hintSendBytes", bytes - buffer.len(previous.bytes))
 		previous.bytes = encoded
 	else
 		local job: Job = { bytes = encoded, actor = actor, handle = handle, latest = latest }
 		table.insert(self.queue, job)
 		self.pendingCount += 1
+		Metrics.Adjust(self.diagnostics, "hintSendRecords", 1)
 		self.pendingBytes += bytes
+		Metrics.Adjust(self.diagnostics, "hintSendBytes", bytes)
 
 		if latest ~= nil then
 			latest.job = job
 		end
 	end
+
+	Metrics.Count(self.diagnostics, "hintRecordsAdmitted", 1)
 
 	return true, nil
 end
@@ -295,6 +331,7 @@ function ClientHintRuntime.new(
 	assert(limits.maxSequence <= Constants.MAX_COUNTER, "InvalidHintSequenceLimit")
 
 	local state: State = {
+		diagnostics = Diagnostics.Get(),
 		protocol = protocol,
 		codec = Codec.Compile(protocol),
 		stream = stream,

@@ -6,6 +6,8 @@ local ActorConstants = require(script.Parent.shared.Networking.utils.ActorProtoc
 local CommandConstants = require(script.Parent.shared.Networking.utils.CommandConstants)
 local ProtocolCodec = require(script.Parent.shared.Networking.ProtocolCodec)
 local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompiler)
+local Diagnostics = require(script.Networking.utils.NetworkingDiagnosticsState)
+local SendMetrics = require(script.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
 
 export type StartupFailure = ClientTypes.StartupFailure
@@ -35,6 +37,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	end
 
 	attempted = true
+	local diagnosticOwner = Diagnostics.Start()
 	local dependencies: ClientTypes.Dependencies = injectedDependencies or defaultDependencies
 	local deadline: number = dependencies.Now() + Constants.INIT_TIMEOUT_SECONDS
 	local state: "AwaitBootstrap" | "AwaitAck" = "AwaitBootstrap"
@@ -64,6 +67,7 @@ function Client.Init(): (boolean, StartupFailure?)
 		cleanupConsumers = nil
 		dispose(consumers)
 		protocol = nil
+		Diagnostics.Stop(diagnosticOwner)
 	end
 
 	local function finish(accepted: boolean, reason: string?): ()
@@ -115,6 +119,11 @@ function Client.Init(): (boolean, StartupFailure?)
 		finish(false, discoveryReason or "TransportUnavailable")
 	else
 		local transport: ClientTypes.ClientTransport = endpoint
+
+		local function sendReliable(payload: buffer): ()
+			SendMetrics.Record(diagnosticOwner, true, payload)
+			transport.SendReliable(payload)
+		end
 
 		local function receive(payload: any, ...: any): ()
 			if finished then
@@ -194,14 +203,16 @@ function Client.Init(): (boolean, StartupFailure?)
 					function(receiver: (any) -> ())
 						receiveActors = receiver
 					end,
-					transport.SendReliable,
+					SendMetrics.Wrap(diagnosticOwner, true, transport.SendReliable),
 					function(): boolean
 						return initialized and success
 					end,
 					function(): ()
 						terminate("ReliableConsumerFailed")
 					end,
-					transport.SendUnreliable,
+					if transport.SendUnreliable ~= nil
+						then SendMetrics.Wrap(diagnosticOwner, false, transport.SendUnreliable)
+						else nil,
 					transport.ConnectUnreliable
 				)
 
@@ -228,7 +239,7 @@ function Client.Init(): (boolean, StartupFailure?)
 				state = "AwaitAck"
 				local ready: buffer?, readyReason: string? = ProtocolCodec.Encode({ kind = "Ready" })
 				assert(ready ~= nil, readyReason)
-				transport.SendReliable(ready)
+				sendReliable(ready)
 			end
 		end
 
@@ -249,7 +260,7 @@ function Client.Init(): (boolean, StartupFailure?)
 				ProtocolCodec.Encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION })
 
 			assert(hello ~= nil, reason)
-			transport.SendReliable(hello)
+			sendReliable(hello)
 		end)
 
 		if not connected then

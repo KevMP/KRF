@@ -7,6 +7,8 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local Client = require(KRF.client)
+local Diagnostics = require(KRF.client.Networking.NetworkingDiagnostics)
+local DiagnosticState = require(KRF.client.Networking.utils.NetworkingDiagnosticsState)
 local ClientTypes = require(KRF.client.types)
 local Types = require(KRF.client.Networking.types)
 local SharedTypes = require(KRF.shared.Networking.types)
@@ -253,4 +255,42 @@ it("connects and disconnects the existing native unreliable endpoint without aff
 
 	barrier.Event:Wait()
 	expect(payload).toBe("sample")
+end)
+
+it("reports client admission and retained packet ownership through reentrant receipt shutdown", function()
+	expect(Diagnostics.GetClientSnapshot()).toBeNil()
+	bootstrap()
+	local aggregate = assert(DiagnosticState.Get())
+	local startup = assert(Diagnostics.GetClientSnapshot())
+	expect(startup.scope).toBe("Client")
+	expect(startup.counters.reliableSendAttempts).toBe(2)
+	expect(startup.counters.reliableLogicalRecords).toBe(0)
+	emit(1)
+	expect(assert(Diagnostics.GetClientSnapshot()).counters.hintPacketsRefused).toBe(1)
+	ClientUtils.acknowledge(fixture.client)
+	emit(2)
+	local pending = assert(Diagnostics.GetClientSnapshot())
+	expect(pending.counters.hintPacketsAdmitted).toBe(1)
+	expect(pending.gauges.hintReceivePackets.current).toBe(1)
+	expect(pending.gauges.hintReceiveBytes.current).toBe(12)
+	expect(table.isfrozen(pending.gauges.hintReceiveBytes)).toBe(true)
+	local checkedUnwind = false
+
+	local disconnect = Hints.OnHintReceived:Connect(function(): ()
+		Client._ResetForTests()
+		expect(Diagnostics.GetClientSnapshot()).toBeNil()
+		expect(aggregate:Snapshot().gauges.hintReceivePackets.current).toBe(1)
+		expect(aggregate:Snapshot().gauges.hintReceiveBytes.current).toBe(12)
+		checkedUnwind = true
+	end)
+
+	pump()
+	disconnect:Disconnect()
+	expect(checkedUnwind).toBe(true)
+	expect(aggregate:Snapshot().gauges.hintReceivePackets.current).toBe(0)
+	expect(aggregate:Snapshot().gauges.hintReceiveBytes.current).toBe(0)
+	expect(aggregate:Snapshot().gauges.hintReceiveBytes.highWater).toBe(12)
+	expect(pending.gauges.hintReceiveBytes.current).toBe(12)
+	Client._ResetForTests()
+	expect(aggregate:Snapshot().gauges.hintReceiveBytes.current).toBe(0)
 end)

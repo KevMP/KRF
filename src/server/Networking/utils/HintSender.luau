@@ -2,6 +2,8 @@
 local Types = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Queue = require(script.Parent.ActiveQueue)
@@ -10,6 +12,7 @@ type Latest = { sequence: number, actor: ActorTypes.Actor?, job: Job? }
 type Job = { bytes: buffer, actor: ActorTypes.Actor?, handle: number?, latest: Latest? }
 
 type Connection = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	player: Player,
 	node: Queue.Node<Connection>?,
 	queue: { Job },
@@ -68,7 +71,9 @@ function HintSender._release(self: Runtime, connection: Connection, job: Job): (
 	connection.pendingCount -= 1
 	connection.pendingBytes -= bytes
 	self.pendingCount -= 1
+	Metrics.Adjust(connection.diagnostics, "hintSendRecords", -1)
 	self.pendingBytes -= bytes
+	Metrics.Adjust(connection.diagnostics, "hintSendBytes", -bytes)
 end
 
 function HintSender._close(self: Runtime, player: Player): ()
@@ -126,8 +131,11 @@ function HintSender.SendTo(
 	payload: any?
 ): (boolean, string?)
 	local connection = self.connections[player]
+	local diagnosticOwner = if connection ~= nil then connection.diagnostics else nil
 
 	if connection == nil or not self:_current(connection) then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "ClientNotReady"
 	end
 
@@ -142,6 +150,8 @@ function HintSender.SendTo(
 	end
 
 	if connection.attempts >= limits.maxAttempts or self.attempts >= limits.maxGlobalAttempts then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -151,10 +161,14 @@ function HintSender.SendTo(
 	local hint = if self.protocol.hintsById ~= nil then self.protocol.hintsById[id] else nil
 
 	if hint == nil then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "UnknownHint"
 	end
 
 	if hint.direction ~= "ServerToClient" then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "HintDirectionMismatch"
 	end
 
@@ -162,15 +176,21 @@ function HintSender.SendTo(
 
 	if hint.target == "Actor" then
 		if actor == nil then
+			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 			return false, "ActorUnavailable"
 		end
 
 		handle = self.dependencies.awareness:GetHandle(player, actor)
 
 		if handle == nil or self.dependencies.awareness:ResolveActor(player, handle) ~= actor then
+			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 			return false, "ActorUnavailable"
 		end
 	elseif actor ~= nil then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "UnexpectedActorTarget"
 	end
 
@@ -182,10 +202,14 @@ function HintSender.SendTo(
 			latest == nil
 			and (connection.latestCount >= limits.maxLatestKeys or self.latestCount >= limits.maxGlobalLatestKeys)
 		then
+			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 			return false, "HintLatestKeysFull"
 		end
 
 		if latest ~= nil and latest.sequence >= limits.maxSequence then
+			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 			return false, "HintSequenceExhausted"
 		end
 	end
@@ -196,6 +220,8 @@ function HintSender.SendTo(
 		previous == nil
 		and (connection.pendingCount >= limits.maxPending or self.pendingCount >= limits.maxGlobalPending)
 	then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -205,12 +231,16 @@ function HintSender.SendTo(
 		self.codec.EncodeRecord({ hintCode = hint.code, targetHandle = handle, sequence = sequence, payload = payload })
 
 	if encoded == nil then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, reason
 	end
 
 	local bytes = buffer.len(encoded)
 
 	if connection.rateBytes + bytes > limits.maxBytes or self.rateBytes + bytes > limits.maxGlobalBytes then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "HintRateLimited"
 	end
 
@@ -220,6 +250,8 @@ function HintSender.SendTo(
 		connection.pendingBytes + delta > limits.maxPendingBytes
 		or self.pendingBytes + delta > limits.maxGlobalPendingBytes
 	then
+		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+
 		return false, "HintPendingFull"
 	end
 
@@ -240,6 +272,7 @@ function HintSender.SendTo(
 
 	connection.pendingBytes += delta
 	self.pendingBytes += delta
+	Metrics.Adjust(connection.diagnostics, "hintSendBytes", delta)
 
 	if previous ~= nil then
 		previous.bytes = encoded
@@ -248,6 +281,7 @@ function HintSender.SendTo(
 		table.insert(connection.queue, job)
 		connection.pendingCount += 1
 		self.pendingCount += 1
+		Metrics.Adjust(connection.diagnostics, "hintSendRecords", 1)
 
 		if latest ~= nil then
 			latest.job = job
@@ -256,6 +290,8 @@ function HintSender.SendTo(
 
 	local node = assert(connection.node, "Expected Hint recipient node")
 	Queue.Push(self.active, node)
+
+	Metrics.Count(connection.diagnostics, "hintRecordsAdmitted", 1)
 
 	return true, nil
 end
@@ -431,6 +467,7 @@ function HintSender.new(
 			end
 
 			local connection: Connection = {
+				diagnostics = Diagnostics.GetConnection(player),
 				player = player,
 				queue = {},
 				latest = {},
