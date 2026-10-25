@@ -13,6 +13,7 @@ export type Dependencies = {
 	Current: () -> boolean,
 	DiscardProjection: (ActorTypes.Actor, ProjectionTypes.Projection) -> (),
 	GetOrder: (() -> number)?,
+	GetEpoch: () -> number,
 	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
 	ReportFault: (Types.ActorAwarenessFault) -> (),
@@ -48,6 +49,8 @@ type StreamState = {
 	baseline: Baseline?,
 	recapture: boolean,
 	recaptureOrder: number,
+	retryAt: number,
+	retryDelay: number,
 	blockedBudget: number?,
 	removed: boolean,
 	failed: boolean,
@@ -63,6 +66,23 @@ local ActorRecipientStream = {}
 ActorRecipientStream.__index = ActorRecipientStream
 
 export type Stream = typeof(setmetatable({} :: StreamState, ActorRecipientStream))
+
+function ActorRecipientStream.ResetRecovery(self: Stream): ()
+	self.retryAt, self.retryDelay = 0, 0
+end
+
+function ActorRecipientStream.CanCapture(self: Stream): boolean
+	return self.dependencies.Current() and self.dependencies.GetEpoch() >= self.retryAt
+end
+
+function ActorRecipientStream._backoff(self: Stream): ()
+	self.retryDelay = math.min(
+		if self.retryDelay == 0 then Constants.RECOVERY_RETRY_PUMPS else self.retryDelay * 2,
+		Constants.MAX_RECOVERY_RETRY_PUMPS
+	)
+
+	self.retryAt = self.dependencies.GetEpoch() + self.retryDelay
+end
 
 function ActorRecipientStream._clearBaseline(self: Stream): ()
 	if self.baseline ~= nil and self.baseline.charge ~= nil and self.baseline.charge ~= self.stagedBaselineCharge then
@@ -105,6 +125,7 @@ function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 	local reported: boolean = self.failed
 
 	self.failed = true
+	self:ResetRecovery()
 	self:_clearBaseline()
 	self.recapture = false
 	self.blockedBudget = nil
@@ -177,6 +198,7 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 		self:_clearBaseline()
 		self.scheduler:MarkBaselinePending(self.key)
 		self.recapture, self.recaptureOrder = true, earliest
+		self:_backoff()
 		self.dependencies.Activate(self)
 
 		return false
@@ -194,9 +216,7 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 		body = body,
 		offset = 0,
 		phase = "Begin",
-		order = if self.recapture
-			then self.recaptureOrder
-			else if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0,
+		order = earliest,
 	}
 
 	self.recapture = false
@@ -237,6 +257,8 @@ function ActorRecipientStream.new(
 		baseline = nil,
 		recapture = false,
 		recaptureOrder = 0,
+		retryAt = 0,
+		retryDelay = 0,
 		blockedBudget = nil,
 		removed = false,
 		failed = false,
@@ -303,6 +325,13 @@ function ActorRecipientStream.Prepare(
 	end
 
 	if self.recapture then
+		if not self:CanCapture() then
+			return nil, nil
+		end
+
+		-- Eligibility is indexed through the existing bounded active visit; no retry scan.
+		self.dependencies.Activate(self)
+
 		if not self.dependencies.ClaimCapture(self, work) then
 			return nil, nil
 		end
@@ -438,6 +467,10 @@ function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.A
 	elseif record.kind == "BaselineEnd" then
 		if record.generation == self.generation then
 			self:_clearBaseline()
+
+			if pending ~= nil then
+				self:ResetRecovery()
+			end
 		end
 
 		self.revision = record.revision
@@ -469,6 +502,10 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 	end
 
 	if not self.scheduler:Enqueue(self.key, commit, order) then
+		if self.baseline ~= nil then
+			self:_backoff()
+		end
+
 		self.recapture = true
 
 		-- Replacement truth keeps the earliest work it supersedes ahead of newer results.
@@ -483,6 +520,7 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 end
 
 function ActorRecipientStream.Retire(self: Stream): ()
+	self:ResetRecovery()
 	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 	self.scheduler:Destroy()
 	self:_clearBaseline()
@@ -523,6 +561,7 @@ function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boole
 end
 
 function ActorRecipientStream.Destroy(self: Stream): ()
+	self:ResetRecovery()
 	self:_clearBaseline()
 	-- Only the pump epilogue releases staged ownership, including reentrant teardown.
 	self.scheduler:Destroy()

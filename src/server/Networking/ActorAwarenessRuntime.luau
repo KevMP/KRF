@@ -122,7 +122,7 @@ end
 -- Reference-only opportunity membership. Payloads remain in each stream's N3
 -- queue; capture itself still runs through Prepare under the same causal gate.
 function ActorAwarenessRuntime._indexCapture(self: Runtime, connection: Connection, stream: Stream): ()
-	if stream.recapture then
+	if stream.recapture and stream:CanCapture() then
 		local node: ActiveQueue.Node<Stream>? = stream.captureNode
 
 		if node == nil then
@@ -160,6 +160,7 @@ function ActorAwarenessRuntime._claimCapture(
 ): boolean
 	if
 		self.connections[stream.player] ~= connection
+		or not stream:CanCapture()
 		or self.captures.first == nil
 		or self.captures.first.value ~= connection
 		or connection.captures.first == nil
@@ -333,6 +334,9 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 		GetOrder = function(): number
 			return connection.egress.order
 		end,
+		GetEpoch = function(): number
+			return self.epoch
+		end,
 		ClaimCapture = function(active: Stream, work: WorkBudget.Budget): boolean
 			return self:_claimCapture(connection, active, work)
 		end,
@@ -407,6 +411,7 @@ function ActorAwarenessRuntime.RefreshPlayerAssociation(self: Runtime, actor: Ac
 		local stream: Stream? = if connection ~= nil then connection.actors[actor] else nil
 
 		if stream ~= nil and not stream.failed then
+			stream:ResetRecovery()
 			stream:Capture()
 		end
 	end
