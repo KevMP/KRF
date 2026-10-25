@@ -13,6 +13,7 @@ local CommandEgress = require(script.Parent.utils.CommandEgress)
 local ActiveQueue = require(script.Parent.utils.ActiveQueue)
 local StreamOrder = require(script.Parent.utils.ActorStreamOrder)
 local WorkBudget = require(script.Parent.utils.ReliableWorkBudget)
+local Backlog = require(script.Parent.utils.ReliableBacklog)
 
 type Stream = Streams.Stream
 
@@ -63,6 +64,7 @@ type RuntimeState = {
 	waiting: { Connection },
 	epoch: number,
 	work: WorkBudget.Budget?,
+	backlog: Types.ReliableBacklog,
 	disconnects: { () -> () },
 	destroyed: boolean,
 	stepping: boolean,
@@ -321,6 +323,13 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 	end
 
 	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.options, {
+		Backlog = self.backlog,
+		Current = function(): boolean
+			return self.connections[connection.player] == connection
+		end,
+		DiscardProjection = function(projectedActor: ActorTypes.Actor, projection: Projections.Projection): ()
+			self.projections:Discard(projectedActor, projection)
+		end,
 		GetOrder = function(): number
 			return connection.egress.order
 		end,
@@ -485,7 +494,10 @@ function ActorAwarenessRuntime.RequestReplacementBaseline(
 
 	local captured: boolean = stream:Capture()
 
-	return captured, if captured then nil else "ActorStreamHalted"
+	return captured,
+		if captured
+			then nil
+			else if stream.recapture and not stream.failed then "ActorBaselineCapacity" else "ActorStreamHalted"
 end
 
 function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords: number): ()
@@ -565,6 +577,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		end
 
 		local stream = ActiveQueue.Pop(connection.active) :: Stream
+		stream:StageBaseline()
 		-- Keep active membership while staged/blocked; reentrant publication cannot
 		-- insert it again. Resume once, after all packet acknowledgements unwind.
 		table.insert(self.deferred, stream)
@@ -776,6 +789,7 @@ function ActorAwarenessRuntime.Step(self: Runtime, maxBytes: number, maxRecords:
 	-- This epilogue also runs after an injected dependency throws. Nothing staged
 	-- or blocked is reselected within its pump, and remaining active work survives.
 	for _, stream in self.deferred do
+		stream:ReleaseStaged()
 		stream.active = false
 		stream.dependencies.Activate(stream)
 	end
@@ -803,6 +817,7 @@ function ActorAwarenessRuntime._close(self: Runtime, player: Player): ()
 	end
 
 	self.connections[player] = nil
+	self.backlog:CloseRecipient(player)
 	CommandEgress.Destroy(connection.egress)
 
 	if connection.node ~= nil then
@@ -843,6 +858,7 @@ function ActorAwarenessRuntime.Destroy(self: Runtime): ()
 	table.clear(self.players)
 	table.clear(self.models)
 	self.projections:Destroy()
+	self.backlog:Destroy()
 	table.clear(self.measuredRecords)
 	self.active = ActiveQueue.new()
 	self.captures = ActiveQueue.new()
@@ -870,6 +886,7 @@ function ActorAwarenessRuntime.new(
 		measuredRecords = setmetatable({}, { __mode = "k" }),
 		dependencies = dependencies,
 		options = options,
+		backlog = Backlog.new(options.backlogLimits, options.maxBaselineBytes),
 		connections = {},
 		owners = {},
 		players = {},

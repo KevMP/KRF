@@ -9,6 +9,9 @@ local ActiveQueue = require(script.Parent.ActiveQueue)
 local WorkBudget = require(script.Parent.ReliableWorkBudget)
 
 export type Dependencies = {
+	Backlog: Types.ReliableBacklog,
+	Current: () -> boolean,
+	DiscardProjection: (ActorTypes.Actor, ProjectionTypes.Projection) -> (),
 	GetOrder: (() -> number)?,
 	Project: (ActorTypes.Actor, Player) -> (number?, ProjectionTypes.Projection?, string?),
 	Activate: (Stream) -> (),
@@ -18,7 +21,13 @@ export type Dependencies = {
 	YieldCapture: (Stream) -> (),
 }
 
-type Baseline = { body: buffer, offset: number, phase: "Begin" | "Chunks", order: number }
+type Baseline = {
+	body: buffer,
+	offset: number,
+	phase: "Begin" | "Chunks",
+	order: number,
+	charge: Types.PublicationCharge?,
+}
 
 type StreamState = {
 	queueNode: ActiveQueue.Node<Stream>?,
@@ -26,6 +35,8 @@ type StreamState = {
 	orderIndex: number,
 	pendingOrder: number,
 	stagedOrder: number?,
+	stagedCharge: Types.PublicationCharge?,
+	stagedBaselineCharge: Types.PublicationCharge?,
 	terminalOrder: number,
 	actor: ActorTypes.Actor,
 	player: Player,
@@ -53,13 +64,40 @@ ActorRecipientStream.__index = ActorRecipientStream
 
 export type Stream = typeof(setmetatable({} :: StreamState, ActorRecipientStream))
 
+function ActorRecipientStream._clearBaseline(self: Stream): ()
+	if self.baseline ~= nil and self.baseline.charge ~= nil then
+		self.baseline.charge.release()
+	end
+
+	self.baseline = nil
+end
+
+function ActorRecipientStream.StageBaseline(self: Stream): ()
+	if self.baseline ~= nil and self.baseline.charge ~= nil then
+		self.stagedBaselineCharge = self.baseline.charge
+		self.baseline.charge.stage()
+	end
+end
+
+function ActorRecipientStream.ReleaseStaged(self: Stream): ()
+	if self.stagedCharge ~= nil then
+		self.stagedCharge.release()
+		self.stagedCharge = nil
+	end
+
+	if self.stagedBaselineCharge ~= nil then
+		self.stagedBaselineCharge.resume()
+		self.stagedBaselineCharge = nil
+	end
+end
+
 function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 
 	local reported: boolean = self.failed
 
 	self.failed = true
-	self.baseline = nil
+	self:_clearBaseline()
 	self.recapture = false
 	self.blockedBudget = nil
 	-- A known identity needs reliable cleanup, even if failure happened after End.
@@ -80,6 +118,9 @@ function ActorRecipientStream.Fault(self: Stream, reason: string): ()
 end
 
 function ActorRecipientStream.Capture(self: Stream): boolean
+	local earliest = self:GetNextOrder()
+		or (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0)
+
 	local sequence: number?, projected: ProjectionTypes.Projection?, reason: string? =
 		self.dependencies.Project(self.actor, self.player)
 
@@ -92,21 +133,56 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 	local body: buffer = projected.body
 
 	if buffer.len(body) > self.options.maxBaselineBytes then
+		self.dependencies.DiscardProjection(self.actor, projected)
 		self:Fault("ActorBaselineTooLarge")
 
 		return false
 	end
 
 	if self.generation >= (self.options.maxGeneration or Constants.MAX_COUNTER) then
+		self.dependencies.DiscardProjection(self.actor, projected)
 		self:Fault("ActorGenerationExhausted")
 
 		return false
+	end
+
+	if not self.dependencies.Current() then
+		self.dependencies.DiscardProjection(self.actor, projected)
+
+		return false
+	end
+
+	local charge = self.dependencies.Backlog:Acquire(
+		self.key,
+		projected,
+		buffer.len(body),
+		if self.baseline ~= nil then self.baseline.charge else nil,
+		true,
+		function(): ()
+			self.dependencies.DiscardProjection(self.actor, projected)
+		end
+	)
+
+	if charge == nil then
+		self.dependencies.DiscardProjection(self.actor, projected)
+
+		self:_clearBaseline()
+		self.scheduler:MarkBaselinePending(self.key)
+		self.recapture, self.recaptureOrder = true, earliest
+		self.dependencies.Activate(self)
+
+		return false
+	end
+
+	if self.baseline ~= nil and self.baseline.charge ~= charge then
+		self:_clearBaseline()
 	end
 
 	self.generation += 1
 	self.fence = sequence
 
 	self.baseline = {
+		charge = charge,
 		body = body,
 		offset = 0,
 		phase = "Begin",
@@ -131,6 +207,8 @@ function ActorRecipientStream.new(
 	dependencies: Dependencies
 ): Stream
 	local scheduler: Types.PublicationScheduler = Scheduler.new({
+		backlog = dependencies.Backlog,
+		retainDrained = true,
 		maxBarriers = options.maxEvents,
 		maxEvents = options.maxEvents,
 		maxQueuedBytes = options.maxQueuedBytes,
@@ -229,6 +307,8 @@ function ActorRecipientStream.Prepare(
 	local pending: Baseline? = self.baseline
 
 	if pending ~= nil then
+		self:StageBaseline()
+
 		if pending.phase == "Begin" then
 			return self:_begin(canBegin), nil
 		elseif pending.offset < buffer.len(pending.body) then
@@ -291,6 +371,7 @@ function ActorRecipientStream.Prepare(
 
 		self.recapture = true
 		self.recaptureOrder = self.scheduler:GetNextRecordOrder(self.key) or 0
+		self.scheduler:MarkBaselinePending(self.key)
 		self.dependencies.Activate(self)
 
 		if not self.dependencies.ClaimCapture(self, work) then
@@ -300,6 +381,8 @@ function ActorRecipientStream.Prepare(
 		if not self:Capture() then
 			return nil, nil
 		end
+
+		self:StageBaseline()
 
 		return self:_begin(canBegin), nil
 	end
@@ -312,6 +395,8 @@ function ActorRecipientStream.Prepare(
 	if record == nil then
 		return nil, nil
 	end
+
+	self.stagedCharge = record.charge
 
 	return {
 		kind = "Commit",
@@ -344,7 +429,7 @@ function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.A
 		end
 	elseif record.kind == "BaselineEnd" then
 		if record.generation == self.generation then
-			self.baseline = nil
+			self:_clearBaseline()
 		end
 
 		self.revision = record.revision
@@ -383,7 +468,7 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 			or order
 			or (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0)
 
-		self.baseline = nil
+		self:_clearBaseline()
 	end
 
 	self.dependencies.Activate(self)
@@ -392,7 +477,7 @@ end
 function ActorRecipientStream.Retire(self: Stream): ()
 	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 	self.scheduler:Destroy()
-	self.baseline = nil
+	self:_clearBaseline()
 	self.recapture = false
 	self.haltPending = false
 	self.removed = true
@@ -430,6 +515,8 @@ function ActorRecipientStream.HasWorkThrough(self: Stream, order: number): boole
 end
 
 function ActorRecipientStream.Destroy(self: Stream): ()
+	self:_clearBaseline()
+	self:ReleaseStaged()
 	self.scheduler:Destroy()
 end
 

@@ -84,15 +84,20 @@ for _, ownerOnly: boolean in { false, true } do
 	)
 end
 
-it("releases stale encoded bodies on a commit even when no Ready recipients remain", function()
+it("releases completed and disconnected baseline caches before later authority changes", function()
 	local player: Player = TestUtils.player(fixture)
 	local actor: ActorTypes.Actor = TestUtils.actor(fixture, player)
 	local runtime: ServerNetworkingTypes.ActorAwarenessRuntime = TestUtils.start(fixture)
 	TestUtils.ready(fixture, player)
-	TestUtils.drain(fixture)
 	local reusable: { [ActorTypes.Actor]: CachedBaseline } = (runtime :: any).projections.baselines
 	expect(reusable[actor]).never.toBeNil()
+	TestUtils.drain(fixture)
+	expect(reusable[actor]).toBeNil()
+	local handle = assert(runtime:GetHandle(player, actor))
+	expect(runtime:RequestReplacementBaseline(player, handle)).toBe(true)
+	expect(reusable[actor]).never.toBeNil()
 	TestUtils.close(fixture, player)
+	expect(reusable[actor]).toBeNil()
 	fixture.deliveries = {}
 	fixture.ownerDomain.value = 21
 	fixture.ownerDomain.callbacks[actor]()

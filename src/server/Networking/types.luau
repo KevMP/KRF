@@ -214,6 +214,27 @@ export type PublicationRecord = {
 	read stream: PublicationStreamKey,
 	read commit: PublicationFilteredCommit,
 	read encodedSizeBytes: number,
+	read charge: PublicationCharge?,
+}
+
+-- Private retained-work ownership; staging transfers cleanup to the pump epilogue.
+export type PublicationCharge = { release: () -> (), stage: () -> (), resume: () -> () }
+export type ReliableBacklogLimits = { [string]: number }
+
+export type ReliableBacklog = {
+	read maxStreamRecords: number,
+	read maxStreamBytes: number,
+	Acquire: (
+		self: ReliableBacklog,
+		key: PublicationStreamKey,
+		payload: any,
+		bytes: number,
+		previous: PublicationCharge?,
+		baseline: boolean?,
+		onUnused: (() -> ())?
+	) -> PublicationCharge?,
+	CloseRecipient: (self: ReliableBacklog, recipient: any) -> (),
+	Destroy: (self: ReliableBacklog) -> (),
 }
 
 export type PublicationStreamStatus = {
@@ -230,6 +251,8 @@ export type PublicationDrainResult = {
 }
 
 export type PublicationSchedulerOptions = {
+	read backlog: ReliableBacklog?,
+	read retainDrained: boolean?,
 	read maxBarriers: number,
 	read maxEvents: number,
 	read maxQueuedBytes: number,
@@ -280,6 +303,7 @@ export type ActorAwarenessDependencies = {
 export type ReliableWorkLimits = { [string]: number }
 
 export type ActorAwarenessOptions = {
+	backlogLimits: ReliableBacklogLimits?,
 	workLimits: ReliableWorkLimits?,
 	maxBaselineBytes: number,
 	maxChunkBytes: number,

@@ -4,7 +4,7 @@ local Types = require(script.Parent.Parent.types)
 local PublicationScheduler = {}
 PublicationScheduler.__index = PublicationScheduler
 
-type Pending = { commit: Types.PublicationFilteredCommit, bytes: number, order: number }
+type Pending = { commit: Types.PublicationFilteredCommit, bytes: number, order: number, charge: Types.PublicationCharge? }
 
 type Stream = {
 	key: Types.PublicationStreamKey,
@@ -302,19 +302,40 @@ function PublicationScheduler.Enqueue(
 		or barriers > self.options.maxBarriers
 		or stream.pendingEvents + #commit.events > self.options.maxEvents
 		or newBytes > self.options.maxQueuedBytes
+		or (
+			self.options.backlog ~= nil
+			and (newRecords > self.options.backlog.maxStreamRecords or newBytes > self.options.backlog.maxStreamBytes)
+		)
 	then
 		self:MarkBaselinePending(key)
 
 		return false, "PublicationStreamOverloaded"
 	end
 
+	-- Capacity replacement is atomic: retain the old tail unless the new one fits.
+	local charge: Types.PublicationCharge? = nil
+
+	if size > 0 and self.options.backlog ~= nil then
+		charge = self.options.backlog:Acquire(key, composed, size, if canMerge then tail.charge else nil)
+
+		if charge == nil then
+			self:MarkBaselinePending(key)
+
+			return false, "PublicationAggregateOverloaded"
+		end
+	end
+
 	if canMerge then
+		if size == 0 and tail.charge ~= nil then
+			tail.charge.release()
+		end
+
 		table.remove(records)
 		stream.queuedBytes -= tail.bytes
 	end
 
 	if size > 0 then
-		table.insert(records, { commit = composed, bytes = size, order = order or 0 })
+		table.insert(records, { commit = composed, bytes = size, order = order or 0, charge = charge })
 		stream.queuedBytes += size
 		stream.pendingEvents += #composed.events
 		stream.barriers += if #composed.events > 0 then 1 else 0
@@ -331,11 +352,19 @@ end
 
 function PublicationScheduler.MarkBaselinePending(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream = find(self, key, true) :: Stream
+
+	for _, pending in stream.records do
+		if pending.charge ~= nil then
+			pending.charge.release()
+		end
+	end
+
 	table.clear(stream.records)
 	stream.pendingEvents = 0
 	stream.queuedBytes = 0
 	stream.barriers = 0
 	stream.needsBaseline = true
+	stream.delivered = {}
 	deactivate(self, stream)
 end
 
@@ -345,6 +374,13 @@ function PublicationScheduler.ResetAfterBaseline(
 	domains: { [string]: Types.PublicationDomainTruth }
 ): ()
 	local stream: Stream = find(self, key, true) :: Stream
+
+	for _, pending in stream.records do
+		if pending.charge ~= nil then
+			pending.charge.release()
+		end
+	end
+
 	table.clear(stream.records)
 	stream.pendingEvents = 0
 	stream.queuedBytes = 0
@@ -362,6 +398,12 @@ function PublicationScheduler.RemoveStream(self: Runtime, key: Types.Publication
 	end
 
 	deactivate(self, stream)
+
+	for _, pending in stream.records do
+		if pending.charge ~= nil then
+			pending.charge.release()
+		end
+	end
 
 	local actors = self.streams[key.recipient]
 	actors[key.actor] = nil
@@ -431,7 +473,23 @@ function PublicationScheduler.DrainBudgeted(
 			stream.pendingEvents -= #pending.commit.events
 			stream.queuedBytes -= pending.bytes
 			stream.barriers -= if #pending.commit.events > 0 then 1 else 0
-			table.insert(records, { stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes })
+
+			local charge = pending.charge
+
+			if charge ~= nil then
+				if self.options.retainDrained then
+					charge.stage()
+				else
+					charge.release()
+					charge = nil
+				end
+			end
+
+			table.insert(
+				records,
+				{ stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes, charge = charge }
+			)
+
 			encodedBytes += pending.bytes
 
 			for _, item in pending.commit.patches do
@@ -450,6 +508,16 @@ function PublicationScheduler.DrainBudgeted(
 end
 
 function PublicationScheduler.Destroy(self: Runtime): ()
+	for _, actors in self.streams do
+		for _, stream in actors do
+			for _, pending in stream.records do
+				if pending.charge ~= nil then
+					pending.charge.release()
+				end
+			end
+		end
+	end
+
 	table.clear(self.active)
 	table.clear(self.streams)
 end

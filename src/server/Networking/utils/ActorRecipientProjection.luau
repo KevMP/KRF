@@ -79,6 +79,8 @@ function ActorRecipientProjection.Capture(
 	local body: buffer?, reason: string? = projected.body, projected.reason
 
 	if body == nil then
+		self:Discard(actor, projected)
+
 		return nil, nil, reason or "InvalidActorBaseline"
 	end
 
@@ -87,6 +89,27 @@ end
 
 function ActorRecipientProjection.Forget(self: Runtime, actor: ActorTypes.Actor): ()
 	self.baselines[actor] = nil
+end
+
+-- The reusable body cache may retain only bodies still owned by a transfer.
+function ActorRecipientProjection.Discard(self: Runtime, actor: ActorTypes.Actor, projection: Projection): ()
+	local cache = self.baselines[actor]
+
+	if cache == nil then
+		return
+	end
+
+	if cache.public == projection then
+		cache.public = nil
+	end
+
+	if cache.owner == projection then
+		cache.owner = nil
+	end
+
+	if cache.public == nil and cache.owner == nil then
+		self.baselines[actor] = nil
+	end
 end
 
 function ActorRecipientProjection.PublicCommit(
