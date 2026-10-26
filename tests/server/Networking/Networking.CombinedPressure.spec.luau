@@ -354,6 +354,7 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 	local slow = assert(awareness:ReserveCommandResult(players[3], 1))
 	ready(players[4])
 	local admitted, refused = 0, 0
+	local admittedHotRequests: { [number]: boolean } = {}
 	local ordinaryEvents = 0
 	local midpointSends = 0
 	local ordinary = actors[5]:GetController("ActionController") :: ActionTypes.ActionController
@@ -363,11 +364,12 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 		now += 1
 
 		for attempt = 1, 12 do
-			local request =
-				assert(commandWire.EncodeRequest({ requestId = (pump - 1) * 12 + attempt, commandCode = 0 }))
+			local requestId = (pump - 1) * 12 + attempt
+			local request = assert(commandWire.EncodeRequest({ requestId = requestId, commandCode = 0 }))
 
 			if commands:Handle(players[1], request) then
 				admitted += 1
+				admittedHotRequests[requestId] = true
 			else
 				refused += 1
 			end
@@ -507,6 +509,10 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 	end
 
 	local correlated: { [number]: boolean } = {}
+	local hotResults: { [number]: number } = {}
+	local hotCorrelated: { [number]: number } = {}
+	local hotRequesterEvents = 0
+	local hotRequesterHandle = awareness:GetHandle(players[1], actors[1])
 	local requesterEvents = 0
 	local joiningOrdinaryEvents = 0
 	local requesterHandle = awareness:GetHandle(players[2], actors[2])
@@ -514,6 +520,16 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 
 	for _, delivery in sent do
 		if buffer.readu8(delivery.payload, 0) == CommandConstants.RESULT_KIND then
+			if delivery.player == players[1] then
+				local result = assert(commandWire.DecodeResult(delivery.payload))
+				assert(admittedHotRequests[result.requestId], "Unexpected hot requester result")
+				assert(result.status == "Accepted", "Expected definitive hot requester acceptance")
+				hotResults[result.requestId] = (hotResults[result.requestId] or 0) + 1
+				expect(hotResults[result.requestId]).toBe(1)
+				assert(hotCorrelated[result.result] == nil, "Action sequence reused across hot requester results")
+				hotCorrelated[result.result] = result.requestId
+			end
+
 			if delivery.player == players[2] then
 				local result = assert(commandWire.DecodeResult(delivery.payload))
 				assert(result.status == "Accepted", "Expected definitive requester acceptance")
@@ -531,6 +547,23 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 
 				if delivery.player == players[4] and record.kind == "BaselineEnd" then
 					completedJoins[record.handle] = true
+				end
+
+				if
+					delivery.player == players[1]
+					and record.kind == "Commit"
+					and record.handle == hotRequesterHandle
+				then
+					for _, event in record.events do
+						if event.domainId == "KRF.Actions" then
+							hotRequesterEvents += 1
+
+							assert(
+								hotCorrelated[event.payload.sequenceId] ~= nil,
+								"Hot requester Action lifecycle event overtook its command result"
+							)
+						end
+					end
 				end
 
 				if delivery.player == players[2] and record.kind == "Commit" then
@@ -556,6 +589,12 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 	end
 
 	local joins = 0
+	local hotResultCount = 0
+
+	for requestId in admittedHotRequests do
+		expect(hotResults[requestId]).toBe(1)
+		hotResultCount += 1
+	end
 
 	for _ in completedJoins do
 		joins += 1
@@ -564,6 +603,8 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 	expect(joins).toBe(16)
 	expect(ordinaryEvents).toBe(48)
 	expect(requesterEvents).toBe(24)
+	-- Recovery may supersede incremental hot events; every observed event must still be result-first.
+	expect(hotRequesterEvents > 0).toBe(true)
 	expect(joiningOrdinaryEvents).toBe(48)
 	expect((commands:_GetPendingForTests())).toBe(0)
 	local drained = assert(Diagnostics.GetServerSnapshot())
@@ -584,6 +625,8 @@ it("isolates slow and joining recipients while Actions, commands, resync and dis
 		joins = joins,
 		ordinaryEvents = ordinaryEvents,
 		requesterEvents = requesterEvents,
+		hotResults = hotResultCount,
+		hotRequesterEvents = hotRequesterEvents,
 		joiningOrdinaryEvents = joiningOrdinaryEvents,
 		gauges = drained.gauges,
 	}))
