@@ -24,6 +24,11 @@ local Wire = require(KRF.shared.Networking.ActorStreamCodec)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Scenario = require(ReplicatedStorage.NetworkingBaselineScenario)
+-- Optional only because the identical fixture also loads archived N9 source.
+local diagnosticsModule = KRF.server.Networking.utils:FindFirstChild("NetworkingDiagnosticsState")
+local Diagnostics = if diagnosticsModule ~= nil then require(diagnosticsModule) else nil
+local packetModule = KRF.server.Networking.utils:FindFirstChild("ActorPacketBatch")
+local Packets = if packetModule ~= nil then require(packetModule) else nil
 
 local cases: { any } = {}
 local probes: { [string]: number }? = nil
@@ -46,6 +51,7 @@ local function install(owner: any, key: string, metric: string): ()
 end
 
 local function fixture(actorCount: number, recipientCount: number, maxEvents: number?): any
+	local now = 0
 	local actors: { ActorTypes.Actor } = {}
 	local values: { [ActorTypes.Actor]: number } = {}
 	local observers: { [ActorTypes.Actor]: ReplicationTypes.ReplicationDomainOnCommitted } = {}
@@ -102,6 +108,9 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	end
 
 	local runtime: Types.ActorAwarenessRuntime = Awareness.new(publication, catalog, protocol.runtime, {
+		Now = function(): number
+			return now
+		end,
 		IsClientReady = function(): boolean
 			return true
 		end,
@@ -166,7 +175,6 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	})
 
 	local commandCodec = CommandCodec.Compile(protocol.runtime)
-	local now = 0
 
 	local resync: Types.ResyncRuntime = Resync.new({
 		Now = function(): number
@@ -207,7 +215,7 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	-- All private-state inspection is benchmark-local and outside timed work.
 	local internal: any = runtime
 
-	local function pending(): (number, number, number)
+	local function pending(): (number, number, number, number?, number?)
 		local bytes, records, baselines = 0, 0, 0
 
 		for _, connection in internal.connections do
@@ -217,7 +225,11 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 				records += status.pendingRecords
 
 				if stream.baseline ~= nil then
-					bytes += buffer.len(stream.baseline.body)
+					-- N10 owns a canonical anchor before scheduled encoding creates a body.
+					if stream.baseline.body ~= nil then
+						bytes += buffer.len(stream.baseline.body)
+					end
+
 					baselines += 1
 				end
 			end
@@ -226,25 +238,41 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 			records += #connection.egress.queue
 		end
 
-		return bytes, records, baselines
+		return bytes,
+			records,
+			baselines,
+			if internal.backlog ~= nil then internal.backlog.bytes else nil,
+			if internal.backlog ~= nil then internal.backlog.records else nil
 	end
 
-	local function drain(): ()
+	local function drain(observe: ((any) -> ())?): number
 		local commandState: any = commands
 
-		for _ = 1, 10000 do
+		for pump = 1, 10000 do
 			local jobs = if commandState._GetPendingForTests ~= nil then commands:_GetPendingForTests() else 0
 
 			if Scenario.activeCount(internal) == 0 and jobs == 0 then
-				return
+				return pump - 1
 			end
 
 			if commandState.Step ~= nil then
 				commands:Step()
 			end
 
+			now += 1 / 60
 			runtime:Step(Scenario.budget())
+
+			if observe ~= nil then
+				for _, delivery in deliveries do
+					observe(delivery)
+				end
+			end
+
 			table.clear(deliveries)
+
+			if pump % 32 == 0 then
+				task.wait()
+			end
 		end
 
 		error("Audit drain did not converge")
@@ -275,8 +303,8 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 
 			return resync:Handle(player, payload)
 		end,
-		advance = function(): ()
-			now += Constants.RESYNC_WINDOW_SECONDS
+		advance = function(seconds: number?): ()
+			now += seconds or Constants.RESYNC_WINDOW_SECONDS
 		end,
 		destroy = function(): ()
 			resync:Destroy()
@@ -291,15 +319,39 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 	}
 end
 
-local function scene(actorCount: number, recipients: number, mode: string, diagnostic: boolean): any
+local function scene(
+	actorCount: number,
+	recipients: number,
+	mode: string,
+	diagnostic: boolean,
+	collector: boolean?
+): any
+	if collector and Diagnostics ~= nil then
+		Diagnostics.Start()
+	end
+
 	local world = fixture(actorCount, recipients, if mode == "Recovery" then 8 else nil)
-	world.drain()
+	local joinSends, joinBytes, joinEnds = 0, 0, 0
+	local joinStarted = os.clock()
+
+	local joinPumps = world.drain(function(delivery: any): ()
+		joinSends += 1
+		joinBytes += buffer.len(delivery.payload)
+
+		for _, record in assert(world.wire.Decode(delivery.payload)) do
+			joinEnds += if record.kind == "BaselineEnd" then 1 else 0
+		end
+	end)
+
+	local joinDrainUs = (os.clock() - joinStarted) * 1e6
+	assert(joinEnds == actorCount * recipients, "Initial multipart joins did not all complete")
 	local finalBytes, finalRecords, finalBaselines = world.pending()
 	assert(finalBytes == 0 and finalRecords == 0 and finalBaselines == 0, "Audit retained drained work")
 	-- The production workload uses identical deterministic mutations in each pass.
 	local counts: { [string]: number } = {}
 	probes = if diagnostic then counts else nil
 	local pumpUs, mutationUs, waits = {}, {}, {}
+	local heap = {}
 	local workSamples, perActorOffered, perActorCompleted = {}, {}, {}
 
 	for index = 1, actorCount do
@@ -307,16 +359,22 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 	end
 
 	local bytes, sends, logical, completed, maxBytes, maxRecords = 0, 0, 0, 0, 0, 0
+	local peakLedgerBytes: number? = nil
+	local peakLedgerRecords: number? = nil
 	local completedByRecipient: { [Player]: { number } } = {}
+	local completedAfterQuiet: { [Player]: { number } } = {}
+	local recordsByKind: { [string]: number } = {}
 	local revisions: { [Player]: { [number]: number } } = {}
 	local created: { [Player]: { [number]: number } } = {}
 
 	for _, player in world.players do
 		revisions[player], created[player] = {}, {}
 		completedByRecipient[player] = table.create(actorCount, 0)
+		completedAfterQuiet[player] = table.create(actorCount, 0)
 	end
 
 	for tick = 1, 120 do
+		world.advance(1 / 60)
 		local started = os.clock()
 
 		if mode == "HotQuiet" then
@@ -342,9 +400,14 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		end
 
 		table.insert(mutationUs, (os.clock() - started) * 1e6)
-		local queuedBytes, queuedRecords = world.pending()
+		local queuedBytes, queuedRecords, _, ledgerBytes, ledgerRecords = world.pending()
 		maxBytes = math.max(maxBytes, queuedBytes)
 		maxRecords = math.max(maxRecords, queuedRecords)
+
+		if ledgerBytes ~= nil and ledgerRecords ~= nil then
+			peakLedgerBytes = math.max(peakLedgerBytes or 0, ledgerBytes)
+			peakLedgerRecords = math.max(peakLedgerRecords or 0, ledgerRecords)
+		end
 
 		-- Residence is sampled per stream becoming pending, in virtual pump opportunities.
 		for _, player in world.players do
@@ -368,9 +431,15 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		world.runtime:Step(Scenario.budget())
 		table.insert(pumpUs, (os.clock() - started) * 1e6)
 		table.insert(workSamples, Scenario.work(world.runtime))
-		local afterBytes, afterRecords = world.pending()
+		table.insert(heap, gcinfo())
+		local afterBytes, afterRecords, _, afterLedgerBytes, afterLedgerRecords = world.pending()
 		maxBytes = math.max(maxBytes, afterBytes)
 		maxRecords = math.max(maxRecords, afterRecords)
+
+		if afterLedgerBytes ~= nil and afterLedgerRecords ~= nil then
+			peakLedgerBytes = math.max(peakLedgerBytes or 0, afterLedgerBytes)
+			peakLedgerRecords = math.max(peakLedgerRecords or 0, afterLedgerRecords)
+		end
 
 		for _, delivery in world.deliveries do
 			bytes += buffer.len(delivery.payload)
@@ -379,6 +448,8 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 			logical += #records
 
 			for _, record in records do
+				recordsByKind[record.kind] = (recordsByKind[record.kind] or 0) + 1
+
 				if record.kind == "Commit" or record.kind == "BaselineEnd" then
 					if mode == "HotQuiet" and record.kind == "Commit" then
 						perActorCompleted[record.handle] += 1
@@ -430,25 +501,48 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		end
 	end
 
-	world.drain()
+	world.drain(function(delivery: any): ()
+		if mode == "HotQuiet" then
+			for _, record in assert(world.wire.Decode(delivery.payload)) do
+				if record.kind == "Commit" or record.kind == "BaselineEnd" then
+					completedAfterQuiet[delivery.player][record.handle] += 1
+				end
+			end
+		end
+	end)
+
 	local drainedBytes, drainedRecords, drainedBaselines = world.pending()
 	assert(drainedBytes == 0 and drainedRecords == 0 and drainedBaselines == 0, "Audit retained drained work")
 
+	local unservedDuringLoad = 0
+
 	if mode == "HotQuiet" then
-		for _, vector in completedByRecipient do
-			for _, completedRecords in vector do
+		for player, vector in completedByRecipient do
+			for handle, completedRecords in vector do
+				unservedDuringLoad += if completedRecords == 0 then 1 else 0
+
+				-- Aggregate overflow may explicitly supersede incremental events.
+				-- Record fixed-window progress, then require service/current truth after quiet.
 				assert(
-					completedRecords >= 1,
-					"Quiet Actor starved for an eligible recipient during sustained hot traffic"
+					completedRecords + completedAfterQuiet[player][handle] >= 1,
+					"Quiet Actor failed to deliver incremental work or recovered truth after drain"
 				)
 			end
 		end
 	end
 
+	local collectorSnapshot: SharedTypes.DiagnosticSnapshot? = nil
+
+	if collector and Diagnostics ~= nil then
+		collectorSnapshot = assert(Diagnostics.GetServer(), "Expected active benchmark collector"):Snapshot()
+	end
+
 	local result = {
-		raw = { pumpUs = pumpUs, waits = waits, work = workSamples },
+		raw = { pumpUs = pumpUs, waits = waits, work = workSamples, heapKiB = heap },
 		perActorOffered = perActorOffered,
 		perActorCompleted = perActorCompleted,
+		unservedDuringLoad = unservedDuringLoad,
+		recordsByKind = recordsByKind,
 		recoveryCapturesByRecipient = recoveryCapturesByRecipient,
 		completedByRecipient = (function(): { { number } }
 			local vectors = {}
@@ -459,11 +553,13 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 
 			return vectors
 		end)(),
-		kind = "Scene",
+		kind = if collector ~= nil then "Collector" else "Scene",
 		actors = actorCount,
 		recipients = recipients,
 		mode = mode,
-		diagnostic = diagnostic,
+		diagnostic = if collector ~= nil then collector else diagnostic,
+		collectorAvailable = Diagnostics ~= nil,
+		collectorSnapshot = collectorSnapshot,
 		ticks = 120,
 		pumpUs = Scenario.summarize(pumpUs),
 		mutationUs = Scenario.summarize(mutationUs),
@@ -475,12 +571,25 @@ local function scene(actorCount: number, recipients: number, mode: string, diagn
 		recoveryCompletedDuringLoad = completed,
 		peakPendingBytes = maxBytes,
 		peakPendingRecords = maxRecords,
+		peakLedgerBytes = peakLedgerBytes,
+		peakLedgerRecords = peakLedgerRecords,
+		initialJoin = {
+			pumps = joinPumps,
+			drainUs = joinDrainUs,
+			sends = joinSends,
+			bytes = joinBytes,
+			completed = joinEnds,
+		},
 		retainedBytesBeforeDrain = retainedBytes,
 		retainedRecordsBeforeDrain = retainedRecords,
 		pendingBaselinesBeforeDrain = pendingBaselines,
 	}
 
 	world.destroy()
+
+	if Diagnostics ~= nil then
+		Diagnostics.Stop()
+	end
 
 	return result
 end
@@ -740,6 +849,10 @@ local success, failure = pcall(function()
 			install(Streams, "Capture", "captures")
 			install(Publication, "CaptureBaseline", "baselineTruthReads")
 			install(Scheduler, "Enqueue", "enqueues")
+
+			if Packets ~= nil then
+				install(Packets, "new", "packetBatches")
+			end
 		end
 
 		for _, actors in { 1, 16, 64, 128 } do
@@ -768,6 +881,19 @@ local success, failure = pcall(function()
 			table.insert(cases, coalescing(width, barriers))
 		end
 	end
+
+	-- Collector on/off is an N10-only experiment, separate from wrapper probes.
+	for index = #restores, 1, -1 do
+		restores[index]()
+	end
+
+	table.clear(restores)
+
+	for _, mode in { "Idle", "State", "Events" } do
+		for _, collector in { false, true } do
+			table.insert(cases, scene(128, 8, mode, false, collector))
+		end
+	end
 end)
 
 probes = nil
@@ -779,7 +905,7 @@ end
 local encoded = HttpService:JSONEncode({
 	success = success,
 	reason = if success then nil else tostring(failure),
-	workloadVersion = 1,
+	workloadVersion = 2,
 	pattern = "fixed ascending actors; 120 pumps",
 	cases = cases,
 })

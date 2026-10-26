@@ -37,6 +37,34 @@ test("audit comparisons pool raw observations and preserve unpooled legacy count
 	const cases = normalize({ "audit-before": { summaries: [entry] }, "audit-after": { summaries: [entry] } });
 	assert.equal(cases[0].after.pumpUs.p99, 5);
 	assert.equal(cases[0].before.perRun[0].probes.eligibilityChecks, 80);
+	entry.key = "audit/Collector/128/8/State/true";
+	assert.match(normalize({ "audit-before": { summaries: [entry] }, "audit-after": { summaries: [entry] } })[0].comparisonScope, /^N10-only/);
+});
+
+test("audit v2 preserves recovery censoring, collector availability and ledger units", t => {
+	const { directory } = fixture(t);
+	const entry = { kind: "Collector", actors: 128, recipients: 8, mode: "Events", diagnostic: true,
+		collectorAvailable: false, unservedDuringLoad: 91, peakPendingBytes: 100, raw: { pumpUs: [1], waits: [] } };
+	const file = path.join(directory, "audit-run1.json");
+	const observation = { success: true, workloadVersion: 2, cases: [entry], environment: {
+		implementationRevision: "reference", studioFileVersion: "studio", sourceSHA256: { source: "HASH" },
+		harnessSHA256: { "tests/benchmarks/NetworkingAudit.luau": "HASH" } } };
+	const analyze = () => spawnSync(process.execPath, [path.join(__dirname, "analyze-networking-baseline.cjs"), directory], { encoding: "utf8" });
+	fs.writeFileSync(file, JSON.stringify(observation));
+	let result = analyze();
+	assert.equal(result.status, 0, result.stderr);
+	const baseline = JSON.parse(result.stdout).summaries[0].perRun[0];
+	assert.equal(baseline.collectorAvailable, false);
+	assert.equal(baseline.peakLedgerBytes, undefined);
+	assert.equal(baseline.unservedDuringLoad, 91);
+	entry.collectorAvailable = true; entry.peakLedgerBytes = 45;
+	fs.writeFileSync(file, JSON.stringify(observation));
+	result = analyze();
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(JSON.parse(result.stdout).summaries[0].perRun[0].peakLedgerBytes, 45);
+	observation.workloadVersion = 999;
+	fs.writeFileSync(file, JSON.stringify(observation));
+	assert.notEqual(analyze().status, 0);
 });
 
 function fixture(t, config = options([])) {

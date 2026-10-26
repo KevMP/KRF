@@ -189,7 +189,8 @@ function normalize(outputs) {
 	if (outputs["audit-before"]) {
 		const cases = new Map();
 		for (const arm of ["before", "after"]) for (const entry of outputs[`audit-${arm}`].summaries) {
-			if (!cases.has(entry.key)) cases.set(entry.key, { key: entry.key, kind: "audit" });
+			if (!cases.has(entry.key)) cases.set(entry.key, { key: entry.key, kind: "audit",
+				comparisonScope: entry.key.includes("/Collector/") ? "N10-only collector experiment; N9 requested-on control has no collector" : "paired implementation" });
 			const runs = entry.perRun;
 			const pumps = runs.flatMap(run => run.raw?.pumpUs || (Number.isFinite(run.pumpUs) ? [run.pumpUs] : []));
 			const waits = runs.flatMap(run => run.raw?.waits || []);
@@ -236,7 +237,7 @@ function report(manifest, cases) {
 	for (const entry of cases) {
 		const { before, after } = entry;
 		const counts = value => entry.kind === "commands" ? `${value.offered}/${value.wireOffered ?? value.offered}/${value.admitted}/${value.executed}` : entry.kind === "audit" ? `${value.perRun.reduce((sum, run) => sum + (run.logicalRecords || 0), 0)} records` : `${value.commits} commits`;
-		lines.push(`| ${entry.key} | ${counts(before)} → ${counts(after)} | ${fmt(before.costUs)} → ${fmt(after.costUs)} | ${quantiles(before.latency)} → ${quantiles(after.latency)} ${after.latencyUnit} | ${before.peakPending ?? "—"}/${before.peakPendingBytes ?? "—"} → ${after.peakPending ?? "—"}/${after.peakPendingBytes ?? "—"} | ${span(before.serverCores)} / ${span(before.clientCores)} → ${span(after.serverCores)} / ${span(after.clientCores)} |`);
+		lines.push(`| ${entry.key}${entry.comparisonScope?.startsWith("N10-only") ? " (N10-only control)" : ""} | ${counts(before)} → ${counts(after)} | ${fmt(before.costUs)} → ${fmt(after.costUs)} | ${quantiles(before.latency)} → ${quantiles(after.latency)} ${after.latencyUnit} | ${before.peakPending ?? "—"}/${before.peakPendingBytes ?? "—"} → ${after.peakPending ?? "—"}/${after.peakPendingBytes ?? "—"} | ${span(before.serverCores)} / ${span(before.clientCores)} → ${span(after.serverCores)} / ${span(after.clientCores)} |`);
 		for (const [metric, b, a] of [["costUs", before.costUs, after.costUs], ["latencyP95", before.latency?.p95, after.latency?.p95]]) if (Number.isFinite(b) && Number.isFinite(a) && a > b) regressions.push({ case: entry.key, metric, reference: b, candidate: a, delta: a - b, percent: b ? (a / b - 1) * 100 : null,
 			equalExecutions: entry.kind === "commands" ? before.executed === after.executed : null, equalCommits: entry.kind === "publication" ? before.commits === after.commits : null });
 	}

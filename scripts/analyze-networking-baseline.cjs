@@ -67,7 +67,7 @@ for (const file of files) {
 	});
 	for (const entry of result.cases) {
 		if (file.startsWith("audit-")) {
-			if (result.workloadVersion !== 1) throw new Error(`Unsupported audit workload: ${file}`);
+			if (![1, 2].includes(result.workloadVersion)) throw new Error(`Unsupported audit workload: ${file}`);
 			const key = ["audit", entry.kind, entry.actors ?? entry.size ?? entry.width ?? 0, entry.recipients ?? entry.barriers ?? 1,
 				entry.mode ?? entry.malformed ?? "", entry.diagnostic ?? false].join("/");
 			if (!groups.has(key)) groups.set(key, []);
@@ -144,6 +144,7 @@ for (const [key, cases] of groups) {
 		stageMeanUsPerCommit, stageWorkloadTickUs, n3EstimatedUsPerCommit, heapChanges,
 		work: merge("work").length ? Object.fromEntries(["connections", "streams", "checks", "prepares", "measurements", "encodes", "sends", "captures", "priorities"].map(unit => [unit, distribution(merge("work").map(sample => sample[unit] || 0))])) : null,
 		perRun: cases.map(({ file, entry, host }) => ({
+			engine: entry.raw.engine, diagnosticStart: entry.diagnosticStart, diagnosticEnd: entry.diagnosticEnd,
 			file, work: entry.raw.work, mutationMedianUs: entry.mutationUs.median,
 			n4TotalUs: native ? entry.raw.n4Steps.reduce((sum, sample) => sum + sample[1], 0) : entry.stepUs.total,
 			mutationTotalUs: entry.mutationUs.total, drainSteps: entry.drainSteps,

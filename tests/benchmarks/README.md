@@ -99,6 +99,38 @@ unwrapped timing passes. Audit pending inspections and packet decoding happen
 outside pump timers. Sample allocation/retention still affects the process heap
 and GC; compare raw controls and do not attribute host CPU entirely to KRF.
 
+Audit workload v2 advances an identical virtual 60-Hz clock in both arms, including
+quiet drain, so recovery backoff is measurable without depending on host speed.
+Initial multipart join drain reports pumps, completed baselines, sends and encoded
+bytes separately from steady state; its elapsed time includes verification/yields
+and excludes synchronous Ready setup. The 120-pump load window is fixed, not a
+fairness deadline: `unservedDuringLoad` reports Actor/recipient pairs with no
+incremental Commit during HotQuiet. After quiet, each pair must have delivered
+incremental work or recovered truth. Explicit recovery can supersede events.
+Do not exclude those pairs when interpreting completion-conditioned queue waits.
+
+`peakPendingBytes` remains serialized queue/body/result liability, counting shared
+bodies per recipient; it excludes unencoded canonical anchors and table overhead.
+N10-only `peakLedgerBytes`/`peakLedgerRecords` report its distinct retained-weight
+ledger, including canonical anchors. They are not heap bytes, and absent N9 ledger
+fields mean unavailable. Compare their meanings rather than subtracting them.
+
+Separate `Collector` cases run identical 128-Actor/eight-recipient Idle/State/Events
+work with the production collector off/on, without benchmark wrappers. N9 records
+`collectorAvailable=false`; its requested-on case is a control, not diagnostics
+implementation evidence. On/off order is fixed within each fresh trial, so GC/order
+effects remain. Snapshots are outside timed pumps and include initial join and drain.
+Probe-enabled Scene cases count packet batch constructions where supported;
+heap samples and callback counts cannot identify all allocations or isolate the
+architectural refactor from other N10 changes. No allocation-byte estimate is inferred.
+
+Native publication samples [Roblox Stats](https://create.roblox.com/docs/reference/engine/classes/Stats)
+once per second: approximate engine-wide send/receive KB/s and scheduler seconds,
+under `raw.engine` (elapsed seconds, send, receive, HeartbeatTime). These lagging
+engine counters include fixture/control/engine traffic; they are neither KRF encoded
+bytes nor a NIC capture. Snapshot endpoints are N10-only, cumulative observations;
+their high-water marks can include earlier cases in the same native process.
+
 ## Command dispatch comparisons
 
 Use the same offered request plan on both implementations. CPU profiles use

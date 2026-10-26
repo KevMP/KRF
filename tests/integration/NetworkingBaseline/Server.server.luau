@@ -4,17 +4,21 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
+local Stats = game:GetService("Stats")
 local KRF = ReplicatedStorage.Packages.KRF
 local Scheduling = require(KRF.server.Networking.utils.AwarenessScheduling)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
+local SharedTypes = require(KRF.shared.Networking.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Awareness = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Scenario = require(ReplicatedStorage.NetworkingBaselineScenario)
+local diagnosticsModule = KRF.server.Networking:FindFirstChild("NetworkingDiagnostics")
+local Diagnostics = if diagnosticsModule ~= nil then require(diagnosticsModule) else nil
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingBaselineControl") :: RemoteEvent
 
 Scheduling.GetBudget = function(): NetworkingTypes.AwarenessStepBudget
@@ -42,6 +46,8 @@ local frameTimes: { number } = {}
 local packetSizes: { number } = {}
 local steps: { { number } } = {}
 local workSamples: { any } = {}
+local engineSamples: { { number } } = {}
+local nextEngineSample = 0
 local measuring, finished = false, false
 local phase = "Ready"
 local commits = 0
@@ -86,6 +92,18 @@ local heartbeat = RunService.Heartbeat:Connect(function(delta: number)
 		table.insert(frames, delta * 1000)
 		table.insert(frameTimes, os.clock() - caseStart)
 		table.insert(heap, { os.clock() - caseStart, gcinfo() })
+
+		if os.clock() >= nextEngineSample then
+			nextEngineSample = os.clock() + 1
+
+			-- Engine-wide approximate KB/s and scheduler seconds, not KRF bytes or RTT.
+			table.insert(engineSamples, {
+				os.clock() - caseStart,
+				Stats.DataSendKbps,
+				Stats.DataReceiveKbps,
+				Stats.HeartbeatTime,
+			})
+		end
 	end
 end)
 
@@ -324,6 +342,14 @@ else
 					request("Arm", { mode = mode, epoch = epoch, previous = generations })
 					frames, frameTimes, heap, starts, sent, packetSizes, steps = {}, {}, {}, {}, {}, {}, {}
 					workSamples = {}
+					engineSamples, nextEngineSample = {}, 0
+					local diagnostics = Diagnostics
+					local diagnosticStart: SharedTypes.DiagnosticSnapshot? = nil
+
+					if diagnostics ~= nil then
+						diagnosticStart = diagnostics.GetServerSnapshot()
+					end
+
 					local mutationUs: { number } = {}
 					local tickCpuUs: { number } = {}
 					local tickTimes: { number } = {}
@@ -402,6 +428,12 @@ else
 						table.insert(clients, reply)
 					end
 
+					local diagnosticEnd: SharedTypes.DiagnosticSnapshot? = nil
+
+					if diagnostics ~= nil then
+						diagnosticEnd = diagnostics.GetServerSnapshot()
+					end
+
 					table.insert(cases, {
 						actors = #subjects,
 						modeledPlayers = population.players,
@@ -418,6 +450,8 @@ else
 						serverHeartbeatMs = Scenario.summarize(frames),
 						observedMs = Scenario.summarize(observed),
 						packetBytes = Scenario.summarize(packetSizes),
+						diagnosticStart = diagnosticStart,
+						diagnosticEnd = diagnosticEnd,
 						clients = clients,
 						raw = {
 							mutationUs = mutationUs,
@@ -428,6 +462,7 @@ else
 							heapKiB = heap,
 							n4Steps = steps,
 							work = workSamples,
+							engine = engineSamples,
 							observedMs = observed,
 							packetBytes = packetSizes,
 						},
