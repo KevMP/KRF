@@ -1,18 +1,16 @@
 --!strict
 local Types = require(script.Parent.types)
-local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.CommandCodec)
-local Timer = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandTimer)
-local Context = require(script.Parent.utils.CommandContext)
+local History = require(script.Parent.utils.CommandOutcomeHistory)
+local Execution = require(script.Parent.utils.CommandExecution)
 local CommandDiagnostics = require(script.Parent.utils.CommandDiagnostics)
 local Admission = require(script.Parent.utils.CommandAdmission)
 local Queue = require(script.Parent.utils.ActiveQueue)
 
-type History = { outcome: Types.CommandOutcome, bytes: number, expires: number }
 type Queued = { queuedAt: number, request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
 
 type Connection = {
@@ -25,10 +23,7 @@ type Connection = {
 	bytes: number,
 	queue: { Queued },
 	queuedBytes: number,
-	history: { [number]: History },
-	order: { number },
-	historyBytes: number,
-	cancelExpiry: (() -> ())?,
+	history: History.Runtime,
 }
 
 type Limits = {
@@ -53,7 +48,7 @@ ServerCommandRuntime.__index = ServerCommandRuntime
 
 type State = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
-	catalog: Types.PreparedCommandCatalog,
+	execution: Execution.Runtime,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.CommandCodec,
 	dependencies: Types.ServerCommandDependencies,
@@ -91,67 +86,6 @@ function ServerCommandRuntime._deactivate(_self: Runtime, connection: Connection
 	end
 end
 
-local function invoke(callback: (...any) -> ...any, ...: any): (boolean, any, any)
-	local callbackThread: thread = coroutine.create(callback)
-	local completed: boolean, first: any, second: any = coroutine.resume(callbackThread, ...)
-
-	if coroutine.status(callbackThread) ~= "dead" then
-		pcall(task.cancel, callbackThread)
-		pcall(coroutine.close, callbackThread)
-
-		return false, "CommandCallbackYielded", nil
-	end
-
-	return completed, first, second
-end
-
-local function reasonValid(reason: any): boolean
-	return type(reason) == "string" and #reason > 0 and #reason <= Constants.MAX_REASON_BYTES
-end
-
-local function evict(connection: Connection): ()
-	local id: number = table.remove(connection.order, 1) :: number
-	local previous: History = connection.history[id]
-
-	connection.historyBytes -= previous.bytes
-	Metrics.Adjust(connection.diagnostics, "commandHistoryEntries", -1)
-	Metrics.Adjust(connection.diagnostics, "commandHistoryBytes", -previous.bytes)
-	connection.history[id] = nil
-end
-
-function ServerCommandRuntime._expire(self: Runtime, connection: Connection): ()
-	while #connection.order > 0 and connection.history[connection.order[1]].expires <= self.dependencies.Now() do
-		evict(connection)
-	end
-end
-
-function ServerCommandRuntime._armExpiry(self: Runtime, player: Player, connection: Connection): ()
-	if connection.cancelExpiry ~= nil then
-		connection.cancelExpiry()
-		connection.cancelExpiry = nil
-	end
-
-	local id: number? = connection.order[1]
-
-	if id == nil or self.connections[player] ~= connection then
-		return
-	end
-
-	local schedule: (number, () -> ()) -> () -> () = self.dependencies.ScheduleTimeout or Timer.Schedule
-
-	connection.cancelExpiry = schedule(
-		math.max(0, connection.history[id].expires - self.dependencies.Now()),
-		function(): ()
-			connection.cancelExpiry = nil
-
-			if self.connections[player] == connection then
-				self:_expire(connection)
-				self:_armExpiry(player, connection)
-			end
-		end
-	)
-end
-
 function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 	self.admission:Closed(player)
 	local connection: Connection? = self.connections[player]
@@ -163,10 +97,7 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 	self.connections[player] = nil
 	self:_deactivate(connection)
 
-	if connection.cancelExpiry ~= nil then
-		pcall(connection.cancelExpiry)
-		connection.cancelExpiry = nil
-	end
+	connection.history:Destroy()
 
 	-- A popped invocation remains charged until its dispatch stack returns,
 	-- even if author code closes/reopens the connection or destroys the runtime.
@@ -181,220 +112,12 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 	end
 
 	table.clear(connection.queue)
-	Metrics.Set(connection.diagnostics, "commandHistoryEntries", 0)
-	Metrics.Set(connection.diagnostics, "commandHistoryBytes", 0)
 
 	if connection.diagnostics ~= nil then
 		connection.diagnostics:SetAgeSource("commandQueueAgeSeconds", nil)
 	end
 
-	table.clear(connection.history)
-	table.clear(connection.order)
 	connection.queuedBytes = 0
-	connection.historyBytes = 0
-end
-
-function ServerCommandRuntime._execute(
-	self: Runtime,
-	player: Player,
-	connection: Connection,
-	request: SharedTypes.CommandRequest,
-	reservation: Types.CommandReservation,
-	observation: CommandDiagnostics.Observation
-): ()
-	local commands: { [number]: SharedTypes.ClientCommand } = self.protocol.commandsByCode or {}
-	local command: SharedTypes.ClientCommand = commands[request.commandCode]
-	local definition: Types.LoadedCommandDefinition = self.catalog.definitionsById[command.id]
-
-	local actor: ActorTypes.Actor? = nil
-	local targetReason: string? = nil
-
-	if request.targetHandle ~= nil then
-		actor, targetReason = self.dependencies.awareness:ResolveActor(player, request.targetHandle)
-	end
-
-	local outcome: SharedTypes.CommandResult = {
-		commandCode = request.commandCode,
-		requestId = request.requestId,
-		status = "Rejected",
-		reason = "ActorUnavailable",
-	}
-
-	local fault: string? = nil
-
-	if request.targetHandle == nil or actor ~= nil then
-		local context: Types.CommandContext, closeContext: () -> () = Context.new(
-			player,
-			actor,
-			request.requestId,
-			command.id,
-			function(id: number): Types.CommandOutcome?
-				if
-					self.connections[player] ~= connection
-					or type(id) ~= "number"
-					or id <= 0
-					or id >= request.requestId
-					or id % 1 ~= 0
-				then
-					return nil
-				end
-
-				self:_expire(connection)
-				local prior: History? = connection.history[id]
-
-				return if prior ~= nil then prior.outcome else nil
-			end,
-			{
-				ready = function(): boolean
-					return self.connections[player] == connection and self.dependencies.IsClientReady(player)
-				end,
-				owns = function(): boolean
-					return actor ~= nil
-						and self.dependencies.awareness:GetPlayerForActor(actor) == player
-						and self.dependencies.awareness:GetActorForPlayer(player) == actor
-				end,
-			}
-		)
-
-		local authorized: boolean, allowed: any, denial: any = invoke(definition.authorize, context, request.request)
-
-		if
-			not authorized
-			or type(allowed) ~= "boolean"
-			or (allowed == false and not reasonValid(denial))
-			or (allowed == true and denial ~= nil)
-		then
-			fault = "CommandAuthorizationFault"
-		elseif not allowed then
-			outcome =
-				{ commandCode = command.code, requestId = request.requestId, status = "Rejected", reason = denial }
-		elseif self.connections[player] == connection then
-			Metrics.Count(connection.diagnostics, "commandsExecuted", 1)
-			local handled: boolean, result: any = invoke(definition.handle, context, request.request)
-
-			if not handled or type(result) ~= "table" or type(rawget(result, "accepted")) ~= "boolean" then
-				fault = "CommandHandlerFault"
-			else
-				for key in next, result do
-					if key ~= "accepted" and key ~= "result" and key ~= "reason" then
-						fault = "CommandHandlerFault"
-					end
-				end
-
-				outcome = {
-					commandCode = command.code,
-					requestId = request.requestId,
-					status = if result.accepted then "Accepted" else "Rejected",
-					result = rawget(result, "result"),
-					reason = rawget(result, "reason") :: any,
-				}
-			end
-		end
-
-		closeContext()
-	elseif targetReason ~= nil then
-		-- Safely correlated valid envelopes may receive a bounded pre-effect rejection.
-		outcome = {
-			commandCode = command.code,
-			requestId = request.requestId,
-			status = "Rejected",
-			reason = "ActorUnavailable",
-		}
-	end
-
-	if fault ~= nil then
-		CommandDiagnostics.Fault(observation)
-	end
-
-	if self.connections[player] ~= connection or self.destroyed or not self.dependencies.IsClientReady(player) then
-		CommandDiagnostics.Uncertain(observation)
-		reservation.Cancel()
-
-		return
-	end
-
-	local encoded: buffer? = nil
-
-	if fault == nil then
-		encoded = self.codec.EncodeResult(outcome)
-
-		if encoded == nil then
-			fault = "CommandResultFault"
-			CommandDiagnostics.Fault(observation)
-		end
-	end
-
-	if fault ~= nil then
-		CommandDiagnostics.Uncertain(observation)
-		outcome = { commandCode = command.code, requestId = request.requestId, status = "Unknown", reason = fault }
-		encoded = self.codec.EncodeResult(outcome)
-		pcall(self.dependencies.ReportFault, player, fault)
-	end
-
-	if self.connections[player] ~= connection or self.destroyed then
-		reservation.Cancel()
-
-		return
-	end
-
-	if encoded == nil then
-		reservation.Cancel()
-		self.dependencies.CloseConnection(player, "CommandEgressFault")
-
-		return
-	end
-
-	-- Round-trip through the compiled result schema before retaining any author data.
-	local owned: SharedTypes.CommandResult? = self.codec.DecodeResult(encoded)
-	assert(owned ~= nil, "Encoded command result must decode")
-
-	if owned.status ~= "Unknown" then
-		Metrics.Count(
-			connection.diagnostics,
-			if owned.status == "Accepted" then "commandsAccepted" else "commandsRejected",
-			1
-		)
-	end
-
-	local retained: Types.CommandOutcome = table.freeze({
-		requestId = request.requestId,
-		commandId = command.id,
-		targetActor = actor,
-		status = owned.status,
-		result = owned.result,
-		reason = owned.reason,
-	})
-
-	self:_expire(connection)
-	local historyBytes: number = buffer.len(encoded) + #command.id + 24
-
-	while
-		#connection.order > 0
-		and (
-			#connection.order >= self.limits.history
-			or connection.historyBytes + historyBytes > self.limits.historyBytes
-		)
-	do
-		evict(connection)
-	end
-
-	if self.limits.history > 0 and historyBytes <= self.limits.historyBytes then
-		connection.history[request.requestId] =
-			{ outcome = retained, bytes = historyBytes, expires = self.dependencies.Now() + self.limits.lifetime }
-
-		table.insert(connection.order, request.requestId)
-		connection.historyBytes += historyBytes
-		Metrics.Adjust(connection.diagnostics, "commandHistoryEntries", 1)
-		Metrics.Adjust(connection.diagnostics, "commandHistoryBytes", historyBytes)
-	end
-
-	self:_armExpiry(player, connection)
-
-	if not reservation.Commit(encoded) then
-		CommandDiagnostics.Fault(observation)
-		CommandDiagnostics.Uncertain(observation)
-		self.dependencies.CloseConnection(player, "CommandEgressFault")
-	end
 end
 
 function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any, ...: any): (boolean, string?)
@@ -423,9 +146,14 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 			bytes = 0,
 			queue = {},
 			queuedBytes = 0,
-			history = {},
-			order = {},
-			historyBytes = 0,
+			history = History.new(
+				Diagnostics.GetConnection(player),
+				self.dependencies.Now,
+				self.dependencies.ScheduleTimeout,
+				self.limits.history,
+				self.limits.historyBytes,
+				self.limits.lifetime
+			),
 		}
 
 		existing = created
@@ -595,7 +323,10 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 
 			local observed = CommandDiagnostics.new(connection.diagnostics)
 			observation = observed
-			self:_execute(player, connection, queued.request, reservation :: Types.CommandReservation, observed)
+
+			self.execution:Execute(player, connection.history, connection.diagnostics, function(): boolean
+				return not self.destroyed and self.connections[player] == connection
+			end, queued.request, reservation :: Types.CommandReservation, observed)
 		end)
 
 		if not completed then
@@ -686,11 +417,13 @@ function ServerCommandRuntime.new(
 		)
 	end
 
+	local codec = Codec.Compile(protocol)
+
 	local state: State = {
 		diagnostics = Diagnostics.GetServer(),
-		catalog = catalog,
+		execution = Execution.new(catalog, protocol, codec, dependencies),
 		protocol = protocol,
-		codec = Codec.Compile(protocol),
+		codec = codec,
 		dependencies = dependencies,
 		limits = {
 			requests = limits.maxRequests or Constants.MAX_REQUESTS,

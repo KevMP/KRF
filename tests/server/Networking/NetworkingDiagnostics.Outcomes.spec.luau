@@ -233,9 +233,9 @@ it("counts one faulted and uncertain dispatch when a handler fault is followed b
 	-- Deliberately fail the private codec after the real handler fault, so both
 	-- the execution and outer dispatch cleanup paths observe the same request.
 	local internal: any = created.runtime
-	internal.codec = table.clone(internal.codec)
+	internal.execution.codec = table.clone(internal.execution.codec)
 
-	internal.codec.DecodeResult = function(): ()
+	internal.execution.codec.DecodeResult = function(): ()
 		error("DecodeUnavailable")
 	end
 
