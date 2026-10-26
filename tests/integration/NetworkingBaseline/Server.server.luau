@@ -11,6 +11,7 @@ local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
 local SharedTypes = require(KRF.shared.Networking.types)
+local ReplicationTypes = require(KRF.server.Replication.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
@@ -56,7 +57,7 @@ local heap: { { number } } = {}
 local idleFrames: { number } = {}
 local idleMeasuring = false
 local idle: { any } = {}
-local originalSend = Networking.SendReliable
+local originalAwarenessNew = Awareness.new
 local originalStep = Awareness.Step
 
 Awareness.Step = function(...: any): ()
@@ -69,18 +70,33 @@ Awareness.Step = function(...: any): ()
 	end
 end
 
-Networking.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
-	local success, reason = originalSend(player, payload)
+-- Observe the actual installed delegate on both revisions. N10's installation
+-- calls its owner directly rather than routing through the public facade.
+Awareness.new = function(
+	publication: NetworkingTypes.PublicationRuntime,
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	protocol: SharedTypes.ClientProtocol,
+	dependencies: NetworkingTypes.ActorAwarenessDependencies,
+	options: NetworkingTypes.ActorAwarenessOptions
+): NetworkingTypes.ActorAwarenessRuntime
+	local observed = table.clone(dependencies)
+	local send = dependencies.SendReliable
 
-	if measuring and success and buffer.readu8(payload, 0) == Constants.PACKET_KIND then
-		local traffic = sent[player] or { bytes = 0, packets = 0 }
-		traffic.bytes += buffer.len(payload)
-		traffic.packets += 1
-		sent[player] = traffic
-		table.insert(packetSizes, buffer.len(payload))
+	observed.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
+		local success, reason = send(player, payload)
+
+		if measuring and success and buffer.readu8(payload, 0) == Constants.PACKET_KIND then
+			local traffic = sent[player] or { bytes = 0, packets = 0 }
+			traffic.bytes += buffer.len(payload)
+			traffic.packets += 1
+			sent[player] = traffic
+			table.insert(packetSizes, buffer.len(payload))
+		end
+
+		return success, reason
 	end
 
-	return success, reason
+	return originalAwarenessNew(publication, catalog, protocol, observed, options)
 end
 
 local heartbeat = RunService.Heartbeat:Connect(function(delta: number)
@@ -127,7 +143,7 @@ local function finish(success: boolean, reason: string?): ()
 		end
 	end)
 
-	Networking.SendReliable = originalSend
+	Awareness.new = originalAwarenessNew
 	Awareness.Step = originalStep
 
 	StudioTestService:EndTest({

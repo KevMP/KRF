@@ -10,6 +10,7 @@ local Types = require(KRF.server.Networking.types)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
 local SharedTypes = require(KRF.shared.Networking.types)
+local ReplicationTypes = require(KRF.server.Replication.types)
 local Server = require(KRF.server)
 local Actors = require(KRF.server.Actor.ActorRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
@@ -57,7 +58,7 @@ local maxOthers = 0
 local blockedReservations = 0
 local originalNew = Commands.new
 local originalStep = Awareness.Step
-local originalSend = Networking.SendReliable
+local originalAwarenessNew = Awareness.new
 local egressUs, workSamples = {}, {}
 local sendAttempts, physicalSends, logicalActorRecords, resultRecords, payloadBytes = 0, 0, 0, 0, 0
 
@@ -72,25 +73,38 @@ Awareness.Step = function(...: any): ()
 	end
 end
 
-Networking.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
-	local sent, reason = originalSend(player, payload)
+Awareness.new = function(
+	publication: Types.PublicationRuntime,
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	protocol: SharedTypes.ClientProtocol,
+	dependencies: Types.ActorAwarenessDependencies,
+	options: Types.ActorAwarenessOptions
+): Types.ActorAwarenessRuntime
+	local observed = table.clone(dependencies)
+	local send = dependencies.SendReliable
 
-	if measuring then
-		sendAttempts += 1
+	observed.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
+		local sent, reason = send(player, payload)
 
-		if sent then
-			physicalSends += 1
-			payloadBytes += buffer.len(payload)
+		if measuring then
+			sendAttempts += 1
 
-			if buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND then
-				logicalActorRecords += buffer.readu32(payload, 5)
-			else
-				resultRecords += 1
+			if sent then
+				physicalSends += 1
+				payloadBytes += buffer.len(payload)
+
+				if buffer.readu8(payload, 0) == ActorConstants.PACKET_KIND then
+					logicalActorRecords += buffer.readu32(payload, 5)
+				else
+					resultRecords += 1
+				end
 			end
 		end
+
+		return sent, reason
 	end
 
-	return sent, reason
+	return originalAwarenessNew(publication, catalog, protocol, observed, options)
 end
 
 local function pending(): number
@@ -232,7 +246,7 @@ local function finish(success: boolean, reason: string?): ()
 	finished, measuring = true, false
 	Commands.new = originalNew
 	Awareness.Step = originalStep
-	Networking.SendReliable = originalSend
+	Awareness.new = originalAwarenessNew
 	heartbeat:Disconnect()
 
 	local cleaned, cleanupReason = pcall(function()
