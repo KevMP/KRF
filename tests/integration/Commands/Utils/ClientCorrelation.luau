@@ -5,6 +5,7 @@ local Types = require(KRF.client.Networking.types)
 local PublicTypes = require(KRF.client.Actor.types)
 local SignalTypes = require(KRF.shared.Signal.types)
 local Commands: Types.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
+local Hints: Types.HintRuntime = require(KRF.client.Networking.HintRuntime)
 local Registry: PublicTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local Scenario = {}
 
@@ -113,6 +114,11 @@ function Scenario.Run(ownId: string, otherId: string, requester: boolean, ready:
 		end
 
 		if requester then
+			for value = 1, 4 do
+				assert(Hints.Send("Game.Look", views[1], value), "Expected competing native C2S Latest")
+				assert(Hints.Send("Game.Pulse", nil, value), "Expected competing native C2S Pulse")
+			end
+
 			local first: number?, firstReason: string? = Commands.Send("Game.Begin", views[1])
 			assert(first ~= nil and firstReason == nil, "Expected admitted generic Begin")
 			local pulse: number?, pulseReason: string? = Commands.Send("Game.Pulse", views[1])
@@ -145,6 +151,18 @@ function Scenario.Run(ownId: string, otherId: string, requester: boolean, ready:
 		assert(fault == nil, fault)
 		assert(callbacks == 8, "Expected persistent activation, transient start/end, and start/interruption")
 		assert(resultCount == (if requester then 5 else 0), "Only requester receives command results")
+		local joinDeadline = os.clock() + 20
+
+		while #Registry.GetAllActorViews() < 18 do
+			assert(os.clock() < joinDeadline, "Multipart pressure Actors did not install")
+			task.wait()
+		end
+
+		for _, candidate in Registry.GetAllActorViews() do
+			assert(candidate:IsAvailable(), "A multipart baseline must install atomically")
+			local padding = assert(candidate:GetDomain("Stress.Padding"))
+			assert(padding:GetState() == string.rep("x", 8192), "Expected complete canonical padding")
+		end
 
 		for _, view: PublicTypes.ActorView in views do
 			assert(#view:GetActions():GetActiveActions() == 0, "All native scenario activations must have ended")

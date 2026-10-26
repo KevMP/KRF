@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local StudioTestService = game:GetService("StudioTestService")
 local KRF = ReplicatedStorage.Packages.KRF
 local ActorTypes = require(KRF.server.Actor.types)
+local ActionTypes = require(KRF.server.Action.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedTypes = require(KRF.shared.Networking.types)
@@ -32,6 +33,7 @@ Players.CharacterAutoLoads = false
 
 local actors: { [Player]: ActorTypes.Actor } = {}
 local models: { Model } = {}
+local pressureActors: { ActorTypes.Actor } = {}
 local reports: { [Player]: boolean } = {}
 local requests: { [Player]: { Request } } = {}
 local requestIds: { [Player]: { number } } = {}
@@ -95,6 +97,9 @@ Awareness.new = function(
 	dependencies: NetworkingTypes.ActorAwarenessDependencies,
 	options: NetworkingTypes.ActorAwarenessOptions
 ): NetworkingTypes.ActorAwarenessRuntime
+	-- Keep the real scheduler/transport; force multipart captures in this fixture.
+	options.maxChunkBytes = 512
+
 	local runtime: NetworkingTypes.ActorAwarenessRuntime =
 		originalAwareness(publication, catalog, protocol, dependencies, options)
 
@@ -126,6 +131,10 @@ local function finish(success: boolean, reason: string?): ()
 		end
 
 		for _, actor: ActorTypes.Actor in actors do
+			Actors.UnregisterActor(actor)
+		end
+
+		for _, actor in pressureActors do
 			Actors.UnregisterActor(actor)
 		end
 
@@ -282,9 +291,25 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 		elseif phase == "PrepareCorrelation" then
 			phase = "Correlation"
 			reports = {}
+
+			-- Joining Actor streams compete with the existing requester-first Action
+			-- lifecycle assertions. Consumers and both transports remain production.
+			for _ = 1, 16 do
+				local model = Instance.new("Model")
+				model.Name = "CommandPressureActor"
+				model.Parent = workspace
+				table.insert(models, model)
+				local actor = assert(Actors.RegisterActor(model))
+				table.insert(pressureActors, actor)
+			end
+
 			control:FireAllClients(phase)
 		elseif phase == "Correlation" then
 			for _, actor: ActorTypes.Actor in actors do
+				Actors.UnregisterActor(actor)
+			end
+
+			for _, actor in pressureActors do
 				Actors.UnregisterActor(actor)
 			end
 
@@ -322,7 +347,7 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 			)
 
 			assert(
-				snapshot.counters.baselinesCompleted >= 2 and snapshot.gauges.readyConnections.current == 2,
+				snapshot.counters.baselinesCompleted >= 36 and snapshot.gauges.readyConnections.current == 2,
 				"Expected completed native baselines and Ready scopes"
 			)
 
@@ -424,6 +449,15 @@ local completed: boolean, reason: any = pcall(function(): ()
 	local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 		commands = commands,
 		actions = Correlation.Actions,
+		replicationDomains = {
+			{
+				id = "Stress.Padding",
+				state = Schema.String(8192),
+				snapshot = function(): string
+					return string.rep("x", 8192)
+				end,
+			},
+		},
 		hints = {
 			{
 				id = "Game.Look",
@@ -521,6 +555,17 @@ local completed: boolean, reason: any = pcall(function(): ()
 			if index > 2 then
 				assert(phase == "Correlation", "Unexpected command traffic outside the correlation phase")
 				assert(index <= 7, "Unexpected correlation traffic")
+
+				for _, actor in pressureActors do
+					local actions = actor:GetController("ActionController") :: ActionTypes.ActionController
+					assert(actions:RequestAction("Native.Pulse").accepted, "Expected live work during multipart joins")
+				end
+
+				for recipient in actors do
+					local token = recipientTokens[recipient] * 16 + 4
+					assert(Hints.SendTo(recipient, "Game.ZSample", nil, token))
+					assert(Hints.SendTo(recipient, "Game.VFX", nil, token))
+				end
 
 				assert(
 					commandsById["Game.Begin"].code == request.commandCode

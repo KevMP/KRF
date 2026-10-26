@@ -198,11 +198,15 @@ it("bounds recovery captures while another live Actor makes progress and eventua
 	fixture.publicDomain.callbacks[actors[7]]({ { id = "Changed", payload = 17 } })
 	fixture.options.workLimits = { captures = 1 }
 
+	local observedWork = false
+
 	for _ = 1, 32 do
 		runtime:Step(32768, 64)
-		local work = (runtime :: any).work
+		local work = (runtime :: any).delivery.work
 
 		if work ~= nil then
+			observedWork = true
+
 			for unit, used in work.used do
 				expect(used <= work.limits[unit]).toBe(true)
 			end
@@ -211,6 +215,7 @@ it("bounds recovery captures while another live Actor makes progress and eventua
 		end
 	end
 
+	expect(observedWork).toBe(true)
 	expect(#TestUtils.kind(fixture, player, "Commit")).toBe(1)
 	expect(#TestUtils.kind(fixture, player, "BaselineEnd")).toBe(6)
 	expect(fixture.faults).toEqual({})
