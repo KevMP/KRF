@@ -62,8 +62,8 @@ it("anchors many joins synchronously but bounds all projection and encoding thro
 		runtime:Step(32768, 128)
 		expect(encodes - previous <= 1).toBe(true)
 
-		if internal.work ~= nil then
-			expect(internal.work.used.captures <= 1).toBe(true)
+		if internal.delivery.work ~= nil then
+			expect(internal.delivery.work.used.captures <= 1).toBe(true)
 		end
 	end
 

@@ -129,7 +129,7 @@ it("keeps healthy Actors and another recipient progressing under a shared one-ca
 		invalidate()
 		fixture.publicDomain.callbacks[quiet]({ { id = "Changed", payload = 17 } })
 		runtime:Step(32768, 128)
-		expect(internal.work.used.captures <= 1).toBe(true)
+		expect(internal.delivery.work.used.captures <= 1).toBe(true)
 	end
 
 	for _, recipient in { player, other } do

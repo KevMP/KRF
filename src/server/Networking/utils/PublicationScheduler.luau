@@ -1,6 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Composition = require(script.Parent.PublicationPatchComposition)
 local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 
 local PublicationScheduler = {}
@@ -46,186 +47,12 @@ local function abandon(self: Runtime, stream: Stream): ()
 	Metrics.Adjust(owner, "publicationQueuedBytes", -stream.queuedBytes)
 end
 
-local function copy(value: any): any
-	if type(value) ~= "table" then
-		return value
-	end
-
-	local result: { [any]: any } = {}
-
-	for key, item in value do
-		result[key] = copy(item)
-	end
-
-	return result
-end
-
-local function apply(value: any, patch: Types.PublicationPatch): any
-	if patch.kind == "Replace" then
-		return copy(patch.value)
-	end
-
-	-- Delivered subtrees are private. Copy only the path changed by this patch;
-	-- incoming replacement values and Map entries still cross an ownership boundary.
-	local result = if type(value) == "table" then table.clone(value) else {}
-
-	if patch.kind == "Struct" then
-		for field, change in patch.fields do
-			result[field] = apply(result[field], change)
-		end
-	else
-		for key, entry in patch.entries do
-			result[key] = copy(entry)
-		end
-
-		for _, key in patch.removed do
-			result[key] = nil
-		end
-	end
-
-	return result
-end
-
-local function merge(
-	first: Types.PublicationPatch,
-	second: Types.PublicationPatch,
-	delivered: Types.PublicationDomainTruth?
-): Types.PublicationPatch?
-	if second.kind == "Replace" or first.kind ~= second.kind then
-		return second
-	end
-
-	if first.kind == "Struct" and second.kind == "Struct" then
-		local fields: { [string]: Types.PublicationPatch } = table.clone(first.fields)
-
-		for field, change in second.fields do
-			local earlier = fields[field]
-			local fieldTruth: Types.PublicationDomainTruth? = nil
-
-			if delivered ~= nil and type(delivered.value) == "table" then
-				fieldTruth = { value = delivered.value[field] }
-			end
-
-			fields[field] = if earlier == nil then change else merge(earlier, change, fieldTruth)
-		end
-
-		return { kind = "Struct", fields = fields }
-	end
-
-	if first.kind == "Map" and second.kind == "Map" then
-		local entries: { [any]: any } = table.clone(first.entries)
-		local removals: { [any]: boolean } = {}
-
-		for _, key in first.removed do
-			removals[key] = true
-		end
-
-		for key, value in second.entries do
-			entries[key] = value
-			removals[key] = nil
-		end
-
-		for _, key in second.removed do
-			entries[key] = nil
-
-			if delivered ~= nil and type(delivered.value) == "table" and delivered.value[key] == nil then
-				removals[key] = nil
-			else
-				removals[key] = true
-			end
-		end
-
-		local removed: { any } = {}
-
-		for key in removals do
-			table.insert(removed, key)
-		end
-
-		table.sort(removed, function(a: any, b: any): boolean
-			return a < b
-		end)
-
-		if next(entries) == nil and #removed == 0 then
-			return nil
-		end
-
-		return { kind = "Map", entries = entries, removed = removed }
-	end
-
-	return second
-end
-
-local function combine(
-	first: Types.PublicationFilteredCommit?,
-	second: Types.PublicationFilteredCommit,
-	delivered: { [string]: Types.PublicationDomainTruth }
-): Types.PublicationFilteredCommit
-	if first == nil then
-		return second
-	end
-
-	local byDomain: { [string]: Types.PublicationPatch } = {}
-	local order: { string } = {}
-
-	for _, item in first.patches do
-		byDomain[item.domainId] = item.patch
-		table.insert(order, item.domainId)
-	end
-
-	for _, item in second.patches do
-		local previous = byDomain[item.domainId]
-
-		if previous == nil then
-			byDomain[item.domainId] = item.patch
-			table.insert(order, item.domainId)
-		else
-			byDomain[item.domainId] = merge(previous, item.patch, delivered[item.domainId])
-		end
-	end
-
-	local patches: { Types.PublicationDomainPatch } = {}
-
-	for _, domainId in order do
-		local patch = byDomain[domainId]
-
-		if patch ~= nil then
-			table.insert(patches, { domainId = domainId, patch = patch })
-		end
-	end
-
-	local events: { Types.PublicationEvent } = {}
-
-	for _, event in first.events do
-		table.insert(events, event)
-	end
-
-	for _, event in second.events do
-		table.insert(events, event)
-	end
-
-	return { sequence = second.sequence, patches = patches, events = events }
-end
-
-local function applyKnown(
-	truth: { [string]: Types.PublicationDomainTruth },
-	domainId: string,
-	patch: Types.PublicationPatch
-): ()
-	local previous = truth[domainId]
-
-	if previous ~= nil then
-		truth[domainId] = { value = apply(previous.value, patch) }
-	elseif patch.kind == "Replace" then
-		truth[domainId] = { value = copy(patch.value) }
-	end
-end
-
 local function truthBeforeTail(stream: Stream): { [string]: Types.PublicationDomainTruth }
 	local truth: { [string]: Types.PublicationDomainTruth } = table.clone(stream.delivered)
 
 	for index = 1, #stream.records - 1 do
 		for _, item in stream.records[index].commit.patches do
-			applyKnown(truth, item.domainId, item.patch)
+			Composition.ApplyKnown(truth, item.domainId, item.patch)
 		end
 	end
 
@@ -314,7 +141,7 @@ function PublicationScheduler.Enqueue(
 	local tail = records[#records]
 	local isEvent = #commit.events > 0
 	local canMerge = tail ~= nil and #tail.commit.events == 0 and tail.order == (order or 0)
-	local composed = if canMerge then combine(tail.commit, commit, truthBeforeTail(stream)) else commit
+	local composed = if canMerge then Composition.Combine(tail.commit, commit, truthBeforeTail(stream)) else commit
 	local newRecords = #records + (if canMerge or (#composed.patches == 0 and not isEvent) then 0 else 1)
 	local size = if #composed.patches == 0 and #composed.events == 0 then 0 else self.options.MeasureRecord(composed)
 	local newBytes = stream.queuedBytes - (if canMerge then tail.bytes else 0) + size
@@ -438,7 +265,7 @@ function PublicationScheduler.ResetAfterBaseline(
 	stream.needsBaseline = false
 	-- N3 canonical values are already frozen and owned; applying a patch copies
 	-- changed paths. Only the top-level delivered index must be writable here.
-	stream.delivered = if owned then table.clone(domains) else copy(domains)
+	stream.delivered = if owned then table.clone(domains) else Composition.Copy(domains)
 end
 
 function PublicationScheduler.RemoveStream(self: Runtime, key: Types.PublicationStreamKey): ()
@@ -562,7 +389,7 @@ function PublicationScheduler.DrainBudgeted(
 			encodedBytes += pending.bytes
 
 			for _, item in pending.commit.patches do
-				applyKnown(stream.delivered, item.domainId, item.patch)
+				Composition.ApplyKnown(stream.delivered, item.domainId, item.patch)
 			end
 
 			if #stream.records > 0 then

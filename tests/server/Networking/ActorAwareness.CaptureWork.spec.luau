@@ -70,7 +70,7 @@ do
 				end
 
 				runtime:Step(32768, population.records)
-				expect((runtime :: any).work.used.captures <= 1).toBe(true)
+				expect((runtime :: any).delivery.work.used.captures <= 1).toBe(true)
 			end
 
 			for _, player in players do

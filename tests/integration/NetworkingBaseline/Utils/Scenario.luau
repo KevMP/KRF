@@ -20,7 +20,9 @@ function Scenario.budget(): (number, number)
 end
 
 function Scenario.activeCount(runtime: any): number
-	return if runtime.active.count ~= nil then runtime.active.count else #runtime.active
+	local scheduler = runtime.delivery or runtime
+
+	return if scheduler.active.count ~= nil then scheduler.active.count else #scheduler.active
 end
 
 function Scenario.focus(): string
@@ -30,17 +32,19 @@ function Scenario.focus(): string
 end
 
 function Scenario.work(runtime: any): any
-	if runtime.active.count == nil then
+	local scheduler = runtime.delivery or runtime
+
+	if scheduler.active.count == nil then
 		return nil -- Legacy implementation has no attempted-work accounting.
 	end
 
-	if runtime.work ~= nil then
-		for unit, used in runtime.work.used do
-			assert(used <= runtime.work.limits[unit], "Scheduler exceeded attempted-work limit: " .. unit)
+	if scheduler.work ~= nil then
+		for unit, used in scheduler.work.used do
+			assert(used <= scheduler.work.limits[unit], "Scheduler exceeded attempted-work limit: " .. unit)
 		end
 	end
 
-	return if runtime.work ~= nil then table.clone(runtime.work.used) else {}
+	return if scheduler.work ~= nil then table.clone(scheduler.work.used) else {}
 end
 
 function Scenario.plan(count: number, mode: string): { { number } }

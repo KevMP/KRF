@@ -21,6 +21,34 @@ beforeEach(function()
 	fixture = TestUtils.new()
 end)
 
+it("does not pump pending captures when observer disconnection reenters teardown", function()
+	local observe = fixture.dependencies.ObserveAssociationChanged
+	local disconnects = 0
+
+	fixture.dependencies.ObserveAssociationChanged = function(callback: (Model) -> ()): () -> ()
+		local disconnect = observe(callback)
+
+		return function(): ()
+			disconnects += 1
+			assert(fixture.runtime, "Expected installed awareness"):Step(32768, 64)
+			disconnect()
+		end
+	end
+
+	local player: Player = TestUtils.player(fixture)
+	TestUtils.actor(fixture, nil)
+	local runtime: Types.ActorAwarenessRuntime = TestUtils.start(fixture)
+	TestUtils.ready(fixture, player)
+	runtime:Destroy()
+	runtime:Destroy()
+	expect(disconnects).toBe(1)
+	expect(fixture.deliveries).toEqual({})
+	expect(fixture.faults).toEqual({})
+	local internal: any = runtime
+	expect(internal.backlog.records).toBe(0)
+	expect(internal.backlog.bytes).toBe(0)
+end)
+
 it("detaches staged work when a send fault closes and readies the same Player", function()
 	local player: Player = TestUtils.player(fixture)
 	TestUtils.actor(fixture, nil)
