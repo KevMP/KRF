@@ -313,6 +313,39 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 				"Expected ingress admission observations"
 			)
 
+			assert(
+				snapshot.counters.baselinesCaptured
+					== snapshot.counters.baselinesCompleted
+						+ snapshot.counters.baselinesAbandoned
+						+ snapshot.gauges.baselineGenerations.current,
+				"Baseline lifecycle accounting must balance"
+			)
+
+			assert(
+				snapshot.counters.baselinesCompleted >= 2 and snapshot.gauges.readyConnections.current == 2,
+				"Expected completed native baselines and Ready scopes"
+			)
+
+			assert(
+				snapshot.counters.commandsExecuted > 0 and snapshot.counters.commandsAccepted > 0,
+				"Expected author execution and known outcomes"
+			)
+
+			assert(
+				snapshot.gauges.commandResultSlots.current == 0 and snapshot.gauges.commandResultSlots.highWater > 0,
+				"Expected drained result reservations"
+			)
+
+			assert(
+				snapshot.counters.hintsSent >= 8 and snapshot.counters.hintsReceived > 0,
+				"Expected semantic Hint handoff and authorized receipt"
+			)
+
+			assert(
+				snapshot.counters.reliableConnectionVisits > 0 and snapshot.maxima.reliablePumpWorkUnits > 0,
+				"Expected bounded scheduler work observations"
+			)
+
 			local reliableCalls, unreliableCalls = 0, 0
 
 			for recipient in reports do

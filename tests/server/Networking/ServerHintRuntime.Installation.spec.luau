@@ -102,6 +102,26 @@ beforeEach(function()
 					table.insert(received, { context = context, payload = payload })
 				end,
 			},
+			{
+				id = "C.Latest",
+				direction = "ServerToClient",
+				target = "None",
+				mode = "Latest",
+				payload = Schema.U8,
+			},
+			{
+				id = "D.Denied",
+				direction = "ClientToServer",
+				target = "None",
+				mode = "Pulse",
+				payload = Schema.U8,
+				authorize = function(): (boolean, string?)
+					return false, "Denied"
+				end,
+				receive = function(): ()
+					error("Denied Hint must not reach a receiver")
+				end,
+			},
 		},
 	})
 
@@ -285,5 +305,48 @@ it(
 		expect(aggregate:Snapshot().gauges.hintSendBytes.current).toBe(0)
 		expect(connection:Snapshot().gauges.hintSendRecords.current).toBe(0)
 		expect(aggregate:Snapshot().gauges.connections.current).toBe(0)
+	end
+)
+
+it(
+	"distinguishes successful Hint handoff and receipt from coalescing, stale suppression, denial and malformed packets",
+	function()
+		ready()
+		expect((Hints.SendTo(player, "C.Latest", nil, 1))).toBe(true)
+		expect((Hints.SendTo(player, "C.Latest", nil, 2))).toBe(true)
+		expect((Hints.SendTo(player, "Missing", nil, 2))).toBe(false)
+		emit(unreliable, sample(1))
+		emit(unreliable, sample(1))
+		local prepared = assert(protocol, "Expected published Hint protocol")
+		local codec = Wire.Compile(prepared.runtime)
+		local denied = assert(codec.Pack({ assert(codec.EncodeRecord({ hintCode = 3, payload = 1 })) }))
+		emit(unreliable, denied)
+		emit(unreliable, buffer.create(1))
+		local malformed = sample(2)
+		buffer.writeu16(malformed, 9, 65535)
+		emit(unreliable, malformed)
+		local admitted = assert(Diagnostics.GetConnectionSnapshot(player))
+		expect(admitted.counters.hintsReceived).toBe(0)
+		expect(admitted.counters.hintsSent).toBe(0)
+		expect(admitted.counters.hintsCoalesced).toBe(1)
+		local step = assert(tick, "Expected production Networking pump")
+		step()
+		local observed = assert(Diagnostics.GetConnectionSnapshot(player))
+		expect(observed.counters.hintsSent).toBe(1)
+		expect(observed.counters.hintsReceived).toBe(1)
+		expect(observed.counters.hintsCoalesced).toBe(1)
+		expect(observed.counters.hintsStaleDropped).toBe(1)
+		expect(observed.counters.hintsUnauthorized).toBe(1)
+		expect(observed.counters.hintsMalformed).toBe(2)
+		expect(observed.counters.hintPacketsDropped).toBe(2)
+		expect(observed.counters.hintsDropped).toBe(4)
+		expect(observed.gauges.hintLatestKeys.current).toBe(2)
+		expect(observed.counters.hintReceiveVisits).toBe(4)
+		expect(observed.counters.hintSendVisits).toBe(1)
+		expect(assert(Diagnostics.GetServerSnapshot()).maxima.hintReceivePumpWorkUnits).toBe(4)
+		expect(assert(Diagnostics.GetServerSnapshot()).maxima.hintSendPumpWorkUnits).toBe(1)
+		local aggregate = assert(DiagnosticState.GetServer())
+		Server._ResetForTests()
+		expect(aggregate:Snapshot().gauges.hintLatestKeys.current).toBe(0)
 	end
 )

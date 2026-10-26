@@ -8,10 +8,11 @@ local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.Co
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.CommandCodec)
 local Timer = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandTimer)
 local Context = require(script.Parent.utils.CommandContext)
+local CommandDiagnostics = require(script.Parent.utils.CommandDiagnostics)
 local Admission = require(script.Parent.utils.CommandAdmission)
 
 type History = { outcome: Types.CommandOutcome, bytes: number, expires: number }
-type Queued = { request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
+type Queued = { queuedAt: number, request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
 
 type Connection = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
@@ -51,6 +52,7 @@ local ServerCommandRuntime = {}
 ServerCommandRuntime.__index = ServerCommandRuntime
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	catalog: Types.PreparedCommandCatalog,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.CommandCodec,
@@ -137,6 +139,8 @@ local function evict(connection: Connection): ()
 	local previous: History = connection.history[id]
 
 	connection.historyBytes -= previous.bytes
+	Metrics.Adjust(connection.diagnostics, "commandHistoryEntries", -1)
+	Metrics.Adjust(connection.diagnostics, "commandHistoryBytes", -previous.bytes)
 	connection.history[id] = nil
 end
 
@@ -191,6 +195,7 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 
 	-- A popped invocation remains charged until its dispatch stack returns,
 	-- even if author code closes/reopens the connection or destroys the runtime.
+	Metrics.Count(connection.diagnostics, "commandsAbandoned", #connection.queue)
 	self.queued -= #connection.queue
 	Metrics.Adjust(connection.diagnostics, "commandRequests", -#connection.queue)
 	Metrics.Adjust(connection.diagnostics, "commandBytes", -connection.queuedBytes)
@@ -201,6 +206,13 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 	end
 
 	table.clear(connection.queue)
+	Metrics.Set(connection.diagnostics, "commandHistoryEntries", 0)
+	Metrics.Set(connection.diagnostics, "commandHistoryBytes", 0)
+
+	if connection.diagnostics ~= nil then
+		connection.diagnostics:SetAgeSource("commandQueueAgeSeconds", nil)
+	end
+
 	table.clear(connection.history)
 	table.clear(connection.order)
 	connection.queuedBytes = 0
@@ -212,7 +224,8 @@ function ServerCommandRuntime._execute(
 	player: Player,
 	connection: Connection,
 	request: SharedTypes.CommandRequest,
-	reservation: Types.CommandReservation
+	reservation: Types.CommandReservation,
+	observation: CommandDiagnostics.Observation
 ): ()
 	local commands: { [number]: SharedTypes.ClientCommand } = self.protocol.commandsByCode or {}
 	local command: SharedTypes.ClientCommand = commands[request.commandCode]
@@ -281,6 +294,7 @@ function ServerCommandRuntime._execute(
 			outcome =
 				{ commandCode = command.code, requestId = request.requestId, status = "Rejected", reason = denial }
 		elseif self.connections[player] == connection then
+			Metrics.Count(connection.diagnostics, "commandsExecuted", 1)
 			local handled: boolean, result: any = invoke(definition.handle, context, request.request)
 
 			if not handled or type(result) ~= "table" or type(rawget(result, "accepted")) ~= "boolean" then
@@ -313,7 +327,12 @@ function ServerCommandRuntime._execute(
 		}
 	end
 
+	if fault ~= nil then
+		CommandDiagnostics.Fault(observation)
+	end
+
 	if self.connections[player] ~= connection or self.destroyed or not self.dependencies.IsClientReady(player) then
+		CommandDiagnostics.Uncertain(observation)
 		reservation.Cancel()
 
 		return
@@ -326,10 +345,12 @@ function ServerCommandRuntime._execute(
 
 		if encoded == nil then
 			fault = "CommandResultFault"
+			CommandDiagnostics.Fault(observation)
 		end
 	end
 
 	if fault ~= nil then
+		CommandDiagnostics.Uncertain(observation)
 		outcome = { commandCode = command.code, requestId = request.requestId, status = "Unknown", reason = fault }
 		encoded = self.codec.EncodeResult(outcome)
 		pcall(self.dependencies.ReportFault, player, fault)
@@ -351,6 +372,14 @@ function ServerCommandRuntime._execute(
 	-- Round-trip through the compiled result schema before retaining any author data.
 	local owned: SharedTypes.CommandResult? = self.codec.DecodeResult(encoded)
 	assert(owned ~= nil, "Encoded command result must decode")
+
+	if owned.status ~= "Unknown" then
+		Metrics.Count(
+			connection.diagnostics,
+			if owned.status == "Accepted" then "commandsAccepted" else "commandsRejected",
+			1
+		)
+	end
 
 	local retained: Types.CommandOutcome = table.freeze({
 		requestId = request.requestId,
@@ -380,18 +409,28 @@ function ServerCommandRuntime._execute(
 
 		table.insert(connection.order, request.requestId)
 		connection.historyBytes += historyBytes
+		Metrics.Adjust(connection.diagnostics, "commandHistoryEntries", 1)
+		Metrics.Adjust(connection.diagnostics, "commandHistoryBytes", historyBytes)
 	end
 
 	self:_armExpiry(player, connection)
 
 	if not reservation.Commit(encoded) then
+		CommandDiagnostics.Fault(observation)
+		CommandDiagnostics.Uncertain(observation)
 		self.dependencies.CloseConnection(player, "CommandEgressFault")
 	end
 end
 
 function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any, ...: any): (boolean, string?)
-	if self.destroyed or not self.dependencies.IsClientReady(player) then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+	if self.destroyed then
+		return false, "ClientNotReady"
+	end
+
+	Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsReceived", 1)
+
+	if not self.dependencies.IsClientReady(player) then
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "ClientNotReady"
 	end
@@ -416,6 +455,14 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 
 		existing = created
 		self.connections[player] = created
+
+		if created.diagnostics ~= nil then
+			created.diagnostics:SetAgeSource("commandQueueAgeSeconds", function(): number?
+				local head = created.queue[1]
+
+				return if head ~= nil then math.max(0, self.dependencies.Now() - head.queuedAt) else nil
+			end)
+		end
 	end
 
 	local connection: Connection = existing :: Connection
@@ -429,7 +476,9 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local size: number = if typeof(payload) == "buffer" then buffer.len(payload) else 0
 
 	if connection.count >= self.limits.requests or size > self.limits.bytes - connection.bytes then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
+
+		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
 
 		return false, "CommandRateLimited"
 	end
@@ -440,13 +489,15 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	-- Charge attempted ingress before decoding, including malformed and refused
 	-- requests. Draining or disconnecting must not reset the aggregate rate gate.
 	if not self.admission:Attempt(player, size, now) then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
+
+		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
 
 		return false, "CommandGlobalRateLimited"
 	end
 
 	if select("#", ...) ~= 0 then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "MalformedCommandEnvelope"
 	end
@@ -454,13 +505,13 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local request: SharedTypes.CommandRequest?, reason: string? = self.codec.DecodeRequest(payload)
 
 	if request == nil then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, reason
 	end
 
 	if request.requestId <= connection.lastId then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "ReplayedRequestId"
 	end
@@ -468,7 +519,7 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	connection.lastId = request.requestId
 
 	if #connection.queue >= self.limits.queued or size > self.limits.queuedBytes - connection.queuedBytes then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "CommandQueueFull"
 	end
@@ -476,12 +527,12 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local ticket = self.admission:Queue(player, size, self.queued, self.queuedBytes)
 
 	if ticket == nil then
-		Metrics.Count(Diagnostics.FindConnection(player), "commandsRefused", 1)
+		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "CommandGlobalQueueFull"
 	end
 
-	table.insert(connection.queue, { request = request, bytes = size, ticket = ticket })
+	table.insert(connection.queue, { queuedAt = now, request = request, bytes = size, ticket = ticket })
 	connection.queuedBytes += size
 	self.queued += 1
 	Metrics.Count(connection.diagnostics, "commandsAdmitted", 1)
@@ -513,7 +564,9 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 
 		self.active = connection.next
 		visits += 1
+		Metrics.Count(connection.diagnostics, "commandConnectionVisits", 1)
 		local running: Queued? = nil
+		local observation: CommandDiagnostics.Observation? = nil
 		local reservation: Types.CommandReservation? = nil
 
 		local completed = pcall(function()
@@ -547,12 +600,29 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 			running = table.remove(connection.queue, 1) :: Queued
 			connection.queuedBytes -= queued.bytes
 			dispatched += 1
-			self:_execute(player, connection, queued.request, reservation :: Types.CommandReservation)
+			Metrics.Count(connection.diagnostics, "commandsDispatched", 1)
+
+			Metrics.Observe(
+				connection.diagnostics,
+				"commandQueueResidenceSeconds",
+				math.max(0, self.dependencies.Now() - queued.queuedAt)
+			)
+
+			local observed = CommandDiagnostics.new(connection.diagnostics)
+			observation = observed
+			self:_execute(player, connection, queued.request, reservation :: Types.CommandReservation, observed)
 		end)
 
 		if not completed then
 			if reservation ~= nil then
 				pcall((reservation :: Types.CommandReservation).Cancel)
+			end
+
+			if observation ~= nil then
+				CommandDiagnostics.Fault(observation)
+				CommandDiagnostics.Uncertain(observation)
+			else
+				Metrics.Count(connection.diagnostics, "commandsFaulted", 1)
 			end
 
 			pcall(self.dependencies.ReportFault, player, "CommandInternalFault")
@@ -569,6 +639,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 			unproductive = 0
 		else
 			unproductive += 1
+			Metrics.Count(connection.diagnostics, "commandUnproductiveInspections", 1)
 		end
 
 		if #connection.queue == 0 then
@@ -581,6 +652,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 	end
 
 	self.pumping = false
+	Metrics.Observe(self.diagnostics, "commandPumpWorkUnits", visits + dispatched)
 
 	return dispatched, visits
 end
@@ -630,6 +702,7 @@ function ServerCommandRuntime.new(
 	end
 
 	local state: State = {
+		diagnostics = Diagnostics.GetServer(),
 		catalog = catalog,
 		protocol = protocol,
 		codec = Codec.Compile(protocol),

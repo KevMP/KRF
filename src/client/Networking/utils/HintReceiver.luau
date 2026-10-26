@@ -8,7 +8,7 @@ local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.u
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Registry = require(script.Parent.Parent.Parent.Actor.utils.ActorViewRegistryState)
 
-type Packet = { cursor: SharedTypes.HintCursor, bytes: number, held: boolean }
+type Packet = { queuedAt: number, cursor: SharedTypes.HintCursor, bytes: number, held: boolean }
 type Latest = { sequence: number, actor: PublicTypes.ActorView? }
 
 local HintReceiver = {}
@@ -42,6 +42,12 @@ function HintReceiver._release(self: Runtime, packet: Packet): ()
 	end
 
 	packet.held = false
+
+	if packet.cursor.remaining > 0 then
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
+		Metrics.Count(self.diagnostics, "hintsDropped", packet.cursor.remaining)
+	end
+
 	self.pendingCount -= 1
 	Metrics.Adjust(self.diagnostics, "hintReceivePackets", -1)
 	self.pendingBytes -= packet.bytes
@@ -51,6 +57,7 @@ end
 function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, string?)
 	if self.destroyed or not self.dependencies.IsReady() then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		return false, "ClientNotReady"
 	end
@@ -63,6 +70,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 
 	if self.attempts >= self.limits.maxPackets then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		return false, "HintRateLimited"
 	end
@@ -71,6 +79,9 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 
 	if select("#", ...) ~= 0 then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
+
+		Metrics.Count(self.diagnostics, "hintsMalformed", 1)
 
 		return false, "MalformedHintPacket"
 	end
@@ -78,7 +89,9 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 	local cursor, reason = self.codec.Open(payload)
 
 	if cursor == nil then
+		Metrics.Count(self.diagnostics, "hintsMalformed", 1)
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		return false, reason
 	end
@@ -87,6 +100,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 
 	if self.rateBytes + bytes > self.limits.maxBytes then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		return false, "HintRateLimited"
 	end
@@ -98,6 +112,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 		or self.pendingBytes + bytes > self.limits.maxPendingBytes
 	then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
+		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		return false, "HintPendingFull"
 	end
@@ -105,7 +120,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 	local owned = buffer.create(bytes)
 	buffer.copy(owned, 0, cursor.source)
 	cursor.source = owned
-	table.insert(self.packets, { cursor = cursor, bytes = bytes, held = true })
+	table.insert(self.packets, { queuedAt = now, cursor = cursor, bytes = bytes, held = true })
 	self.pendingCount += 1
 	Metrics.Adjust(self.diagnostics, "hintReceivePackets", 1)
 	self.pendingBytes += bytes
@@ -123,6 +138,8 @@ function HintReceiver._deliver(self: Runtime, record: SharedTypes.HintRecord): b
 		local mapping = self.stream:GetByHandle(record.targetHandle)
 
 		if mapping == nil then
+			Metrics.Count(self.diagnostics, "hintsDropped", 1)
+
 			return false
 		end
 
@@ -134,6 +151,8 @@ function HintReceiver._deliver(self: Runtime, record: SharedTypes.HintRecord): b
 			or not actor:IsAvailable()
 			or self.stream:GetByActorId(mapping.actorId) ~= mapping
 		then
+			Metrics.Count(self.diagnostics, "hintsDropped", 1)
+
 			return false
 		end
 	end
@@ -144,15 +163,21 @@ function HintReceiver._deliver(self: Runtime, record: SharedTypes.HintRecord): b
 		local previous = self.latest[key]
 
 		if previous ~= nil and record.sequence <= previous.sequence then
+			Metrics.Count(self.diagnostics, "hintsStaleDropped", 1)
+			Metrics.Count(self.diagnostics, "hintsDropped", 1)
+
 			return false
 		end
 
 		if previous == nil then
 			if self.latestCount >= self.limits.maxLatestKeys then
+				Metrics.Count(self.diagnostics, "hintsDropped", 1)
+
 				return false
 			end
 
 			self.latestCount += 1
+			Metrics.Adjust(self.diagnostics, "hintLatestKeys", 1)
 		end
 
 		self.latest[key] = { sequence = record.sequence, actor = actor }
@@ -161,13 +186,19 @@ function HintReceiver._deliver(self: Runtime, record: SharedTypes.HintRecord): b
 	local hint = if self.protocol.hintsByCode ~= nil then self.protocol.hintsByCode[record.hintCode] else nil
 	assert(hint ~= nil, "Expected decoded S2C Hint")
 	local value: Types.HintReceived = table.freeze({ hintId = hint.id, actorView = actor, payload = record.payload })
+	Metrics.Count(self.diagnostics, "hintsReceived", 1)
 	local notifier = coroutine.create(self.dependencies.Notify)
 	local completed = coroutine.resume(notifier, value)
 
 	if coroutine.status(notifier) ~= "dead" then
 		coroutine.close(notifier)
+		Metrics.Count(self.diagnostics, "hintCallbackFaults", 1)
 
 		return false
+	end
+
+	if not completed then
+		Metrics.Count(self.diagnostics, "hintCallbackFaults", 1)
 	end
 
 	return completed
@@ -189,11 +220,25 @@ function HintReceiver.Step(self: Runtime): (number, number)
 		end
 
 		work += 1
+		Metrics.Count(self.diagnostics, "hintReceiveVisits", 1)
 		self.staged = packet
+
+		Metrics.Observe(
+			self.diagnostics,
+			"hintReceiveQueueResidenceSeconds",
+			math.max(0, self.dependencies.Now() - packet.queuedAt)
+		)
+
 		local completed, record = pcall(self.codec.Read, packet.cursor)
 
 		if completed and record ~= nil and self:_deliver(record) then
 			delivered += 1
+		else
+			Metrics.Count(self.diagnostics, "hintUnproductiveInspections", 1)
+		end
+
+		if not completed or record == nil then
+			Metrics.Count(self.diagnostics, "hintsMalformed", 1)
 		end
 
 		if not completed or record == nil or packet.cursor.remaining == 0 or self.destroyed then
@@ -208,6 +253,7 @@ function HintReceiver.Step(self: Runtime): (number, number)
 	end
 
 	self.pumping = false
+	Metrics.Observe(self.diagnostics, "hintReceivePumpWorkUnits", work)
 
 	return work, delivered
 end
@@ -217,6 +263,7 @@ function HintReceiver.ForgetActor(self: Runtime, actor: PublicTypes.ActorView): 
 		if latest.actor == actor then
 			self.latest[key] = nil
 			self.latestCount -= 1
+			Metrics.Adjust(self.diagnostics, "hintLatestKeys", -1)
 		end
 	end
 	-- Undecoded packet ownership stays bounded; retired handles fail resolution
@@ -234,6 +281,12 @@ function HintReceiver.Destroy(self: Runtime): ()
 		if packet ~= self.staged then
 			self:_release(packet)
 		end
+	end
+
+	Metrics.Adjust(self.diagnostics, "hintLatestKeys", -self.latestCount)
+
+	if self.diagnostics ~= nil then
+		self.diagnostics:SetAgeSource("hintReceiveQueueAgeSeconds", nil)
 	end
 
 	self.packets, self.latest, self.latestCount = {}, {}, 0
@@ -280,7 +333,19 @@ function HintReceiver.new(
 		pumping = false,
 	}
 
-	return setmetatable(state, HintReceiver)
+	local self: Runtime = setmetatable(state, HintReceiver)
+
+	if self.diagnostics ~= nil then
+		self.diagnostics:SetAgeSource("hintReceiveQueueAgeSeconds", function(): number?
+			local head = self.packets[1]
+
+			return if head ~= nil and head.cursor.remaining > 0
+				then math.max(0, dependencies.Now() - head.queuedAt)
+				else nil
+		end)
+	end
+
+	return self
 end
 
 return HintReceiver

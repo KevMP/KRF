@@ -9,7 +9,7 @@ local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.HintC
 local Queue = require(script.Parent.ActiveQueue)
 
 type Latest = { sequence: number, actor: ActorTypes.Actor?, job: Job? }
-type Job = { bytes: buffer, actor: ActorTypes.Actor?, handle: number?, latest: Latest? }
+type Job = { queuedAt: number, bytes: buffer, actor: ActorTypes.Actor?, handle: number?, latest: Latest? }
 
 type Connection = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
@@ -29,6 +29,7 @@ local HintSender = {}
 HintSender.__index = HintSender
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.HintCodec,
 	dependencies: Types.HintSendDependencies,
@@ -65,7 +66,17 @@ function HintSender._eligible(self: Runtime, connection: Connection, job: Job): 
 		)
 end
 
-function HintSender._release(self: Runtime, connection: Connection, job: Job): ()
+function HintSender._release(self: Runtime, connection: Connection, job: Job, dropped: boolean?): ()
+	if dropped then
+		Metrics.Count(connection.diagnostics, "hintsDropped", 1)
+
+		Metrics.Observe(
+			connection.diagnostics,
+			"hintSendQueueResidenceSeconds",
+			math.max(0, self.dependencies.Now() - job.queuedAt)
+		)
+	end
+
 	local bytes = buffer.len(job.bytes)
 
 	connection.pendingCount -= 1
@@ -90,10 +101,16 @@ function HintSender._close(self: Runtime, player: Player): ()
 	end
 
 	for _, job in connection.queue do
-		self:_release(connection, job)
+		self:_release(connection, job, true)
 	end
 
 	self.latestCount -= connection.latestCount
+	Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -connection.latestCount)
+
+	if connection.diagnostics ~= nil then
+		connection.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", nil)
+	end
+
 	connection.queue, connection.latest, connection.latestCount = {}, {}, 0
 end
 
@@ -105,7 +122,7 @@ function HintSender.ForgetActor(self: Runtime, actor: ActorTypes.Actor): ()
 
 			if job.actor == actor then
 				table.remove(connection.queue, index)
-				self:_release(connection, job)
+				self:_release(connection, job, true)
 			end
 		end
 
@@ -114,6 +131,7 @@ function HintSender.ForgetActor(self: Runtime, actor: ActorTypes.Actor): ()
 				connection.latest[key] = nil
 				connection.latestCount -= 1
 				self.latestCount -= 1
+				Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -1)
 			end
 		end
 
@@ -131,10 +149,16 @@ function HintSender.SendTo(
 	payload: any?
 ): (boolean, string?)
 	local connection = self.connections[player]
-	local diagnosticOwner = if connection ~= nil then connection.diagnostics else nil
+
+	local diagnosticOwner = if self.destroyed
+		then nil
+		else if connection ~= nil
+			then connection.diagnostics
+			else Diagnostics.FindConnection(player) or self.diagnostics
 
 	if connection == nil or not self:_current(connection) then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "ClientNotReady"
 	end
@@ -151,6 +175,7 @@ function HintSender.SendTo(
 
 	if connection.attempts >= limits.maxAttempts or self.attempts >= limits.maxGlobalAttempts then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "HintRateLimited"
 	end
@@ -162,12 +187,14 @@ function HintSender.SendTo(
 
 	if hint == nil then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "UnknownHint"
 	end
 
 	if hint.direction ~= "ServerToClient" then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "HintDirectionMismatch"
 	end
@@ -177,6 +204,7 @@ function HintSender.SendTo(
 	if hint.target == "Actor" then
 		if actor == nil then
 			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+			Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 			return false, "ActorUnavailable"
 		end
@@ -185,11 +213,13 @@ function HintSender.SendTo(
 
 		if handle == nil or self.dependencies.awareness:ResolveActor(player, handle) ~= actor then
 			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+			Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 			return false, "ActorUnavailable"
 		end
 	elseif actor ~= nil then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "UnexpectedActorTarget"
 	end
@@ -203,12 +233,14 @@ function HintSender.SendTo(
 			and (connection.latestCount >= limits.maxLatestKeys or self.latestCount >= limits.maxGlobalLatestKeys)
 		then
 			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+			Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 			return false, "HintLatestKeysFull"
 		end
 
 		if latest ~= nil and latest.sequence >= limits.maxSequence then
 			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+			Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 			return false, "HintSequenceExhausted"
 		end
@@ -221,6 +253,7 @@ function HintSender.SendTo(
 		and (connection.pendingCount >= limits.maxPending or self.pendingCount >= limits.maxGlobalPending)
 	then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "HintPendingFull"
 	end
@@ -232,6 +265,7 @@ function HintSender.SendTo(
 
 	if encoded == nil then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, reason
 	end
@@ -240,6 +274,7 @@ function HintSender.SendTo(
 
 	if connection.rateBytes + bytes > limits.maxBytes or self.rateBytes + bytes > limits.maxGlobalBytes then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "HintRateLimited"
 	end
@@ -251,6 +286,7 @@ function HintSender.SendTo(
 		or self.pendingBytes + delta > limits.maxGlobalPendingBytes
 	then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
+		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
 		return false, "HintPendingFull"
 	end
@@ -265,6 +301,7 @@ function HintSender.SendTo(
 			connection.latest[key] = created
 			connection.latestCount += 1
 			self.latestCount += 1
+			Metrics.Adjust(connection.diagnostics, "hintLatestKeys", 1)
 		else
 			latest.sequence = sequence
 		end
@@ -276,8 +313,10 @@ function HintSender.SendTo(
 
 	if previous ~= nil then
 		previous.bytes = encoded
+		previous.queuedAt = now
+		Metrics.Count(connection.diagnostics, "hintsCoalesced", 1)
 	else
-		local job: Job = { bytes = encoded, actor = actor, handle = handle, latest = latest }
+		local job: Job = { queuedAt = now, bytes = encoded, actor = actor, handle = handle, latest = latest }
 		table.insert(connection.queue, job)
 		connection.pendingCount += 1
 		self.pendingCount += 1
@@ -317,6 +356,7 @@ function HintSender.Step(self: Runtime): (number, number)
 			break
 		end
 
+		Metrics.Count(connection.diagnostics, "hintConnectionVisits", 1)
 		local selected: { Job } = {}
 		local records: { buffer } = {}
 		local bytes, visits = Constants.PACKET_HEADER_BYTES, 0
@@ -328,6 +368,7 @@ function HintSender.Step(self: Runtime): (number, number)
 			and #records < Constants.MAX_RECORDS
 		do
 			work += 1
+			Metrics.Count(connection.diagnostics, "hintSendVisits", 1)
 			visits += 1
 			local job = connection.queue[1]
 			local eligible = self:_eligible(connection, job)
@@ -339,10 +380,17 @@ function HintSender.Step(self: Runtime): (number, number)
 					or sentBytes + bytes + buffer.len(job.bytes) > limits.maxStepBytes
 				)
 			then
+				Metrics.Count(connection.diagnostics, "hintUnproductiveInspections", 1)
 				break
 			end
 
 			table.remove(connection.queue, 1)
+
+			Metrics.Observe(
+				connection.diagnostics,
+				"hintSendQueueResidenceSeconds",
+				math.max(0, self.dependencies.Now() - job.queuedAt)
+			)
 
 			if job.latest ~= nil then
 				job.latest.job = nil
@@ -353,7 +401,8 @@ function HintSender.Step(self: Runtime): (number, number)
 				table.insert(records, job.bytes)
 				bytes += buffer.len(job.bytes)
 			else
-				self:_release(connection, job)
+				Metrics.Count(connection.diagnostics, "hintUnproductiveInspections", 1)
+				self:_release(connection, job, true)
 			end
 		end
 
@@ -362,10 +411,17 @@ function HintSender.Step(self: Runtime): (number, number)
 			sends += 1
 			sentBytes += buffer.len(packet)
 			local sender = coroutine.create(self.dependencies.SendUnreliable)
-			coroutine.resume(sender, connection.player, packet)
+			local completed = coroutine.resume(sender, connection.player, packet)
 
 			if coroutine.status(sender) ~= "dead" then
 				coroutine.close(sender)
+				completed = false
+			end
+
+			Metrics.Count(connection.diagnostics, if completed then "hintsSent" else "hintsDropped", #selected)
+
+			if not completed then
+				Metrics.Count(connection.diagnostics, "hintSendFailures", 1)
 			end
 
 			-- Jobs were removed from the queue but remain charged through callback unwind.
@@ -380,6 +436,7 @@ function HintSender.Step(self: Runtime): (number, number)
 	end
 
 	self.pumping = false
+	Metrics.Observe(self.diagnostics, "hintSendPumpWorkUnits", work)
 
 	return work, sends
 end
@@ -438,6 +495,7 @@ function HintSender.new(
 	)
 
 	local state: State = {
+		diagnostics = Diagnostics.GetServer(),
 		protocol = protocol,
 		codec = Codec.Compile(protocol, "ServerToClient"),
 		dependencies = dependencies,
@@ -481,6 +539,20 @@ function HintSender.new(
 
 			connection.node = Queue.node(connection)
 			self.connections[player] = connection
+
+			if connection.diagnostics ~= nil then
+				connection.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", function(): number?
+					local earliest: number? = nil
+
+					for _, job in connection.queue do
+						if self:_eligible(connection, job) then
+							earliest = math.min(earliest or math.huge, job.queuedAt)
+						end
+					end
+
+					return if earliest ~= nil then math.max(0, dependencies.Now() - earliest) else nil
+				end)
+			end
 		end)
 	)
 

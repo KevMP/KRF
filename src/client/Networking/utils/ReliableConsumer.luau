@@ -1,5 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local ActorConstants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
@@ -10,6 +12,7 @@ function ReliableConsumer.new(
 	commands: Types.ClientCommandRuntime,
 	fault: () -> ()
 ): ((any) -> (), () -> ())
+	local diagnostics = Diagnostics.Get()
 	local active: boolean = true
 	local paused: boolean = false
 	local queue: { buffer } = {}
@@ -31,6 +34,8 @@ function ReliableConsumer.new(
 					while active and not paused and #queue > 0 do
 						local nextPayload: buffer = table.remove(queue, 1) :: buffer
 						bytes -= buffer.len(nextPayload)
+						Metrics.Adjust(diagnostics, "clientReliableDeferredRecords", -1)
+						Metrics.Adjust(diagnostics, "clientReliableDeferredBytes", -buffer.len(nextPayload))
 						consume(nextPayload)
 					end
 				end)
@@ -48,6 +53,9 @@ function ReliableConsumer.new(
 			continuation = nil
 		end
 
+		Metrics.Count(diagnostics, "clientReliableDeferredDropped", #queue)
+		Metrics.Set(diagnostics, "clientReliableDeferredRecords", 0)
+		Metrics.Set(diagnostics, "clientReliableDeferredBytes", 0)
 		table.clear(queue)
 		bytes = 0
 	end
@@ -59,6 +67,7 @@ function ReliableConsumer.new(
 
 		if paused then
 			if #queue >= Constants.MAX_FENCED_RECORDS or bytes + buffer.len(payload) > Constants.MAX_FENCED_BYTES then
+				Metrics.Count(diagnostics, "clientReliableDeferredDropped", 1)
 				cleanup()
 				fault()
 
@@ -67,6 +76,9 @@ function ReliableConsumer.new(
 
 			table.insert(queue, payload)
 			bytes += buffer.len(payload)
+			Metrics.Count(diagnostics, "clientReliableDeferredAdmitted", 1)
+			Metrics.Adjust(diagnostics, "clientReliableDeferredRecords", 1)
+			Metrics.Adjust(diagnostics, "clientReliableDeferredBytes", buffer.len(payload))
 		else
 			consume(payload)
 		end

@@ -6,6 +6,7 @@ local KRF = ReplicatedStorage.Packages.KRF
 local PublicTypes = require(KRF.client.Actor.types)
 local Client = require(KRF.client)
 local Diagnostics = require(KRF.client.Networking.NetworkingDiagnostics)
+local DiagnosticState = require(KRF.client.Networking.utils.NetworkingDiagnosticsState)
 local ClientTypes = require(KRF.client.types)
 local SharedTypes = require(KRF.shared.Networking.types)
 local Manifest = require(KRF.shared.Networking.ManifestCompiler)
@@ -308,6 +309,7 @@ control.OnClientEvent:Connect(
 				local requestId: number?, failure: string? = Commands.Send("Game.Interact", view, { choice = 7 })
 				assert(requestId == nil and type(failure) == "string", "Retired ActorView must fail locally")
 				assert(Client._IsInitialized() and disconnectCalls == 0, "Expected live native client before overflow")
+				local diagnosticOwner = assert(DiagnosticState.Get())
 				local snapshot = assert(Diagnostics.GetClientSnapshot(), "Expected live client diagnostics")
 
 				assert(
@@ -330,6 +332,13 @@ control.OnClientEvent:Connect(
 					"Expected S2C queue observations"
 				)
 
+				assert(
+					snapshot.counters.commandsAccepted > 0
+						and snapshot.counters.hintsReceived >= 4
+						and snapshot.counters.hintsSent > 0,
+					"Expected correlated outcomes and semantic Hint observations"
+				)
+
 				injectTerminalFailure = true
 				requestId, failure = Commands.Send("Game.Ping")
 				assert(requestId ~= nil and failure == nil, "Expected native result to trigger terminal overflow")
@@ -343,6 +352,21 @@ control.OnClientEvent:Connect(
 				assert(disconnectCalls == 1, "Repeated shutdown must not disconnect the Reliable listener twice")
 				assert(unreliableDisconnects == 1, "S2C reception must disconnect exactly once")
 				assert(Diagnostics.GetClientSnapshot() == nil, "Terminal shutdown must revoke client diagnostics")
+				local cleaned = diagnosticOwner:Snapshot()
+
+				assert(
+					cleaned.gauges.clientCommandPending.current == 0
+						and cleaned.gauges.clientCommandMetadataBytes.current == 0,
+					"Shutdown must release correlation diagnostics"
+				)
+
+				assert(
+					cleaned.gauges.clientBaselineBytes.current == 0
+						and cleaned.gauges.clientReliableDeferredBytes.current == 0
+						and cleaned.gauges.hintLatestKeys.current == 0,
+					"Shutdown must release all client queue ownership observations"
+				)
+
 				requestId, failure = Commands.Send("Game.Ping")
 				assert(requestId == nil and type(failure) == "string", "Shutdown must revoke command admission")
 				assert(#Registry.GetAllActorViews() == 0, "Shutdown must clear Actor consumers")

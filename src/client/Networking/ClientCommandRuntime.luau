@@ -2,6 +2,8 @@
 local Types = require(script.Parent.types)
 local PublicTypes = require(script.Parent.Parent.Actor.types)
 local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.CommandCodec)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
@@ -16,6 +18,7 @@ type Pending = {
 }
 
 type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.CommandCodec,
 	stream: Types.ActorStreamRuntime,
@@ -42,6 +45,8 @@ function ClientCommandRuntime._remove(self: Runtime, id: number): Pending?
 	self.pending[id] = nil
 	self.count -= 1
 	self.bytes -= pending.bytes
+	Metrics.Adjust(self.diagnostics, "clientCommandPending", -1)
+	Metrics.Adjust(self.diagnostics, "clientCommandMetadataBytes", -pending.bytes)
 
 	if pending.cancel ~= nil then
 		pending.cancel()
@@ -52,13 +57,21 @@ function ClientCommandRuntime._remove(self: Runtime, id: number): Pending?
 end
 
 function ClientCommandRuntime._notify(
-	_self: Runtime,
+	self: Runtime,
 	id: number,
 	pending: Pending,
 	status: "Accepted" | "Rejected" | "Unknown",
 	result: any,
 	reason: string?
 ): ()
+	Metrics.Count(
+		self.diagnostics,
+		if status == "Unknown"
+			then "commandsUncertain"
+			else if status == "Accepted" then "commandsAccepted" else "commandsRejected",
+		1
+	)
+
 	local message: Types.CommandResult = table.freeze({
 		requestId = id,
 		commandId = pending.command.id,
@@ -100,6 +113,8 @@ function ClientCommandRuntime.Send(
 	request: any?
 ): (number?, string?)
 	if self.destroyed or not self.options.IsReady() then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, "ClientNotReady"
 	end
 
@@ -107,6 +122,8 @@ function ClientCommandRuntime.Send(
 	local command: SharedTypes.ClientCommand? = commands[commandId]
 
 	if command == nil then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, "UnknownCommand"
 	end
 
@@ -114,21 +131,29 @@ function ClientCommandRuntime.Send(
 
 	if command.target == "Actor" then
 		if actor == nil or not Registry.IsCurrent(actor) or not actor:IsAvailable() then
+			Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 			return nil, "ActorViewUnavailable"
 		end
 
 		local record: Types.ActorStreamRecord? = self.stream:GetByActorId(actor:GetId())
 
 		if record == nil or self.stream:GetByHandle(record.handle) ~= record then
+			Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 			return nil, "ActorViewUnavailable"
 		end
 
 		handle = record.handle
 	elseif actor ~= nil then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, "UnexpectedActorTarget"
 	end
 
 	if self.nextId > (self.options.maxRequestId or Constants.MAX_COUNTER) then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, "RequestIdExhausted"
 	end
 
@@ -142,6 +167,8 @@ function ClientCommandRuntime.Send(
 	})
 
 	if payload == nil then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, reason
 	end
 
@@ -152,6 +179,8 @@ function ClientCommandRuntime.Send(
 		self.count >= (self.options.maxPending or Constants.MAX_PENDING)
 		or self.bytes + bytes > (self.options.maxPendingBytes or Constants.MAX_PENDING_BYTES)
 	then
+		Metrics.Count(self.diagnostics, "commandsRefused", 1)
+
 		return nil, "CommandPendingFull"
 	end
 
@@ -162,6 +191,9 @@ function ClientCommandRuntime.Send(
 	self.pending[id] = pending
 	self.count += 1
 	self.bytes += bytes
+	Metrics.Count(self.diagnostics, "commandsAdmitted", 1)
+	Metrics.Adjust(self.diagnostics, "clientCommandPending", 1)
+	Metrics.Adjust(self.diagnostics, "clientCommandMetadataBytes", bytes)
 
 	pending.cancel = self.options.ScheduleTimeout(
 		self.options.timeoutSeconds or Constants.TIMEOUT_SECONDS,
@@ -174,6 +206,7 @@ function ClientCommandRuntime.Send(
 	local sent: boolean = pcall(self.options.SendReliable, payload)
 
 	if not sent then
+		Metrics.Count(self.diagnostics, "commandsFaulted", 1)
 		self:_uncertain(id, "CommandTransportFault")
 	end
 
@@ -196,6 +229,8 @@ function ClientCommandRuntime.Handle(self: Runtime, payload: any): boolean
 	if pending == nil or pending.command.code ~= result.commandCode then
 		return false
 	end
+
+	Metrics.Count(self.diagnostics, "commandResultsReceived", 1)
 
 	if result.status == "Unknown" then
 		self:_uncertain(result.requestId, result.reason :: string)
@@ -229,6 +264,7 @@ function ClientCommandRuntime.new(
 	options: Types.ClientCommandOptions
 ): Types.ClientCommandRuntime
 	local state: State = {
+		diagnostics = Diagnostics.Get(),
 		protocol = protocol,
 		codec = Codec.Compile(protocol),
 		stream = stream,

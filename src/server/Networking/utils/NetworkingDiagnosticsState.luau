@@ -6,8 +6,32 @@ local server: Types.DiagnosticCollector? = nil
 local connections: { [Player]: Types.DiagnosticCollector } = {}
 
 function State.Start(): ()
-	server = Metrics.new("Server", nil)
-	table.clear(connections)
+	State.Stop()
+	local owner = Metrics.new("Server", nil)
+	server = owner
+
+	local keys: { Types.DiagnosticAge } = {
+		"reliableEligibleQueueAgeSeconds",
+		"commandQueueAgeSeconds",
+		"hintSendQueueAgeSeconds",
+		"hintReceiveQueueAgeSeconds",
+	}
+
+	for _, key in keys do
+		owner:SetAgeSource(key, function(): number?
+			local oldest: number? = nil
+
+			for _, connection in connections do
+				local age = connection:GetAge(key)
+
+				if age ~= nil then
+					oldest = math.max(oldest or 0, age)
+				end
+			end
+
+			return oldest
+		end)
+	end
 end
 
 function State.GetServer(): Types.DiagnosticCollector?
@@ -38,12 +62,21 @@ end
 
 function State.Close(player: Player): ()
 	if connections[player] ~= nil then
+		connections[player]:ClearSources()
 		connections[player] = nil
 		Metrics.Adjust(server, "connections", -1)
 	end
 end
 
 function State.Stop(): ()
+	if server ~= nil then
+		server:ClearSources()
+	end
+
+	for _, connection in connections do
+		connection:ClearSources()
+	end
+
 	table.clear(connections)
 	server = nil
 end

@@ -2,6 +2,8 @@
 local Types = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Scheduler = require(script.Parent.PublicationScheduler)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 local ProjectionTypes = require(script.Parent.ActorRecipientProjection)
@@ -9,6 +11,7 @@ local ActiveQueue = require(script.Parent.ActiveQueue)
 local WorkBudget = require(script.Parent.ReliableWorkBudget)
 
 export type Dependencies = {
+	Now: (() -> number)?,
 	Backlog: Types.ReliableBacklog,
 	Current: () -> boolean,
 	DiscardProjection: (ActorTypes.Actor, ProjectionTypes.Projection) -> (),
@@ -24,6 +27,7 @@ export type Dependencies = {
 }
 
 type Baseline = {
+	queuedAt: number,
 	body: buffer?,
 	projection: ProjectionTypes.Projection,
 	offset: number,
@@ -33,6 +37,9 @@ type Baseline = {
 }
 
 type StreamState = {
+	diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
+	recaptureQueuedAt: number,
+	terminalQueuedAt: number,
 	queueNode: ActiveQueue.Node<Stream>?,
 	captureNode: ActiveQueue.Node<Stream>?,
 	orderIndex: number,
@@ -69,7 +76,15 @@ ActorRecipientStream.__index = ActorRecipientStream
 
 export type Stream = typeof(setmetatable({} :: StreamState, ActorRecipientStream))
 
-function ActorRecipientStream.ResetRecovery(self: Stream): ()
+function ActorRecipientStream.ResetRecovery(self: Stream, completed: boolean?): ()
+	if self.diagnostics ~= nil and self.retryDelay > 0 and self.dependencies.Current() then
+		Metrics.Adjust(self.diagnostics, "recoveryStreams", -1)
+
+		if not completed then
+			Metrics.Count(self.diagnostics, "recoveryAbandoned", 1)
+		end
+	end
+
 	self.retryAt, self.retryDelay = 0, 0
 end
 
@@ -82,6 +97,14 @@ function ActorRecipientStream.NeedsCapture(self: Stream): boolean
 end
 
 function ActorRecipientStream._backoff(self: Stream): ()
+	if self.diagnostics ~= nil and self.dependencies.Current() then
+		Metrics.Count(self.diagnostics, "recoveryBackoffs", 1)
+
+		if self.retryDelay == 0 then
+			Metrics.Adjust(self.diagnostics, "recoveryStreams", 1)
+		end
+	end
+
 	self.retryDelay = math.min(
 		if self.retryDelay == 0 then Constants.RECOVERY_RETRY_PUMPS else self.retryDelay * 2,
 		Constants.MAX_RECOVERY_RETRY_PUMPS
@@ -90,7 +113,22 @@ function ActorRecipientStream._backoff(self: Stream): ()
 	self.retryAt = self.dependencies.GetEpoch() + self.retryDelay
 end
 
-function ActorRecipientStream._clearBaseline(self: Stream): ()
+function ActorRecipientStream._observeBaselineEnd(self: Stream, completed: boolean?): ()
+	if self.diagnostics ~= nil and self.baseline ~= nil and self.dependencies.Current() then
+		Metrics.Adjust(self.diagnostics, "baselineGenerations", -1)
+		Metrics.Count(self.diagnostics, if completed then "baselinesCompleted" else "baselinesAbandoned", 1)
+
+		Metrics.Observe(
+			self.diagnostics,
+			"reliableQueueResidenceSeconds",
+			math.max(0, (self.dependencies.Now or os.clock)() - self.baseline.queuedAt)
+		)
+	end
+end
+
+function ActorRecipientStream._clearBaseline(self: Stream, completed: boolean?): ()
+	self:_observeBaselineEnd(completed)
+
 	if self.baseline ~= nil and self.baseline.charge ~= nil and self.baseline.charge ~= self.stagedBaselineCharge then
 		self.baseline.charge.release()
 	end
@@ -126,6 +164,7 @@ function ActorRecipientStream.ReleaseStaged(self: Stream): ()
 end
 
 function ActorRecipientStream.Fault(self: Stream, reason: string): ()
+	self.terminalQueuedAt = (self.dependencies.Now or os.clock)()
 	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 
 	local reported: boolean = self.failed
@@ -155,6 +194,8 @@ end
 -- Preserve the synchronous N4 boundary using only N3-owned value references.
 -- Recipient projection/encoding runs later under _prepareBaseline's work claim.
 function ActorRecipientStream.Capture(self: Stream): boolean
+	local queuedAt = self:GetQueuedAt() or (self.dependencies.Now or os.clock)()
+
 	local earliest = self:GetNextOrder()
 		or (if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0)
 
@@ -201,25 +242,37 @@ function ActorRecipientStream.Capture(self: Stream): boolean
 	)
 
 	if charge == nil then
+		Metrics.Count(self.diagnostics, "baselineCapacityRefusals", 1)
 		self.dependencies.DiscardProjection(self.actor, projected)
 
 		self:_clearBaseline()
 		self.scheduler:MarkBaselinePending(self.key)
 		self.recapture, self.recaptureOrder = true, earliest
+		self.recaptureQueuedAt = queuedAt
 		self:_backoff()
 		self.dependencies.Activate(self)
 
 		return false
 	end
 
-	if self.baseline ~= nil and self.baseline.charge ~= charge then
-		self:_clearBaseline()
+	if self.baseline ~= nil then
+		if self.baseline.charge ~= charge then
+			self:_clearBaseline()
+		else
+			-- A new generation can reuse the same owned anchor. End only its
+			-- semantic observation; the ledger charge must remain untouched.
+			self:_observeBaselineEnd(false)
+		end
 	end
 
+	Metrics.Count(self.diagnostics, "baselinesCaptured", 1)
+	Metrics.Count(self.diagnostics, "baselinesRestarted", if self.generation > 0 then 1 else 0)
+	Metrics.Adjust(self.diagnostics, "baselineGenerations", 1)
 	self.generation += 1
 	self.fence = sequence
 
 	self.baseline = {
+		queuedAt = queuedAt,
 		charge = charge,
 		projection = projected,
 		body = projected.body,
@@ -287,7 +340,12 @@ function ActorRecipientStream.new(
 	options: Types.ActorAwarenessOptions,
 	dependencies: Dependencies
 ): Stream
+	local diagnostics = Diagnostics.FindConnection(player)
+
 	local scheduler: Types.PublicationScheduler = Scheduler.new({
+		diagnostics = diagnostics,
+		IsCurrent = dependencies.Current,
+		Now = dependencies.Now,
 		backlog = dependencies.Backlog,
 		retainDrained = true,
 		maxBarriers = options.maxEvents,
@@ -297,6 +355,9 @@ function ActorRecipientStream.new(
 	})
 
 	local state: StreamState = {
+		diagnostics = diagnostics,
+		recaptureQueuedAt = 0,
+		terminalQueuedAt = 0,
 		orderIndex = 0,
 		pendingOrder = 0,
 		terminalOrder = 0,
@@ -449,6 +510,8 @@ function ActorRecipientStream.Prepare(
 			return nil, nil
 		end
 
+		Metrics.Count(self.diagnostics, "streamDiscontinuities", 1)
+		self.recaptureQueuedAt = self:GetQueuedAt() or (self.dependencies.Now or os.clock)()
 		self.recapture = true
 		self.recaptureOrder = self.scheduler:GetNextRecordOrder(self.key) or 0
 		self.scheduler:MarkBaselinePending(self.key)
@@ -505,10 +568,10 @@ function ActorRecipientStream.Sent(self: Stream, record: SharedNetworkingTypes.A
 		end
 	elseif record.kind == "BaselineEnd" then
 		if record.generation == self.generation then
-			self:_clearBaseline()
+			self:_clearBaseline(true)
 
 			if pending ~= nil then
-				self:ResetRecovery()
+				self:ResetRecovery(true)
 			end
 		end
 
@@ -525,6 +588,10 @@ end
 
 function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFilteredCommit, order: number?): ()
 	if self.failed or self.recapture or commit.sequence <= self.fence then
+		if commit.sequence > self.fence and (#commit.patches > 0 or #commit.events > 0) then
+			Metrics.Count(self.diagnostics, "publicationDropped", 1)
+		end
+
 		return
 	end
 
@@ -540,7 +607,11 @@ function ActorRecipientStream.Enqueue(self: Stream, commit: Types.PublicationFil
 		pendingOrder = math.min(pendingOrder or math.huge, self.stagedOrder)
 	end
 
+	local queuedAt = self:GetQueuedAt() or (self.dependencies.Now or os.clock)()
+
 	if not self.scheduler:Enqueue(self.key, commit, order) then
+		self.recaptureQueuedAt = queuedAt
+
 		if self.baseline ~= nil then
 			self:_backoff()
 		end
@@ -560,6 +631,7 @@ end
 
 function ActorRecipientStream.Retire(self: Stream): ()
 	self:ResetRecovery()
+	self.terminalQueuedAt = (self.dependencies.Now or os.clock)()
 	self.terminalOrder = if self.dependencies.GetOrder ~= nil then self.dependencies.GetOrder() else 0
 	self.scheduler:Destroy()
 	self:_clearBaseline()
@@ -567,6 +639,30 @@ function ActorRecipientStream.Retire(self: Stream): ()
 	self.haltPending = false
 	self.removed = true
 	self.dependencies.Activate(self)
+end
+
+function ActorRecipientStream.GetQueuedAt(self: Stream): number?
+	if self.removed or self.haltPending then
+		return self.terminalQueuedAt
+	end
+
+	if self.failed then
+		return nil
+	end
+
+	if self.recapture then
+		return self.recaptureQueuedAt
+	end
+
+	if self.baseline ~= nil then
+		return self.baseline.queuedAt
+	end
+
+	return self.scheduler:GetNextRecordQueuedAt(self.key)
+end
+
+function ActorRecipientStream.GetEligibleQueuedAt(self: Stream): number?
+	return if self:NeedsCapture() and not self:CanCapture() then nil else self:GetQueuedAt()
 end
 
 function ActorRecipientStream.HasWork(self: Stream): boolean

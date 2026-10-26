@@ -236,7 +236,7 @@ function ActorViewRuntime.new(
 					state.domains = stage.domains
 					state.revision = revision
 					state.status = "Live"
-					state.recovery.Cancel()
+					state.recovery.Cancel(true)
 					RegistryOwner.Added:Fire(owner.view)
 
 					return
@@ -253,7 +253,7 @@ function ActorViewRuntime.new(
 				state.domains = stage.domains
 				state.revision = revision
 				state.status = "Live"
-				state.recovery.Cancel()
+				state.recovery.Cancel(true)
 
 				for id: string, domain: PublicTypes.DomainViewOwner in previous do
 					if stage.domains[id] == nil then

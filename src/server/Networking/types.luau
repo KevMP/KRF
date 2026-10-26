@@ -376,6 +376,9 @@ export type PublicationDrainResult = {
 }
 
 export type PublicationSchedulerOptions = {
+	read diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
+	read IsCurrent: (() -> boolean)?,
+	read Now: (() -> number)?,
 	read backlog: ReliableBacklog?,
 	read retainDrained: boolean?,
 	read maxBarriers: number,
@@ -405,6 +408,7 @@ export type PublicationScheduler = {
 	GetStreamStatus: (self: PublicationScheduler, stream: PublicationStreamKey) -> PublicationStreamStatus,
 	GetNextRecordBytes: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
 	GetNextRecordOrder: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
+	GetNextRecordQueuedAt: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
 	DrainBudgeted: (self: PublicationScheduler, maxBytes: number, maxRecords: number) -> PublicationDrainResult,
 	Destroy: (self: PublicationScheduler) -> (),
 }
@@ -415,6 +419,7 @@ export type PublicationSchedulerModule = { new: (options: PublicationSchedulerOp
 export type ActorAwarenessFault = { player: Player, actorId: string, reason: string }
 
 export type ActorAwarenessDependencies = {
+	Now: (() -> number)?,
 	CloseConnection: ((Player, string) -> ())?,
 	IsClientReady: (Player) -> boolean,
 	ObserveClientReady: ((Player) -> ()) -> () -> (),

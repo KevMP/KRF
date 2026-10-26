@@ -1,5 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
 export type Unit =
@@ -13,11 +15,32 @@ export type Unit =
 	| "captures"
 	| "priorities"
 
-export type Budget = { limits: { [string]: number }, used: { [string]: number } }
+export type Budget = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
+	connection: SharedTypes.DiagnosticCollector?,
+	total: number,
+	byConnection: { [SharedTypes.DiagnosticCollector]: number },
+	limits: { [string]: number },
+	used: { [string]: number },
+}
 
 local ReliableWorkBudget = {}
 
-function ReliableWorkBudget.new(records: number, overrides: Types.ReliableWorkLimits?): Budget
+local counters: { [Unit]: SharedTypes.DiagnosticCounter } = {
+	streams = "reliableStreamVisits",
+	checks = "reliableChecks",
+	prepares = "reliablePrepares",
+	measurements = "reliableMeasurements",
+	encodes = "reliableEncodes",
+	captures = "reliableCaptures",
+	priorities = "reliablePriorityVisits",
+}
+
+function ReliableWorkBudget.new(
+	records: number,
+	overrides: Types.ReliableWorkLimits?,
+	diagnostics: SharedTypes.DiagnosticCollector?
+): Budget
 	local limits = {
 		connections = records * Constants.VISITS_PER_RECORD,
 		streams = records * Constants.VISITS_PER_RECORD,
@@ -40,7 +63,7 @@ function ReliableWorkBudget.new(records: number, overrides: Types.ReliableWorkLi
 		used[key] = 0
 	end
 
-	return { limits = limits, used = used }
+	return { diagnostics = diagnostics, total = 0, byConnection = {}, limits = limits, used = used }
 end
 
 function ReliableWorkBudget.Available(budget: Budget, unit: Unit): boolean
@@ -55,6 +78,26 @@ function ReliableWorkBudget.Take(budget: Budget, unit: Unit): boolean
 	end
 
 	budget.used[unit] = used + 1
+	budget.total += 1
+
+	local owner = budget.connection
+
+	if unit ~= "connections" then
+		local key = counters[unit]
+
+		if key ~= nil then
+			Metrics.Count(owner or budget.diagnostics, key, 1)
+		end
+
+		if owner ~= nil then
+			local count = (budget.byConnection[owner] or 0) + 1
+
+			budget.byConnection[owner] = count
+			Metrics.Observe(owner, "reliablePumpWorkUnits", count)
+		end
+	end
+
+	Metrics.Observe(budget.diagnostics, "reliablePumpWorkUnits", budget.total)
 
 	return true
 end

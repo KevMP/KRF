@@ -5,6 +5,10 @@ local State = {}
 local current: Types.DiagnosticCollector? = nil
 
 function State.Start(): Types.DiagnosticCollector
+	if current ~= nil then
+		current:ClearSources()
+	end
+
 	local owner = Metrics.new("Client", nil)
 	current = owner
 
@@ -18,6 +22,10 @@ end
 function State.Stop(expected: Types.DiagnosticCollector?): ()
 	if expected ~= nil and current ~= expected then
 		return
+	end
+
+	if current ~= nil then
+		current:ClearSources()
 	end
 
 	current = nil

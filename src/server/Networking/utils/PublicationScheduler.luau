@@ -1,10 +1,18 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 
 local PublicationScheduler = {}
 PublicationScheduler.__index = PublicationScheduler
 
-type Pending = { commit: Types.PublicationFilteredCommit, bytes: number, order: number, charge: Types.PublicationCharge? }
+type Pending = {
+	queuedAt: number,
+	commit: Types.PublicationFilteredCommit,
+	bytes: number,
+	order: number,
+	charge: Types.PublicationCharge?,
+}
 
 type Stream = {
 	key: Types.PublicationStreamKey,
@@ -24,6 +32,19 @@ type RuntimeState = {
 }
 
 type Runtime = typeof(setmetatable({} :: RuntimeState, PublicationScheduler))
+
+local function diagnosticOwner(self: Runtime): SharedTypes.DiagnosticCollector?
+	local owner = self.options.diagnostics
+
+	return if owner ~= nil and (self.options.IsCurrent == nil or self.options.IsCurrent()) then owner else nil
+end
+
+local function abandon(self: Runtime, stream: Stream): ()
+	local owner = diagnosticOwner(self)
+	Metrics.Count(owner, "publicationRecordsAbandoned", #stream.records)
+	Metrics.Adjust(owner, "publicationQueuedRecords", -#stream.records)
+	Metrics.Adjust(owner, "publicationQueuedBytes", -stream.queuedBytes)
+end
 
 local function copy(value: any): any
 	if type(value) ~= "table" then
@@ -284,6 +305,8 @@ function PublicationScheduler.Enqueue(
 	local stream: Stream = find(self, key, true) :: Stream
 
 	if stream.needsBaseline then
+		Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
+
 		return false, "PublicationBaselinePending"
 	end
 
@@ -307,6 +330,8 @@ function PublicationScheduler.Enqueue(
 			and (newRecords > self.options.backlog.maxStreamRecords or newBytes > self.options.backlog.maxStreamBytes)
 		)
 	then
+		Metrics.Count(diagnosticOwner(self), "streamDiscontinuities", 1)
+		Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
 		self:MarkBaselinePending(key)
 
 		return false, "PublicationStreamOverloaded"
@@ -319,13 +344,21 @@ function PublicationScheduler.Enqueue(
 		charge = self.options.backlog:Acquire(key, composed, size, if canMerge then tail.charge else nil)
 
 		if charge == nil then
+			Metrics.Count(diagnosticOwner(self), "streamDiscontinuities", 1)
+			Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
 			self:MarkBaselinePending(key)
 
 			return false, "PublicationAggregateOverloaded"
 		end
 	end
 
+	local owner = diagnosticOwner(self)
+	local oldCount, oldBytes = #records, stream.queuedBytes
+	local queuedAt = if canMerge then tail.queuedAt else (self.options.Now or os.clock)()
+
 	if canMerge then
+		Metrics.Count(owner, "stateCoalesces", 1)
+
 		if size == 0 and tail.charge ~= nil then
 			tail.charge.release()
 		end
@@ -335,12 +368,20 @@ function PublicationScheduler.Enqueue(
 	end
 
 	if size > 0 then
-		table.insert(records, { commit = composed, bytes = size, order = order or 0, charge = charge })
+		table.insert(
+			records,
+			{ queuedAt = queuedAt, commit = composed, bytes = size, order = order or 0, charge = charge }
+		)
+
 		stream.queuedBytes += size
 		stream.pendingEvents += #composed.events
 		stream.barriers += if #composed.events > 0 then 1 else 0
 	end
 
+	Metrics.Count(owner, "publicationAdmitted", 1)
+	Metrics.Count(owner, "semanticBarriers", if isEvent then 1 else 0)
+	Metrics.Adjust(owner, "publicationQueuedRecords", #records - oldCount)
+	Metrics.Adjust(owner, "publicationQueuedBytes", stream.queuedBytes - oldBytes)
 	activate(self, stream)
 
 	if #records == 0 then
@@ -352,6 +393,7 @@ end
 
 function PublicationScheduler.MarkBaselinePending(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream = find(self, key, true) :: Stream
+	abandon(self, stream)
 
 	for _, pending in stream.records do
 		if pending.charge ~= nil then
@@ -378,6 +420,8 @@ function PublicationScheduler.ResetAfterBaseline(
 	local stream: Stream = find(self, key, true) :: Stream
 
 	if not preserveQueued then
+		abandon(self, stream)
+
 		for _, pending in stream.records do
 			if pending.charge ~= nil then
 				pending.charge.release()
@@ -405,6 +449,7 @@ function PublicationScheduler.RemoveStream(self: Runtime, key: Types.Publication
 	end
 
 	deactivate(self, stream)
+	abandon(self, stream)
 
 	for _, pending in stream.records do
 		if pending.charge ~= nil then
@@ -452,6 +497,13 @@ function PublicationScheduler.GetNextRecordOrder(self: Runtime, key: Types.Publi
 	return if pending ~= nil then pending.order else nil
 end
 
+function PublicationScheduler.GetNextRecordQueuedAt(self: Runtime, key: Types.PublicationStreamKey): number?
+	local stream = find(self, key, false)
+	local pending = if stream ~= nil then stream.records[1] else nil
+
+	return if pending ~= nil then pending.queuedAt else nil
+end
+
 function PublicationScheduler.DrainBudgeted(
 	self: Runtime,
 	maxBytes: number,
@@ -477,6 +529,16 @@ function PublicationScheduler.DrainBudgeted(
 
 		if pending ~= nil and encodedBytes + pending.bytes <= maxBytes then
 			table.remove(stream.records, 1)
+			local owner = diagnosticOwner(self)
+			Metrics.Adjust(owner, "publicationQueuedRecords", -1)
+			Metrics.Adjust(owner, "publicationQueuedBytes", -pending.bytes)
+
+			Metrics.Observe(
+				owner,
+				"reliableQueueResidenceSeconds",
+				math.max(0, (self.options.Now or os.clock)() - pending.queuedAt)
+			)
+
 			stream.pendingEvents -= #pending.commit.events
 			stream.queuedBytes -= pending.bytes
 			stream.barriers -= if #pending.commit.events > 0 then 1 else 0
@@ -517,6 +579,8 @@ end
 function PublicationScheduler.Destroy(self: Runtime): ()
 	for _, actors in self.streams do
 		for _, stream in actors do
+			abandon(self, stream)
+
 			for _, pending in stream.records do
 				if pending.charge ~= nil then
 					pending.charge.release()

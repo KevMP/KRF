@@ -1,9 +1,12 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
 local Timer = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.CommandTimer)
 
 export type Entry = {
+	queuedAt: number,
 	order: number,
 	payload: buffer?,
 	reserved: number,
@@ -14,6 +17,8 @@ export type Entry = {
 }
 
 export type State = {
+	diagnostics: SharedTypes.DiagnosticCollector?,
+	now: () -> number,
 	order: number,
 	queue: { Entry },
 	reservedBytes: number,
@@ -26,8 +31,14 @@ export type State = {
 
 local CommandEgress = {}
 
-function CommandEgress.new(expired: (() -> ())?): State
+function CommandEgress.new(
+	expired: (() -> ())?,
+	diagnostics: SharedTypes.DiagnosticCollector?,
+	now: (() -> number)?
+): State
 	return {
+		diagnostics = diagnostics,
+		now = now or os.clock,
 		order = 0,
 		queue = {},
 		reservedBytes = 0,
@@ -54,6 +65,11 @@ function CommandEgress.Release(state: State, entry: Entry): ()
 		state.scope = nil
 	end
 
+	Metrics.Adjust(state.diagnostics, "commandResultSlots", -1)
+	Metrics.Adjust(state.diagnostics, "commandResultReservedBytes", -entry.reserved)
+	Metrics.Adjust(state.diagnostics, "commandFencedRecords", -entry.records)
+	Metrics.Adjust(state.diagnostics, "commandFencedBytes", -entry.bytes)
+	Metrics.Observe(state.diagnostics, "reliableQueueResidenceSeconds", math.max(0, state.now() - entry.queuedAt))
 	state.reservedBytes -= entry.reserved
 	state.fencedBytes -= entry.bytes
 	state.fencedRecords -= entry.records
@@ -69,10 +85,14 @@ end
 
 function CommandEgress.Reserve(state: State, maxBytes: number): (Types.CommandReservation?, string?)
 	if state.destroyed or state.scope ~= nil then
+		Metrics.Count(state.diagnostics, "commandReservationsRefused", 1)
+
 		return nil, "CommandEgressUnavailable"
 	end
 
 	if maxBytes <= 0 or maxBytes > Constants.MAX_RESULT_BYTES or maxBytes % 1 ~= 0 then
+		Metrics.Count(state.diagnostics, "commandReservationsRefused", 1)
+
 		return nil, "InvalidCommandReservation"
 	end
 
@@ -81,18 +101,25 @@ function CommandEgress.Reserve(state: State, maxBytes: number): (Types.CommandRe
 		or state.reservedBytes + maxBytes > Constants.MAX_OUTBOUND_BYTES
 		or state.order >= Constants.MAX_COUNTER
 	then
+		Metrics.Count(state.diagnostics, "commandReservationsRefused", 1)
+
 		return nil, "CommandOutboundFull"
 	end
 
-	local entry: Entry = { order = state.order, reserved = maxBytes, records = 0, bytes = 0, active = true }
+	local entry: Entry =
+		{ queuedAt = state.now(), order = state.order, reserved = maxBytes, records = 0, bytes = 0, active = true }
 
 	state.order += 1
 	state.reservedBytes += maxBytes
+	Metrics.Count(state.diagnostics, "commandReservationsAdmitted", 1)
+	Metrics.Adjust(state.diagnostics, "commandResultSlots", 1)
+	Metrics.Adjust(state.diagnostics, "commandResultReservedBytes", maxBytes)
 	state.scope = entry
 	table.insert(state.queue, entry)
 
 	entry.cancel = Timer.Schedule(Constants.OUTBOUND_SECONDS, function(): ()
 		entry.cancel = nil
+		Metrics.Count(state.diagnostics, "commandResultsExpired", 1)
 		CommandEgress.Release(state, entry)
 
 		if state.expired ~= nil then
@@ -142,6 +169,8 @@ function CommandEgress.AdmitPublication(state: State, bytes: number): boolean
 		return false
 	end
 
+	Metrics.Adjust(state.diagnostics, "commandFencedBytes", bytes)
+	Metrics.Adjust(state.diagnostics, "commandFencedRecords", 1)
 	state.fencedBytes += bytes
 	state.fencedRecords += 1
 	scope.bytes += bytes

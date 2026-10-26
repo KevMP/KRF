@@ -13,11 +13,14 @@ local CommandEgress = require(script.Parent.utils.CommandEgress)
 local ActiveQueue = require(script.Parent.utils.ActiveQueue)
 local StreamOrder = require(script.Parent.utils.ActorStreamOrder)
 local WorkBudget = require(script.Parent.utils.ReliableWorkBudget)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Backlog = require(script.Parent.utils.ReliableBacklog)
 
 type Stream = Streams.Stream
 
 type Connection = {
+	diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
 	egress: CommandEgress.State,
 	player: Player,
 	nextHandle: number,
@@ -48,6 +51,7 @@ local ActorAwarenessRuntime = {}
 ActorAwarenessRuntime.__index = ActorAwarenessRuntime
 
 type RuntimeState = {
+	diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
 	publication: Types.PublicationRuntime,
 	codec: SharedNetworkingTypes.ActorStreamCodec,
 	measuredRecords: { [Types.PublicationFilteredCommit]: number },
@@ -92,12 +96,21 @@ function ActorAwarenessRuntime._measureRecord(self: Runtime, commit: Types.Publi
 	return size
 end
 
+function ActorAwarenessRuntime._updateOrder(self: Runtime, connection: Connection, stream: Stream): ()
+	if self.connections[connection.player] ~= connection then
+		return
+	end
+
+	StreamOrder.Update(connection.orders, stream)
+	Metrics.Set(connection.diagnostics, "reliableActiveStreams", #connection.orders)
+end
+
 function ActorAwarenessRuntime._activate(self: Runtime, connection: Connection, stream: Stream): ()
 	if self.connections[stream.player] ~= connection then
 		return
 	end
 
-	StreamOrder.Update(connection.orders, stream)
+	self:_updateOrder(connection, stream)
 	self:_indexCapture(connection, stream)
 
 	if stream.active or not stream:HasWork() then
@@ -243,6 +256,12 @@ function ActorAwarenessRuntime._queueConnection(self: Runtime, connection: Conne
 		node = created
 	end
 
+	Metrics.Set(
+		connection.diagnostics,
+		"reliableActiveConnections",
+		if #connection.orders > 0 or #connection.egress.queue > 0 then 1 else 0
+	)
+
 	assert(node ~= nil, "Expected active connection node")
 	ActiveQueue.Push(self.active, node)
 end
@@ -326,6 +345,7 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 
 	local stream: Stream = Streams.new(actor, connection.player, connection.nextHandle, self.options, {
 		Backlog = self.backlog,
+		Now = self.dependencies.Now,
 		Current = function(): boolean
 			return self.connections[connection.player] == connection
 		end,
@@ -369,6 +389,7 @@ function ActorAwarenessRuntime._aware(self: Runtime, connection: Connection, act
 	connection.nextHandle += 1
 	connection.actors[actor] = stream
 	connection.handles[stream.handle] = stream
+	Metrics.Adjust(connection.diagnostics, "awareStreams", 1)
 	stream:Capture()
 end
 
@@ -451,6 +472,7 @@ function ActorAwarenessRuntime.OnActorUnregistering(self: Runtime, actor: ActorT
 		end
 
 		connection.actors[actor] = nil
+		Metrics.Adjust(connection.diagnostics, "awareStreams", -1)
 		connection.handles[stream.handle] = nil
 		stream:Retire()
 	end
@@ -544,6 +566,17 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 	while self.active.count > 0 and maxRecords > 0 and maxBytes > 0 and WorkBudget.Take(work, "connections") do
 		local connection = ActiveQueue.Pop(self.active) :: Connection
 
+		work.connection = connection.diagnostics
+
+		if connection.diagnostics ~= nil then
+			local count = (work.byConnection[connection.diagnostics] or 0) + 1
+
+			work.byConnection[connection.diagnostics] = count
+			Metrics.Observe(connection.diagnostics, "reliablePumpWorkUnits", count)
+		end
+
+		Metrics.Count(connection.diagnostics, "reliableConnectionVisits", 1)
+
 		if connection.waitEpoch ~= self.epoch then
 			connection.waitEpoch = self.epoch
 			table.insert(self.waiting, connection)
@@ -590,6 +623,10 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 		end
 
 		if connection.active.count == 0 then
+			if not sentResult then
+				Metrics.Count(connection.diagnostics, "reliableUnproductiveInspections", 1)
+			end
+
 			if sentResult and #connection.egress.queue > 0 then
 				self:_queueConnection(connection)
 			end
@@ -682,12 +719,17 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 			end
 
 			if not staged then
+				Metrics.Count(connection.diagnostics, "reliableUnproductiveInspections", 1)
 				stream.stagedOrder = nil
 
 				if self.connections[connection.player] == connection then
-					StreamOrder.Update(connection.orders, stream)
+					self:_updateOrder(connection, stream)
 				end
 			end
+		end
+
+		if not canStage then
+			Metrics.Count(connection.diagnostics, "reliableUnproductiveInspections", 1)
 		end
 
 		if connection.active.count > 0 then
@@ -697,6 +739,8 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 
 	for _, packet in packets do
 		local connection = packet.connection
+
+		work.connection = connection.diagnostics
 
 		if self.connections[connection.player] ~= connection then
 			continue
@@ -734,7 +778,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 					connection.transferCount -= 1
 				end
 
-				StreamOrder.Update(connection.orders, stream)
+				self:_updateOrder(connection, stream)
 			end
 		end
 
@@ -791,7 +835,7 @@ function ActorAwarenessRuntime._step(self: Runtime, maxBytes: number, maxRecords
 			end
 
 			if self.connections[connection.player] == connection then
-				StreamOrder.Update(connection.orders, stream)
+				self:_updateOrder(connection, stream)
 			end
 		end
 	end
@@ -810,7 +854,7 @@ function ActorAwarenessRuntime.Step(self: Runtime, maxBytes: number, maxRecords:
 		return
 	end
 
-	self.work = WorkBudget.new(math.max(0, maxRecords), self.options.workLimits)
+	self.work = WorkBudget.new(math.max(0, maxRecords), self.options.workLimits, self.diagnostics)
 	self.epoch += 1
 	self.stepping = true
 	local success, failure = pcall(self._step, self, maxBytes, maxRecords)
@@ -824,6 +868,14 @@ function ActorAwarenessRuntime.Step(self: Runtime, maxBytes: number, maxRecords:
 	end
 
 	for _, connection in self.waiting do
+		if self.connections[connection.player] == connection then
+			Metrics.Set(
+				connection.diagnostics,
+				"reliableActiveConnections",
+				if #connection.orders > 0 or #connection.egress.queue > 0 then 1 else 0
+			)
+		end
+
 		if connection.active.count > 0 or #connection.egress.queue > 0 then
 			self:_queueConnection(connection)
 		end
@@ -850,6 +902,21 @@ function ActorAwarenessRuntime._close(self: Runtime, player: Player): ()
 	end
 
 	self.connections[player] = nil
+
+	local owner = connection.diagnostics
+	Metrics.Count(owner, "baselinesAbandoned", Metrics.Set(owner, "baselineGenerations", 0))
+	Metrics.Count(owner, "recoveryAbandoned", Metrics.Set(owner, "recoveryStreams", 0))
+	Metrics.Count(owner, "publicationRecordsAbandoned", Metrics.Set(owner, "publicationQueuedRecords", 0))
+	Metrics.Set(owner, "publicationQueuedBytes", 0)
+	Metrics.Set(owner, "awareStreams", 0)
+	Metrics.Set(owner, "reliableActiveStreams", 0)
+	Metrics.Set(owner, "reliableActiveConnections", 0)
+	Metrics.Adjust(owner, "readyConnections", -1)
+
+	if owner ~= nil then
+		owner:SetAgeSource("reliableEligibleQueueAgeSeconds", nil)
+	end
+
 	self.backlog:CloseRecipient(player)
 	CommandEgress.Destroy(connection.egress)
 
@@ -923,6 +990,7 @@ function ActorAwarenessRuntime.new(
 	local codec: SharedNetworkingTypes.ActorStreamCodec = WireCodec.Compile(protocol, schemas)
 
 	local state: RuntimeState = {
+		diagnostics = Diagnostics.GetServer(),
 		publication = publication,
 		codec = codec,
 		measuredRecords = setmetatable({}, { __mode = "k" }),
@@ -970,13 +1038,14 @@ function ActorAwarenessRuntime.new(
 			end
 
 			local connection: Connection = {
+				diagnostics = Diagnostics.GetConnection(player),
 				egress = CommandEgress.new(function(): ()
 					self:_close(player)
 
 					if dependencies.CloseConnection ~= nil then
 						pcall(dependencies.CloseConnection, player, "CommandOutputExpired")
 					end
-				end),
+				end, Diagnostics.GetConnection(player), dependencies.Now),
 				player = player,
 				nextHandle = 1,
 				actors = {},
@@ -990,6 +1059,36 @@ function ActorAwarenessRuntime.new(
 			}
 
 			self.connections[player] = connection
+			Metrics.Adjust(connection.diagnostics, "readyConnections", 1)
+
+			if connection.diagnostics ~= nil then
+				connection.diagnostics:SetAgeSource("reliableEligibleQueueAgeSeconds", function(): number?
+					local earliest: number? = nil
+					local result = connection.egress.queue[1]
+
+					if
+						result ~= nil
+						and result.payload ~= nil
+						and not StreamOrder.HasWorkThrough(connection.orders, result.order)
+					then
+						earliest = result.queuedAt
+					end
+
+					for _, stream in connection.orders do
+						local queuedAt = if result == nil or stream:HasWorkThrough(result.order)
+							then stream:GetEligibleQueuedAt()
+							else nil
+
+						if queuedAt ~= nil then
+							earliest = math.min(earliest or math.huge, queuedAt)
+						end
+					end
+
+					return if earliest ~= nil
+						then math.max(0, (self.dependencies.Now or os.clock)() - earliest)
+						else nil
+				end)
+			end
 
 			for _, actor: ActorTypes.Actor in publication:GetAttachedActors() do
 				self:_aware(connection, actor)

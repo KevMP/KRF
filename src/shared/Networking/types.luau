@@ -256,22 +256,65 @@ export type ActorStreamCodecModule = {
 	Compile: (protocol: ClientProtocol, schemas: ActorSchemaCatalog) -> ActorStreamCodec,
 }
 
--- Private diagnostics: counters saturate at the largest exact integer. Gauges
--- include staged ownership until its existing owner releases it.
--- Transport counters count calls before handoff (including failed calls), not
--- delivery. Bytes are KRF buffer lengths, never platform wire bandwidth.
--- Logical records: Actor envelopes, command request/results and resync; bootstrap
--- control messages contribute sends/bytes but zero logical records.
--- Work counters count admission calls/charges, not authoritative outcomes.
--- Server/Connection: commandRequests/Bytes are admitted request ownership;
--- reliableRecords are ledger charges, DeliveryBytes sum their accounting weights.
--- Server only: RetainedBytes deduplicates shared ledger payload accounting;
--- connections counts tracked transport lifetimes, including pre-Ready/rejected.
--- Both sides: hintSend* counts encoded records/bytes excluding packet envelopes;
--- hintReceive* counts owned complete wire packets/bytes including envelopes.
--- Refused Hint work counts local admission drops, not later stale/transport loss.
--- Scope-inapplicable fields stay zero; this is a private foundation inventory,
--- not a promise that all Networking ownership or outcomes are instrumented.
+-- Private local diagnostics. Scope-inapplicable observations stay zero/nil.
+-- Counters are monotonic, saturating at 2^53-1. Gauges expose current ownership
+-- and simultaneous high-water; maxima are observed per-pump work or seconds.
+-- Snapshot ages are current local-clock samples on demand, never wire RTT.
+--
+-- Transport attempts/bytes are counted before handoff, even if a call fails;
+-- bytes are KRF buffer lengths, not Roblox framing/compression/wire bandwidth.
+-- Logical records count Actor/Hint envelopes, command requests/results and resync;
+-- bootstrap/control handshakes contribute sends/bytes but zero logical records.
+-- HintsSent counts records after a nonthrowing/nonyielding local send callback;
+-- HintsReceived counts validated, target-resolved/authorized semantic callback
+-- entry. Neither proves remote delivery or game callback success. Callback/send
+-- failures are separate. Coalesced samples are not counted as drops. Stale and
+-- unauthorized are subsets of record drops; malformed counts packet detections.
+-- Whole packet refusals are counted in packet units without decoding for stats;
+-- discarded admitted tails also count their bounded framed-record candidates.
+--
+-- Server commands: Received/Admitted/Dispatched are distinct from Executed
+-- (author handler entry); Accepted/Rejected are schema-valid local outcomes.
+-- Uncertain means local Unknown/cancelled dispatch. Faulted counts each affected dispatch once;
+-- these counters are not mutually exclusive final delivery classifications.
+-- Client commands: admission retains correlation metadata; result receipt is
+-- correlated decoding, and outcome counters count public notification entry.
+-- Unknown notifies once while metadata remains for a late definitive result.
+-- A late Accepted/Rejected can therefore follow Uncertain without decrementing it.
+-- Reservations/fenced/history bytes are the existing capacity accounting weights.
+--
+-- Publication admissions/refusals count visible recipient Enqueue calls; barriers
+-- count eventful commits, not individual events. Coalesces absorb an unsent state
+-- tail. Abandoned records count stored entries discarded without incremental send.
+-- Captured baselines are admitted N4 canonical anchors; Restarted counts every
+-- later admitted generation, not only thrashing. Completed is matching local End
+-- handoff; Abandoned is invalidation before completion, including owner close.
+-- Recovery backoffs count new retry waits, not idle inspections. Abandonment is
+-- cancellation/exhaustion of a live retry chain/episode; successful truth resets
+-- it without abandonment. Server resync counts ingress; client counts local
+-- recovery opportunities, including duplicate starts and admission refusals.
+--
+-- ReliableRecords/DeliveryBytes include staged ledger charges until release;
+-- server RetainedBytes deduplicates shared payload accounting (not heap).
+-- PublicationQueued* excludes drained/staged records, whose ledger charge stays.
+-- AwareStreams counts live awareness mappings; reliableActiveStreams includes
+-- ordered pending/staged work; reliableActiveConnections includes that work or
+-- result reservations. Connections includes pre-Ready/rejected transport scopes;
+-- ReadyConnections counts installed Ready awareness owners.
+-- Hint send bytes exclude envelopes, receive bytes include them. Latest keys
+-- count bounded sequence indexes independently of optional queued samples.
+-- ClientBaselineBytes counts active assembly body + occupied bitmap, excluding
+-- decoder temporaries/installed views; clientCommandMetadataBytes is budget
+-- weight, not encoded bytes. Deferred reliable bytes are queued full buffers.
+--
+-- Reliable pump work is the sum of existing nine budget claims; command work is
+-- connection visits + dispatches; Hint work is attempted record inspections.
+-- Per-connection maxima expose the applicable subset. Unproductive inspection
+-- means no record staged/dispatched or no completed receive callback, not zero CPU.
+-- Residence maxima sample local dequeue/discard (baseline generations through
+-- local completion/abandonment). Eligible reliable age excludes retry backoff,
+-- unfilled results and causally blocked work; it ignores transient pump quotas.
+-- Only explicit snapshot reads walk bounded live queues to sample current ages.
 export type DiagnosticScope = "Server" | "Connection" | "Client"
 
 export type DiagnosticCounter =
@@ -289,6 +332,64 @@ export type DiagnosticCounter =
 	| "hintPacketsRefused"
 	| "reliableChargesAdmitted"
 	| "reliableChargesRefused"
+	| "publicationAdmitted"
+	| "publicationDropped"
+	| "stateCoalesces"
+	| "semanticBarriers"
+	| "streamDiscontinuities"
+	| "baselinesCaptured"
+	| "baselinesCompleted"
+	| "baselinesRestarted"
+	| "baselinesAbandoned"
+	| "recoveryBackoffs"
+	| "recoveryAbandoned"
+	| "resyncRequests"
+	| "resyncAdmitted"
+	| "resyncDeduplicated"
+	| "resyncRateLimited"
+	| "resyncRefused"
+	| "commandsAbandoned"
+	| "commandsReceived"
+	| "commandsDispatched"
+	| "commandsExecuted"
+	| "commandsAccepted"
+	| "commandsRejected"
+	| "commandsRateLimited"
+	| "commandsFaulted"
+	| "commandsUncertain"
+	| "commandResultsExpired"
+	| "commandReservationsAdmitted"
+	| "commandReservationsRefused"
+	| "hintsSent"
+	| "hintsReceived"
+	| "hintsCoalesced"
+	| "hintsDropped"
+	| "hintsStaleDropped"
+	| "hintsMalformed"
+	| "hintsUnauthorized"
+	| "hintPacketsDropped"
+	| "hintCallbackFaults"
+	| "hintSendFailures"
+	| "reliableConnectionVisits"
+	| "reliableStreamVisits"
+	| "reliableChecks"
+	| "reliablePrepares"
+	| "reliableMeasurements"
+	| "reliableEncodes"
+	| "reliableCaptures"
+	| "reliablePriorityVisits"
+	| "reliableUnproductiveInspections"
+	| "commandConnectionVisits"
+	| "commandUnproductiveInspections"
+	| "hintConnectionVisits"
+	| "hintSendVisits"
+	| "hintReceiveVisits"
+	| "hintUnproductiveInspections"
+	| "publicationRecordsAbandoned"
+	| "baselineCapacityRefusals"
+	| "commandResultsReceived"
+	| "clientReliableDeferredAdmitted"
+	| "clientReliableDeferredDropped"
 
 export type DiagnosticGauge =
 	"connections"
@@ -301,6 +402,43 @@ export type DiagnosticGauge =
 	| "hintSendBytes"
 	| "hintReceivePackets"
 	| "hintReceiveBytes"
+	| "readyConnections"
+	| "awareStreams"
+	| "reliableActiveConnections"
+	| "reliableActiveStreams"
+	| "baselineGenerations"
+	| "recoveryStreams"
+	| "commandResultSlots"
+	| "commandResultReservedBytes"
+	| "commandFencedRecords"
+	| "commandFencedBytes"
+	| "commandHistoryEntries"
+	| "commandHistoryBytes"
+	| "clientCommandPending"
+	| "clientCommandMetadataBytes"
+	| "clientBaselineAssemblies"
+	| "clientBaselineBytes"
+	| "hintLatestKeys"
+	| "publicationQueuedRecords"
+	| "publicationQueuedBytes"
+	| "clientReliableDeferredRecords"
+	| "clientReliableDeferredBytes"
+
+export type DiagnosticMaximum =
+	"reliablePumpWorkUnits"
+	| "commandPumpWorkUnits"
+	| "hintSendPumpWorkUnits"
+	| "hintReceivePumpWorkUnits"
+	| "commandQueueResidenceSeconds"
+	| "reliableQueueResidenceSeconds"
+	| "hintSendQueueResidenceSeconds"
+	| "hintReceiveQueueResidenceSeconds"
+
+export type DiagnosticAge =
+	"reliableEligibleQueueAgeSeconds"
+	| "commandQueueAgeSeconds"
+	| "hintSendQueueAgeSeconds"
+	| "hintReceiveQueueAgeSeconds"
 
 export type DiagnosticGaugeSnapshot = { read current: number, read highWater: number }
 
@@ -321,6 +459,64 @@ export type DiagnosticSnapshot = {
 		read hintPacketsRefused: number,
 		read reliableChargesAdmitted: number,
 		read reliableChargesRefused: number,
+		read publicationAdmitted: number,
+		read publicationDropped: number,
+		read stateCoalesces: number,
+		read semanticBarriers: number,
+		read streamDiscontinuities: number,
+		read baselinesCaptured: number,
+		read baselinesCompleted: number,
+		read baselinesRestarted: number,
+		read baselinesAbandoned: number,
+		read recoveryBackoffs: number,
+		read recoveryAbandoned: number,
+		read resyncRequests: number,
+		read resyncAdmitted: number,
+		read resyncDeduplicated: number,
+		read resyncRateLimited: number,
+		read resyncRefused: number,
+		read commandsAbandoned: number,
+		read commandsReceived: number,
+		read commandsDispatched: number,
+		read commandsExecuted: number,
+		read commandsAccepted: number,
+		read commandsRejected: number,
+		read commandsRateLimited: number,
+		read commandsFaulted: number,
+		read commandsUncertain: number,
+		read commandResultsExpired: number,
+		read commandReservationsAdmitted: number,
+		read commandReservationsRefused: number,
+		read hintsSent: number,
+		read hintsReceived: number,
+		read hintsCoalesced: number,
+		read hintsDropped: number,
+		read hintsStaleDropped: number,
+		read hintsMalformed: number,
+		read hintsUnauthorized: number,
+		read hintPacketsDropped: number,
+		read hintCallbackFaults: number,
+		read hintSendFailures: number,
+		read reliableConnectionVisits: number,
+		read reliableStreamVisits: number,
+		read reliableChecks: number,
+		read reliablePrepares: number,
+		read reliableMeasurements: number,
+		read reliableEncodes: number,
+		read reliableCaptures: number,
+		read reliablePriorityVisits: number,
+		read reliableUnproductiveInspections: number,
+		read commandConnectionVisits: number,
+		read commandUnproductiveInspections: number,
+		read hintConnectionVisits: number,
+		read hintSendVisits: number,
+		read hintReceiveVisits: number,
+		read hintUnproductiveInspections: number,
+		read publicationRecordsAbandoned: number,
+		read baselineCapacityRefusals: number,
+		read commandResultsReceived: number,
+		read clientReliableDeferredAdmitted: number,
+		read clientReliableDeferredDropped: number,
 	},
 	read gauges: {
 		read connections: DiagnosticGaugeSnapshot,
@@ -333,12 +529,55 @@ export type DiagnosticSnapshot = {
 		read hintSendBytes: DiagnosticGaugeSnapshot,
 		read hintReceivePackets: DiagnosticGaugeSnapshot,
 		read hintReceiveBytes: DiagnosticGaugeSnapshot,
+		read readyConnections: DiagnosticGaugeSnapshot,
+		read awareStreams: DiagnosticGaugeSnapshot,
+		read reliableActiveConnections: DiagnosticGaugeSnapshot,
+		read reliableActiveStreams: DiagnosticGaugeSnapshot,
+		read baselineGenerations: DiagnosticGaugeSnapshot,
+		read recoveryStreams: DiagnosticGaugeSnapshot,
+		read commandResultSlots: DiagnosticGaugeSnapshot,
+		read commandResultReservedBytes: DiagnosticGaugeSnapshot,
+		read commandFencedRecords: DiagnosticGaugeSnapshot,
+		read commandFencedBytes: DiagnosticGaugeSnapshot,
+		read commandHistoryEntries: DiagnosticGaugeSnapshot,
+		read commandHistoryBytes: DiagnosticGaugeSnapshot,
+		read clientCommandPending: DiagnosticGaugeSnapshot,
+		read clientCommandMetadataBytes: DiagnosticGaugeSnapshot,
+		read clientBaselineAssemblies: DiagnosticGaugeSnapshot,
+		read clientBaselineBytes: DiagnosticGaugeSnapshot,
+		read hintLatestKeys: DiagnosticGaugeSnapshot,
+		read publicationQueuedRecords: DiagnosticGaugeSnapshot,
+		read publicationQueuedBytes: DiagnosticGaugeSnapshot,
+		read clientReliableDeferredRecords: DiagnosticGaugeSnapshot,
+		read clientReliableDeferredBytes: DiagnosticGaugeSnapshot,
+	},
+	read maxima: {
+		read reliablePumpWorkUnits: number,
+		read commandPumpWorkUnits: number,
+		read hintSendPumpWorkUnits: number,
+		read hintReceivePumpWorkUnits: number,
+		read commandQueueResidenceSeconds: number,
+		read reliableQueueResidenceSeconds: number,
+		read hintSendQueueResidenceSeconds: number,
+		read hintReceiveQueueResidenceSeconds: number,
+	},
+	read ages: {
+		read reliableEligibleQueueAgeSeconds: number?,
+		read commandQueueAgeSeconds: number?,
+		read hintSendQueueAgeSeconds: number?,
+		read hintReceiveQueueAgeSeconds: number?,
 	},
 }
 
 export type DiagnosticCollector = {
 	Count: (self: DiagnosticCollector, DiagnosticCounter, number) -> (),
 	Adjust: (self: DiagnosticCollector, DiagnosticGauge, number) -> (),
+	Set: (self: DiagnosticCollector, DiagnosticGauge, number) -> number,
+	GetCurrent: (self: DiagnosticCollector, DiagnosticGauge) -> number,
+	Observe: (self: DiagnosticCollector, DiagnosticMaximum, number) -> (),
+	SetAgeSource: (self: DiagnosticCollector, DiagnosticAge, (() -> number?)?) -> (),
+	GetAge: (self: DiagnosticCollector, DiagnosticAge) -> number?,
+	ClearSources: (self: DiagnosticCollector) -> (),
 	Snapshot: (self: DiagnosticCollector) -> DiagnosticSnapshot,
 }
 
