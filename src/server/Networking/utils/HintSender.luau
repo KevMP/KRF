@@ -177,6 +177,8 @@ function HintSender.SendTo(
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -255,6 +257,8 @@ function HintSender.SendTo(
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintPendingFull")
+
 		return false, "HintPendingFull"
 	end
 
@@ -276,6 +280,8 @@ function HintSender.SendTo(
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -287,6 +293,8 @@ function HintSender.SendTo(
 	then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
+
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintPendingFull")
 
 		return false, "HintPendingFull"
 	end
@@ -422,6 +430,7 @@ function HintSender.Step(self: Runtime): (number, number)
 
 			if not completed then
 				Metrics.Count(connection.diagnostics, "hintSendFailures", 1)
+				Metrics.Warn(connection.diagnostics, "HintAbuse", "hintSendFailures")
 			end
 
 			-- Jobs were removed from the queue but remain charged through callback unwind.

@@ -25,6 +25,7 @@ local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.u
 local Hints = require(script.Parent.ServerHintRuntime)
 local HintSender = require(script.Parent.utils.HintSender)
 local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 local SendMetrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local HintState = require(script.Parent.utils.HintRuntimeState)
 
@@ -316,7 +317,16 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
 				awareness = created,
 				ReportFault = function(player: Player, faultReason: string): ()
-					warn("[Networking] command fault recipient=" .. tostring(player) .. " reason=" .. faultReason)
+					if faultReason == "CommandInternalFault" then
+						-- This path closes the connection; retain its terminal evidence.
+						warn("[Networking] command fault recipient=" .. tostring(player) .. " reason=" .. faultReason)
+					else
+						Metrics.Warn(
+							Diagnostics.FindConnection(player) or Diagnostics.GetServer(),
+							"CommandFault",
+							faultReason
+						)
+					end
 				end,
 				CloseConnection = function(player: Player, _reason: string): ()
 					handshake:Close(player)

@@ -99,6 +99,7 @@ end
 function ActorRecipientStream._backoff(self: Stream): ()
 	if self.diagnostics ~= nil and self.dependencies.Current() then
 		Metrics.Count(self.diagnostics, "recoveryBackoffs", 1)
+		Metrics.Warn(self.diagnostics, "BaselineRecovery", "BaselineRetryBackoff")
 
 		if self.retryDelay == 0 then
 			Metrics.Adjust(self.diagnostics, "recoveryStreams", 1)

@@ -5,9 +5,9 @@ local State = {}
 local server: Types.DiagnosticCollector? = nil
 local connections: { [Player]: Types.DiagnosticCollector } = {}
 
-function State.Start(): ()
+function State.Start(options: Types.DiagnosticWarningOptions?): ()
 	State.Stop()
-	local owner = Metrics.new("Server", nil)
+	local owner = Metrics.new("Server", nil, options)
 	server = owner
 
 	local keys: { Types.DiagnosticAge } = {

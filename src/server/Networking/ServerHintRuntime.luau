@@ -149,6 +149,8 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintPacketsDropped", 1)
 
+		Metrics.Warn(diagnosticOwner, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -160,6 +162,7 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 		Metrics.Count(diagnosticOwner, "hintPacketsDropped", 1)
 
 		Metrics.Count(diagnosticOwner, "hintsMalformed", 1)
+		Metrics.Warn(diagnosticOwner, "MalformedTraffic", "hintsMalformed")
 
 		return false, "MalformedHintPacket"
 	end
@@ -168,6 +171,7 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 
 	if cursor == nil then
 		Metrics.Count(diagnosticOwner, "hintsMalformed", 1)
+		Metrics.Warn(diagnosticOwner, "MalformedTraffic", "hintsMalformed")
 		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintPacketsDropped", 1)
 
@@ -179,6 +183,8 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	if connection.rateBytes + bytes > self.limits.maxBytes or self.rateBytes + bytes > self.limits.maxGlobalBytes then
 		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintPacketsDropped", 1)
+
+		Metrics.Warn(diagnosticOwner, "HintAbuse", "HintRateLimited")
 
 		return false, "HintRateLimited"
 	end
@@ -194,6 +200,8 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	then
 		Metrics.Count(diagnosticOwner, "hintPacketsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintPacketsDropped", 1)
+
+		Metrics.Warn(diagnosticOwner, "HintAbuse", "HintPendingFull")
 
 		return false, "HintPendingFull"
 	end
@@ -288,6 +296,7 @@ function ServerHintRuntime._deliver(self: Runtime, connection: Connection, recor
 	if not completed or allowed ~= true or not eligible() then
 		if not completed or allowed ~= true then
 			Metrics.Count(connection.diagnostics, "hintsUnauthorized", 1)
+			Metrics.Warn(connection.diagnostics, "HintAbuse", "hintsUnauthorized")
 		end
 
 		Context.Release(context)
@@ -313,6 +322,7 @@ function ServerHintRuntime._deliver(self: Runtime, connection: Connection, recor
 
 	if not delivered then
 		Metrics.Count(connection.diagnostics, "hintCallbackFaults", 1)
+		Metrics.Warn(connection.diagnostics, "HintAbuse", "hintCallbackFaults")
 	end
 
 	return delivered
@@ -356,6 +366,7 @@ function ServerHintRuntime.Step(self: Runtime): (number, number)
 
 		if not completed or record == nil then
 			Metrics.Count(connection.diagnostics, "hintsMalformed", 1)
+			Metrics.Warn(connection.diagnostics, "MalformedTraffic", "hintsMalformed")
 		end
 
 		if not completed or record == nil or packet.cursor.remaining == 0 or not self:_current(connection) then

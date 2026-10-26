@@ -569,7 +569,27 @@ export type DiagnosticSnapshot = {
 	},
 }
 
+-- Fixed process-lifetime categories: never key suppression by Player, Actor or error text.
+export type DiagnosticWarning =
+	"MalformedTraffic"
+	| "CommandOverload"
+	| "ResyncAbuse"
+	| "HintAbuse"
+	| "BaselineRecovery"
+	| "CommandFault"
+	| "TransportFault"
+	| "ObserverFault"
+	| "ActorStreamFault"
+
+export type DiagnosticWarningOptions = {
+	Now: (() -> number)?,
+	windowSeconds: number?,
+	maxPerWindow: number?,
+	Emit: ((DiagnosticWarning, string?, number) -> ())?,
+}
+
 export type DiagnosticCollector = {
+	Warn: (self: DiagnosticCollector, DiagnosticWarning, string?) -> (),
 	Count: (self: DiagnosticCollector, DiagnosticCounter, number) -> (),
 	Adjust: (self: DiagnosticCollector, DiagnosticGauge, number) -> (),
 	Set: (self: DiagnosticCollector, DiagnosticGauge, number) -> number,

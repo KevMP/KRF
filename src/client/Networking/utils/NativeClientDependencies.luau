@@ -20,6 +20,8 @@ local Hints = require(script.Parent.Parent.ClientHintRuntime)
 local HintReceiver = require(script.Parent.HintReceiver)
 local HintState = require(script.Parent.HintRuntimeState)
 local ViewRegistry = require(script.Parent.Parent.Parent.Actor.ActorViewRegistry)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 
 local dependencies: ClientTypes.Dependencies
 
@@ -122,6 +124,7 @@ dependencies = {
 		local runtime: Types.ActorStreamRuntime? = nil
 		local views: Types.ActorViewRuntime? = nil
 		local active: boolean = true
+		local diagnosticOwner = Diagnostics.Get()
 		local commands: Types.ClientCommandRuntime? = nil
 		local stopReceiver: (() -> ())? = nil
 		local hints: Types.ClientHintRuntime? = nil
@@ -199,8 +202,13 @@ dependencies = {
 					Now = dependencies.Now,
 					ScheduleTimeout = dependencies.ScheduleTimeout,
 					SendReliable = sendReliable,
-					ReportFault = function(fault: Types.ActorViewFault)
-						warn("[Networking] ActorView fault actorId=" .. fault.actorId .. " reason=" .. fault.reason)
+					ReportFault = function(fault: Types.ActorViewFault, terminal: boolean?)
+						if terminal then
+							-- Terminal ActorView faults already transition once per live owner.
+							warn("[Networking] ActorView fault actorId=" .. fault.actorId .. " reason=" .. fault.reason)
+						else
+							Metrics.Warn(diagnosticOwner, "BaselineRecovery", fault.reason)
+						end
 					end,
 				})
 
@@ -212,7 +220,7 @@ dependencies = {
 				maxBaselineBytes = Constants.MAX_BASELINE_BYTES,
 				maxPendingBaselines = Constants.MAX_PENDING_BASELINES,
 				ReportFault = function(fault: string)
-					warn("[Networking] Actor stream fault: " .. fault)
+					Metrics.Warn(diagnosticOwner, "ActorStreamFault", fault)
 				end,
 			})
 

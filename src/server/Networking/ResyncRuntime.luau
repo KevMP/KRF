@@ -31,6 +31,7 @@ function ResyncRuntime.new(dependencies: Types.ResyncDependencies, options: Type
 			Metrics.Count(diagnosticOwner, "resyncRequests", 1)
 
 			if select("#", ...) ~= 0 then
+				Metrics.Warn(diagnosticOwner, "MalformedTraffic", "MalformedResyncRequest")
 				Metrics.Count(diagnosticOwner, "resyncRefused", 1)
 
 				return false, "MalformedResyncRequest"
@@ -39,6 +40,7 @@ function ResyncRuntime.new(dependencies: Types.ResyncDependencies, options: Type
 			local request: Codec.Request?, reason: string? = Codec.Decode(payload)
 
 			if request == nil then
+				Metrics.Warn(diagnosticOwner, "MalformedTraffic", reason)
 				Metrics.Count(diagnosticOwner, "resyncRefused", 1)
 
 				return false, reason
@@ -63,6 +65,7 @@ function ResyncRuntime.new(dependencies: Types.ResyncDependencies, options: Type
 				or (window.actors[request.handle] or 0) >= options.maxRequestsPerActor
 			then
 				Metrics.Count(diagnosticOwner, "resyncRateLimited", 1)
+				Metrics.Warn(diagnosticOwner, "ResyncAbuse", "ResyncRateLimited")
 				Metrics.Count(diagnosticOwner, "resyncRefused", 1)
 
 				return false, "ResyncRateLimited"

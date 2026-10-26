@@ -479,6 +479,7 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
+		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandRateLimited")
 
 		return false, "CommandRateLimited"
 	end
@@ -492,11 +493,13 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
+		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandGlobalRateLimited")
 
 		return false, "CommandGlobalRateLimited"
 	end
 
 	if select("#", ...) ~= 0 then
+		Metrics.Warn(connection.diagnostics, "MalformedTraffic", "MalformedCommandEnvelope")
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "MalformedCommandEnvelope"
@@ -505,12 +508,14 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local request: SharedTypes.CommandRequest?, reason: string? = self.codec.DecodeRequest(payload)
 
 	if request == nil then
+		Metrics.Warn(connection.diagnostics, "MalformedTraffic", reason)
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, reason
 	end
 
 	if request.requestId <= connection.lastId then
+		Metrics.Warn(connection.diagnostics, "CommandOverload", "ReplayedRequestId")
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "ReplayedRequestId"
@@ -519,6 +524,7 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	connection.lastId = request.requestId
 
 	if #connection.queue >= self.limits.queued or size > self.limits.queuedBytes - connection.queuedBytes then
+		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandQueueFull")
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "CommandQueueFull"
@@ -527,6 +533,7 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local ticket = self.admission:Queue(player, size, self.queued, self.queuedBytes)
 
 	if ticket == nil then
+		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandGlobalQueueFull")
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "CommandGlobalQueueFull"

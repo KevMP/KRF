@@ -108,6 +108,8 @@ function ClientHintRuntime.Send(
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -179,6 +181,8 @@ function ClientHintRuntime.Send(
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintPendingFull")
+
 		return false, "HintPendingFull"
 	end
 
@@ -200,6 +204,8 @@ function ClientHintRuntime.Send(
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -209,6 +215,8 @@ function ClientHintRuntime.Send(
 	then
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintsDropped", 1)
+
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintPendingFull")
 
 		return false, "HintPendingFull"
 	end
@@ -318,6 +326,7 @@ function ClientHintRuntime.Step(self: Runtime): (number, number)
 
 				if not completed then
 					Metrics.Count(self.diagnostics, "hintSendFailures", 1)
+					Metrics.Warn(self.diagnostics, "HintAbuse", "hintSendFailures")
 				end
 			else
 				Metrics.Count(self.diagnostics, "hintsDropped", #selected)

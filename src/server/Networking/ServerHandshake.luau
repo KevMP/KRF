@@ -3,6 +3,7 @@ local Types = require(script.Parent.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local ProtocolCodec = require(script.Parent.Parent.Parent.shared.Networking.ProtocolCodec)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ProtocolConstants)
+local Warnings = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingWarnings)
 
 local ServerHandshake = {} :: Types.ServerHandshakeModule
 
@@ -17,6 +18,7 @@ function ServerHandshake.new(
 	local readyObservers: { Observer } = {}
 	local closedObservers: { Observer } = {}
 	local destroyed: boolean = false
+	local warnings = Warnings.new(nil)
 	local acknowledgement: buffer?, ackReason: string? = ProtocolCodec.Encode({ kind = "ReadyAck" })
 	assert(acknowledgement ~= nil, ackReason)
 	local runtime: Types.ServerHandshake = {} :: Types.ServerHandshake
@@ -25,7 +27,11 @@ function ServerHandshake.new(
 		local completed: boolean, reason: any = pcall(dependencies.SendReliable, player, payload)
 
 		if not completed then
-			warn("[Networking] reliable send failed: " .. tostring(reason))
+			local allowed, suppressed = warnings.Allow("TransportFault")
+
+			if allowed then
+				Warnings.Emit("TransportFault", tostring(reason), suppressed)
+			end
 		end
 
 		return completed
@@ -51,7 +57,11 @@ function ServerHandshake.new(
 			end
 
 			if not completed then
-				warn("[Networking] private connection observer failed: " .. tostring(reason))
+				local allowed, suppressed = warnings.Allow("ObserverFault")
+
+				if allowed then
+					Warnings.Emit("ObserverFault", tostring(reason), suppressed)
+				end
 			end
 		end
 	end
@@ -185,6 +195,7 @@ function ServerHandshake.new(
 
 		table.clear(readyObservers)
 		table.clear(closedObservers)
+		warnings.Destroy()
 	end
 
 	function runtime._GetConnectionCountForTests(_self: Types.ServerHandshake): number

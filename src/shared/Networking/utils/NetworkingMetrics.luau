@@ -1,8 +1,17 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local Warnings = require(script.Parent.NetworkingWarnings)
 local Metrics = {}
 
-function Metrics.new(scope: Types.DiagnosticScope, parent: Types.DiagnosticCollector?): Types.DiagnosticCollector
+function Metrics.new(
+	scope: Types.DiagnosticScope,
+	parent: Types.DiagnosticCollector?,
+	warningOptions: Types.DiagnosticWarningOptions?
+): Types.DiagnosticCollector
+	local warnings = if parent == nil then Warnings.new(warningOptions) else nil
+	local emit = if warningOptions ~= nil and warningOptions.Emit ~= nil then warningOptions.Emit else Warnings.Emit
+	local warningActive = true
+
 	local counters: { [Types.DiagnosticCounter]: number } = {
 		reliableSendAttempts = 0,
 		reliableEncodedBytes = 0,
@@ -126,6 +135,29 @@ function Metrics.new(scope: Types.DiagnosticScope, parent: Types.DiagnosticColle
 	local sources: { [Types.DiagnosticAge]: () -> number? } = {}
 	local collector: Types.DiagnosticCollector = {} :: Types.DiagnosticCollector
 
+	function collector.Warn(_self: Types.DiagnosticCollector, category: Types.DiagnosticWarning, reason: string?): ()
+		if not warningActive then
+			return
+		end
+
+		if parent ~= nil then
+			parent:Warn(category, reason)
+		elseif warnings ~= nil then
+			local allowed, suppressed = warnings.Allow(category)
+
+			if allowed then
+				-- Commit the gate before logging. A broken/yielding internal sink cannot
+				-- interrupt authoritative work or retain a suspended coroutine.
+				local thread = coroutine.create(emit)
+				coroutine.resume(thread, category, reason, suppressed)
+
+				if coroutine.status(thread) ~= "dead" then
+					coroutine.close(thread)
+				end
+			end
+		end
+	end
+
 	function collector.Count(_self: Types.DiagnosticCollector, key: Types.DiagnosticCounter, amount: number): ()
 		counters[key] = math.min(9007199254740991, counters[key] + amount)
 
@@ -179,6 +211,11 @@ function Metrics.new(scope: Types.DiagnosticScope, parent: Types.DiagnosticColle
 
 	function collector.ClearSources(_self: Types.DiagnosticCollector): ()
 		table.clear(sources)
+		warningActive = false
+
+		if warnings ~= nil then
+			warnings.Destroy()
+		end
 	end
 
 	function collector.Snapshot(_self: Types.DiagnosticCollector): Types.DiagnosticSnapshot
@@ -322,6 +359,12 @@ end
 function Metrics.Count(collector: Types.DiagnosticCollector?, key: Types.DiagnosticCounter, amount: number): ()
 	if collector ~= nil then
 		collector:Count(key, amount)
+	end
+end
+
+function Metrics.Warn(collector: Types.DiagnosticCollector?, category: Types.DiagnosticWarning, reason: string?): ()
+	if collector ~= nil then
+		collector:Warn(category, reason)
 	end
 end
 

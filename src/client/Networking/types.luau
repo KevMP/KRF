@@ -154,7 +154,8 @@ export type ActorViewOptions = {
 	Now: () -> number,
 	ScheduleTimeout: (number, () -> ()) -> () -> (),
 	SendReliable: (buffer) -> (),
-	ReportFault: (ActorViewFault) -> (),
+	-- True only at the once-per-owner terminal transition; logging may suppress retries.
+	ReportFault: (ActorViewFault, boolean?) -> (),
 }
 
 -- Private diagnostics, never reachable through ActorView or its public registry.

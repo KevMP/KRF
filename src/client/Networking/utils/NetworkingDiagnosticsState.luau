@@ -4,12 +4,12 @@ local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.uti
 local State = {}
 local current: Types.DiagnosticCollector? = nil
 
-function State.Start(): Types.DiagnosticCollector
+function State.Start(options: Types.DiagnosticWarningOptions?): Types.DiagnosticCollector
 	if current ~= nil then
 		current:ClearSources()
 	end
 
-	local owner = Metrics.new("Client", nil)
+	local owner = Metrics.new("Client", nil, options)
 	current = owner
 
 	return owner

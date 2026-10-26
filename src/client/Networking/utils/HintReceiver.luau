@@ -72,6 +72,8 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -82,6 +84,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
 		Metrics.Count(self.diagnostics, "hintsMalformed", 1)
+		Metrics.Warn(self.diagnostics, "MalformedTraffic", "hintsMalformed")
 
 		return false, "MalformedHintPacket"
 	end
@@ -90,6 +93,7 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 
 	if cursor == nil then
 		Metrics.Count(self.diagnostics, "hintsMalformed", 1)
+		Metrics.Warn(self.diagnostics, "MalformedTraffic", "hintsMalformed")
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
@@ -102,6 +106,8 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
 
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintRateLimited")
+
 		return false, "HintRateLimited"
 	end
 
@@ -113,6 +119,8 @@ function HintReceiver.Handle(self: Runtime, payload: any, ...: any): (boolean, s
 	then
 		Metrics.Count(self.diagnostics, "hintPacketsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintPacketsDropped", 1)
+
+		Metrics.Warn(self.diagnostics, "HintAbuse", "HintPendingFull")
 
 		return false, "HintPendingFull"
 	end
@@ -193,12 +201,14 @@ function HintReceiver._deliver(self: Runtime, record: SharedTypes.HintRecord): b
 	if coroutine.status(notifier) ~= "dead" then
 		coroutine.close(notifier)
 		Metrics.Count(self.diagnostics, "hintCallbackFaults", 1)
+		Metrics.Warn(self.diagnostics, "HintAbuse", "hintCallbackFaults")
 
 		return false
 	end
 
 	if not completed then
 		Metrics.Count(self.diagnostics, "hintCallbackFaults", 1)
+		Metrics.Warn(self.diagnostics, "HintAbuse", "hintCallbackFaults")
 	end
 
 	return completed
@@ -239,6 +249,7 @@ function HintReceiver.Step(self: Runtime): (number, number)
 
 		if not completed or record == nil then
 			Metrics.Count(self.diagnostics, "hintsMalformed", 1)
+			Metrics.Warn(self.diagnostics, "MalformedTraffic", "hintsMalformed")
 		end
 
 		if not completed or record == nil or packet.cursor.remaining == 0 or self.destroyed then
