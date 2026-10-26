@@ -6,20 +6,19 @@ local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.uti
 local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.Parent.shared.Networking.HintCodec)
+local Outbox = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.HintOutbox)
 local Queue = require(script.Parent.ActiveQueue)
 
-type Latest = { sequence: number, actor: ActorTypes.Actor?, job: Job? }
-type Job = { queuedAt: number, bytes: buffer, actor: ActorTypes.Actor?, handle: number?, latest: Latest? }
+type Job = Outbox.Job<ActorTypes.Actor>
+
+local newOutbox: (Outbox.Pool, SharedTypes.DiagnosticCollector?, () -> number) -> Outbox.State<ActorTypes.Actor> =
+	Outbox.new
 
 type Connection = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
+	outbox: Outbox.State<ActorTypes.Actor>,
 	player: Player,
 	node: Queue.Node<Connection>?,
-	queue: { Job },
-	latest: { [string]: Latest },
-	pendingCount: number,
-	pendingBytes: number,
-	latestCount: number,
 	window: number,
 	attempts: number,
 	rateBytes: number,
@@ -34,12 +33,10 @@ type State = {
 	codec: SharedTypes.HintCodec,
 	dependencies: Types.HintSendDependencies,
 	limits: Types.HintSendLimits,
+	pool: Outbox.Pool,
 	connections: { [Player]: Connection },
 	active: Queue.Queue<Connection>,
 	disconnects: { () -> () },
-	pendingCount: number,
-	pendingBytes: number,
-	latestCount: number,
 	window: number,
 	attempts: number,
 	rateBytes: number,
@@ -66,27 +63,6 @@ function HintSender._eligible(self: Runtime, connection: Connection, job: Job): 
 		)
 end
 
-function HintSender._release(self: Runtime, connection: Connection, job: Job, dropped: boolean?): ()
-	if dropped then
-		Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-		Metrics.Observe(
-			connection.diagnostics,
-			"hintSendQueueResidenceSeconds",
-			math.max(0, self.dependencies.Now() - job.queuedAt)
-		)
-	end
-
-	local bytes = buffer.len(job.bytes)
-
-	connection.pendingCount -= 1
-	connection.pendingBytes -= bytes
-	self.pendingCount -= 1
-	Metrics.Adjust(connection.diagnostics, "hintSendRecords", -1)
-	self.pendingBytes -= bytes
-	Metrics.Adjust(connection.diagnostics, "hintSendBytes", -bytes)
-end
-
 function HintSender._close(self: Runtime, player: Player): ()
 	local connection = self.connections[player]
 
@@ -100,42 +76,18 @@ function HintSender._close(self: Runtime, player: Player): ()
 		Queue.Remove(connection.node)
 	end
 
-	for _, job in connection.queue do
-		self:_release(connection, job, true)
-	end
-
-	self.latestCount -= connection.latestCount
-	Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -connection.latestCount)
+	Outbox.Destroy(connection.outbox)
 
 	if connection.diagnostics ~= nil then
 		connection.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", nil)
 	end
-
-	connection.queue, connection.latest, connection.latestCount = {}, {}, 0
 end
 
 function HintSender.ForgetActor(self: Runtime, actor: ActorTypes.Actor): ()
-	-- A lifecycle traversal is bounded by retained jobs/keys, never repeated at idle.
 	for _, connection in self.connections do
-		for index = #connection.queue, 1, -1 do
-			local job = connection.queue[index]
+		Outbox.ForgetActor(connection.outbox, actor)
 
-			if job.actor == actor then
-				table.remove(connection.queue, index)
-				self:_release(connection, job, true)
-			end
-		end
-
-		for key, latest in connection.latest do
-			if latest.actor == actor then
-				connection.latest[key] = nil
-				connection.latestCount -= 1
-				self.latestCount -= 1
-				Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -1)
-			end
-		end
-
-		if #connection.queue == 0 and connection.node ~= nil then
+		if #connection.outbox.queue == 0 and connection.node ~= nil then
 			Queue.Remove(connection.node)
 		end
 	end
@@ -227,12 +179,15 @@ function HintSender.SendTo(
 	end
 
 	local key = tostring(hint.code) .. ":" .. tostring(handle or 0)
-	local latest = if hint.mode == "Latest" then connection.latest[key] else nil
+	local latest = if hint.mode == "Latest" then connection.outbox.latest[key] else nil
 
 	if hint.mode == "Latest" then
 		if
 			latest == nil
-			and (connection.latestCount >= limits.maxLatestKeys or self.latestCount >= limits.maxGlobalLatestKeys)
+			and (
+				connection.outbox.latestCount >= limits.maxLatestKeys
+				or self.pool.latestCount >= limits.maxGlobalLatestKeys
+			)
 		then
 			Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 			Metrics.Count(diagnosticOwner, "hintsDropped", 1)
@@ -252,7 +207,7 @@ function HintSender.SendTo(
 
 	if
 		previous == nil
-		and (connection.pendingCount >= limits.maxPending or self.pendingCount >= limits.maxGlobalPending)
+		and (connection.outbox.pendingCount >= limits.maxPending or self.pool.pendingCount >= limits.maxGlobalPending)
 	then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
@@ -288,8 +243,8 @@ function HintSender.SendTo(
 	local delta = bytes - (if previous ~= nil then buffer.len(previous.bytes) else 0)
 
 	if
-		connection.pendingBytes + delta > limits.maxPendingBytes
-		or self.pendingBytes + delta > limits.maxGlobalPendingBytes
+		connection.outbox.pendingBytes + delta > limits.maxPendingBytes
+		or self.pool.pendingBytes + delta > limits.maxGlobalPendingBytes
 	then
 		Metrics.Count(diagnosticOwner, "hintRecordsRefused", 1)
 		Metrics.Count(diagnosticOwner, "hintsDropped", 1)
@@ -301,39 +256,7 @@ function HintSender.SendTo(
 
 	connection.rateBytes += bytes
 	self.rateBytes += bytes
-
-	if sequence ~= nil then
-		if latest == nil then
-			local created: Latest = { sequence = sequence, actor = actor }
-			latest = created
-			connection.latest[key] = created
-			connection.latestCount += 1
-			self.latestCount += 1
-			Metrics.Adjust(connection.diagnostics, "hintLatestKeys", 1)
-		else
-			latest.sequence = sequence
-		end
-	end
-
-	connection.pendingBytes += delta
-	self.pendingBytes += delta
-	Metrics.Adjust(connection.diagnostics, "hintSendBytes", delta)
-
-	if previous ~= nil then
-		previous.bytes = encoded
-		previous.queuedAt = now
-		Metrics.Count(connection.diagnostics, "hintsCoalesced", 1)
-	else
-		local job: Job = { queuedAt = now, bytes = encoded, actor = actor, handle = handle, latest = latest }
-		table.insert(connection.queue, job)
-		connection.pendingCount += 1
-		self.pendingCount += 1
-		Metrics.Adjust(connection.diagnostics, "hintSendRecords", 1)
-
-		if latest ~= nil then
-			latest.job = job
-		end
-	end
+	Outbox.Admit(connection.outbox, key, actor, handle, encoded, sequence, now)
 
 	local node = assert(connection.node, "Expected Hint recipient node")
 	Queue.Push(self.active, node)
@@ -365,54 +288,18 @@ function HintSender.Step(self: Runtime): (number, number)
 		end
 
 		Metrics.Count(connection.diagnostics, "hintConnectionVisits", 1)
-		local selected: { Job } = {}
-		local records: { buffer } = {}
-		local bytes, visits = Constants.PACKET_HEADER_BYTES, 0
 
-		while
-			#connection.queue > 0
-			and work < limits.maxRecords
-			and visits < limits.maxConnectionRecords
-			and #records < Constants.MAX_RECORDS
-		do
-			work += 1
-			Metrics.Count(connection.diagnostics, "hintSendVisits", 1)
-			visits += 1
-			local job = connection.queue[1]
-			local eligible = self:_eligible(connection, job)
-
-			if
-				eligible
-				and (
-					bytes + buffer.len(job.bytes) > Constants.MAX_PACKET_BYTES
-					or sentBytes + bytes + buffer.len(job.bytes) > limits.maxStepBytes
-				)
-			then
-				Metrics.Count(connection.diagnostics, "hintUnproductiveInspections", 1)
-				break
+		local batch = Outbox.Select(
+			connection.outbox,
+			math.min(limits.maxRecords - work, limits.maxConnectionRecords),
+			limits.maxStepBytes - sentBytes,
+			function(job: Job): boolean
+				return self:_eligible(connection, job)
 			end
+		)
 
-			table.remove(connection.queue, 1)
-
-			Metrics.Observe(
-				connection.diagnostics,
-				"hintSendQueueResidenceSeconds",
-				math.max(0, self.dependencies.Now() - job.queuedAt)
-			)
-
-			if job.latest ~= nil then
-				job.latest.job = nil
-			end
-
-			if eligible then
-				table.insert(selected, job)
-				table.insert(records, job.bytes)
-				bytes += buffer.len(job.bytes)
-			else
-				Metrics.Count(connection.diagnostics, "hintUnproductiveInspections", 1)
-				self:_release(connection, job, true)
-			end
-		end
+		work += batch.work
+		local selected, records = batch.jobs, batch.records
 
 		if #selected > 0 then
 			local packet = assert(self.codec.Pack(records))
@@ -433,13 +320,10 @@ function HintSender.Step(self: Runtime): (number, number)
 				Metrics.Warn(connection.diagnostics, "HintAbuse", "hintSendFailures")
 			end
 
-			-- Jobs were removed from the queue but remain charged through callback unwind.
-			for _, job in selected do
-				self:_release(connection, job)
-			end
+			Outbox.Settle(connection.outbox, batch)
 		end
 
-		if self:_current(connection) and #connection.queue > 0 then
+		if self:_current(connection) and #connection.outbox.queue > 0 then
 			Queue.Push(self.active, assert(connection.node, "Expected Hint recipient node"))
 		end
 	end
@@ -509,12 +393,11 @@ function HintSender.new(
 		codec = Codec.Compile(protocol, "ServerToClient"),
 		dependencies = dependencies,
 		limits = limits,
+		pool = Outbox.pool(),
 		connections = {},
 		active = Queue.new(),
 		disconnects = {},
-		pendingCount = 0,
-		pendingBytes = 0,
-		latestCount = 0,
+
 		window = dependencies.Now(),
 		attempts = 0,
 		rateBytes = 0,
@@ -535,12 +418,9 @@ function HintSender.new(
 
 			local connection: Connection = {
 				diagnostics = Diagnostics.GetConnection(player),
+				outbox = newOutbox(self.pool, Diagnostics.GetConnection(player), dependencies.Now),
 				player = player,
-				queue = {},
-				latest = {},
-				pendingCount = 0,
-				pendingBytes = 0,
-				latestCount = 0,
+
 				window = dependencies.Now(),
 				attempts = 0,
 				rateBytes = 0,
@@ -553,7 +433,7 @@ function HintSender.new(
 				connection.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", function(): number?
 					local earliest: number? = nil
 
-					for _, job in connection.queue do
+					for _, job in connection.outbox.queue do
 						if self:_eligible(connection, job) then
 							earliest = math.min(earliest or math.huge, job.queuedAt)
 						end

@@ -132,12 +132,12 @@ local function finish(success: boolean, reason: string?): ()
 		Networking.Destroy()
 
 		assert(
-			senderOwner == nil or (senderOwner.pendingBytes == 0 and senderOwner.latestCount == 0),
+			senderOwner == nil or (senderOwner.pool.pendingBytes == 0 and senderOwner.pool.latestCount == 0),
 			"S2C teardown must release recipient ownership"
 		)
 
 		assert(
-			hintRuntime == nil or (hintRuntime.latestCount == 0 and hintRuntime.pendingBytes == 0),
+			hintRuntime == nil or (hintRuntime.dispatch.keys == 0 and hintRuntime.pendingBytes == 0),
 			"Hint teardown must release keys and queued wire capacity"
 		)
 
@@ -374,7 +374,7 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 			end
 
 			assert(
-				senderOwner == nil or (senderOwner.pendingBytes == 0 and senderOwner.latestCount == 0),
+				senderOwner == nil or (senderOwner.pool.pendingBytes == 0 and senderOwner.pool.latestCount == 0),
 				"S2C teardown must release recipient ownership"
 			)
 

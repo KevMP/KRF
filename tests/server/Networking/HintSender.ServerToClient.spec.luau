@@ -177,7 +177,7 @@ it("rejects invalid direction, targets, schemas and unready recipients before tr
 	expect(type(reason)).toBe("string")
 	runtime:Step()
 	expect(sent).toEqual({})
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.pool.pendingBytes).toBe(0)
 end)
 
 it("coalesces each recipient's Latest independently and preserves Pulse occurrences", function()
@@ -196,7 +196,7 @@ it("coalesces each recipient's Latest independently and preserves Pulse occurren
 	})
 
 	expect(records(2)).toEqual({ { hintCode = 4, sequence = 1, payload = 7 } })
-	expect(runtime.pendingCount).toBe(0)
+	expect(runtime.pool.pendingCount).toBe(0)
 end)
 
 it("gives another eligible recipient a turn within global work and send bounds", function()
@@ -210,7 +210,7 @@ it("gives another eligible recipient a turn within global work and send bounds",
 	expect(sends).toBe(2)
 	expect(sent[1].player).toBe(first)
 	expect(sent[2].player).toBe(second)
-	expect(runtime.pendingCount).toBe(4)
+	expect(runtime.pool.pendingCount).toBe(4)
 end)
 
 it("bounds local and aggregate pending jobs and recovers capacity on disconnect", function()
@@ -226,7 +226,7 @@ it("bounds local and aggregate pending jobs and recovers capacity on disconnect"
 	expect(reason).toBe("HintPendingFull")
 	Awareness.close(base, first)
 	expect((runtime:SendTo(second, "Game.Pulse", nil, 6))).toBe(true)
-	expect(runtime.pendingCount).toBe(2)
+	expect(runtime.pool.pendingCount).toBe(2)
 end)
 
 it("bounds byte ownership and preserves the prior Latest when a larger replacement cannot fit", function()
@@ -287,10 +287,10 @@ end)
 
 it("drops retired Actor work, releases its keys and refuses obsolete targets without recovery", function()
 	runtime:SendTo(first, "Game.Look", actor, { value = 1 })
-	expect(runtime.latestCount).toBe(1)
+	expect(runtime.pool.latestCount).toBe(1)
 	awareness:OnActorUnregistering(actor)
-	expect(runtime.pendingCount).toBe(0)
-	expect(runtime.latestCount).toBe(0)
+	expect(runtime.pool.pendingCount).toBe(0)
+	expect(runtime.pool.latestCount).toBe(0)
 	local accepted, reason = runtime:SendTo(first, "Game.Look", actor, { value = 2 })
 	expect(accepted).toBe(false)
 	expect(reason).toBe("ActorUnavailable")
@@ -309,13 +309,13 @@ it("keeps complete packet bytes within pump limits without fragmenting records",
 	runtime:Step()
 	expect(#sent).toBe(1)
 	expect(buffer.len(sent[1].payload) <= 900).toBe(true)
-	expect(runtime.pendingCount > 0).toBe(true)
+	expect(runtime.pool.pendingCount > 0).toBe(true)
 
 	for _ = 1, 4 do
 		runtime:Step()
 	end
 
-	expect(runtime.pendingCount).toBe(0)
+	expect(runtime.pool.pendingCount).toBe(0)
 
 	for _, delivery in sent do
 		expect(buffer.len(delivery.payload) <= 900).toBe(true)
@@ -343,7 +343,7 @@ it("drops throwing and yielding transport calls without retrying or blocking hea
 
 	runtime:SendTo(first, "Game.Pulse", nil, 3)
 	runtime:Step()
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.pool.pendingBytes).toBe(0)
 	expect((runtime:Step())).toBe(0)
 end)
 
@@ -353,7 +353,7 @@ it("holds staged capacity through reentrant teardown and releases it exactly onc
 
 	send = function(): ()
 		runtime:Destroy()
-		during = runtime.pendingBytes
+		during = runtime.pool.pendingBytes
 		nested = runtime:Step()
 	end
 
@@ -362,8 +362,8 @@ it("holds staged capacity through reentrant teardown and releases it exactly onc
 	runtime:Step()
 	expect(during).toBe(3)
 	expect(nested).toBe(0)
-	expect(runtime.pendingCount).toBe(0)
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.pool.pendingCount).toBe(0)
+	expect(runtime.pool.pendingBytes).toBe(0)
 	runtime:Destroy()
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.pool.pendingBytes).toBe(0)
 end)

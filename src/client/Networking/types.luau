@@ -3,7 +3,21 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Network
 local PublicTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
+local ClientTypes = require(script.Parent.Parent.types)
+
 local types = {}
+
+export type ClientConsumerInstallationOptions = {
+	Now: () -> number,
+	ScheduleTimeout: (number, () -> ()) -> () -> (),
+	ObserveStep: ClientTypes.ClientStepObserver?,
+	installActorReceiver: (((any) -> ()) -> ())?,
+	sendReliable: ((buffer) -> ())?,
+	isReady: (() -> boolean)?,
+	onTerminalFailure: (() -> ())?,
+	sendUnreliable: ((buffer) -> ())?,
+	connectUnreliable: ClientTypes.ClientUnreliableObserver?,
+}
 
 -- Private local introspection; absent outside the owning runtime lifetime.
 export type NetworkingDiagnostics = {

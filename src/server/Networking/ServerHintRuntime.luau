@@ -7,10 +7,9 @@ local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.HintCodec)
 local Queue = require(script.Parent.utils.ActiveQueue)
-local Context = require(script.Parent.utils.HintContext)
+local Dispatch = require(script.Parent.utils.HintDispatcher)
 
 type Packet = { queuedAt: number, cursor: SharedTypes.HintCursor, bytes: number, held: boolean }
-type Latest = { actor: ActorTypes.Actor?, sequence: number }
 
 type Limits = {
 	maxPackets: number,
@@ -36,8 +35,7 @@ type Connection = {
 	window: number,
 	attempts: number,
 	rateBytes: number,
-	latest: { [string]: Latest },
-	latestCount: number,
+	delivery: Dispatch.Channel,
 }
 
 local ServerHintRuntime = {}
@@ -45,8 +43,7 @@ ServerHintRuntime.__index = ServerHintRuntime
 
 type State = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
-	catalog: Types.PreparedHintCatalog,
-	protocol: SharedTypes.ClientProtocol,
+	dispatch: Dispatch.Runtime,
 	codec: SharedTypes.HintCodec,
 	dependencies: Types.ServerHintDependencies,
 	limits: Limits,
@@ -54,7 +51,6 @@ type State = {
 	active: Queue.Queue<Connection>,
 	pendingCount: number,
 	pendingBytes: number,
-	latestCount: number,
 	window: number,
 	attempts: number,
 	rateBytes: number,
@@ -110,27 +106,19 @@ function ServerHintRuntime._close(self: Runtime, player: Player): ()
 		end
 	end
 
-	self.latestCount -= connection.latestCount
-	Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -connection.latestCount)
+	self.dispatch:Close(connection.delivery)
 
 	if connection.diagnostics ~= nil then
 		connection.diagnostics:SetAgeSource("hintReceiveQueueAgeSeconds", nil)
 	end
 
-	connection.latest, connection.latestCount, connection.packets = {}, 0, {}
+	connection.packets = {}
 end
 
 function ServerHintRuntime.ForgetActor(self: Runtime, actor: ActorTypes.Actor): ()
-	-- Retirement work is bounded by live sequence keys; no idle-frame traversal.
+	-- Only retirement traverses live sequence keys, never ingress or idle pumps.
 	for _, connection in self.connections do
-		for key, latest in connection.latest do
-			if latest.actor == actor then
-				connection.latest[key] = nil
-				connection.latestCount -= 1
-				self.latestCount -= 1
-				Metrics.Adjust(connection.diagnostics, "hintLatestKeys", -1)
-			end
-		end
+		self.dispatch:ForgetActor(connection.delivery, actor)
 	end
 end
 
@@ -241,108 +229,6 @@ function ServerHintRuntime.Handle(self: Runtime, player: Player, payload: any, .
 	return true, nil
 end
 
-function ServerHintRuntime._deliver(self: Runtime, connection: Connection, record: SharedTypes.HintRecord): boolean
-	if not self:_current(connection) then
-		Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-		return false
-	end
-
-	local hint = if self.protocol.hintsByCode ~= nil then self.protocol.hintsByCode[record.hintCode] else nil
-	assert(hint ~= nil, "Expected decoded Hint definition")
-	local definition = self.catalog.definitionsById[hint.id]
-	local actor: ActorTypes.Actor? = nil
-
-	if record.targetHandle ~= nil then
-		actor = self.dependencies.awareness:ResolveActor(connection.player, record.targetHandle)
-
-		if actor == nil then
-			Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-			return false
-		end
-	end
-
-	local key = tostring(record.hintCode) .. ":" .. tostring(record.targetHandle or 0)
-	local latest = connection.latest[key]
-
-	if record.sequence ~= nil then
-		if latest ~= nil and record.sequence <= latest.sequence then
-			Metrics.Count(connection.diagnostics, "hintsStaleDropped", 1)
-			Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-			return false
-		end
-
-		if
-			latest == nil
-			and (
-				connection.latestCount >= self.limits.maxLatestKeys
-				or self.latestCount >= self.limits.maxGlobalLatestKeys
-			)
-		then
-			Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-			return false
-		end
-	end
-
-	local function eligible(): boolean
-		return self:_current(connection)
-			and (
-				record.targetHandle == nil
-				or self.dependencies.awareness:ResolveActor(connection.player, record.targetHandle) == actor
-			)
-	end
-
-	local context = Context.new(connection.player, actor, hint.id, {
-		ready = eligible,
-		owns = function(): boolean
-			return actor ~= nil
-				and self.dependencies.awareness:GetActorForPlayer(connection.player) == actor
-				and self.dependencies.awareness:GetPlayerForActor(actor) == connection.player
-		end,
-	})
-
-	local authorize, receive = definition.authorize, definition.receive
-	assert(authorize ~= nil and receive ~= nil, "Expected validated C2S callbacks")
-	local completed, allowed = Context.Resume(coroutine.create(authorize), context, record.payload)
-
-	if not completed or allowed ~= true or not eligible() then
-		if not completed or allowed ~= true then
-			Metrics.Count(connection.diagnostics, "hintsUnauthorized", 1)
-			Metrics.Warn(connection.diagnostics, "HintAbuse", "hintsUnauthorized")
-		end
-
-		Context.Release(context)
-
-		Metrics.Count(connection.diagnostics, "hintsDropped", 1)
-
-		return false
-	end
-
-	if record.sequence ~= nil then
-		if latest == nil then
-			connection.latestCount += 1
-			self.latestCount += 1
-			Metrics.Adjust(connection.diagnostics, "hintLatestKeys", 1)
-		end
-
-		connection.latest[key] = { actor = actor, sequence = record.sequence }
-	end
-
-	Metrics.Count(connection.diagnostics, "hintsReceived", 1)
-	local delivered = Context.Resume(coroutine.create(receive), context, record.payload)
-	Context.Release(context)
-
-	if not delivered then
-		Metrics.Count(connection.diagnostics, "hintCallbackFaults", 1)
-		Metrics.Warn(connection.diagnostics, "HintAbuse", "hintCallbackFaults")
-	end
-
-	return delivered
-end
-
 function ServerHintRuntime.Step(self: Runtime): (number, number)
 	if self.destroyed or self.pumping then
 		return 0, 0
@@ -373,7 +259,7 @@ function ServerHintRuntime.Step(self: Runtime): (number, number)
 
 		local completed, record = pcall(self.codec.Read, packet.cursor)
 
-		if completed and record ~= nil and self:_deliver(connection, record) then
+		if completed and record ~= nil and self.dispatch:Deliver(connection.delivery, record) then
 			delivered += 1
 		else
 			Metrics.Count(connection.diagnostics, "hintUnproductiveInspections", 1)
@@ -469,8 +355,7 @@ function ServerHintRuntime.new(
 
 	local state: State = {
 		diagnostics = Diagnostics.GetServer(),
-		catalog = catalog,
-		protocol = protocol,
+		dispatch = Dispatch.new(catalog, protocol, dependencies.awareness, limits),
 		codec = Codec.Compile(protocol),
 		dependencies = dependencies,
 		limits = limits,
@@ -478,7 +363,6 @@ function ServerHintRuntime.new(
 		active = Queue.new(),
 		pendingCount = 0,
 		pendingBytes = 0,
-		latestCount = 0,
 		window = dependencies.Now(),
 		attempts = 0,
 		rateBytes = 0,
@@ -498,6 +382,16 @@ function ServerHintRuntime.new(
 				return
 			end
 
+			local channel: Dispatch.Channel? = nil
+
+			local created = self.dispatch:Open(player, Diagnostics.GetConnection(player), function(): boolean
+				local connection = self.connections[player]
+
+				return connection ~= nil and connection.delivery == channel and self:_current(connection)
+			end)
+
+			channel = created
+
 			local connection: Connection = {
 				diagnostics = Diagnostics.GetConnection(player),
 				player = player,
@@ -506,8 +400,7 @@ function ServerHintRuntime.new(
 				window = dependencies.Now(),
 				attempts = 0,
 				rateBytes = 0,
-				latest = {},
-				latestCount = 0,
+				delivery = created,
 			}
 
 			connection.node = Queue.node(connection)

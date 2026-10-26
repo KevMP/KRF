@@ -6,10 +6,14 @@ local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.Netw
 local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.HintConstants)
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.HintCodec)
+local Outbox = require(script.Parent.Parent.Parent.shared.Networking.utils.HintOutbox)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 
-type Latest = { sequence: number, actor: PublicTypes.ActorView?, job: Job? }
-type Job = { queuedAt: number, bytes: buffer, actor: PublicTypes.ActorView?, handle: number?, latest: Latest? }
+type Job = Outbox.Job<PublicTypes.ActorView>
+type Latest = Outbox.Latest<PublicTypes.ActorView>
+
+local newOutbox: (Outbox.Pool, SharedTypes.DiagnosticCollector?, () -> number) -> Outbox.State<PublicTypes.ActorView> =
+	Outbox.new
 
 type Limits = {
 	maxPending: number,
@@ -28,16 +32,12 @@ ClientHintRuntime.__index = ClientHintRuntime
 
 type State = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
+	outbox: Outbox.State<PublicTypes.ActorView>,
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.HintCodec,
 	stream: Types.ActorStreamRuntime,
 	dependencies: Types.ClientHintDependencies,
 	limits: Limits,
-	queue: { Job },
-	latest: { [string]: Latest },
-	pendingCount: number,
-	pendingBytes: number,
-	latestCount: number,
 	window: number,
 	attempts: number,
 	rateBytes: number,
@@ -61,40 +61,8 @@ function ClientHintRuntime._eligible(self: Runtime, actor: PublicTypes.ActorView
 	return record ~= nil and record.handle == handle and self.stream:GetByHandle(record.handle) == record
 end
 
-function ClientHintRuntime._release(self: Runtime, job: Job, dropped: boolean?): ()
-	if dropped then
-		Metrics.Count(self.diagnostics, "hintsDropped", 1)
-
-		Metrics.Observe(
-			self.diagnostics,
-			"hintSendQueueResidenceSeconds",
-			math.max(0, self.dependencies.Now() - job.queuedAt)
-		)
-	end
-
-	self.pendingCount -= 1
-	Metrics.Adjust(self.diagnostics, "hintSendRecords", -1)
-	self.pendingBytes -= buffer.len(job.bytes)
-	Metrics.Adjust(self.diagnostics, "hintSendBytes", -buffer.len(job.bytes))
-end
-
 function ClientHintRuntime.ForgetActor(self: Runtime, actor: PublicTypes.ActorView): ()
-	for index = #self.queue, 1, -1 do
-		local job = self.queue[index]
-
-		if job.actor == actor then
-			table.remove(self.queue, index)
-			self:_release(job, true)
-		end
-	end
-
-	for key, latest in self.latest do
-		if latest.actor == actor then
-			self.latest[key] = nil
-			self.latestCount -= 1
-			Metrics.Adjust(self.diagnostics, "hintLatestKeys", -1)
-		end
-	end
+	Outbox.ForgetActor(self.outbox, actor)
 end
 
 function ClientHintRuntime.Send(
@@ -169,10 +137,10 @@ function ClientHintRuntime.Send(
 	end
 
 	local key = tostring(hint.code) .. ":" .. tostring(handle or 0)
-	local latest: Latest? = if hint.mode == "Latest" then self.latest[key] else nil
+	local latest: Latest? = if hint.mode == "Latest" then self.outbox.latest[key] else nil
 
 	if hint.mode == "Latest" then
-		if latest == nil and self.latestCount >= self.limits.maxLatestKeys then
+		if latest == nil and self.outbox.latestCount >= self.limits.maxLatestKeys then
 			Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 			Metrics.Count(self.diagnostics, "hintsDropped", 1)
 
@@ -189,7 +157,7 @@ function ClientHintRuntime.Send(
 
 	local previous = if latest ~= nil then latest.job else nil
 
-	if previous == nil and self.pendingCount >= self.limits.maxPending then
+	if previous == nil and self.outbox.pendingCount >= self.limits.maxPending then
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
 		Metrics.Count(self.diagnostics, "hintsDropped", 1)
 
@@ -222,7 +190,7 @@ function ClientHintRuntime.Send(
 	end
 
 	if
-		self.pendingBytes + bytes - (if previous ~= nil then buffer.len(previous.bytes) else 0)
+		self.outbox.pendingBytes + bytes - (if previous ~= nil then buffer.len(previous.bytes) else 0)
 		> self.limits.maxPendingBytes
 	then
 		Metrics.Count(self.diagnostics, "hintRecordsRefused", 1)
@@ -235,36 +203,7 @@ function ClientHintRuntime.Send(
 
 	self.rateBytes += bytes
 
-	if sequence ~= nil then
-		if latest == nil then
-			local created: Latest = { sequence = sequence, actor = actor }
-			latest = created
-			self.latest[key] = latest
-			self.latestCount += 1
-			Metrics.Adjust(self.diagnostics, "hintLatestKeys", 1)
-		else
-			latest.sequence = sequence
-		end
-	end
-
-	if previous ~= nil then
-		self.pendingBytes += bytes - buffer.len(previous.bytes)
-		Metrics.Adjust(self.diagnostics, "hintSendBytes", bytes - buffer.len(previous.bytes))
-		previous.bytes = encoded
-		previous.queuedAt = now
-		Metrics.Count(self.diagnostics, "hintsCoalesced", 1)
-	else
-		local job: Job = { queuedAt = now, bytes = encoded, actor = actor, handle = handle, latest = latest }
-		table.insert(self.queue, job)
-		self.pendingCount += 1
-		Metrics.Adjust(self.diagnostics, "hintSendRecords", 1)
-		self.pendingBytes += bytes
-		Metrics.Adjust(self.diagnostics, "hintSendBytes", bytes)
-
-		if latest ~= nil then
-			latest.job = job
-		end
-	end
+	Outbox.Admit(self.outbox, key, actor, handle, encoded, sequence, now)
 
 	Metrics.Count(self.diagnostics, "hintRecordsAdmitted", 1)
 
@@ -279,47 +218,18 @@ function ClientHintRuntime.Step(self: Runtime): (number, number)
 	self.pumping = true
 	local work, sends = 0, 0
 
-	while not self.destroyed and work < self.limits.maxRecords and sends < self.limits.maxSends and #self.queue > 0 do
-		local selected: { Job } = {}
-		local records: { buffer } = {}
-		local bytes = Constants.PACKET_HEADER_BYTES
+	while
+		not self.destroyed
+		and work < self.limits.maxRecords
+		and sends < self.limits.maxSends
+		and #self.outbox.queue > 0
+	do
+		local batch = Outbox.Select(self.outbox, self.limits.maxRecords - work, math.huge, function(job: Job): boolean
+			return self:_eligible(job.actor, job.handle)
+		end)
 
-		while
-			not self.destroyed
-			and work < self.limits.maxRecords
-			and #records < Constants.MAX_RECORDS
-			and #self.queue > 0
-		do
-			local job = self.queue[1]
-			work += 1
-			Metrics.Count(self.diagnostics, "hintSendVisits", 1)
-
-			if self:_eligible(job.actor, job.handle) and bytes + buffer.len(job.bytes) > Constants.MAX_PACKET_BYTES then
-				Metrics.Count(self.diagnostics, "hintUnproductiveInspections", 1)
-				break
-			end
-
-			table.remove(self.queue, 1)
-
-			Metrics.Observe(
-				self.diagnostics,
-				"hintSendQueueResidenceSeconds",
-				math.max(0, self.dependencies.Now() - job.queuedAt)
-			)
-
-			if job.latest ~= nil then
-				job.latest.job = nil
-			end
-
-			if self:_eligible(job.actor, job.handle) then
-				table.insert(selected, job)
-				table.insert(records, job.bytes)
-				bytes += buffer.len(job.bytes)
-			else
-				Metrics.Count(self.diagnostics, "hintUnproductiveInspections", 1)
-				self:_release(job, true)
-			end
-		end
+		work += batch.work
+		local selected, records = batch.jobs, batch.records
 
 		if #selected > 0 then
 			local packet = self.codec.Pack(records)
@@ -344,10 +254,7 @@ function ClientHintRuntime.Step(self: Runtime): (number, number)
 				Metrics.Count(self.diagnostics, "hintsDropped", #selected)
 			end
 
-			-- Selected records remain charged through reentrant transport/teardown.
-			for _, job in selected do
-				self:_release(job)
-			end
+			Outbox.Settle(self.outbox, batch)
 		end
 	end
 
@@ -364,17 +271,11 @@ function ClientHintRuntime.Destroy(self: Runtime): ()
 
 	self.destroyed = true
 
-	for _, job in self.queue do
-		self:_release(job, true)
-	end
-
-	Metrics.Adjust(self.diagnostics, "hintLatestKeys", -self.latestCount)
+	Outbox.Destroy(self.outbox)
 
 	if self.diagnostics ~= nil then
 		self.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", nil)
 	end
-
-	self.queue, self.latest, self.latestCount = {}, {}, 0
 end
 
 function ClientHintRuntime.new(
@@ -417,16 +318,13 @@ function ClientHintRuntime.new(
 
 	local state: State = {
 		diagnostics = Diagnostics.Get(),
+		outbox = newOutbox(Outbox.pool(), Diagnostics.Get(), dependencies.Now),
 		protocol = protocol,
 		codec = Codec.Compile(protocol),
 		stream = stream,
 		dependencies = dependencies,
 		limits = limits,
-		queue = {},
-		latest = {},
-		pendingCount = 0,
-		pendingBytes = 0,
-		latestCount = 0,
+
 		window = dependencies.Now(),
 		attempts = 0,
 		rateBytes = 0,
@@ -440,7 +338,7 @@ function ClientHintRuntime.new(
 		self.diagnostics:SetAgeSource("hintSendQueueAgeSeconds", function(): number?
 			local earliest: number? = nil
 
-			for _, job in self.queue do
+			for _, job in self.outbox.queue do
 				if self:_eligible(job.actor, job.handle) then
 					earliest = math.min(earliest or math.huge, job.queuedAt)
 				end

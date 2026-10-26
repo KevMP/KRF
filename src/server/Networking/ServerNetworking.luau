@@ -1,467 +1,51 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 local Types = require(script.Parent.types)
 local ReplicationTypes = require(script.Parent.Parent.Replication.types)
-local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
-local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ProtocolConstants)
+local SharedTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local Transport = require(script.Parent.Parent.Parent.shared.Networking.Transport)
-local ProtocolCodec = require(script.Parent.Parent.Parent.shared.Networking.ProtocolCodec)
-local CodecCompiler = require(script.Parent.Parent.Parent.shared.Networking.CodecCompiler)
-local SchemaProjection = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaProjection)
-local Handshake = require(script.Parent.ServerHandshake)
-local PublicationRuntime = require(script.Parent.PublicationRuntime)
-local PublicationLifecycle = require(script.Parent.utils.ActorPublicationLifecycle)
-local Awareness = require(script.Parent.ActorAwarenessRuntime)
-local AwarenessLifecycle = require(script.Parent.utils.ActorAwarenessLifecycle)
-local Scheduling = require(script.Parent.utils.AwarenessScheduling)
-local NativeAssociation = require(script.Parent.utils.NativePlayerAssociation)
-local ActorConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
-local Resync = require(script.Parent.ResyncRuntime)
-local CommandManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandManifest)
-local HintManifest = require(script.Parent.Parent.Parent.shared.Networking.utils.HintManifest)
-local Commands = require(script.Parent.ServerCommandRuntime)
-local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
-local Hints = require(script.Parent.ServerHintRuntime)
-local HintSender = require(script.Parent.utils.HintSender)
+local Preparation = require(script.Parent.utils.ServerProtocolPreparation)
+local Installation = require(script.Parent.utils.NativeServerInstallation)
 local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
-local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
-local SendMetrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingSendMetrics)
-local HintState = require(script.Parent.utils.HintRuntimeState)
-
 local ServerNetworking = {} :: Types.ServerNetworking
-local initialized: boolean = false
-local owned: SharedNetworkingTypes.OwnedTransport? = nil
-local runtime: Types.ServerHandshake? = nil
-local publication: Types.PublicationRuntime? = nil
+local installation: Installation.Runtime? = nil
 local preparedCatalog: ReplicationTypes.PreparedReplicationDomainCatalog? = nil
-local listeners: { RBXScriptConnection } = {}
-local awareness: Types.ActorAwarenessRuntime? = nil
-local association: Types.PlayerAssociationSource? = nil
-local stopDriver: (() -> ())? = nil
-local resync: Types.ResyncRuntime? = nil
-local commandRuntime: Types.ServerCommandRuntime? = nil
 local preparedCommands: Types.PreparedCommandCatalog? = nil
 local preparedHints: Types.PreparedHintCatalog? = nil
-local hintRuntime: Types.ServerHintRuntime? = nil
-local hintSender: Types.HintSenderRuntime? = nil
 
 function ServerNetworking.Prepare(
 	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
 	commands: Types.PreparedCommandCatalog?,
 	hints: Types.PreparedHintCatalog?
-): (SharedNetworkingTypes.PreparedProtocol?, string?)
+): (SharedTypes.PreparedProtocol?, string?)
 	if ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME) ~= nil then
 		return nil, "TransportConflict"
 	end
 
-	local definitions: { ReplicationTypes.LoadedReplicationDomainDefinition } = table.clone(catalog.orderedDefinitions)
+	local protocol, reason = Preparation.Compile(catalog, commands, hints)
 
-	table.sort(
-		definitions,
-		function(
-			first: ReplicationTypes.LoadedReplicationDomainDefinition,
-			second: ReplicationTypes.LoadedReplicationDomainDefinition
-		): boolean
-			return first.id < second.id
-		end
-	)
-
-	local domains: { SharedNetworkingTypes.ManifestDomain } = {}
-	local eventDefinitions: { [string]: { ReplicationTypes.LoadedReplicationEventDefinition } } = {}
-
-	for index: number, definition: ReplicationTypes.LoadedReplicationDomainDefinition in definitions do
-		local events: { SharedNetworkingTypes.ManifestEvent } = {}
-		local orderedEvents: { ReplicationTypes.LoadedReplicationEventDefinition } = table.clone(definition.events)
-
-		table.sort(
-			orderedEvents,
-			function(
-				first: ReplicationTypes.LoadedReplicationEventDefinition,
-				second: ReplicationTypes.LoadedReplicationEventDefinition
-			): boolean
-				return first.id < second.id
-			end
-		)
-
-		eventDefinitions[definition.id] = orderedEvents
-
-		for eventIndex: number, event: ReplicationTypes.LoadedReplicationEventDefinition in orderedEvents do
-			local projected: SharedNetworkingTypes.ManifestEvent =
-				{ id = event.id, code = eventIndex - 1, payload = SchemaProjection.Definition(event.payload) }
-
-			table.freeze(projected)
-			table.insert(events, projected)
-		end
-
-		table.freeze(events)
-
-		local domain: SharedNetworkingTypes.ManifestDomain = {
-			id = definition.id,
-			code = index - 1,
-			state = SchemaProjection.Definition(definition.state),
-			events = events,
-		}
-
-		table.freeze(domain)
-		table.insert(domains, domain)
+	if protocol ~= nil then
+		preparedCatalog, preparedCommands, preparedHints = catalog, commands, hints
 	end
 
-	table.freeze(domains)
-	local commandMetadata: { SharedNetworkingTypes.ManifestCommand } = {}
-
-	if commands ~= nil then
-		for index: number, definition: Types.LoadedCommandDefinition in commands.orderedDefinitions do
-			local projected: SharedNetworkingTypes.ManifestCommand = table.freeze({
-				id = definition.id,
-				code = index - 1,
-				target = definition.target,
-				request = if definition.request ~= nil then SchemaProjection.Definition(definition.request) else nil,
-				result = if definition.result ~= nil then SchemaProjection.Definition(definition.result) else nil,
-			})
-
-			table.insert(commandMetadata, projected)
-		end
-	end
-
-	table.freeze(commandMetadata)
-	local hintMetadata: { SharedNetworkingTypes.ManifestHint } = {}
-
-	if hints ~= nil then
-		for index: number, definition: Types.LoadedHintDefinition in hints.orderedDefinitions do
-			local projected: SharedNetworkingTypes.ManifestHint = table.freeze({
-				id = definition.id,
-				code = index - 1,
-				direction = definition.direction,
-				target = definition.target,
-				mode = definition.mode,
-				payload = SchemaProjection.Definition(definition.payload),
-			})
-
-			table.insert(hintMetadata, projected)
-		end
-	end
-
-	table.freeze(hintMetadata)
-
-	local manifest: SharedNetworkingTypes.ProtocolManifest = {
-		version = Constants.PROTOCOL_VERSION,
-		domains = domains,
-		commands = if #commandMetadata > 0 then commandMetadata else nil,
-		hints = if #hintMetadata > 0 then hintMetadata else nil,
-	}
-
-	table.freeze(manifest)
-
-	local bootstrapBuffer: buffer?, encodeReason: string? =
-		ProtocolCodec.Encode({ kind = "Bootstrap", manifest = manifest })
-
-	if bootstrapBuffer == nil then
-		return nil,
-			if encodeReason == "BootstrapTooLarge" then "BootstrapManifestTooLarge" else "InvalidProtocolManifest"
-	end
-
-	local domainsById: { [string]: SharedNetworkingTypes.ClientDomain } = {}
-	local domainsByCode: { [number]: SharedNetworkingTypes.ClientDomain } = {}
-
-	for index: number, definition: ReplicationTypes.LoadedReplicationDomainDefinition in definitions do
-		local stateCodec: SharedNetworkingTypes.CompiledCodec? = CodecCompiler.Compile(definition.state)
-
-		if stateCodec == nil then
-			return nil, "CodecCompilationFailure"
-		end
-
-		local eventsById: { [string]: SharedNetworkingTypes.ClientEvent } = {}
-		local eventsByCode: { [number]: SharedNetworkingTypes.ClientEvent } = {}
-
-		for eventIndex: number, event: ReplicationTypes.LoadedReplicationEventDefinition in
-			eventDefinitions[definition.id]
-		do
-			local codec: SharedNetworkingTypes.CompiledCodec? = CodecCompiler.Compile(event.payload)
-
-			if codec == nil then
-				return nil, "CodecCompilationFailure"
-			end
-
-			local installed: SharedNetworkingTypes.ClientEvent = { id = event.id, code = eventIndex - 1, codec = codec }
-			table.freeze(installed)
-			eventsById[event.id] = installed
-			eventsByCode[eventIndex - 1] = installed
-		end
-
-		table.freeze(eventsById)
-		table.freeze(eventsByCode)
-
-		local installed: SharedNetworkingTypes.ClientDomain = {
-			id = definition.id,
-			code = index - 1,
-			stateCodec = stateCodec,
-			eventsById = eventsById,
-			eventsByCode = eventsByCode,
-		}
-
-		table.freeze(installed)
-		domainsById[definition.id] = installed
-		domainsByCode[index - 1] = installed
-	end
-
-	table.freeze(domainsById)
-	table.freeze(domainsByCode)
-	local commandsById, commandsByCode, commandReason = CommandManifest.Compile(manifest.commands)
-
-	if commandsById == nil or commandsByCode == nil then
-		return nil, commandReason or "CodecCompilationFailure"
-	end
-
-	local hintsById, hintsByCode, hintReason = HintManifest.Compile(manifest.hints)
-
-	if hintsById == nil or hintsByCode == nil then
-		return nil, hintReason or "CodecCompilationFailure"
-	end
-
-	local codecs: SharedNetworkingTypes.ClientProtocol = {
-		domainsById = domainsById,
-		domainsByCode = domainsByCode,
-		commandsById = commandsById,
-		commandsByCode = commandsByCode,
-		hintsById = hintsById,
-		hintsByCode = hintsByCode,
-	}
-
-	table.freeze(codecs)
-
-	local prepared: SharedNetworkingTypes.PreparedProtocol =
-		{ manifest = manifest, bootstrapBuffer = bootstrapBuffer, runtime = codecs }
-
-	table.freeze(prepared)
-	preparedCatalog = catalog
-	preparedCommands = commands
-	preparedHints = hints
-
-	return prepared, nil
+	return protocol, reason
 end
 
-function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtocol): (boolean, string?)
-	if initialized then
+function ServerNetworking.Publish(protocol: SharedTypes.PreparedProtocol): (boolean, string?)
+	if installation ~= nil and installation.initialized then
 		return false, "NetworkingAlreadyInitialized"
 	end
 
-	local transports: SharedNetworkingTypes.OwnedTransport?, reason: string? = Transport.Create(ReplicatedStorage)
+	local transports, reason = Transport.Create(ReplicatedStorage)
 
 	if transports == nil then
 		return false, reason
 	end
 
-	owned = transports
+	local created = Installation.new(transports)
+	installation = created
 	Diagnostics.Start()
-
-	local completed: boolean, failure: any = pcall(function()
-		if preparedCatalog ~= nil then
-			publication = PublicationRuntime.new(preparedCatalog)
-			PublicationLifecycle.Install(publication)
-		end
-
-		local handshake: Types.ServerHandshake = Handshake.new(protocol, {
-			SendReliable = function(player: Player, payload: buffer): ()
-				SendMetrics.Record(Diagnostics.GetConnection(player), true, payload)
-				transports.reliable:FireClient(player, payload)
-			end,
-		})
-
-		runtime = handshake
-		handshake:ObserveClientClosed(Diagnostics.Close)
-
-		if publication ~= nil and preparedCatalog ~= nil then
-			local source: Types.PlayerAssociationSource = NativeAssociation.new()
-			association = source
-
-			local created: Types.ActorAwarenessRuntime = Awareness.new(publication, preparedCatalog, protocol.runtime, {
-				IsClientReady = ServerNetworking.IsClientReady,
-				ObserveClientReady = ServerNetworking.ObserveClientReady,
-				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
-				SendReliable = ServerNetworking.SendReliable,
-				GetPlayerFromCharacter = source.GetPlayerFromCharacter,
-				ObserveAssociationChanged = source.ObserveAssociationChanged,
-				CloseConnection = function(player: Player, _reason: string): ()
-					handshake:Close(player)
-				end,
-				ReportFault = function(fault: Types.ActorAwarenessFault)
-					warn(
-						"[Networking] Actor stream halted actorId="
-							.. fault.actorId
-							.. " recipient="
-							.. tostring(fault.player)
-							.. " reason="
-							.. fault.reason
-					)
-				end,
-			}, {
-				maxBaselineBytes = ActorConstants.MAX_BASELINE_BYTES,
-				maxChunkBytes = ActorConstants.CHUNK_BYTES,
-				maxQueuedBytes = ActorConstants.MAX_QUEUED_BYTES,
-				maxEvents = ActorConstants.MAX_EVENTS,
-				maxHandle = ActorConstants.MAX_COUNTER,
-				maxRevision = ActorConstants.MAX_COUNTER,
-			})
-
-			awareness = created
-			AwarenessLifecycle.Install(created)
-
-			local commandCatalog: Types.PreparedCommandCatalog = preparedCommands
-				or { definitionsById = {}, orderedDefinitions = {} }
-
-			commandRuntime = Commands.new(commandCatalog, protocol.runtime, {
-				Now = os.clock,
-				IsClientReady = ServerNetworking.IsClientReady,
-				ObserveClientReady = ServerNetworking.ObserveClientReady,
-				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
-				awareness = created,
-				ReportFault = function(player: Player, faultReason: string): ()
-					if faultReason == "CommandInternalFault" then
-						-- This path closes the connection; retain its terminal evidence.
-						warn("[Networking] command fault recipient=" .. tostring(player) .. " reason=" .. faultReason)
-					else
-						Metrics.Warn(
-							Diagnostics.FindConnection(player) or Diagnostics.GetServer(),
-							"CommandFault",
-							faultReason
-						)
-					end
-				end,
-				CloseConnection = function(player: Player, _reason: string): ()
-					handshake:Close(player)
-				end,
-			})
-
-			resync = Resync.new({
-				Now = os.clock,
-				IsClientReady = ServerNetworking.IsClientReady,
-				ObserveClientClosed = ServerNetworking.ObserveClientClosed,
-				RequestReplacementBaseline = ServerNetworking.RequestReplacementBaseline,
-			}, {
-				windowSeconds = ActorConstants.RESYNC_WINDOW_SECONDS,
-				maxRequestsPerClient = ActorConstants.MAX_RESYNC_PER_CLIENT,
-				maxRequestsPerActor = ActorConstants.MAX_RESYNC_PER_ACTOR,
-			})
-
-			local budget: Types.AwarenessStepBudget = Scheduling.GetBudget()
-
-			local hasC2S = false
-			local hasS2C = false
-			local hintCatalog = preparedHints
-
-			for _, definition in if hintCatalog ~= nil then hintCatalog.orderedDefinitions else {} do
-				if definition.direction == "ClientToServer" then
-					hasC2S = true
-				else
-					hasS2C = true
-				end
-			end
-
-			if hasC2S and hintCatalog ~= nil then
-				hintRuntime = Hints.new(hintCatalog, protocol.runtime, {
-					Now = os.clock,
-					IsClientReady = ServerNetworking.IsClientReady,
-					ObserveClientReady = ServerNetworking.ObserveClientReady,
-					ObserveClientClosed = ServerNetworking.ObserveClientClosed,
-					ObserveActorRemoved = function(callback): () -> ()
-						return created:ObserveActorRemoved(callback)
-					end,
-					awareness = created,
-				})
-			end
-
-			if hasS2C then
-				local sender = HintSender.new(protocol.runtime, {
-					Now = os.clock,
-					IsClientReady = ServerNetworking.IsClientReady,
-					ObserveClientReady = ServerNetworking.ObserveClientReady,
-					ObserveClientClosed = ServerNetworking.ObserveClientClosed,
-					ObserveActorRemoved = function(callback): () -> ()
-						return created:ObserveActorRemoved(callback)
-					end,
-					SendUnreliable = function(player: Player, payload: buffer): ()
-						if initialized and player.Parent == Players then
-							SendMetrics.Record(Diagnostics.GetConnection(player), false, payload)
-							transports.unreliable:FireClient(player, payload)
-						end
-					end,
-					awareness = created,
-				})
-
-				hintSender = sender :: Types.HintSenderRuntime
-				HintState.Install(hintSender)
-			end
-
-			stopDriver = Scheduling.ObserveStep(function()
-				if initialized and awareness == created then
-					if commandRuntime ~= nil then
-						commandRuntime:Step()
-					end
-
-					-- A handler may tear Networking down during dispatch.
-					if not initialized or awareness ~= created then
-						return
-					end
-
-					created:Step(budget.maxBytes, budget.maxRecords)
-
-					if initialized and awareness == created and hintRuntime ~= nil then
-						hintRuntime:Step()
-					end
-
-					if initialized and awareness == created and hintSender ~= nil then
-						hintSender:Step()
-					end
-				end
-			end)
-		end
-
-		table.insert(
-			listeners,
-			transports.reliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
-				if initialized and player.Parent == Players then
-					if
-						commandRuntime ~= nil
-						and typeof(payload) == "buffer"
-						and buffer.len(payload) > 0
-						and buffer.readu8(payload, 0) == CommandConstants.REQUEST_KIND
-					then
-						commandRuntime:Handle(player, payload, ...)
-					elseif
-						resync ~= nil
-						and typeof(payload) == "buffer"
-						and buffer.len(payload) > 0
-						and buffer.readu8(payload, 0) == ActorConstants.RESYNC_PACKET_KIND
-					then
-						resync:Handle(player, payload, ...)
-					else
-						handshake:Handle(player, payload, ...)
-					end
-				end
-			end)
-		)
-
-		table.insert(
-			listeners,
-			Players.PlayerRemoving:Connect(function(player: Player): ()
-				handshake:Close(player)
-			end)
-		)
-
-		if hintRuntime ~= nil then
-			table.insert(
-				listeners,
-				transports.unreliable.OnServerEvent:Connect(function(player: Player, payload: any, ...: any): ()
-					if initialized and player.Parent == Players and hintRuntime ~= nil then
-						hintRuntime:Handle(player, payload, ...)
-					end
-				end)
-			)
-		end
-
-		initialized = true
-	end)
+	local completed, failure = pcall(created.Start, created, protocol, preparedCatalog, preparedCommands, preparedHints)
 
 	if not completed then
 		ServerNetworking.Destroy()
@@ -472,27 +56,27 @@ function ServerNetworking.Publish(protocol: SharedNetworkingTypes.PreparedProtoc
 end
 
 function ServerNetworking.IsClientReady(player: Player): boolean
-	return runtime ~= nil and (runtime :: Types.ServerHandshake):IsClientReady(player)
+	return installation ~= nil and installation:IsClientReady(player)
 end
 
 function ServerNetworking.ObserveClientReady(callback: (Player) -> ()): () -> ()
-	assert(runtime ~= nil, "NetworkingNotInitialized")
+	assert(installation ~= nil, "NetworkingNotInitialized")
 
-	return (runtime :: Types.ServerHandshake):ObserveClientReady(callback)
+	return installation:ObserveClientReady(callback)
 end
 
 function ServerNetworking.ObserveClientClosed(callback: (Player) -> ()): () -> ()
-	assert(runtime ~= nil, "NetworkingNotInitialized")
+	assert(installation ~= nil, "NetworkingNotInitialized")
 
-	return (runtime :: Types.ServerHandshake):ObserveClientClosed(callback)
+	return installation:ObserveClientClosed(callback)
 end
 
 function ServerNetworking.SendReliable(player: Player, payload: buffer): (boolean, string?)
-	if runtime == nil then
+	if installation == nil then
 		return false, "ClientNotReady"
 	end
 
-	return (runtime :: Types.ServerHandshake):Send(player, payload)
+	return installation:SendReliable(player, payload)
 end
 
 function ServerNetworking.RequestReplacementBaseline(
@@ -500,90 +84,29 @@ function ServerNetworking.RequestReplacementBaseline(
 	handle: number,
 	reason: string?
 ): (boolean, string?)
-	if not initialized or awareness == nil then
+	if installation == nil then
 		return false, "ClientNotReady"
 	end
 
-	return (awareness :: Types.ActorAwarenessRuntime):RequestReplacementBaseline(player, handle, reason)
+	return installation:RequestReplacementBaseline(player, handle, reason)
 end
 
 function ServerNetworking.Destroy(): ()
-	initialized = false
-	HintState.Install(nil)
-
-	if hintSender ~= nil then
-		hintSender:Destroy()
-		hintSender = nil
+	if installation ~= nil then
+		installation:Destroy()
+		installation = nil
 	end
 
-	if hintRuntime ~= nil then
-		hintRuntime:Destroy()
-		hintRuntime = nil
-	end
-
-	if commandRuntime ~= nil then
-		commandRuntime:Destroy()
-		commandRuntime = nil
-	end
-
-	if resync ~= nil then
-		resync:Destroy()
-		resync = nil
-	end
-
-	AwarenessLifecycle.Install(nil)
-
-	if stopDriver ~= nil then
-		stopDriver()
-		stopDriver = nil
-	end
-
-	if awareness ~= nil then
-		awareness:Destroy()
-		awareness = nil
-	end
-
-	if association ~= nil then
-		association.Destroy()
-		association = nil
-	end
-
-	PublicationLifecycle.Install(nil)
-
-	if publication ~= nil then
-		publication:Destroy()
-		publication = nil
-	end
-
-	preparedCatalog = nil
-	preparedCommands = nil
-	preparedHints = nil
-
-	for _, listener: RBXScriptConnection in listeners do
-		listener:Disconnect()
-	end
-
-	table.clear(listeners)
-
-	if runtime ~= nil then
-		(runtime :: Types.ServerHandshake):Destroy()
-		runtime = nil
-	end
-
-	if owned ~= nil then
-		(owned :: SharedNetworkingTypes.OwnedTransport).Destroy()
-		owned = nil
-	end
-
+	preparedCatalog, preparedCommands, preparedHints = nil, nil, nil
 	Diagnostics.Stop()
 end
 
 function ServerNetworking._IsInitialized(): boolean
-	return initialized
+	return installation ~= nil and installation.initialized
 end
 
 function ServerNetworking._GetPublicationRuntimeForTests(): Types.PublicationRuntime?
-	return publication
+	return if installation ~= nil then installation.publication else nil
 end
 
 ServerNetworking._ResetForTests = ServerNetworking.Destroy

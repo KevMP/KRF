@@ -188,8 +188,8 @@ it("coalesces Latest before transport, owns the encoded sample and preserves ind
 		{ hintCode = 1, payload = 4 },
 	})
 
-	expect(runtime.pendingCount).toBe(0)
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingCount).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 	expect(fixture.sent).toEqual({})
 end)
 
@@ -206,7 +206,7 @@ it("bounds Pulse history and per-pump work while retaining capacity for coalesce
 	expect(#records()).toBe(1)
 	flush()
 	expect(#records()).toBe(2)
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 end)
 
 it("bounds attempts and bytes before repeated encoding and recovers after the rate window", function()
@@ -247,15 +247,15 @@ it("forgets retired views, drops their unsent data and releases live-key capacit
 	local runtime = ready()
 	local view = TestUtils.baseline(fixture)
 	Hints.Send("Game.Look", view, { value = 1 })
-	expect(runtime.latestCount).toBe(1)
+	expect(runtime.outbox.latestCount).toBe(1)
 	TestUtils.records(fixture, { { kind = "ActorRemove", handle = 7 } })
-	expect(runtime.latestCount).toBe(0)
+	expect(runtime.outbox.latestCount).toBe(0)
 	local accepted, reason = Hints.Send("Game.Look", view, { value = 2 })
 	expect(accepted).toBe(false)
 	expect(reason).toBe("ActorViewUnavailable")
 	flush()
 	expect(sent).toEqual({})
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 end)
 
 it("drops transport failures without retry, resync or command uncertainty and keeps later sends usable", function()
@@ -268,7 +268,7 @@ it("drops transport failures without retry, resync or command uncertainty and ke
 
 	Hints.Send("Game.Pulse", nil, 1)
 	flush()
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 	runtime.dependencies.SendUnreliable = send
 	Hints.Send("Game.Pulse", nil, 2)
 	flush()
@@ -283,8 +283,8 @@ it("cancels pending work and disconnects its pump exactly once on client teardow
 	Client._ResetForTests()
 	flush()
 	expect(sent).toEqual({})
-	expect(runtime.pendingCount).toBe(0)
-	expect(runtime.latestCount).toBe(0)
+	expect(runtime.outbox.pendingCount).toBe(0)
+	expect(runtime.outbox.latestCount).toBe(0)
 	expect(stopCount).toBe(1)
 	local accepted, reason = Hints.Send("Game.Pulse", nil, 2)
 	expect(accepted).toBe(false)
@@ -305,7 +305,7 @@ it("keeps existing Latest data intact when a replacement exceeds byte capacity",
 	accepted, reason = Hints.Send("Game.Pulse", nil, 1)
 	expect(accepted).toBe(false)
 	expect(reason).toBe("HintRateLimited")
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 end)
 
 it("bounds live Latest metadata and releases Actor keys at retirement", function()
@@ -338,11 +338,11 @@ it("limits physical sends and batches without fragmenting large records", functi
 	flush()
 	expect(#sent).toBe(1)
 	expect(buffer.len(sent[1]) <= 900).toBe(true)
-	expect(runtime.pendingCount > 0).toBe(true)
+	expect(runtime.outbox.pendingCount > 0).toBe(true)
 	flush()
 	expect(#sent).toBe(2)
 	flush()
-	expect(runtime.pendingCount).toBe(0)
+	expect(runtime.outbox.pendingCount).toBe(0)
 	expect(#records()).toBe(40)
 end)
 
@@ -367,7 +367,7 @@ it("checks live stream mappings both at admission and before transport", functio
 
 	flush()
 	expect(sent).toEqual({})
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 	runtime.stream.GetByActorId = lookup
 end)
 
@@ -398,24 +398,24 @@ it("drops yielding transport work and holds staged bytes through reentrant teard
 
 	Hints.Send("Game.Pulse", nil, 1)
 	flush()
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 	local during: number? = nil
 	local nested: number? = nil
 
 	runtime.dependencies.SendUnreliable = function()
 		Client._ResetForTests()
-		during = runtime.pendingBytes
+		during = runtime.outbox.pendingBytes
 		nested = runtime:Step()
 	end
 
 	Hints.Send("Game.Sample", nil, 2)
-	local charged = runtime.pendingBytes
+	local charged = runtime.outbox.pendingBytes
 	flush()
 	expect(during).toBe(charged)
 	expect(nested).toBe(0)
-	expect(runtime.pendingBytes).toBe(0)
+	expect(runtime.outbox.pendingBytes).toBe(0)
 	runtime:Destroy()
-	expect(runtime.pendingCount).toBe(0)
+	expect(runtime.outbox.pendingCount).toBe(0)
 	local accepted, reason = runtime:Send("Game.Sample", nil, 3)
 	expect(accepted).toBe(false)
 	expect(reason).toBe("ClientNotReady")
