@@ -12,6 +12,21 @@ local Context = require(script.Parent.utils.HintContext)
 type Packet = { queuedAt: number, cursor: SharedTypes.HintCursor, bytes: number, held: boolean }
 type Latest = { actor: ActorTypes.Actor?, sequence: number }
 
+type Limits = {
+	maxPackets: number,
+	maxBytes: number,
+	maxGlobalPackets: number,
+	maxGlobalBytes: number,
+	maxPendingPackets: number,
+	maxPendingBytes: number,
+	maxGlobalPendingPackets: number,
+	maxGlobalPendingBytes: number,
+	maxRecords: number,
+	maxLatestKeys: number,
+	maxGlobalLatestKeys: number,
+	windowSeconds: number,
+}
+
 type Connection = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
 	player: Player,
@@ -34,7 +49,7 @@ type State = {
 	protocol: SharedTypes.ClientProtocol,
 	codec: SharedTypes.HintCodec,
 	dependencies: Types.ServerHintDependencies,
-	limits: { [string]: number },
+	limits: Limits,
 	connections: { [Player]: Connection },
 	active: Queue.Queue<Connection>,
 	pendingCount: number,
@@ -418,7 +433,7 @@ function ServerHintRuntime.new(
 ): Types.ServerHintRuntime
 	local options: Types.ServerHintLimits = overrides or {}
 
-	local limits = {
+	local limits: Limits = {
 		maxPackets = options.maxPackets or Constants.SERVER_PACKETS,
 		maxBytes = options.maxBytes or Constants.SERVER_BYTES,
 		maxGlobalPackets = options.maxGlobalPackets or Constants.GLOBAL_PACKETS,
@@ -433,7 +448,22 @@ function ServerHintRuntime.new(
 		windowSeconds = options.windowSeconds or Constants.WINDOW_SECONDS,
 	}
 
-	for _, value in limits do
+	for _, value in
+		{
+			limits.maxPackets,
+			limits.maxBytes,
+			limits.maxGlobalPackets,
+			limits.maxGlobalBytes,
+			limits.maxPendingPackets,
+			limits.maxPendingBytes,
+			limits.maxGlobalPendingPackets,
+			limits.maxGlobalPendingBytes,
+			limits.maxRecords,
+			limits.maxLatestKeys,
+			limits.maxGlobalLatestKeys,
+			limits.windowSeconds,
+		}
+	do
 		assert(value > 0 and value < math.huge, "InvalidHintLimits")
 	end
 

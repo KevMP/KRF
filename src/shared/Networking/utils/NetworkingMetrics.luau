@@ -9,7 +9,6 @@ function Metrics.new(
 	warningOptions: Types.DiagnosticWarningOptions?
 ): Types.DiagnosticCollector
 	local warnings = if parent == nil then Warnings.new(warningOptions) else nil
-	local emit = if warningOptions ~= nil and warningOptions.Emit ~= nil then warningOptions.Emit else Warnings.Emit
 	local warningActive = true
 
 	local counters: { [Types.DiagnosticCounter]: number } = {
@@ -143,18 +142,7 @@ function Metrics.new(
 		if parent ~= nil then
 			parent:Warn(category, reason)
 		elseif warnings ~= nil then
-			local allowed, suppressed = warnings.Allow(category)
-
-			if allowed then
-				-- Commit the gate before logging. A broken/yielding internal sink cannot
-				-- interrupt authoritative work or retain a suspended coroutine.
-				local thread = coroutine.create(emit)
-				coroutine.resume(thread, category, reason, suppressed)
-
-				if coroutine.status(thread) ~= "dead" then
-					coroutine.close(thread)
-				end
-			end
+			warnings.Report(category, reason)
 		end
 	end
 

@@ -15,13 +15,16 @@ export type Unit =
 	| "captures"
 	| "priorities"
 
+-- Work is indexed by its closed unit set, never arbitrary configuration keys.
+type Counts = { [Unit]: number }
+
 export type Budget = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
 	connection: SharedTypes.DiagnosticCollector?,
 	total: number,
 	byConnection: { [SharedTypes.DiagnosticCollector]: number },
-	limits: { [string]: number },
-	used: { [string]: number },
+	limits: Counts,
+	used: Counts,
 }
 
 local ReliableWorkBudget = {}
@@ -41,26 +44,32 @@ function ReliableWorkBudget.new(
 	overrides: Types.ReliableWorkLimits?,
 	diagnostics: SharedTypes.DiagnosticCollector?
 ): Budget
-	local limits = {
-		connections = records * Constants.VISITS_PER_RECORD,
-		streams = records * Constants.VISITS_PER_RECORD,
-		checks = records * Constants.VISITS_PER_RECORD,
-		prepares = records * Constants.VISITS_PER_RECORD,
-		measurements = records * Constants.VISITS_PER_RECORD,
-		encodes = records,
-		sends = records,
-		captures = Constants.STEP_CAPTURES,
-		priorities = 1,
+	local limits: Counts = {
+		connections = (overrides and overrides.connections) or records * Constants.VISITS_PER_RECORD,
+		streams = (overrides and overrides.streams) or records * Constants.VISITS_PER_RECORD,
+		checks = (overrides and overrides.checks) or records * Constants.VISITS_PER_RECORD,
+		prepares = (overrides and overrides.prepares) or records * Constants.VISITS_PER_RECORD,
+		measurements = (overrides and overrides.measurements) or records * Constants.VISITS_PER_RECORD,
+		encodes = (overrides and overrides.encodes) or records,
+		sends = (overrides and overrides.sends) or records,
+		captures = (overrides and overrides.captures) or Constants.STEP_CAPTURES,
+		priorities = (overrides and overrides.priorities) or 1,
 	}
 
-	local used: { [string]: number } = {}
+	local used: Counts = {
+		connections = 0,
+		streams = 0,
+		checks = 0,
+		prepares = 0,
+		measurements = 0,
+		encodes = 0,
+		sends = 0,
+		captures = 0,
+		priorities = 0,
+	}
 
-	for key, value in limits do
-		local override = if overrides ~= nil then overrides[key] else nil
-
-		limits[key] = override or value
-		assert(limits[key] >= 0 and limits[key] < math.huge and limits[key] % 1 == 0, "InvalidReliableWorkLimit")
-		used[key] = 0
+	for _, value in limits do
+		assert(value >= 0 and value < math.huge and value % 1 == 0, "InvalidReliableWorkLimit")
 	end
 
 	return { diagnostics = diagnostics, total = 0, byConnection = {}, limits = limits, used = used }

@@ -24,14 +24,10 @@ function ServerHandshake.new(
 	local runtime: Types.ServerHandshake = {} :: Types.ServerHandshake
 
 	local function send(player: Player, payload: buffer): boolean
-		local completed: boolean, reason: any = pcall(dependencies.SendReliable, player, payload)
+		local completed: boolean, reason: unknown = pcall(dependencies.SendReliable, player, payload)
 
 		if not completed then
-			local allowed, suppressed = warnings.Allow("TransportFault")
-
-			if allowed then
-				Warnings.Emit("TransportFault", tostring(reason), suppressed)
-			end
+			warnings.Report("TransportFault", reason)
 		end
 
 		return completed
@@ -48,7 +44,7 @@ function ServerHandshake.new(
 			end
 
 			local thread: thread = coroutine.create(observer.callback)
-			local completed: boolean, reason: any = coroutine.resume(thread, player)
+			local completed: boolean, reason: unknown = coroutine.resume(thread, player)
 
 			if coroutine.status(thread) ~= "dead" then
 				coroutine.close(thread)
@@ -57,11 +53,7 @@ function ServerHandshake.new(
 			end
 
 			if not completed then
-				local allowed, suppressed = warnings.Allow("ObserverFault")
-
-				if allowed then
-					Warnings.Emit("ObserverFault", tostring(reason), suppressed)
-				end
+				warnings.Report("ObserverFault", reason)
 			end
 		end
 	end

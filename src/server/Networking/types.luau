@@ -344,7 +344,17 @@ export type PublicationRecord = {
 
 -- Private retained-work ownership; staging transfers cleanup to the pump epilogue.
 export type PublicationCharge = { release: () -> (), stage: () -> (), resume: () -> () }
-export type ReliableBacklogLimits = { [string]: number }
+
+export type ReliableBacklogLimits = {
+	maxRecords: number?,
+	maxBytes: number?,
+	actorRecords: number?,
+	actorBytes: number?,
+	recipientRecords: number?,
+	recipientBytes: number?,
+	recoveryRecords: number?,
+	recoveryBytes: number?,
+}
 
 export type ReliableBacklog = {
 	read maxStreamRecords: number,
@@ -432,7 +442,17 @@ export type ActorAwarenessDependencies = {
 }
 
 -- Small injected limits exercise boundaries without large allocations. Defaults are private tuning.
-export type ReliableWorkLimits = { [string]: number }
+export type ReliableWorkLimits = {
+	connections: number?,
+	streams: number?,
+	checks: number?,
+	prepares: number?,
+	measurements: number?,
+	encodes: number?,
+	sends: number?,
+	captures: number?,
+	priorities: number?,
+}
 
 export type ActorAwarenessOptions = {
 	backlogLimits: ReliableBacklogLimits?,

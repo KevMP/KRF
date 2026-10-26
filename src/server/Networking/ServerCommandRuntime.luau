@@ -10,6 +10,7 @@ local Timer = require(script.Parent.Parent.Parent.shared.Networking.utils.Comman
 local Context = require(script.Parent.utils.CommandContext)
 local CommandDiagnostics = require(script.Parent.utils.CommandDiagnostics)
 local Admission = require(script.Parent.utils.CommandAdmission)
+local Queue = require(script.Parent.utils.ActiveQueue)
 
 type History = { outcome: Types.CommandOutcome, bytes: number, expires: number }
 type Queued = { queuedAt: number, request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
@@ -17,8 +18,7 @@ type Queued = { queuedAt: number, request: SharedTypes.CommandRequest, bytes: nu
 type Connection = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
 	player: Player,
-	next: Connection?,
-	previous: Connection?,
+	node: Queue.Node<Connection>?,
 	lastId: number,
 	window: number,
 	count: number,
@@ -63,8 +63,7 @@ type State = {
 	disconnect: (() -> ())?,
 	disconnectReady: (() -> ())?,
 	admission: Admission.Runtime,
-	active: Connection?,
-	activeCount: number,
+	active: Queue.Queue<Connection>,
 	pumping: boolean,
 	queued: number,
 	queuedBytes: number,
@@ -75,45 +74,21 @@ type Runtime = typeof(setmetatable({} :: State, ServerCommandRuntime))
 -- Only connection eligibility is linked here. Jobs retain exactly one owner:
 -- their existing per-connection FIFO, then the dispatch stack while executing.
 function ServerCommandRuntime._activate(self: Runtime, connection: Connection): ()
-	if connection.next ~= nil then
-		return
+	local node = connection.node
+
+	if node == nil then
+		node = Queue.node(connection)
+		connection.node = node
 	end
 
-	local active = self.active
-
-	if active == nil then
-		connection.next, connection.previous = connection, connection
-		self.active = connection
-	else
-		local tail = active.previous :: Connection
-
-		connection.next, connection.previous = active, tail
-		tail.next, active.previous = connection, connection
-	end
-
-	self.activeCount += 1
+	assert(node ~= nil, "Expected command connection node")
+	Queue.Push(self.active, node)
 end
 
-function ServerCommandRuntime._deactivate(self: Runtime, connection: Connection): ()
-	local following = connection.next
-
-	if following == nil then
-		return
+function ServerCommandRuntime._deactivate(_self: Runtime, connection: Connection): ()
+	if connection.node ~= nil then
+		Queue.Remove(connection.node)
 	end
-
-	if following == connection then
-		self.active = nil
-	else
-		local previous = connection.previous :: Connection
-		previous.next, following.previous = following, previous
-
-		if self.active == connection then
-			self.active = following
-		end
-	end
-
-	connection.next, connection.previous = nil, nil
-	self.activeCount -= 1
 end
 
 local function invoke(callback: (...any) -> ...any, ...: any): (boolean, any, any)
@@ -561,15 +536,18 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 	local dispatched, visits, unproductive = 0, 0, 0
 
 	while
-		self.active ~= nil
+		self.active.count > 0
 		and not self.destroyed
 		and dispatched < self.limits.dispatchRequests
 		and visits < self.limits.dispatchVisits
 	do
-		local connection = self.active :: Connection
+		local connection = Queue.Pop(self.active)
+		assert(connection ~= nil, "Expected active command connection")
 		local player = connection.player
 
-		self.active = connection.next
+		-- Rotate membership before callbacks, preserving the admitted FIFO owner
+		-- and the next connection's turn through reentrant enqueue/close.
+		self:_activate(connection)
 		visits += 1
 		Metrics.Count(connection.diagnostics, "commandConnectionVisits", 1)
 		local running: Queued? = nil
@@ -653,7 +631,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 			self:_deactivate(connection)
 		end
 
-		if unproductive >= self.activeCount then
+		if unproductive >= self.active.count then
 			break
 		end
 	end
@@ -732,7 +710,7 @@ function ServerCommandRuntime.new(
 		},
 		connections = {},
 		destroyed = false,
-		activeCount = 0,
+		active = Queue.new(),
 		pumping = false,
 		queued = 0,
 		queuedBytes = 0,

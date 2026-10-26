@@ -27,11 +27,22 @@ type Charge = {
 
 type Payload = { references: number, bytes: number, onUnused: (() -> ())? }
 
+type Bounds = {
+	maxRecords: number,
+	maxBytes: number,
+	actorRecords: number,
+	actorBytes: number,
+	recipientRecords: number,
+	recipientBytes: number,
+	recoveryRecords: number,
+	recoveryBytes: number,
+}
+
 type State = {
 	diagnostics: SharedTypes.DiagnosticCollector?,
 	maxStreamRecords: number,
 	maxStreamBytes: number,
-	limits: { [string]: number },
+	limits: Bounds,
 	baselineBytes: number,
 	records: number,
 	bytes: number,
@@ -87,20 +98,40 @@ local function release(self: Runtime, charge: Charge): ()
 end
 
 function ReliableBacklog.new(overrides: Types.ReliableBacklogLimits?, baselineBytes: number): Types.ReliableBacklog
-	local limits = {
-		maxRecords = Constants.BACKLOG_RECORDS,
-		maxBytes = Constants.BACKLOG_BYTES,
-		actorRecords = Constants.BACKLOG_ACTOR_RECORDS,
-		actorBytes = Constants.BACKLOG_ACTOR_BYTES,
-		recipientRecords = Constants.BACKLOG_RECIPIENT_RECORDS,
-		recipientBytes = Constants.BACKLOG_RECIPIENT_BYTES,
-		recoveryRecords = Constants.BACKLOG_RECOVERY_RECORDS,
-		recoveryBytes = Constants.BACKLOG_RECOVERY_BYTES,
+	local options: Types.ReliableBacklogLimits = overrides or {}
+
+	local limits: Bounds = {
+		maxRecords = if options.maxRecords ~= nil then options.maxRecords else Constants.BACKLOG_RECORDS,
+		maxBytes = if options.maxBytes ~= nil then options.maxBytes else Constants.BACKLOG_BYTES,
+		actorRecords = if options.actorRecords ~= nil then options.actorRecords else Constants.BACKLOG_ACTOR_RECORDS,
+		actorBytes = if options.actorBytes ~= nil then options.actorBytes else Constants.BACKLOG_ACTOR_BYTES,
+		recipientRecords = if options.recipientRecords ~= nil
+			then options.recipientRecords
+			else Constants.BACKLOG_RECIPIENT_RECORDS,
+		recipientBytes = if options.recipientBytes ~= nil
+			then options.recipientBytes
+			else Constants.BACKLOG_RECIPIENT_BYTES,
+		recoveryRecords = if options.recoveryRecords ~= nil
+			then options.recoveryRecords
+			else Constants.BACKLOG_RECOVERY_RECORDS,
+		recoveryBytes = if options.recoveryBytes ~= nil
+			then options.recoveryBytes
+			else Constants.BACKLOG_RECOVERY_BYTES,
 	}
 
-	for key, value in limits do
-		limits[key] = if overrides ~= nil and overrides[key] ~= nil then overrides[key] else value
-		assert(limits[key] >= 0 and limits[key] < math.huge and limits[key] % 1 == 0, "InvalidReliableBacklogLimit")
+	for _, value in
+		{
+			limits.maxRecords,
+			limits.maxBytes,
+			limits.actorRecords,
+			limits.actorBytes,
+			limits.recipientRecords,
+			limits.recipientBytes,
+			limits.recoveryRecords,
+			limits.recoveryBytes,
+		}
+	do
+		assert(value >= 0 and value < math.huge and value % 1 == 0, "InvalidReliableBacklogLimit")
 	end
 
 	local state: State = {

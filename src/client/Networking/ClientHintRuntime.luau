@@ -11,6 +11,18 @@ local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState
 type Latest = { sequence: number, actor: PublicTypes.ActorView?, job: Job? }
 type Job = { queuedAt: number, bytes: buffer, actor: PublicTypes.ActorView?, handle: number?, latest: Latest? }
 
+type Limits = {
+	maxPending: number,
+	maxPendingBytes: number,
+	maxLatestKeys: number,
+	maxAttempts: number,
+	maxBytes: number,
+	windowSeconds: number,
+	maxRecords: number,
+	maxSends: number,
+	maxSequence: number,
+}
+
 local ClientHintRuntime = {}
 ClientHintRuntime.__index = ClientHintRuntime
 
@@ -20,7 +32,7 @@ type State = {
 	codec: SharedTypes.HintCodec,
 	stream: Types.ActorStreamRuntime,
 	dependencies: Types.ClientHintDependencies,
-	limits: { [string]: number },
+	limits: Limits,
 	queue: { Job },
 	latest: { [string]: Latest },
 	pendingCount: number,
@@ -373,7 +385,7 @@ function ClientHintRuntime.new(
 ): Types.ClientHintRuntime
 	local options: Types.ClientHintLimits = overrides or {}
 
-	local limits = {
+	local limits: Limits = {
 		maxPending = options.maxPending or Constants.PENDING_RECORDS,
 		maxPendingBytes = options.maxPendingBytes or Constants.PENDING_BYTES,
 		maxLatestKeys = options.maxLatestKeys or Constants.LATEST_KEYS,
@@ -385,7 +397,19 @@ function ClientHintRuntime.new(
 		maxSequence = options.maxSequence or Constants.MAX_COUNTER,
 	}
 
-	for _, value in limits do
+	for _, value in
+		{
+			limits.maxPending,
+			limits.maxPendingBytes,
+			limits.maxLatestKeys,
+			limits.maxAttempts,
+			limits.maxBytes,
+			limits.windowSeconds,
+			limits.maxRecords,
+			limits.maxSends,
+			limits.maxSequence,
+		}
+	do
 		assert(value > 0 and value < math.huge, "InvalidHintLimits")
 	end
 
