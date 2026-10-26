@@ -20,9 +20,11 @@ local HintConstants = require(KRF.shared.Networking.utils.HintConstants)
 local Streams = require(script.Parent.Parent.Parent.client.Utils.ActorStreamTestUtils)
 local Views = require(KRF.client.Networking.ActorViewRuntime)
 local ClientTypes = require(KRF.client.Networking.types)
+local Awareness = require(script.Parent.Parent.Utils.Networking.AwarenessTestUtils)
 local warningEnvironment = getfenv(Warnings.Emit)
 local command: Commands.Fixture?
 local resync: Resync.Fixture?
+local awareness: Awareness.Fixture?
 
 afterEach(function()
 	setfenv(Warnings.Emit, warningEnvironment)
@@ -33,6 +35,12 @@ afterEach(function()
 	end
 
 	command, resync = nil, nil
+
+	if awareness ~= nil then
+		Awareness.destroy(awareness)
+		awareness = nil
+	end
+
 	State.Stop()
 	ClientState.Stop(nil)
 end)
@@ -366,4 +374,36 @@ it("bounds resync abuse independently of refusals and preserves its rate-window 
 	expect(snapshot.counters.resyncRequests).toBe(11)
 	expect(snapshot.counters.resyncRefused).toBe(11)
 	expect(snapshot.counters.resyncRateLimited).toBe(6)
+end)
+
+it("releases recovery ownership when a warning sink closes the connection during capture refusal", function()
+	local fixture = Awareness.new()
+	awareness = fixture
+	fixture.options.backlogLimits = { maxBytes = 1 }
+
+	local player = Awareness.player(fixture)
+	Awareness.actor(fixture, nil)
+	Awareness.start(fixture)
+	local logs = 0
+
+	State.Start({
+		Emit = function(category: SharedTypes.DiagnosticWarning)
+			if category == "BaselineRecovery" then
+				logs += 1
+				Awareness.close(fixture, player)
+				State.Close(player)
+			end
+		end,
+	})
+
+	Awareness.ready(fixture, player)
+	local owner = assert(State.GetServer(), "Expected server diagnostics")
+	local snapshot = owner:Snapshot()
+	expect(logs).toBe(1)
+	expect(snapshot.counters.recoveryBackoffs).toBe(1)
+	expect(snapshot.counters.recoveryAbandoned).toBe(1)
+	expect(snapshot.gauges.recoveryStreams.current).toBe(0)
+	expect(snapshot.gauges.baselineGenerations.current).toBe(0)
+	expect(snapshot.gauges.reliableRecords.current).toBe(0)
+	expect(State.FindConnection(player)).toBeNil()
 end)

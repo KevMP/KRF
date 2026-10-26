@@ -99,7 +99,6 @@ end
 function ActorRecipientStream._backoff(self: Stream): ()
 	if self.diagnostics ~= nil and self.dependencies.Current() then
 		Metrics.Count(self.diagnostics, "recoveryBackoffs", 1)
-		Metrics.Warn(self.diagnostics, "BaselineRecovery", "BaselineRetryBackoff")
 
 		if self.retryDelay == 0 then
 			Metrics.Adjust(self.diagnostics, "recoveryStreams", 1)
@@ -112,6 +111,8 @@ function ActorRecipientStream._backoff(self: Stream): ()
 	)
 
 	self.retryAt = self.dependencies.GetEpoch() + self.retryDelay
+	-- Install ownership before a log sink can close this connection reentrantly.
+	Metrics.Warn(self.diagnostics, "BaselineRecovery", "BaselineRetryBackoff")
 end
 
 function ActorRecipientStream._observeBaselineEnd(self: Stream, completed: boolean?): ()
