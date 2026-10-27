@@ -61,6 +61,10 @@ function ActorStreamOrder.Update(heap: { Stream }, stream: Stream): ()
 		return
 	end
 
+	if index ~= 0 and stream.pendingOrder == order then
+		return
+	end
+
 	stream.pendingOrder = order
 
 	if index == 0 then

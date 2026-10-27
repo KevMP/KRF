@@ -20,9 +20,19 @@ npm run bench:networking:compare -- --full
 npm run bench:networking:compare -- --workload audit --reference HEAD~1 --repetitions 2
 npm run bench:networking:compare -- --workload publication --reference HEAD~1 --records 128 --bytes 65536
 npm run bench:networking:compare -- --workload publication --focus scheduler --reference HEAD~1 --records 128 --bytes 32768 --repetitions 2
+# Only 128 Actors x 32 recipients: initial multipart join, then state-heavy publication.
+npm run bench:networking:compare -- --workload audit --focus join-state --records 64 --bytes 32768 --repetitions 2
 ```
 
 The default is the commands workload, CPU profile, one reference/candidate pair.
+
+`--workload audit --focus join-state` selects the existing single 128-Actor,
+32-recipient State scene without diagnostic wrappers or collector experiments.
+Each trial records initial-join pumps/sends/encoded bytes and raw pump timings,
+then the normal 120-pump state workload. The discarded 16-Actor warmup is retained.
+Join timing covers scheduler pumps, not synchronous Ready or end-to-end join latency.
+Two repetitions alternate reference/candidate/candidate/reference. No native jobs run.
+
 `--full` explicitly selects CPU plus 2/4/6/8 native clients and two repetitions.
 Explicit options override those defaults. `--workload` accepts `commands` or
 `publication`, or `audit` (CPU only); `--profile` accepts `cpu`, `native` or `both`; `--clients` is a

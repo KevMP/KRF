@@ -20,7 +20,7 @@ end
 -- Reference-only opportunity membership. Payloads remain in each stream's N3
 -- queue; capture itself still runs through Prepare under the same causal gate.
 function CaptureQueue.Index(self: Runtime, connection: Connection, stream: Stream): ()
-	if stream:NeedsCapture() and stream:CanCapture() then
+	if stream:NeedsCaptureClaim() and stream:CanCapture() then
 		local node: ActiveQueue.Node<Stream>? = stream.captureNode
 
 		if node == nil then
@@ -53,6 +53,7 @@ end
 function CaptureQueue.Claim(self: Runtime, connection: Connection, stream: Stream, work: WorkBudget.Budget): boolean
 	if
 		self.current(connection) == false
+		or not stream:NeedsCaptureClaim()
 		or not stream:CanCapture()
 		or self.queue.first == nil
 		or self.queue.first.value ~= connection
@@ -74,7 +75,13 @@ function CaptureQueue.Claim(self: Runtime, connection: Connection, stream: Strea
 end
 
 function CaptureQueue.Yield(self: Runtime, connection: Connection, stream: Stream): ()
-	if not self.current(connection) or not stream:NeedsCapture() then
+	if not self.current(connection) then
+		return
+	end
+
+	if not stream:NeedsCaptureClaim() then
+		self:Index(connection, stream)
+
 		return
 	end
 
@@ -108,6 +115,16 @@ function CaptureQueue.Prioritize(
 	local first = connection.captures.first
 	assert(first ~= nil, "Expected indexed capture opportunity")
 	local stream = first.value
+
+	-- Shared materialization can invalidate another stream's opportunity without
+	-- visiting it. Revalidate one indexed head under the existing priority budget;
+	-- never scan recipients or let a stale causal-blocked head pin capture service.
+	if not stream:NeedsCaptureClaim() then
+		self:Index(connection, stream)
+
+		return
+	end
+
 	local boundary = connection.egress.queue[1]
 
 	if boundary ~= nil and not stream:HasWorkThrough(boundary.order) then

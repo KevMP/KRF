@@ -245,7 +245,7 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 			if internal.backlog ~= nil then internal.backlog.records else nil
 	end
 
-	local function drain(observe: ((any) -> ())?): number
+	local function drain(observe: ((any) -> ())?, observePump: ((number) -> ())?): number
 		local commandState: any = commands
 
 		for pump = 1, 10000 do
@@ -260,7 +260,12 @@ local function fixture(actorCount: number, recipientCount: number, maxEvents: nu
 			end
 
 			now += 1 / 60
+			local started = if observePump ~= nil then os.clock() else 0
 			runtime:Step(Scenario.budget())
+
+			if observePump ~= nil then
+				observePump((os.clock() - started) * 1e6)
+			end
 
 			if observe ~= nil then
 				for _, delivery in deliveries do
@@ -333,6 +338,7 @@ local function scene(
 	local world = fixture(actorCount, recipients, if mode == "Recovery" then 8 else nil)
 	local joinSends, joinBytes, joinEnds = 0, 0, 0
 	local joinStarted = os.clock()
+	local joinPumpUs: { number } = {}
 
 	local joinPumps = world.drain(function(delivery: any): ()
 		joinSends += 1
@@ -341,6 +347,8 @@ local function scene(
 		for _, record in assert(world.wire.Decode(delivery.payload)) do
 			joinEnds += if record.kind == "BaselineEnd" then 1 else 0
 		end
+	end, function(elapsed: number): ()
+		table.insert(joinPumpUs, elapsed)
 	end)
 
 	local joinDrainUs = (os.clock() - joinStarted) * 1e6
@@ -574,6 +582,8 @@ local function scene(
 		peakLedgerBytes = peakLedgerBytes,
 		peakLedgerRecords = peakLedgerRecords,
 		initialJoin = {
+			rawPumpUs = joinPumpUs,
+			pumpUs = Scenario.summarize(joinPumpUs),
 			pumps = joinPumps,
 			drainUs = joinDrainUs,
 			sends = joinSends,
@@ -841,6 +851,12 @@ local success, failure = pcall(function()
 	-- Warm the VM/schema/compiler and discard the pilot.
 	scene(16, 1, "State", false)
 
+	if Scenario.focus() == "join-state" then
+		table.insert(cases, scene(128, 32, "State", false))
+
+		return
+	end
+
 	for _, diagnostic in { false, true } do
 		if diagnostic then
 			install(Streams, "Prepare", "prepares")
@@ -906,6 +922,7 @@ local encoded = HttpService:JSONEncode({
 	success = success,
 	reason = if success then nil else tostring(failure),
 	workloadVersion = 2,
+	benchmarkFocus = Scenario.focus(),
 	pattern = "fixed ascending actors; 120 pumps",
 	cases = cases,
 })

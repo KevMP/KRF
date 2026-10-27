@@ -5,12 +5,13 @@ param(
     [string]$ImplementationRevision,
     [ValidateRange(1, 4096)][int]$Records = 64,
     [ValidateRange(1024, 4194304)][int]$Bytes = 32768,
-    [ValidateSet('full', 'scheduler')][string]$Focus = 'full',
+    [ValidateSet('full', 'scheduler', 'join-state')][string]$Focus = 'full',
     [switch]$PrepareOnly,
     [string]$PreparedRunDirectory
 )
 $ErrorActionPreference = 'Stop'
-if ($Focus -ne 'full' -and $Workload -ne 'Networking') { throw 'Scheduler focus requires the Networking workload.' }
+if ($Focus -eq 'scheduler' -and $Workload -ne 'Networking') { throw 'Scheduler focus requires the Networking workload.' }
+if ($Focus -eq 'join-state' -and $Workload -ne 'Audit') { throw 'Join-state focus requires the Audit workload.' }
 $repository = Split-Path -Parent $PSScriptRoot
 if ($PreparedRunDirectory) {
     $runDirectory = (Resolve-Path -LiteralPath $PreparedRunDirectory).Path

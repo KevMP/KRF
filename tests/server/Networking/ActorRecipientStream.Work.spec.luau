@@ -88,3 +88,20 @@ it("halts exhausted live revisions before draining authoritative event history",
 	expect(#TestUtils.kind(fixture, player, "Commit")).toBe(0)
 	expect(#TestUtils.kind(fixture, player, "ActorHalt")).toBe(1)
 end)
+
+it("checks and prepares queued work without allocating a stream status snapshot", function()
+	TestUtils.drain(fixture)
+
+	stream.scheduler.GetStreamStatus = function(): Types.PublicationStreamStatus
+		error("Unexpected status snapshot in stream hot path")
+	end
+
+	expect(stream:HasWork()).toBe(false)
+	expect(stream:Prepare(512, true, 512, nil, Budget.new(4))).toBeNil()
+	fixture.publicDomain.value = 11
+	fixture.publicDomain.callbacks[actor]({ { id = "Changed", payload = 11 } })
+	expect(stream:HasWork()).toBe(true)
+	TestUtils.drain(fixture)
+	expect(#TestUtils.kind(fixture, player, "Commit")).toBe(1)
+	expect(stream:HasWork()).toBe(false)
+end)

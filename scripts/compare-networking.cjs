@@ -36,7 +36,9 @@ function options(args) {
 	if (!result.clients.length || new Set(result.clients).size !== result.clients.length || result.clients.some(n => ![2, 4, 6, 8].includes(n))) throw Error("--clients must contain unique counts from 2,4,6,8");
 	if (result.workload === "audit" && result.profile !== "cpu") throw Error("audit supports --profile cpu only");
 	if (![result.records, result.candidateRecords].every(value => Number.isInteger(value) && value >= 1 && value <= 4096) || !Number.isInteger(result.bytes) || result.bytes < 1024 || result.bytes > 4194304) throw Error("Invalid --records/--candidate-records (1..4096) or --bytes (1024..4194304)");
-	if (!["full", "scheduler"].includes(result.focus) || result.focus !== "full" && (result.workload !== "publication" || result.profile !== "cpu")) throw Error("--focus scheduler requires --workload publication --profile cpu");
+	if (!["full", "scheduler", "join-state"].includes(result.focus) ||
+		result.focus === "scheduler" && (result.workload !== "publication" || result.profile !== "cpu") ||
+		result.focus === "join-state" && (result.workload !== "audit" || result.profile !== "cpu")) throw Error("--focus scheduler requires CPU publication; join-state requires CPU audit");
 	return result;
 }
 
@@ -109,6 +111,10 @@ function verify(directory, manifest, partial = false) {
 		if (focus === "scheduler" && (result.benchmarkFocus !== focus || result.cases?.length !== 12 ||
 			new Set(result.cases.map(entry => [entry.mode, entry.recipients, entry.syntheticActionsLobbyWide].join("/"))).size !== 12 ||
 			result.cases.some(entry => entry.actors !== 90 || ![2, 30].includes(entry.recipients) || ![0, 40].includes(entry.syntheticActionsLobbyWide) || entry.diagnostic !== false || !["Ordinary", "Heavy", "Burst"].includes(entry.mode)))) throw Error(`Incomplete scheduler focus: ${trial.id}`);
+		if (focus === "join-state" && (result.benchmarkFocus !== focus || result.cases?.length !== 1 ||
+			result.cases.some(entry => entry.kind !== "Scene" || entry.actors !== 128 || entry.recipients !== 32 ||
+				entry.mode !== "State" || entry.diagnostic !== false || entry.initialJoin?.completed !== 4096 ||
+				!Array.isArray(entry.initialJoin.rawPumpUs) || entry.initialJoin.rawPumpUs.length !== entry.initialJoin.pumps))) throw Error(`Incomplete join-state focus: ${trial.id}`);
 		const source = canonical(environment.sourceSHA256);
 		if (sources.has(trial.arm) && sources.get(trial.arm) !== source) throw Error(`Mixed ${trial.arm} source: ${trial.id}`);
 		sources.set(trial.arm, source);
@@ -246,6 +252,13 @@ function report(manifest, cases) {
 	lines.push("", "## Observed increases and comparison limits", "", "Reduced execution from shedding is not throughput improvement. More completed work is also not an equal-work cost comparison. Region timers include probes, engine scheduling and GC; OS counters include engine/host overhead and have coarse sampling. Publication admission is not applicable. Every higher observed cost/p95 below is retained even when correctness passes; short/noisy trials do not establish causation.", "");
 	for (const item of regressions) lines.push(`- ${item.case}: ${item.metric} ${fmt(item.reference)} → ${fmt(item.candidate)} (${fmt(item.percent)}%); ${item.equalCommits ? "equal commit counts" : item.equalExecutions ? "equal executed counts" : "executed work differs"}.`);
 	if (!regressions.length) lines.push("No higher cost/p95 observations in these trials; this is not proof of no regression.");
+	if (cases.some(entry => entry.before.perRun.some(run => run.initialJoin?.rawPumpUs))) {
+		lines.push("", "## Initial multipart join", "", "Scheduler pump times exclude synchronous Ready and verification/yields. Each row is one trial; raw samples remain in comparison.json.", "", "| Case | Arm / trial | Pumps | Physical sends | KRF encoded bytes | Pump p50 / p95 / p99 µs |", "| --- | --- | --- | --- | --- | --- |");
+		for (const entry of cases) for (const arm of ["before", "after"]) for (const run of entry[arm].perRun) {
+			const join = run.initialJoin;
+			if (join?.rawPumpUs) lines.push(`| ${entry.key} | ${arm} / ${run.file} | ${join.pumps} | ${join.sends} | ${join.bytes} | ${quantiles(distribution(join.rawPumpUs))} |`);
+		}
+	}
 	if (manifest.config.workload === "commands") {
 		lines.push("", "## Per-client admission and execution", "", "One row per case/arm/trial/client; plan indices, rather than unstable Player IDs, identify workload roles. Per-window wire-offered/admitted counts are retained in comparison.json.", "", "| Case | Arm / trial | Client | Offered / wire / admitted / executed | First-burst admitted | Result p50 / p95 / p99 ms |", "| --- | --- | --- | --- | --- | --- |");
 		for (const entry of cases) for (const arm of ["before", "after"]) for (const run of entry[arm].perRun) for (const client of run.clients || run.perClient || []) lines.push(`| ${entry.key} | ${arm} / ${run.file} | ${client.planIndex ?? client.client} | ${client.offered ?? "—"}/${client.wireOffered ?? client.offered ?? "—"}/${client.admitted ?? "—"}/${client.executed ?? client.results} | ${client.firstTickAdmitted ?? "—"} | ${client.resultMs ? quantiles(client.resultMs) : "—"} |`);
@@ -269,7 +282,7 @@ function summarize(directory, manifest) {
 
 async function main(args) {
 	const config = options(args);
-	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication|audit] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--records 64] [--candidate-records <count>] [--bytes 32768] [--focus full|scheduler] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
+	if (config.help) { console.log("npm run bench:networking:compare -- [--workload commands|publication|audit] [--profile cpu|native|both] [--reference <commit>] [--clients 2,4,6,8] [--repetitions 1..10] [--studio <exe>] [--records 64] [--candidate-records <count>] [--bytes 32768] [--focus full|scheduler|join-state] [--full] [--analyze <directory>]\nDefault: commands, CPU, N9, one pair. --full: both profiles, 2/4/6/8 native clients, two repetitions."); return; }
 	if (config.analyze) {
 		const directory = path.resolve(config.analyze), manifest = read(path.join(directory, "manifest.json"));
 		try {

@@ -82,8 +82,12 @@ function Connection.new(player: Player, now: (() -> number)?, onExpired: () -> (
 end
 
 function Connection.UpdateOrder(connection: Connection, stream: Stream): ()
+	local previous = #connection.orders
 	StreamOrder.Update(connection.orders, stream)
-	Metrics.Set(connection.diagnostics, "reliableActiveStreams", #connection.orders)
+
+	if #connection.orders ~= previous then
+		Metrics.Set(connection.diagnostics, "reliableActiveStreams", #connection.orders)
+	end
 end
 
 -- Caller removes the session identity first. Staged leases stay with the pump;

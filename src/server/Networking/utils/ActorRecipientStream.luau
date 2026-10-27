@@ -96,6 +96,11 @@ function ActorRecipientStream.NeedsCapture(self: Stream): boolean
 	return self.recapture or (self.baseline ~= nil and self.baseline.body == nil)
 end
 
+function ActorRecipientStream.NeedsCaptureClaim(self: Stream): boolean
+	return self.recapture
+		or (self.baseline ~= nil and self.baseline.body == nil and self.baseline.projection.body == nil)
+end
+
 function ActorRecipientStream._backoff(self: Stream): ()
 	if self.diagnostics ~= nil and self.dependencies.Current() then
 		Metrics.Count(self.diagnostics, "recoveryBackoffs", 1)
@@ -298,7 +303,9 @@ function ActorRecipientStream._prepareBaseline(self: Stream, work: WorkBudget.Bu
 
 	self.dependencies.Activate(self)
 
-	if not self.dependencies.ClaimCapture(self, work) then
+	-- Another stream can materialize this exact owned anchor. Reusing its body
+	-- still consumes normal preparation/delivery work, but no expensive capture.
+	if self:NeedsCaptureClaim() and not self.dependencies.ClaimCapture(self, work) then
 		return false
 	end
 
@@ -491,7 +498,9 @@ function ActorRecipientStream.Prepare(
 			nil
 	end
 
-	if self.scheduler:GetStreamStatus(self.key).pendingRecords == 0 then
+	local nextBytes: number? = self.scheduler:GetNextRecordBytes(self.key)
+
+	if nextBytes == nil then
 		return nil, nil
 	end
 
@@ -501,9 +510,7 @@ function ActorRecipientStream.Prepare(
 		return nil, nil
 	end
 
-	local nextBytes: number? = self.scheduler:GetNextRecordBytes(self.key)
-
-	if nextBytes ~= nil and nextBytes > deliveryBudget then
+	if nextBytes > deliveryBudget then
 		-- Give a transiently small pass a chance to recover its budget. Repeated
 		-- insufficient full passes recover truth; a small remaining budget only waits.
 		if self.blockedBudget == nil or deliveryBudget > self.blockedBudget then
@@ -672,7 +679,7 @@ function ActorRecipientStream.HasWork(self: Stream): boolean
 		or self.recapture
 		or self.removed
 		or self.haltPending
-		or self.scheduler:GetStreamStatus(self.key).pendingRecords > 0
+		or self.scheduler:GetNextRecordBytes(self.key) ~= nil
 end
 
 function ActorRecipientStream.GetNextOrder(self: Stream): number?

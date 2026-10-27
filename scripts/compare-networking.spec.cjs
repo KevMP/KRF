@@ -108,6 +108,30 @@ test("scheduler focus selects an explicit CPU publication subset and rejects oth
 	for (const args of [["--focus", "unknown"], ["--focus", "scheduler"], ["--focus", "scheduler", "--workload", "publication", "--profile", "native"]]) assert.throws(() => options(args));
 });
 
+test("join-state focus accepts only the exact audit scene and completed join samples", t => {
+	const config = options(["--workload", "audit", "--focus", "join-state", "--repetitions", "2"]);
+	assert.equal(plan(config).length, 4);
+	for (const args of [["--focus", "join-state"], ["--workload", "publication", "--focus", "join-state"]]) assert.throws(() => options(args));
+	const { directory, manifest } = fixture(t, config);
+	const rewrite = change => {
+		for (const trial of manifest.trials) {
+			const file = contained(directory, trial.result), result = JSON.parse(fs.readFileSync(file, "utf8"));
+			result.benchmarkFocus = result.environment.benchmarkFocus = "join-state";
+			result.cases = [{ kind: "Scene", actors: 128, recipients: 32, mode: "State", diagnostic: false,
+				initialJoin: { completed: 4096, pumps: 2, rawPumpUs: [1, 2] } }];
+			change(result.cases[0]);
+			fs.writeFileSync(file, JSON.stringify(result)); trial.resultSHA256 = hash(file);
+		}
+	};
+	rewrite(() => {});
+	verify(directory, manifest);
+	for (const change of [entry => { entry.actors = 64; }, entry => { entry.initialJoin.completed--; },
+		entry => { entry.initialJoin.rawPumpUs.pop(); }, entry => { entry.diagnostic = true; }]) {
+		rewrite(change);
+		assert.throws(() => verify(directory, manifest), /Incomplete join-state focus/);
+	}
+});
+
 test("scheduler focus rejects missing or incompatible selected cases", t => {
 	const { directory, manifest } = fixture(t, options(["--workload", "publication", "--focus", "scheduler"]));
 	for (const trial of manifest.trials) {
