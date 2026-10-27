@@ -39,3 +39,5 @@ Latest suppresses duplicate and older sequences independently per definition and
 
 - [Hints](/Networking/hints)
 - [HintAuthorization](./hint-authorization)
+- [HintRegistry and definitions](./hint-registry#hint-definition)
+- [Scheduling and diagnostic semantics](/Networking/maintaining-networking)

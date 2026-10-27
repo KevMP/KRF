@@ -445,5 +445,31 @@ status and environment before launch. Execution verifies the frozen place/worklo
 hashes. Use a separate preparation per trial and the same Studio executable.
 Candidate comparisons must use identical workload versions and harness hashes.
 Raw observations stay under ignored `build/`; evidence and checkpoint decisions
-belong in the active PR description. Hint and combined-pressure measurements must
-be added once those primitives exist; they cannot be inferred from an N9 baseline.
+belong in the active PR description. Hint observations are candidate-only when
+the reference has no Hint runtime. Combined-pressure correctness does not by
+itself measure paired throughput, and missing baseline metrics remain unavailable.
+
+## Memory and acceptance interpretation
+
+The reusable [two-client memory soak](../integration/NetworkingBaseline/README.md)
+keeps one server/client session through warmup, stable churn, periodic replacement,
+quiet drains and final teardown. Use comparable post-warmup quiet checkpoints;
+initial engine loading and active peaks are not memory floors. Do not force GC.
+
+| Measurement | What it describes |
+| --- | --- |
+| `gcinfo()` KiB | Luau heap observation, affected by GC and fixture/report retention |
+| OS private memory / working set | Whole Roblox process memory / resident pages, including engine costs; working sets can share pages |
+| Diagnostic retained bytes | Bounded KRF ledger weight, including canonical anchors; not actual allocation bytes |
+| KRF encoded bytes | Serialized payload submitted to transport; not physical Roblox bandwidth or retained memory |
+
+Delivery, bounded ownership and exact cleanup assertions are separate from the
+memory verdict. Stable Luau heaps and zero KRF ownership do not rule out native
+retention. If a process's comparable quiet readings keep rising without an
+attributed cause, report INCONCLUSIVE or SUSPICIOUS, not a proven leak or harmless
+caching. A passing single-machine run does not certify every production setting.
+Current results, observed regressions and owner acceptance decisions belong in
+the PR; do not turn historical timings into permanent API guarantees.
+
+See [maintainer metric semantics](../../docs-site/docs/documentation/Networking/maintaining-networking.md)
+before comparing ledger, age, cumulative, high-water and transport observations.

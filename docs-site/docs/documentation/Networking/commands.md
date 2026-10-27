@@ -175,11 +175,16 @@ A thrown or yielding callback, malformed handler return, invalid result, or publ
 
 The client reports `CommandTimeout` after 10 seconds without an outcome. Timeout neither cancels server execution nor means rejection. Any uncertainty starts a 10-second grace window for one late Accepted/Rejected on the same connection; duplicate definitive results are ignored. Closing the runtime reports remaining pending operations as Unknown and releases timers and metadata. A terminal receive-queue overflow ends the client connection, clears Actor consumers, and stops command admission. It does not restart initialization.
 
-Finite per-connection count/byte limits cover ingress, queued commands, pending correlations, history, outbound results, and temporarily held publications. Output capacity is reserved before author callbacks run. Capacity exhaustion can refuse execution without a reply; a locally admitted client then relies on its uncertainty timeout. Limits are internal policies, not gameplay quotas or a guarantee of delivery under overload.
+Finite global and per-connection count/byte limits cover ingress and queued/in-progress commands; connection-local limits also bound pending correlations, history, outbound results and temporarily held publications. Author handlers run through a bounded fair dispatcher, not directly as an unbounded receive-callback drain. Same-requester FIFO and prior-outcome installation before the next handler remain intact.
+
+Admission protects opportunities in both aggregate attempt and pending-work budgets, with a shared borrowing pool. Ready membership and rotating protected bands accommodate late arrivals and rosters larger than protected capacity. Already admitted work is never evicted to make room for a newcomer. This prevents a few noisy clients consuming every opportunity indefinitely; it does not promise immediate admission, equal throughput, a fixed wait time or utilization of every reserved slot. Local limits, output capacity and handler cost still matter.
+
+Output slots and maximum result bytes are reserved before author callbacks run. A result remains queued in its causal position, ahead of that request's synchronous publications but behind older ordered work. Closing a connection or faulting releases ownership exactly once, including after staged work unwinds. Capacity exhaustion can refuse execution without a reply; a locally admitted client then relies on its uncertainty timeout. KRF never turns a possibly mutated execution into a fabricated definitive rejection. Limits are internal policies, not gameplay quotas or a delivery guarantee under overload.
 
 ## Related
 
 - [CommandRuntime API](/api/Networking/command-runtime)
 - [CommandAuthorization API](/api/Networking/command-authorization)
 - [ActorViews](./actor-views)
+- [Maintainer budgets and result fences](./maintaining-networking)
 - [ActionController](/api/Action/action-controller)
