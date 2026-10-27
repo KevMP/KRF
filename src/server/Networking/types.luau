@@ -366,7 +366,8 @@ export type ReliableBacklog = {
 		bytes: number,
 		previous: PublicationCharge?,
 		baseline: boolean?,
-		onUnused: (() -> ())?
+		onUnused: (() -> ())?,
+		reuseQueued: boolean?
 	) -> PublicationCharge?,
 	CloseRecipient: (self: ReliableBacklog, recipient: any) -> (),
 	Destroy: (self: ReliableBacklog) -> (),

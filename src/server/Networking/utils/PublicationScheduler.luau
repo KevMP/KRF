@@ -168,7 +168,15 @@ function PublicationScheduler.Enqueue(
 	local charge: Types.PublicationCharge? = nil
 
 	if size > 0 and self.options.backlog ~= nil then
-		charge = self.options.backlog:Acquire(key, composed, size, if canMerge then tail.charge else nil)
+		charge = self.options.backlog:Acquire(
+			key,
+			composed,
+			size,
+			if canMerge then tail.charge else nil,
+			nil,
+			nil,
+			canMerge and not isEvent
+		)
 
 		if charge == nil then
 			Metrics.Count(diagnosticOwner(self), "streamDiscontinuities", 1)

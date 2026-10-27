@@ -160,7 +160,8 @@ function ReliableBacklog.Acquire(
 	bytes: number,
 	previous: Types.PublicationCharge?,
 	baseline: boolean?,
-	onUnused: (() -> ())?
+	onUnused: (() -> ())?,
+	reuseQueued: boolean?
 ): Types.PublicationCharge?
 	if self.destroyed then
 		return nil
@@ -178,17 +179,24 @@ function ReliableBacklog.Acquire(
 			"InvalidReliableBacklogReplacement"
 		)
 
-		if earlier.payload == payload then
+		-- A staged lease belongs to the pump, even if a caller offers it as a
+		-- queued-state replacement. Admit independently without releasing that lease.
+		if earlier.owner.pending[earlier] ~= true then
+			earlier = nil
+		elseif earlier.payload == payload then
 			return earlier
 		end
 	end
 
+	local retained = self.payloads[payload]
+	assert(retained == nil or retained.bytes == bytes, "ReliableBacklogPayloadChanged")
+	local oldPayload = if earlier ~= nil then self.payloads[earlier.payload] else nil
 	local owner: Account? = self.recipients[key.recipient]
 	local actor: Account? = self.actors[key.actor]
 	local count = if earlier ~= nil then 0 else 1
 	local localBytes = bytes - (if earlier ~= nil then earlier.bytes else 0)
-	local added = if self.payloads[payload] == nil then bytes else 0
-	local removed = if earlier ~= nil and self.payloads[earlier.payload].references == 1 then earlier.bytes else 0
+	local added = if retained == nil then bytes else 0
+	local removed = if oldPayload ~= nil and oldPayload.references == 1 then oldPayload.bytes else 0
 	local limits = self.limits
 	local recordReserve = if baseline then 0 else limits.recoveryRecords
 	local byteReserve = if baseline then 0 else limits.recoveryBytes
@@ -218,6 +226,45 @@ function ReliableBacklog.Acquire(
 		return nil
 	end
 
+	if
+		reuseQueued
+		and not baseline
+		and earlier ~= nil
+		and oldPayload ~= nil
+		and (oldPayload.references > 1 or oldPayload.onUnused == nil)
+	then
+		-- All independent limits were checked above. Keep the queued lease and
+		-- its indexes/closures; only payload references and byte liabilities change.
+		-- A final-use callback remains on the original path, outside this fast path.
+		if retained == nil then
+			retained = { references = 0, bytes = bytes, onUnused = onUnused }
+			self.payloads[payload] = retained
+		end
+
+		retained.references += 1
+		oldPayload.references -= 1
+
+		if oldPayload.references == 0 then
+			self.payloads[earlier.payload] = nil
+		end
+
+		self.bytes += added - removed
+		earlier.owner.bytes += localBytes
+		earlier.actor.bytes += localBytes
+		earlier.payload, earlier.bytes = payload, bytes
+		Metrics.Count(earlier.owner.diagnostics, "reliableChargesAdmitted", 1)
+
+		if added ~= removed then
+			Metrics.Adjust(self.diagnostics, "reliableRetainedBytes", added - removed)
+		end
+
+		if localBytes ~= 0 then
+			Metrics.Adjust(earlier.owner.diagnostics, "reliableDeliveryBytes", localBytes)
+		end
+
+		return earlier
+	end
+
 	if earlier ~= nil then
 		release(self, earlier)
 	end
@@ -243,7 +290,7 @@ function ReliableBacklog.Acquire(
 		self.actors[key.actor] = actor
 	end
 
-	local retained = self.payloads[payload]
+	retained = self.payloads[payload]
 
 	if retained == nil then
 		retained = { references = 0, bytes = bytes, onUnused = onUnused }

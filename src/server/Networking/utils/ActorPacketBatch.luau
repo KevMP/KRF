@@ -205,8 +205,11 @@ local function validate(packet: Packet): ()
 
 		if valid then
 			retained += 1
-			records[retained] = record
-			deliveries[retained] = delivery
+
+			if retained ~= index then
+				records[retained] = record
+				deliveries[retained] = delivery
+			end
 		else
 			stream.stagedOrder = nil
 

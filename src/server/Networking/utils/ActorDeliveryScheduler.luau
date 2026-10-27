@@ -35,6 +35,18 @@ type State = {
 
 export type Runtime = typeof(setmetatable({} :: State, Delivery))
 
+local function observeActive(connection: Connection): ()
+	local owner = connection.diagnostics
+
+	if owner ~= nil then
+		local value = if #connection.orders > 0 or #connection.egress.queue > 0 then 1 else 0
+
+		if owner:GetCurrent("reliableActiveConnections") ~= value then
+			Metrics.Set(owner, "reliableActiveConnections", value)
+		end
+	end
+end
+
 function Delivery.new(
 	codec: SharedNetworkingTypes.ActorStreamCodec,
 	current: (Connection) -> boolean,
@@ -70,7 +82,10 @@ function Delivery.Activate(self: Runtime, connection: Connection, stream: Stream
 	end
 
 	Connections.UpdateOrder(connection, stream)
-	self.captures:Index(connection, stream)
+
+	if stream:NeedsCapture() or (stream.captureNode ~= nil and stream.captureNode.queue ~= nil) then
+		self.captures:Index(connection, stream)
+	end
 
 	if stream.active or not stream:HasWork() then
 		return
@@ -88,7 +103,11 @@ function Delivery.Activate(self: Runtime, connection: Connection, stream: Stream
 	end
 
 	assert(node ~= nil, "Expected active stream node")
-	ActiveQueue.Push(connection.active, node)
+
+	if node.queue ~= connection.active then
+		ActiveQueue.Push(connection.active, node)
+	end
+
 	self:Queue(connection)
 end
 
@@ -99,7 +118,12 @@ function Delivery.Queue(self: Runtime, connection: Connection): ()
 		return
 	end
 
+	observeActive(connection)
 	local node: ActiveQueue.Node<Connection>? = connection.node
+
+	if node ~= nil and node.queue == self.active then
+		return
+	end
 
 	if node == nil then
 		local created: ActiveQueue.Node<Connection> = ActiveQueue.node(connection :: Connection)
@@ -107,12 +131,6 @@ function Delivery.Queue(self: Runtime, connection: Connection): ()
 		connection.node = created
 		node = created
 	end
-
-	Metrics.Set(
-		connection.diagnostics,
-		"reliableActiveConnections",
-		if #connection.orders > 0 or #connection.egress.queue > 0 then 1 else 0
-	)
 
 	assert(node ~= nil, "Expected active connection node")
 	ActiveQueue.Push(self.active, node)
@@ -221,16 +239,10 @@ function Delivery.Step(self: Runtime, maxBytes: number, maxRecords: number): ()
 	end
 
 	for _, connection in self.waiting do
-		if self.current(connection) then
-			Metrics.Set(
-				connection.diagnostics,
-				"reliableActiveConnections",
-				if #connection.orders > 0 or #connection.egress.queue > 0 then 1 else 0
-			)
-		end
-
 		if connection.active.count > 0 or #connection.egress.queue > 0 then
 			self:Queue(connection)
+		elseif self.current(connection) then
+			observeActive(connection)
 		end
 	end
 
