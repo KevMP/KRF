@@ -1,9 +1,11 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.NetworkingDiagnosticsState)
 local Resync = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ResyncCodec)
 local Constants = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
 
-export type Recovery = { Start: () -> (), Cancel: () -> () }
+export type Recovery = { Start: () -> (), Cancel: (boolean?) -> () }
 
 local ActorViewRecovery = {}
 -- Five opportunities at 0, 1, 3, 7 and 15 seconds; exhaustion at 31 seconds.
@@ -39,6 +41,7 @@ function ActorViewRecovery.new(
 	report: (string) -> (),
 	exhausted: (string) -> ()
 ): Recovery
+	local diagnostics = Diagnostics.Get()
 	local active: boolean = false
 	local episode: number = 0
 	local deadline: number = 0
@@ -46,7 +49,15 @@ function ActorViewRecovery.new(
 	local started: number = options.Now()
 	local requests: number = 0
 
-	local function cancel(): ()
+	local function cancel(completed: boolean?): ()
+		if active then
+			Metrics.Adjust(diagnostics, "recoveryStreams", -1)
+
+			if not completed then
+				Metrics.Count(diagnostics, "recoveryAbandoned", 1)
+			end
+		end
+
 		active = false
 		episode += 1
 		local pending: (() -> ())? = cancelTimer
@@ -71,6 +82,9 @@ function ActorViewRecovery.new(
 			return
 		end
 
+		Metrics.Count(diagnostics, "resyncRequests", 1)
+		Metrics.Count(diagnostics, "recoveryBackoffs", 1)
+
 		-- Schedule before sending so synchronous replacement can cancel the timer.
 		cancelTimer = options.ScheduleTimeout(math.min(delays[opportunity], deadline - current), function()
 			if not active or token ~= episode then
@@ -87,6 +101,9 @@ function ActorViewRecovery.new(
 		end
 
 		if requests >= Constants.MAX_RESYNC_PER_ACTOR or not admit() then
+			Metrics.Count(diagnostics, "resyncRateLimited", 1)
+			Metrics.Count(diagnostics, "resyncRefused", 1)
+
 			return
 		end
 
@@ -94,12 +111,14 @@ function ActorViewRecovery.new(
 		local payload: buffer?, reason: string? = Resync.Encode(actor.handle)
 
 		if payload == nil then
+			Metrics.Count(diagnostics, "resyncRefused", 1)
 			cancel()
 			exhausted(reason or "InvalidActorHandle")
 
 			return
 		end
 
+		Metrics.Count(diagnostics, "resyncAdmitted", 1)
 		local sent: boolean, sendReason: any = pcall(options.SendReliable, payload)
 
 		if not sent then
@@ -110,10 +129,15 @@ function ActorViewRecovery.new(
 	return {
 		Start = function(): ()
 			if active then
+				Metrics.Count(diagnostics, "resyncRequests", 1)
+				Metrics.Count(diagnostics, "resyncDeduplicated", 1)
+				Metrics.Count(diagnostics, "resyncRefused", 1)
+
 				return
 			end
 
 			active = true
+			Metrics.Adjust(diagnostics, "recoveryStreams", 1)
 			episode += 1
 			deadline = options.Now() + 31
 			attempt(episode, 1)

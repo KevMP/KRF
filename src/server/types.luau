@@ -11,6 +11,7 @@ local NetworkingTypes = require(serverFolder.Networking.types)
 local types = {}
 
 export type ServerStartConfig = {
+	hints: { NetworkingTypes.HintDefinition }?,
 	commands: { NetworkingTypes.CommandDefinition }?,
 	controllers: { ControllerTypes.ControllerDef }?,
 	tags: { TagTypes.TagDefinition }?,

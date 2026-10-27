@@ -1,10 +1,51 @@
 --!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
+
 local Scenario = {}
 Scenario.populations = { { actors = 30, players = 10 }, { actors = 75, players = 25 }, { actors = 90, players = 30 } }
 Scenario.modes = { "Ordinary", "Heavy", "Burst" }
 Scenario.ticks = 180
 Scenario.hz = 30
 Scenario.clients = 2
+
+-- Fixture-only overrides: both comparison arms use the same captured values.
+function Scenario.budget(): (number, number)
+	local records = ReplicatedStorage:FindFirstChild("NetworkingBenchmarkRecords") :: IntValue?
+	local bytes = ReplicatedStorage:FindFirstChild("NetworkingBenchmarkBytes") :: IntValue?
+
+	return if bytes ~= nil then bytes.Value else Constants.STEP_BYTES,
+		if records ~= nil then records.Value else Constants.STEP_RECORDS
+end
+
+function Scenario.activeCount(runtime: any): number
+	local scheduler = runtime.delivery or runtime
+
+	return if scheduler.active.count ~= nil then scheduler.active.count else #scheduler.active
+end
+
+function Scenario.focus(): string
+	local value = ReplicatedStorage:FindFirstChild("NetworkingBenchmarkFocus") :: StringValue?
+
+	return if value ~= nil then value.Value else "full"
+end
+
+function Scenario.work(runtime: any): any
+	local scheduler = runtime.delivery or runtime
+
+	if scheduler.active.count == nil then
+		return nil -- Legacy implementation has no attempted-work accounting.
+	end
+
+	if scheduler.work ~= nil then
+		for unit, used in scheduler.work.used do
+			assert(used <= scheduler.work.limits[unit], "Scheduler exceeded attempted-work limit: " .. unit)
+		end
+	end
+
+	return if scheduler.work ~= nil then table.clone(scheduler.work.used) else {}
+end
 
 function Scenario.plan(count: number, mode: string): { { number } }
 	local plan: { { number } } = {}

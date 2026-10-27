@@ -4,7 +4,16 @@ local Types = require(script.Parent.Parent.types)
 local ReplicationTypes = require(script.Parent.Parent.Parent.Replication.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
 
-export type Projection = { domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }, body: buffer?, reason: string? }
+export type Projection = {
+	sequence: number,
+	encodedSizeBytes: number,
+	retainedBytes: number,
+	canonical: Types.PublicationBaseline?,
+	isOwner: boolean,
+	domains: { [string]: SharedNetworkingTypes.ActorDomainTruth },
+	body: buffer?,
+	reason: string?,
+}
 
 type BaselineCache = { sequence: number, public: Projection?, owner: Projection? }
 
@@ -30,12 +39,12 @@ function ActorRecipientProjection.new(
 	return setmetatable(state, ActorRecipientProjection)
 end
 
-function ActorRecipientProjection.Capture(
+function ActorRecipientProjection.Anchor(
 	self: Runtime,
 	actor: ActorTypes.Actor,
 	isOwner: boolean
 ): (number?, Projection?, string?)
-	local captured: Types.PublicationBaseline? = self.publication:CaptureBaseline(actor)
+	local captured: Types.PublicationBaseline? = self.publication:CaptureBaseline(actor, not isOwner)
 
 	if captured == nil then
 		return nil, nil, "ActorBaselineMissing"
@@ -53,19 +62,21 @@ function ActorRecipientProjection.Capture(
 	local projected: Projection? = if isOwner then cache.owner else cache.public
 
 	if projected == nil then
-		local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth } = {}
+		local encodedSizeBytes = self.publication:GetBaselineWeight(actor, not isOwner)
 
-		for id: string, truth: Types.PublicationDomainTruth in captured.domains do
-			local definition: ReplicationTypes.LoadedReplicationDomainDefinition? = self.catalog.definitionsById[id]
+		-- Reserve canonical retained weight plus the largest possible recipient
+		-- body before retaining either. This one charge survives materialization.
+		local created: Projection = {
+			sequence = captured.sequence,
+			encodedSizeBytes = encodedSizeBytes,
+			retainedBytes = encodedSizeBytes * 2,
+			canonical = captured,
+			isOwner = isOwner,
+			domains = captured.domains,
+			body = nil,
+			reason = nil,
+		}
 
-			if definition ~= nil and (definition.audience == "All" or isOwner) then
-				domains[id] = truth
-			end
-		end
-
-		table.freeze(domains)
-		local body: buffer?, reason: string? = self.codec.EncodeBaseline(domains)
-		local created: Projection = { domains = domains, body = body, reason = reason }
 		projected = created
 
 		if isOwner then
@@ -75,18 +86,68 @@ function ActorRecipientProjection.Capture(
 		end
 	end
 
+	return captured.sequence, projected, nil
+end
+
+function ActorRecipientProjection.Project(
+	self: Runtime,
+	actor: ActorTypes.Actor,
+	projected: Projection
+): (number?, Projection?, string?)
+	local captured = projected.canonical
+
+	if captured ~= nil then
+		local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth } = {}
+
+		for id: string, truth: Types.PublicationDomainTruth in captured.domains do
+			local definition: ReplicationTypes.LoadedReplicationDomainDefinition? = self.catalog.definitionsById[id]
+
+			if definition ~= nil and (definition.audience == "All" or projected.isOwner) then
+				domains[id] = truth
+			end
+		end
+
+		table.freeze(domains)
+		local body: buffer?, reason: string? = self.codec.EncodeBaseline(domains)
+		projected.domains, projected.body, projected.reason = domains, body, reason
+		projected.canonical = nil
+	end
+
 	assert(projected ~= nil, "Expected recipient baseline projection")
 	local body: buffer?, reason: string? = projected.body, projected.reason
 
 	if body == nil then
+		self:Discard(actor, projected)
+
 		return nil, nil, reason or "InvalidActorBaseline"
 	end
 
-	return captured.sequence, projected, nil
+	return projected.sequence, projected, nil
 end
 
 function ActorRecipientProjection.Forget(self: Runtime, actor: ActorTypes.Actor): ()
 	self.baselines[actor] = nil
+end
+
+-- The reusable body cache may retain only bodies still owned by a transfer.
+function ActorRecipientProjection.Discard(self: Runtime, actor: ActorTypes.Actor, projection: Projection): ()
+	local cache = self.baselines[actor]
+
+	if cache == nil then
+		return
+	end
+
+	if cache.public == projection then
+		cache.public = nil
+	end
+
+	if cache.owner == projection then
+		cache.owner = nil
+	end
+
+	if cache.public == nil and cache.owner == nil then
+		self.baselines[actor] = nil
+	end
 end
 
 function ActorRecipientProjection.PublicCommit(

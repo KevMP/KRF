@@ -124,6 +124,12 @@ beforeEach(function()
 
 		-- Record only framework lifecycle calls; all recipient behavior uses the real runtime specs.
 		return {
+			ObserveActorRemoved = function(
+				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
+				_callback: (ActorTypes.Actor) -> ()
+			): () -> ()
+				return function(): () end
+			end,
 			OnActorRegistered = function(
 				_self: ServerNetworkingTypes.ActorAwarenessRuntime,
 				actor: ActorTypes.Actor

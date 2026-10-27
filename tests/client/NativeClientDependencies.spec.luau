@@ -17,6 +17,26 @@ local originalLocate: typeof(Transport.Locate) = Transport.Locate
 local instances: { Instance } = {}
 local cancellations: { () -> () } = {}
 
+it("runs the native pump on Heartbeat and disconnects it idempotently", function()
+	local delivered = Instance.new("BindableEvent")
+	table.insert(instances, delivered)
+	local calls = 0
+	local observe = assert(Native.ObserveStep, "Expected native Heartbeat driver")
+
+	local stop = observe(function(): ()
+		calls += 1
+		delivered:Fire()
+	end)
+
+	delivered.Event:Wait()
+	stop()
+	stop()
+	local stopped = calls
+	game:GetService("RunService").Heartbeat:Wait()
+	expect(calls).toBe(stopped)
+	expect(calls > 0).toBe(true)
+end)
+
 afterEach(function()
 	Client._ResetForTests()
 	Transport.Locate = originalLocate

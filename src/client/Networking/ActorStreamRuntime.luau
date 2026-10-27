@@ -1,5 +1,7 @@
 --!strict
 local Types = require(script.Parent.types)
+local Metrics = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
+local Diagnostics = require(script.Parent.utils.NetworkingDiagnosticsState)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 
 type Assembly = { generation: number, bytes: buffer, received: number, occupied: buffer }
@@ -15,6 +17,7 @@ local ActorStreamRuntime = {}
 ActorStreamRuntime.__index = ActorStreamRuntime
 
 type RuntimeState = {
+	diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
 	codec: SharedNetworkingTypes.ActorStreamCodec,
 	consumer: Types.ActorStreamConsumer?,
 	options: Types.ActorStreamOptions,
@@ -31,6 +34,15 @@ type RuntimeState = {
 }
 
 type Runtime = typeof(setmetatable({} :: RuntimeState, ActorStreamRuntime))
+
+-- Destroy detaches the owning handle map atomically. A selected record may
+-- continue unwinding after an unbind callback, but cannot debit that closed map.
+function ActorStreamRuntime._assemblyChanged(self: Runtime, count: number, bytes: number): ()
+	if not self.destroyed then
+		Metrics.Adjust(self.diagnostics, "clientBaselineAssemblies", count)
+		Metrics.Adjust(self.diagnostics, "clientBaselineBytes", bytes)
+	end
+end
 
 function ActorStreamRuntime._unbind(self: Runtime, state: State): ()
 	local model: Model? = state.record.model
@@ -133,9 +145,13 @@ function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes
 		assert(state ~= nil, "Expected admitted Actor record")
 
 		if state.pending == nil then
+			self:_assemblyChanged(1, 0)
 			self.pendingCount += 1
+		else
+			self:_assemblyChanged(0, -2 * buffer.len(state.pending.bytes))
 		end
 
+		self:_assemblyChanged(0, 2 * record.totalBytes)
 		state.generation = record.generation
 
 		state.pending = {
@@ -162,6 +178,8 @@ function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes
 		self:_unbind(state)
 
 		if state.pending ~= nil then
+			self:_assemblyChanged(-1, 0)
+			self:_assemblyChanged(0, -2 * buffer.len(state.pending.bytes))
 			self.pendingCount -= 1
 		end
 
@@ -177,6 +195,8 @@ function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes
 		end
 
 		if state.pending ~= nil then
+			self:_assemblyChanged(-1, 0)
+			self:_assemblyChanged(0, -2 * buffer.len(state.pending.bytes))
 			state.pending = nil
 			self.pendingCount -= 1
 		end
@@ -233,6 +253,8 @@ function ActorStreamRuntime._record(self: Runtime, record: SharedNetworkingTypes
 	-- This assembly is complete. Release it before either consumer callback so
 	-- recovery may deliver a fresh generation synchronously within the same limit.
 	state.pending = nil
+	self:_assemblyChanged(-1, 0)
+	self:_assemblyChanged(0, -2 * buffer.len(pending.bytes))
 	self.pendingCount -= 1
 
 	local domains: { [string]: SharedNetworkingTypes.ActorDomainTruth }?, reason: string? =
@@ -329,6 +351,8 @@ function ActorStreamRuntime.Destroy(self: Runtime): ()
 	table.clear(self.retired)
 	table.clear(self.disconnects)
 	self.pendingCount = 0
+	Metrics.Set(self.diagnostics, "clientBaselineAssemblies", 0)
+	Metrics.Set(self.diagnostics, "clientBaselineBytes", 0)
 end
 
 function ActorStreamRuntime.new(
@@ -338,6 +362,7 @@ function ActorStreamRuntime.new(
 	options: Types.ActorStreamOptions
 ): Types.ActorStreamRuntime
 	local runtimeState: RuntimeState = {
+		diagnostics = Diagnostics.Get(),
 		codec = codec,
 		consumer = consumer,
 		options = options,

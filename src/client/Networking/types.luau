@@ -3,7 +3,77 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Network
 local PublicTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
+local ClientTypes = require(script.Parent.Parent.types)
+
 local types = {}
+
+export type ClientConsumerInstallationOptions = {
+	Now: () -> number,
+	ScheduleTimeout: (number, () -> ()) -> () -> (),
+	ObserveStep: ClientTypes.ClientStepObserver?,
+	installActorReceiver: (((any) -> ()) -> ())?,
+	sendReliable: ((buffer) -> ())?,
+	isReady: (() -> boolean)?,
+	onTerminalFailure: (() -> ())?,
+	sendUnreliable: ((buffer) -> ())?,
+	connectUnreliable: ClientTypes.ClientUnreliableObserver?,
+}
+
+-- Private local introspection; absent outside the owning runtime lifetime.
+export type NetworkingDiagnostics = {
+	read GetClientSnapshot: () -> SharedNetworkingTypes.DiagnosticSnapshot?,
+}
+
+export type HintReceived = { read hintId: string, read actorView: PublicTypes.ActorView?, read payload: any? }
+
+export type HintRuntime = {
+	read Send: (string, PublicTypes.ActorView?, any?) -> (boolean, string?),
+	read OnHintReceived: SignalTypes.Event<HintReceived>,
+}
+
+export type HintReceiveLimits = {
+	windowSeconds: number,
+	maxPackets: number,
+	maxBytes: number,
+	maxPendingPackets: number,
+	maxPendingBytes: number,
+	maxRecords: number,
+	maxLatestKeys: number,
+}
+
+export type HintReceiveDependencies = {
+	Now: () -> number,
+	IsReady: () -> boolean,
+	Notify: (HintReceived) -> (),
+}
+
+export type HintReceiverRuntime = {
+	Handle: (self: HintReceiverRuntime, any, ...any) -> (boolean, string?),
+	Step: (self: HintReceiverRuntime) -> (number, number),
+	ForgetActor: (self: HintReceiverRuntime, PublicTypes.ActorView) -> (),
+	Destroy: (self: HintReceiverRuntime) -> (),
+}
+
+export type ClientHintLimits = {
+	maxPending: number?,
+	maxPendingBytes: number?,
+	maxLatestKeys: number?,
+	maxAttempts: number?,
+	maxBytes: number?,
+	windowSeconds: number?,
+	maxRecords: number?,
+	maxSends: number?,
+	maxSequence: number?,
+}
+
+export type ClientHintDependencies = { Now: () -> number, IsReady: () -> boolean, SendUnreliable: (buffer) -> () }
+
+export type ClientHintRuntime = {
+	Send: (self: ClientHintRuntime, string, PublicTypes.ActorView?, any?) -> (boolean, string?),
+	Step: (self: ClientHintRuntime) -> (number, number),
+	ForgetActor: (self: ClientHintRuntime, PublicTypes.ActorView) -> (),
+	Destroy: (self: ClientHintRuntime) -> (),
+}
 
 export type CommandResult = {
 	read requestId: number,
@@ -98,7 +168,8 @@ export type ActorViewOptions = {
 	Now: () -> number,
 	ScheduleTimeout: (number, () -> ()) -> () -> (),
 	SendReliable: (buffer) -> (),
-	ReportFault: (ActorViewFault) -> (),
+	-- True only at the once-per-owner terminal transition; logging may suppress retries.
+	ReportFault: (ActorViewFault, boolean?) -> (),
 }
 
 -- Private diagnostics, never reachable through ActorView or its public registry.

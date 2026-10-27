@@ -4,18 +4,24 @@ local Players = game:GetService("Players")
 local StudioTestService = game:GetService("StudioTestService")
 local KRF = ReplicatedStorage.Packages.KRF
 local ActorTypes = require(KRF.server.Actor.types)
+local ActionTypes = require(KRF.server.Action.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
 local ReplicationTypes = require(KRF.server.Replication.types)
 local SharedTypes = require(KRF.shared.Networking.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking = require(KRF.server.Networking.ServerNetworking)
+local Diagnostics = require(KRF.server.Networking.NetworkingDiagnostics)
 local Transport = require(KRF.shared.Networking.Transport)
 local Protocol = require(KRF.shared.Networking.ProtocolCodec)
 local ResyncCodec = require(KRF.shared.Networking.utils.ResyncCodec)
 local Awareness: NetworkingTypes.ActorAwarenessRuntimeModule = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Authorization = require(KRF.server.Networking.CommandAuthorization)
+local HintAuthorization = require(KRF.server.Networking.HintAuthorization)
+local Hints: NetworkingTypes.HintRuntime = require(KRF.server.Networking.HintRuntime)
+local HintSender = require(KRF.server.Networking.utils.HintSender)
+local HintOwner = require(KRF.server.Networking.ServerHintRuntime)
 local CommandCodec = require(KRF.shared.Networking.CommandCodec)
 local CommandConstants = require(KRF.shared.Networking.utils.CommandConstants)
 local Correlation = require(script.Parent.Utils.ServerCorrelation)
@@ -27,6 +33,7 @@ Players.CharacterAutoLoads = false
 
 local actors: { [Player]: ActorTypes.Actor } = {}
 local models: { Model } = {}
+local pressureActors: { ActorTypes.Actor } = {}
 local reports: { [Player]: boolean } = {}
 local requests: { [Player]: { Request } } = {}
 local requestIds: { [Player]: { number } } = {}
@@ -37,6 +44,49 @@ local originalPublish: typeof(Networking.Publish) = Networking.Publish
 local phase: string = "Startup"
 local finished: boolean = false
 local listener: RBXScriptConnection? = nil
+local hintRuntime: any = nil
+local originalHints = HintOwner.new
+local recipientTokens: { [Player]: number } = {}
+local hintTargetsReady: { [Player]: boolean } = {}
+local senderOwner: HintSender.Runtime? = nil
+local originalSender = HintSender.new
+
+HintSender.new = function(protocol, dependencies, limits)
+	local created = originalSender(protocol, dependencies, limits)
+	senderOwner = created
+
+	return created
+end
+
+local hintSeen: { [Player]: { look: boolean, pulse: boolean, reported: boolean } } = {}
+
+HintOwner.new = function(catalog, protocol, dependencies, limits)
+	local created = originalHints(catalog, protocol, dependencies, limits)
+	hintRuntime = created
+
+	return created
+end
+
+local function receiveHint(context: NetworkingTypes.HintContext, value: number): ()
+	assert(value >= 1 and value <= 4 and table.isfrozen(context), "Expected validated immutable Hint context")
+	local seen = hintSeen[context.player] or { look = false, pulse = false, reported = false }
+
+	hintSeen[context.player] = seen
+
+	if context.hintId == "Game.Look" then
+		assert(context.actor == actors[context.player], "C2S OwnerActor must reject another Player's aware Actor")
+		seen.look = true
+	else
+		assert(context.actor == nil, "None-target Pulse must not carry Actor identity")
+		seen.pulse = true
+	end
+
+	if seen.look and seen.pulse and not seen.reported then
+		seen.reported = true
+		-- Harness-only observation, not an acknowledgement in the Hint protocol.
+		control:FireClient(context.player, "HintSeen")
+	end
+end
 
 -- Capture the real startup owners without replacing their dependencies or
 -- consumer installation. N4 receives NativePlayerAssociation from production.
@@ -47,6 +97,9 @@ Awareness.new = function(
 	dependencies: NetworkingTypes.ActorAwarenessDependencies,
 	options: NetworkingTypes.ActorAwarenessOptions
 ): NetworkingTypes.ActorAwarenessRuntime
+	-- Keep the real scheduler/transport; force multipart captures in this fixture.
+	options.maxChunkBytes = 512
+
 	local runtime: NetworkingTypes.ActorAwarenessRuntime =
 		originalAwareness(publication, catalog, protocol, dependencies, options)
 
@@ -69,6 +122,8 @@ local function finish(success: boolean, reason: string?): ()
 	finished = true
 	Awareness.new = originalAwareness
 	Networking.Publish = originalPublish
+	HintOwner.new = originalHints
+	HintSender.new = originalSender
 
 	local cleaned: boolean, cleanupReason: any = pcall(function(): ()
 		if listener ~= nil then
@@ -79,7 +134,21 @@ local function finish(success: boolean, reason: string?): ()
 			Actors.UnregisterActor(actor)
 		end
 
+		for _, actor in pressureActors do
+			Actors.UnregisterActor(actor)
+		end
+
 		Networking.Destroy()
+
+		assert(
+			senderOwner == nil or (senderOwner.pool.pendingBytes == 0 and senderOwner.pool.latestCount == 0),
+			"S2C teardown must release recipient ownership"
+		)
+
+		assert(
+			hintRuntime == nil or (hintRuntime.dispatch.keys == 0 and hintRuntime.pendingBytes == 0),
+			"Hint teardown must release keys and queued wire capacity"
+		)
 
 		for _, model: Model in models do
 			model:Destroy()
@@ -138,8 +207,9 @@ local function exercise(): ()
 	phase = "Exercise"
 	reports = {}
 
-	for _, player: Player in players do
-		control:FireClient(player, phase, actors[player]:GetId())
+	for index, player: Player in players do
+		recipientTokens[player] = index
+		control:FireClient(player, phase, actors[player]:GetId(), nil, nil, index)
 	end
 end
 
@@ -149,6 +219,22 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 	end
 
 	local completed: boolean, reason: any = pcall(function(): ()
+		if reportPhase == "HintTargetsReady" then
+			assert(phase == "Exercise" and not hintTargetsReady[player], "Expected one S2C eligibility barrier")
+			hintTargetsReady[player] = true
+
+			for sample = 1, 4 do
+				local value = recipientTokens[player] * 16 + sample
+				assert(Hints.SendTo(player, "Game.VFX", nil, value), "Expected None Pulse admission")
+				assert(Hints.SendTo(player, "Game.ZLook", actors[player], value), "Expected Actor Latest admission")
+				assert(Hints.SendTo(player, "Game.ZPulse", actors[player], value), "Expected Actor Pulse admission")
+				assert(Hints.SendTo(player, "Game.ZSample", nil, value), "Expected None Latest admission")
+				task.wait(0.03)
+			end
+
+			return
+		end
+
 		assert(failure == nil, tostring(failure))
 		assert(reportPhase == phase, "Unexpected native command test phase")
 		assert(not reports[player], "Duplicate native client report")
@@ -205,9 +291,25 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 		elseif phase == "PrepareCorrelation" then
 			phase = "Correlation"
 			reports = {}
+
+			-- Joining Actor streams compete with the existing requester-first Action
+			-- lifecycle assertions. Consumers and both transports remain production.
+			for _ = 1, 16 do
+				local model = Instance.new("Model")
+				model.Name = "CommandPressureActor"
+				model.Parent = workspace
+				table.insert(models, model)
+				local actor = assert(Actors.RegisterActor(model))
+				table.insert(pressureActors, actor)
+			end
+
 			control:FireAllClients(phase)
 		elseif phase == "Correlation" then
 			for _, actor: ActorTypes.Actor in actors do
+				Actors.UnregisterActor(actor)
+			end
+
+			for _, actor in pressureActors do
 				Actors.UnregisterActor(actor)
 			end
 
@@ -215,7 +317,91 @@ control.OnServerEvent:Connect(function(player: Player, reportPhase: any, failure
 			reports = {}
 			control:FireAllClients(phase)
 		elseif phase == "Retire" then
+			local snapshot = assert(Diagnostics.GetServerSnapshot(), "Expected live server diagnostics")
+			assert(snapshot.scope == "Server" and table.isfrozen(snapshot), "Expected immutable server snapshot")
+			assert(snapshot.gauges.connections.current == 2, "Expected two tracked native connections")
+
+			assert(
+				snapshot.counters.reliableSendAttempts > 0 and snapshot.counters.reliableEncodedBytes > 0,
+				"Expected reliable transport observations"
+			)
+
+			assert(snapshot.counters.reliableLogicalRecords > 0, "Expected reliable logical record observations")
+
+			assert(
+				snapshot.counters.unreliableSendAttempts > 0 and snapshot.counters.unreliableLogicalRecords > 0,
+				"Expected S2C transport observations"
+			)
+
+			assert(
+				snapshot.counters.commandsAdmitted > 0 and snapshot.counters.hintPacketsAdmitted > 0,
+				"Expected ingress admission observations"
+			)
+
+			assert(
+				snapshot.counters.baselinesCaptured
+					== snapshot.counters.baselinesCompleted
+						+ snapshot.counters.baselinesAbandoned
+						+ snapshot.gauges.baselineGenerations.current,
+				"Baseline lifecycle accounting must balance"
+			)
+
+			assert(
+				snapshot.counters.baselinesCompleted >= 36 and snapshot.gauges.readyConnections.current == 2,
+				"Expected completed native baselines and Ready scopes"
+			)
+
+			assert(
+				snapshot.counters.commandsExecuted > 0 and snapshot.counters.commandsAccepted > 0,
+				"Expected author execution and known outcomes"
+			)
+
+			assert(
+				snapshot.gauges.commandResultSlots.current == 0 and snapshot.gauges.commandResultSlots.highWater > 0,
+				"Expected drained result reservations"
+			)
+
+			assert(
+				snapshot.counters.hintsSent >= 8 and snapshot.counters.hintsReceived > 0,
+				"Expected semantic Hint handoff and authorized receipt"
+			)
+
+			assert(
+				snapshot.counters.reliableConnectionVisits > 0 and snapshot.maxima.reliablePumpWorkUnits > 0,
+				"Expected bounded scheduler work observations"
+			)
+
+			local reliableCalls, unreliableCalls = 0, 0
+
+			for recipient in reports do
+				local connection =
+					assert(Diagnostics.GetConnectionSnapshot(recipient), "Expected local connection diagnostics")
+
+				assert(connection.scope == "Connection", "Expected connection scope")
+				reliableCalls += connection.counters.reliableSendAttempts
+				unreliableCalls += connection.counters.unreliableSendAttempts
+			end
+
+			assert(
+				reliableCalls == snapshot.counters.reliableSendAttempts
+					and unreliableCalls == snapshot.counters.unreliableSendAttempts,
+				"Expected aggregate native transport accounting"
+			)
+
 			Networking.Destroy()
+			assert(Diagnostics.GetServerSnapshot() == nil, "Shutdown must revoke diagnostic snapshots")
+
+			for recipient in reports do
+				assert(
+					Diagnostics.GetConnectionSnapshot(recipient) == nil,
+					"Shutdown must release Player diagnostic lookups"
+				)
+			end
+
+			assert(
+				senderOwner == nil or (senderOwner.pool.pendingBytes == 0 and senderOwner.pool.latestCount == 0),
+				"S2C teardown must release recipient ownership"
+			)
 
 			assert(
 				ReplicatedStorage:FindFirstChild(Transport.ROOT_NAME) == nil,
@@ -260,12 +446,56 @@ local completed: boolean, reason: any = pcall(function(): ()
 		table.insert(commands, command)
 	end
 
-	local initialized: boolean, failure: Server.StartupFailure? =
-		Server.Init({ commands = commands, actions = Correlation.Actions })
+	local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
+		commands = commands,
+		actions = Correlation.Actions,
+		replicationDomains = {
+			{
+				id = "Stress.Padding",
+				state = Schema.String(8192),
+				snapshot = function(): string
+					return string.rep("x", 8192)
+				end,
+			},
+		},
+		hints = {
+			{
+				id = "Game.Look",
+				direction = "ClientToServer",
+				target = "Actor",
+				mode = "Latest",
+				payload = Schema.U8,
+				authorize = HintAuthorization.OwnerActor,
+				receive = receiveHint,
+			},
+			{
+				id = "Game.Pulse",
+				direction = "ClientToServer",
+				target = "None",
+				mode = "Pulse",
+				payload = Schema.U8,
+				authorize = HintAuthorization.AnyReadyClient,
+				receive = receiveHint,
+			},
+			{ id = "Game.VFX", direction = "ServerToClient", target = "None", mode = "Pulse", payload = Schema.U16 },
+			{ id = "Game.ZLook", direction = "ServerToClient", target = "Actor", mode = "Latest", payload = Schema.U8 },
+			{ id = "Game.ZPulse", direction = "ServerToClient", target = "Actor", mode = "Pulse", payload = Schema.U8 },
+			{
+				id = "Game.ZSample",
+				direction = "ServerToClient",
+				target = "None",
+				mode = "Latest",
+				payload = Schema.U8,
+			},
+		},
+	})
 
 	assert(initialized, if failure ~= nil then failure.reason else "Native Server.Init failed")
 	local protocol: SharedTypes.ClientProtocol? = commandProtocol
 	assert(protocol ~= nil and protocol.commandsById ~= nil, "Expected startup command codebook")
+	assert(protocol.hintsById ~= nil and protocol.hintsByCode ~= nil, "Expected startup Hint codebooks")
+	assert(protocol.hintsById["Game.Look"].code == 0, "Expected deterministic Hint codes")
+	assert(protocol.hintsByCode[2].id == "Game.VFX", "Expected both Hint directions in bootstrap")
 	local commandsById: { [string]: SharedTypes.ClientCommand } = protocol.commandsById
 	local codec: SharedTypes.CommandCodec = CommandCodec.Compile(protocol)
 	local owned: SharedTypes.OwnedTransport?, transportReason: string? = Transport.Locate(ReplicatedStorage)
@@ -325,6 +555,17 @@ local completed: boolean, reason: any = pcall(function(): ()
 			if index > 2 then
 				assert(phase == "Correlation", "Unexpected command traffic outside the correlation phase")
 				assert(index <= 7, "Unexpected correlation traffic")
+
+				for _, actor in pressureActors do
+					local actions = actor:GetController("ActionController") :: ActionTypes.ActionController
+					assert(actions:RequestAction("Native.Pulse").accepted, "Expected live work during multipart joins")
+				end
+
+				for recipient in actors do
+					local token = recipientTokens[recipient] * 16 + 4
+					assert(Hints.SendTo(recipient, "Game.ZSample", nil, token))
+					assert(Hints.SendTo(recipient, "Game.VFX", nil, token))
+				end
 
 				assert(
 					commandsById["Game.Begin"].code == request.commandCode

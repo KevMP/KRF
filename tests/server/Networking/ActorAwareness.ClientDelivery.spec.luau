@@ -31,6 +31,8 @@ beforeEach(function()
 	fixture.options.maxChunkBytes = Constants.CHUNK_BYTES
 	fixture.options.maxQueuedBytes = Constants.MAX_QUEUED_BYTES
 	fixture.options.maxEvents = Constants.MAX_EVENTS
+	-- Exercise all transfer slots independently of the default per-pump capture cap.
+	fixture.options.workLimits = { captures = Constants.MAX_PENDING_BASELINES }
 	client.options.maxBaselineBytes = Constants.MAX_BASELINE_BYTES
 	client.options.maxPendingBaselines = Constants.MAX_PENDING_BASELINES
 end)

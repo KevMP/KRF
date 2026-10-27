@@ -253,7 +253,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 			break
 		end
 
-		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+		runtime:Step(Scenario.budget())
 		baselineSteps += 1
 
 		for _, delivery in deliveries do
@@ -378,6 +378,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 	local authorityUs: { number } = {}
 	local stepUs: { number } = {}
 	local tickUs: { number } = {}
+	local workSamples: { any } = {}
 	local stages: { any } = {}
 	local heap: { number } = {}
 	local generations = table.create(population.actors, 0)
@@ -438,8 +439,9 @@ local function measure(population: any, mode: string, actionCount: number, recip
 		for _ = 1, 2 do
 			stepIndex += 1
 			local beforeStep = os.clock()
-			runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+			runtime:Step(Scenario.budget())
 			table.insert(stepUs, (os.clock() - beforeStep) * 1e6)
+			table.insert(workSamples, Scenario.work(runtime))
 		end
 
 		table.insert(tickUs, (os.clock() - tickStart) * 1e6)
@@ -470,8 +472,9 @@ local function measure(population: any, mode: string, actionCount: number, recip
 
 		local before = os.clock()
 		stepIndex += 1
-		runtime:Step(Constants.STEP_BYTES, Constants.STEP_RECORDS)
+		runtime:Step(Scenario.budget())
 		table.insert(stepUs, (os.clock() - before) * 1e6)
+		table.insert(workSamples, Scenario.work(runtime))
 
 		if diagnostic then
 			table.insert(stages, Probe.stop())
@@ -511,6 +514,7 @@ local function measure(population: any, mode: string, actionCount: number, recip
 		stepUs = Scenario.summarize(stepUs),
 		tickUs = Scenario.summarize(tickUs),
 		raw = {
+			work = workSamples,
 			mutationUs = mutationUs,
 			authorityInclusiveUs = authorityUs,
 			stepUs = stepUs,
@@ -542,18 +546,35 @@ TagController._setAutomaticSteppingEnabledForTests(false)
 
 local ok, failure = pcall(function()
 	local cases: { any } = {}
+	local focused = Scenario.focus() == "scheduler"
 	-- Warm up compilation and VM paths; discard this case.
 	measure({ actors = 30, players = 10 }, "Ordinary", 0, 2, false)
 
 	for _, diagnostic in { false, true } do
+		if focused and diagnostic then
+			continue
+		end
+
 		if diagnostic then
 			Probe.install()
 		end
 
 		for _, population in Scenario.populations do
+			if focused and population.actors ~= 90 then
+				continue
+			end
+
 			for _, mode in Scenario.modes do
 				for _, actions in { 0, 20, 40 } do
+					if focused and actions == 20 then
+						continue
+					end
+
 					for _, recipients in { 0, 2, population.players } do
+						if focused and recipients == 0 then
+							continue
+						end
+
 						-- Diagnostics need only the target fanout; keep primary timings separate.
 						if not diagnostic or recipients == population.players then
 							print("CPU baseline", population.actors, mode, actions, recipients, diagnostic)
@@ -565,7 +586,7 @@ local ok, failure = pcall(function()
 		end
 	end
 
-	local encoded = HttpService:JSONEncode({ success = true, cases = cases })
+	local encoded = HttpService:JSONEncode({ success = true, cases = cases, benchmarkFocus = Scenario.focus() })
 	print("__KRF_NETWORKING_CPU_START__")
 
 	for offset = 1, #encoded, 8000 do

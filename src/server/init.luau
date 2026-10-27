@@ -13,6 +13,7 @@ local ResourceRegistry = require(script.Resource.ResourceRegistry)
 local ActionRegistry = require(script.Action.ActionRegistry)
 local ReplicationDomainRegistry = require(script.Replication.ReplicationDomainRegistry)
 local CommandRegistry = require(script.Networking.CommandRegistry)
+local HintRegistry = require(script.Networking.HintRegistry)
 local BuiltInReplicationDomains = require(script.Replication.BuiltInReplicationDomains)
 local SchemaCollectionUtils = require(script.Parent.shared.Networking.utils.SchemaCollectionUtils)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
@@ -43,6 +44,7 @@ local initialized: boolean = false
 local function rollbackStartup(): ()
 	ServerNetworking.Destroy()
 	CommandRegistry._RollbackStartup()
+	HintRegistry._RollbackStartup()
 	ControllerRegistry._RollbackStartup()
 	TagRegistry._RollbackStartup()
 	ResourceRegistry._RollbackStartup()
@@ -84,6 +86,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		or ActionRegistry.IsLoaded()
 		or ReplicationDomainRegistry.IsLoaded()
 		or CommandRegistry.IsLoaded()
+		or HintRegistry.IsLoaded()
 	then
 		return false, { system = "Server", reason = "CatalogAlreadyLoaded" }
 	end
@@ -110,6 +113,12 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	if preparedCommands == nil then
 		return false, { system = "Command", reason = commandReason :: string }
+	end
+
+	local preparedHints, hintReason = HintRegistry.Prepare(if config.hints ~= nil then config.hints else {})
+
+	if preparedHints == nil then
+		return false, { system = "Hint", reason = hintReason :: string }
 	end
 
 	-- Own validated supporting definitions before Action factories run consumer
@@ -231,7 +240,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 
 	local prepared: boolean, protocol: SharedNetworkingTypes.PreparedProtocol?, networkingReason: string? =
-		pcall(ServerNetworking.Prepare, preparedDomains, preparedCommands)
+		pcall(ServerNetworking.Prepare, preparedDomains, preparedCommands, preparedHints)
 
 	if not prepared then
 		return false, { system = "Networking", reason = "StartupInternalFailure:" .. tostring(protocol) }
@@ -280,6 +289,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 		publicationSystem = "Command"
 		success, failure = CommandRegistry.Publish(preparedCommands)
+
+		if not success then
+			return false, failure
+		end
+
+		publicationSystem = "Hint"
+		success, failure = HintRegistry.Publish(preparedHints)
 
 		if not success then
 			return false, failure

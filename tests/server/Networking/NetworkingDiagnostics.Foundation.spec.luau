@@ -1,0 +1,183 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
+local it: any = JestGlobals.it
+local expect: any = JestGlobals.expect
+local afterEach: any = JestGlobals.afterEach
+local SharedTypes = require(KRF.shared.Networking.types)
+local Types = require(KRF.server.Networking.types)
+local Metrics = require(KRF.shared.Networking.utils.NetworkingMetrics)
+local State = require(KRF.server.Networking.utils.NetworkingDiagnosticsState)
+local Diagnostics = require(KRF.server.Networking.NetworkingDiagnostics)
+local ClientState = require(KRF.client.Networking.utils.NetworkingDiagnosticsState)
+local ClientDiagnostics = require(KRF.client.Networking.NetworkingDiagnostics)
+local SendMetrics = require(KRF.shared.Networking.utils.NetworkingSendMetrics)
+local ActorCodec = require(KRF.shared.Networking.ActorStreamCodec)
+local ProtocolCodec = require(KRF.shared.Networking.ProtocolCodec)
+local Constants = require(KRF.shared.Networking.utils.ProtocolConstants)
+local Backlog = require(KRF.server.Networking.utils.ReliableBacklog)
+
+local players: { Instance } = {}
+local pools: { Types.ReliableBacklog } = {}
+
+local function player(): Player
+	local instance = Instance.new("Folder")
+	table.insert(players, instance)
+
+	return instance :: any
+end
+
+local function pool(): Types.ReliableBacklog
+	local created = Backlog.new({ maxRecords = 2 }, 0)
+	table.insert(pools, created)
+
+	return created
+end
+
+afterEach(function()
+	for _, owned in pools do
+		owned:Destroy()
+	end
+
+	for _, instance in players do
+		instance:Destroy()
+	end
+
+	table.clear(pools)
+	table.clear(players)
+	State.Stop()
+	ClientState.Stop()
+end)
+
+it("aggregates child updates and keeps simultaneous ownership peaks distinct from cumulative counters", function()
+	local server: SharedTypes.DiagnosticCollector = Metrics.new("Server", nil)
+	local first: SharedTypes.DiagnosticCollector = Metrics.new("Connection", server)
+	local second: SharedTypes.DiagnosticCollector = Metrics.new("Connection", server)
+	first:Count("commandsAdmitted", 3)
+	first:Adjust("commandRequests", 3)
+	first:Adjust("commandRequests", -2)
+	second:Count("commandsAdmitted", 2)
+	second:Adjust("commandRequests", 2)
+	local snapshot = server:Snapshot()
+	expect(snapshot.scope).toBe("Server")
+	expect(snapshot.counters.commandsAdmitted).toBe(5)
+	expect(snapshot.gauges.commandRequests.current).toBe(3)
+	expect(snapshot.gauges.commandRequests.highWater).toBe(3)
+	expect(first:Snapshot().gauges.commandRequests.current).toBe(1)
+	expect(second:Snapshot().gauges.commandRequests.highWater).toBe(2)
+end)
+
+it("returns detached deeply frozen snapshots without consuming or resetting observations", function()
+	local owner = Metrics.new("Client", nil)
+	owner:Count("unreliableSendAttempts", 1)
+	local before = owner:Snapshot()
+	owner:Count("unreliableSendAttempts", 1)
+	owner:Adjust("hintSendBytes", 24)
+	expect(before.counters.unreliableSendAttempts).toBe(1)
+	expect(before.gauges.hintSendBytes.current).toBe(0)
+	expect(owner:Snapshot().counters.unreliableSendAttempts).toBe(2)
+	expect(table.isfrozen(before)).toBe(true)
+	expect(table.isfrozen(before.counters)).toBe(true)
+	expect(table.isfrozen(before.gauges)).toBe(true)
+	expect(table.isfrozen(before.gauges.hintSendBytes)).toBe(true)
+end)
+
+it("saturates cumulative counters at the largest exact integer", function()
+	local owner = Metrics.new("Server", nil)
+	owner:Count("reliableEncodedBytes", 9007199254740990)
+	owner:Count("reliableEncodedBytes", 100)
+	expect(owner:Snapshot().counters.reliableEncodedBytes).toBe(9007199254740991)
+end)
+
+it("exposes only active lifetimes and removes closed connection lookups without losing cumulative totals", function()
+	expect(State.GetConnection(player())).toBeNil()
+	expect(Diagnostics.GetServerSnapshot()).toBeNil()
+	expect(ClientDiagnostics.GetClientSnapshot()).toBeNil()
+	State.Start()
+	local oldClient = ClientState.Start()
+	local currentClient = ClientState.Start()
+	ClientState.Stop(oldClient)
+	expect(ClientState.Get()).toBe(currentClient)
+	local recipient = player()
+	local previous = assert(State.GetConnection(recipient))
+	previous:Count("commandsAdmitted", 2)
+	State.Close(recipient)
+	State.Close(recipient)
+	expect(Diagnostics.GetConnectionSnapshot(recipient)).toBeNil()
+	local current = assert(State.GetConnection(recipient))
+	expect(current:Snapshot().counters.commandsAdmitted).toBe(0)
+	expect(assert(Diagnostics.GetServerSnapshot()).counters.commandsAdmitted).toBe(2)
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.connections.current).toBe(1)
+	expect(assert(ClientDiagnostics.GetClientSnapshot()).scope).toBe("Client")
+	State.Stop()
+	ClientState.Stop()
+	expect(Diagnostics.GetConnectionSnapshot(recipient)).toBeNil()
+	expect(Diagnostics.GetServerSnapshot()).toBeNil()
+	expect(ClientDiagnostics.GetClientSnapshot()).toBeNil()
+	State.Start()
+	previous:Count("commandsAdmitted", 1)
+	expect(assert(Diagnostics.GetServerSnapshot()).counters.commandsAdmitted).toBe(0)
+end)
+
+it("reports distinct retained payload bytes separately from recipient delivery ownership", function()
+	State.Start()
+	local first, second = player(), player()
+	local owned = pool()
+	local payload = {}
+	local firstCharge = assert(owned:Acquire({ recipient = first, actor = "Actor" }, payload, 16, nil, true))
+	local secondCharge = assert(owned:Acquire({ recipient = second, actor = "Actor" }, payload, 16, nil, true))
+	local snapshot = assert(Diagnostics.GetServerSnapshot())
+	expect(snapshot.gauges.reliableRecords.current).toBe(2)
+	expect(snapshot.gauges.reliableRetainedBytes.current).toBe(16)
+	expect(snapshot.gauges.reliableDeliveryBytes.current).toBe(32)
+	expect(assert(Diagnostics.GetConnectionSnapshot(first)).gauges.reliableDeliveryBytes.current).toBe(16)
+	expect(owned:Acquire({ recipient = first, actor = "Other" }, {}, 8, nil, true)).toBeNil()
+	expect(assert(Diagnostics.GetServerSnapshot()).counters.reliableChargesRefused).toBe(1)
+	firstCharge.release()
+	firstCharge.release()
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRetainedBytes.current).toBe(16)
+	secondCharge.release()
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRetainedBytes.current).toBe(0)
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableDeliveryBytes.highWater).toBe(32)
+end)
+
+it("retains staged charges through close and re-Ready without debiting the new connection", function()
+	State.Start()
+	local recipient = player()
+	local owned = pool()
+	local key: Types.PublicationStreamKey = { recipient = recipient, actor = "Actor" }
+	local staged = assert(owned:Acquire(key, {}, 16, nil, true))
+	staged.stage()
+	owned:CloseRecipient(recipient)
+	State.Close(recipient)
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRecords.current).toBe(1)
+	local fresh = assert(owned:Acquire(key, {}, 24, nil, true))
+	staged.resume()
+	staged.release()
+	expect(assert(Diagnostics.GetConnectionSnapshot(recipient)).gauges.reliableDeliveryBytes.current).toBe(24)
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRecords.current).toBe(1)
+	owned:Destroy()
+	fresh.release()
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRecords.current).toBe(0)
+	expect(assert(Diagnostics.GetServerSnapshot()).gauges.reliableRetainedBytes.current).toBe(0)
+end)
+
+it("counts transport attempts, encoded buffers and batched logical records without decoding payloads", function()
+	local owner = Metrics.new("Server", nil)
+	local protocol: SharedTypes.ClientProtocol = { domainsById = {}, domainsByCode = {} }
+	local codec = ActorCodec.Compile(protocol, {})
+	local packet = assert(codec.Encode({ { kind = "ActorRemove", handle = 1 }, { kind = "ActorRemove", handle = 2 } }))
+	SendMetrics.Record(nil, true, packet)
+	SendMetrics.Record(owner, true, packet)
+	local hello = assert(ProtocolCodec.Encode({ kind = "Hello", version = Constants.PROTOCOL_VERSION }))
+	SendMetrics.Record(owner, true, hello)
+	SendMetrics.Record(owner, false, buffer.create(0))
+	local snapshot = owner:Snapshot()
+	expect(snapshot.counters.reliableSendAttempts).toBe(2)
+	expect(snapshot.counters.reliableLogicalRecords).toBe(2)
+	expect(snapshot.counters.reliableEncodedBytes).toBe(buffer.len(packet) + buffer.len(hello))
+	expect(snapshot.counters.unreliableSendAttempts).toBe(1)
+	expect(snapshot.counters.unreliableEncodedBytes).toBe(0)
+	expect(snapshot.counters.unreliableLogicalRecords).toBe(0)
+end)

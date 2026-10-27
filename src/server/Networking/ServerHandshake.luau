@@ -3,6 +3,7 @@ local Types = require(script.Parent.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
 local ProtocolCodec = require(script.Parent.Parent.Parent.shared.Networking.ProtocolCodec)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ProtocolConstants)
+local Warnings = require(script.Parent.Parent.Parent.shared.Networking.utils.NetworkingWarnings)
 
 local ServerHandshake = {} :: Types.ServerHandshakeModule
 
@@ -17,15 +18,16 @@ function ServerHandshake.new(
 	local readyObservers: { Observer } = {}
 	local closedObservers: { Observer } = {}
 	local destroyed: boolean = false
+	local warnings = Warnings.new(nil)
 	local acknowledgement: buffer?, ackReason: string? = ProtocolCodec.Encode({ kind = "ReadyAck" })
 	assert(acknowledgement ~= nil, ackReason)
 	local runtime: Types.ServerHandshake = {} :: Types.ServerHandshake
 
 	local function send(player: Player, payload: buffer): boolean
-		local completed: boolean, reason: any = pcall(dependencies.SendReliable, player, payload)
+		local completed: boolean, reason: unknown = pcall(dependencies.SendReliable, player, payload)
 
 		if not completed then
-			warn("[Networking] reliable send failed: " .. tostring(reason))
+			warnings.Report("TransportFault", reason)
 		end
 
 		return completed
@@ -42,7 +44,7 @@ function ServerHandshake.new(
 			end
 
 			local thread: thread = coroutine.create(observer.callback)
-			local completed: boolean, reason: any = coroutine.resume(thread, player)
+			local completed: boolean, reason: unknown = coroutine.resume(thread, player)
 
 			if coroutine.status(thread) ~= "dead" then
 				coroutine.close(thread)
@@ -51,7 +53,7 @@ function ServerHandshake.new(
 			end
 
 			if not completed then
-				warn("[Networking] private connection observer failed: " .. tostring(reason))
+				warnings.Report("ObserverFault", reason)
 			end
 		end
 	end
@@ -185,6 +187,7 @@ function ServerHandshake.new(
 
 		table.clear(readyObservers)
 		table.clear(closedObservers)
+		warnings.Destroy()
 	end
 
 	function runtime._GetConnectionCountForTests(_self: Types.ServerHandshake): number

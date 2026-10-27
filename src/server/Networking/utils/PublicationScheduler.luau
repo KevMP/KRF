@@ -1,10 +1,19 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
+local SharedTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
+local Composition = require(script.Parent.PublicationPatchComposition)
+local Metrics = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.NetworkingMetrics)
 
 local PublicationScheduler = {}
 PublicationScheduler.__index = PublicationScheduler
 
-type Pending = { commit: Types.PublicationFilteredCommit, bytes: number, order: number }
+type Pending = {
+	queuedAt: number,
+	commit: Types.PublicationFilteredCommit,
+	bytes: number,
+	order: number,
+	charge: Types.PublicationCharge?,
+}
 
 type Stream = {
 	key: Types.PublicationStreamKey,
@@ -25,178 +34,17 @@ type RuntimeState = {
 
 type Runtime = typeof(setmetatable({} :: RuntimeState, PublicationScheduler))
 
-local function copy(value: any): any
-	if type(value) ~= "table" then
-		return value
-	end
+local function diagnosticOwner(self: Runtime): SharedTypes.DiagnosticCollector?
+	local owner = self.options.diagnostics
 
-	local result: { [any]: any } = {}
-
-	for key, item in value do
-		result[key] = copy(item)
-	end
-
-	return result
+	return if owner ~= nil and (self.options.IsCurrent == nil or self.options.IsCurrent()) then owner else nil
 end
 
-local function apply(value: any, patch: Types.PublicationPatch): any
-	if patch.kind == "Replace" then
-		return copy(patch.value)
-	end
-
-	-- Delivered subtrees are private. Copy only the path changed by this patch;
-	-- incoming replacement values and Map entries still cross an ownership boundary.
-	local result = if type(value) == "table" then table.clone(value) else {}
-
-	if patch.kind == "Struct" then
-		for field, change in patch.fields do
-			result[field] = apply(result[field], change)
-		end
-	else
-		for key, entry in patch.entries do
-			result[key] = copy(entry)
-		end
-
-		for _, key in patch.removed do
-			result[key] = nil
-		end
-	end
-
-	return result
-end
-
-local function merge(
-	first: Types.PublicationPatch,
-	second: Types.PublicationPatch,
-	delivered: Types.PublicationDomainTruth?
-): Types.PublicationPatch?
-	if second.kind == "Replace" or first.kind ~= second.kind then
-		return second
-	end
-
-	if first.kind == "Struct" and second.kind == "Struct" then
-		local fields: { [string]: Types.PublicationPatch } = table.clone(first.fields)
-
-		for field, change in second.fields do
-			local earlier = fields[field]
-			local fieldTruth: Types.PublicationDomainTruth? = nil
-
-			if delivered ~= nil and type(delivered.value) == "table" then
-				fieldTruth = { value = delivered.value[field] }
-			end
-
-			fields[field] = if earlier == nil then change else merge(earlier, change, fieldTruth)
-		end
-
-		return { kind = "Struct", fields = fields }
-	end
-
-	if first.kind == "Map" and second.kind == "Map" then
-		local entries: { [any]: any } = table.clone(first.entries)
-		local removals: { [any]: boolean } = {}
-
-		for _, key in first.removed do
-			removals[key] = true
-		end
-
-		for key, value in second.entries do
-			entries[key] = value
-			removals[key] = nil
-		end
-
-		for _, key in second.removed do
-			entries[key] = nil
-
-			if delivered ~= nil and type(delivered.value) == "table" and delivered.value[key] == nil then
-				removals[key] = nil
-			else
-				removals[key] = true
-			end
-		end
-
-		local removed: { any } = {}
-
-		for key in removals do
-			table.insert(removed, key)
-		end
-
-		table.sort(removed, function(a: any, b: any): boolean
-			return a < b
-		end)
-
-		if next(entries) == nil and #removed == 0 then
-			return nil
-		end
-
-		return { kind = "Map", entries = entries, removed = removed }
-	end
-
-	return second
-end
-
-local function combine(
-	first: Types.PublicationFilteredCommit?,
-	second: Types.PublicationFilteredCommit,
-	delivered: { [string]: Types.PublicationDomainTruth }
-): Types.PublicationFilteredCommit
-	if first == nil then
-		return second
-	end
-
-	local byDomain: { [string]: Types.PublicationPatch } = {}
-	local order: { string } = {}
-
-	for _, item in first.patches do
-		byDomain[item.domainId] = item.patch
-		table.insert(order, item.domainId)
-	end
-
-	for _, item in second.patches do
-		local previous = byDomain[item.domainId]
-
-		if previous == nil then
-			byDomain[item.domainId] = item.patch
-			table.insert(order, item.domainId)
-		else
-			byDomain[item.domainId] = merge(previous, item.patch, delivered[item.domainId])
-		end
-	end
-
-	local patches: { Types.PublicationDomainPatch } = {}
-
-	for _, domainId in order do
-		local patch = byDomain[domainId]
-
-		if patch ~= nil then
-			table.insert(patches, { domainId = domainId, patch = patch })
-		end
-	end
-
-	local events: { Types.PublicationEvent } = {}
-
-	for _, event in first.events do
-		table.insert(events, event)
-	end
-
-	for _, event in second.events do
-		table.insert(events, event)
-	end
-
-	return { sequence = second.sequence, patches = patches, events = events }
-end
-
-local function applyKnown(
-	truth: { [string]: Types.PublicationDomainTruth },
-	domainId: string,
-	patch: Types.PublicationPatch
-): ()
-	local previous = truth[domainId]
-
-	if previous ~= nil then
-		truth[domainId] = { value = apply(previous.value, patch) }
-	elseif patch.kind == "Replace" then
-		truth[domainId] = { value = copy(patch.value) }
-	end
+local function abandon(self: Runtime, stream: Stream): ()
+	local owner = diagnosticOwner(self)
+	Metrics.Count(owner, "publicationRecordsAbandoned", #stream.records)
+	Metrics.Adjust(owner, "publicationQueuedRecords", -#stream.records)
+	Metrics.Adjust(owner, "publicationQueuedBytes", -stream.queuedBytes)
 end
 
 local function truthBeforeTail(stream: Stream): { [string]: Types.PublicationDomainTruth }
@@ -204,7 +52,7 @@ local function truthBeforeTail(stream: Stream): { [string]: Types.PublicationDom
 
 	for index = 1, #stream.records - 1 do
 		for _, item in stream.records[index].commit.patches do
-			applyKnown(truth, item.domainId, item.patch)
+			Composition.ApplyKnown(truth, item.domainId, item.patch)
 		end
 	end
 
@@ -284,6 +132,8 @@ function PublicationScheduler.Enqueue(
 	local stream: Stream = find(self, key, true) :: Stream
 
 	if stream.needsBaseline then
+		Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
+
 		return false, "PublicationBaselinePending"
 	end
 
@@ -291,7 +141,7 @@ function PublicationScheduler.Enqueue(
 	local tail = records[#records]
 	local isEvent = #commit.events > 0
 	local canMerge = tail ~= nil and #tail.commit.events == 0 and tail.order == (order or 0)
-	local composed = if canMerge then combine(tail.commit, commit, truthBeforeTail(stream)) else commit
+	local composed = if canMerge then Composition.Combine(tail.commit, commit, truthBeforeTail(stream)) else commit
 	local newRecords = #records + (if canMerge or (#composed.patches == 0 and not isEvent) then 0 else 1)
 	local size = if #composed.patches == 0 and #composed.events == 0 then 0 else self.options.MeasureRecord(composed)
 	local newBytes = stream.queuedBytes - (if canMerge then tail.bytes else 0) + size
@@ -302,24 +152,71 @@ function PublicationScheduler.Enqueue(
 		or barriers > self.options.maxBarriers
 		or stream.pendingEvents + #commit.events > self.options.maxEvents
 		or newBytes > self.options.maxQueuedBytes
+		or (
+			self.options.backlog ~= nil
+			and (newRecords > self.options.backlog.maxStreamRecords or newBytes > self.options.backlog.maxStreamBytes)
+		)
 	then
+		Metrics.Count(diagnosticOwner(self), "streamDiscontinuities", 1)
+		Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
 		self:MarkBaselinePending(key)
 
 		return false, "PublicationStreamOverloaded"
 	end
 
+	-- Capacity replacement is atomic: retain the old tail unless the new one fits.
+	local charge: Types.PublicationCharge? = nil
+
+	if size > 0 and self.options.backlog ~= nil then
+		charge = self.options.backlog:Acquire(
+			key,
+			composed,
+			size,
+			if canMerge then tail.charge else nil,
+			nil,
+			nil,
+			canMerge and not isEvent
+		)
+
+		if charge == nil then
+			Metrics.Count(diagnosticOwner(self), "streamDiscontinuities", 1)
+			Metrics.Count(diagnosticOwner(self), "publicationDropped", 1)
+			self:MarkBaselinePending(key)
+
+			return false, "PublicationAggregateOverloaded"
+		end
+	end
+
+	local owner = diagnosticOwner(self)
+	local oldCount, oldBytes = #records, stream.queuedBytes
+	local queuedAt = if canMerge then tail.queuedAt else (self.options.Now or os.clock)()
+
 	if canMerge then
+		Metrics.Count(owner, "stateCoalesces", 1)
+
+		if size == 0 and tail.charge ~= nil then
+			tail.charge.release()
+		end
+
 		table.remove(records)
 		stream.queuedBytes -= tail.bytes
 	end
 
 	if size > 0 then
-		table.insert(records, { commit = composed, bytes = size, order = order or 0 })
+		table.insert(
+			records,
+			{ queuedAt = queuedAt, commit = composed, bytes = size, order = order or 0, charge = charge }
+		)
+
 		stream.queuedBytes += size
 		stream.pendingEvents += #composed.events
 		stream.barriers += if #composed.events > 0 then 1 else 0
 	end
 
+	Metrics.Count(owner, "publicationAdmitted", 1)
+	Metrics.Count(owner, "semanticBarriers", if isEvent then 1 else 0)
+	Metrics.Adjust(owner, "publicationQueuedRecords", #records - oldCount)
+	Metrics.Adjust(owner, "publicationQueuedBytes", stream.queuedBytes - oldBytes)
 	activate(self, stream)
 
 	if #records == 0 then
@@ -331,27 +228,52 @@ end
 
 function PublicationScheduler.MarkBaselinePending(self: Runtime, key: Types.PublicationStreamKey): ()
 	local stream: Stream = find(self, key, true) :: Stream
+	abandon(self, stream)
+
+	for _, pending in stream.records do
+		if pending.charge ~= nil then
+			pending.charge.release()
+		end
+	end
+
 	table.clear(stream.records)
 	stream.pendingEvents = 0
 	stream.queuedBytes = 0
 	stream.barriers = 0
 	stream.needsBaseline = true
+	stream.delivered = {}
 	deactivate(self, stream)
 end
 
 function PublicationScheduler.ResetAfterBaseline(
 	self: Runtime,
 	key: Types.PublicationStreamKey,
-	domains: { [string]: Types.PublicationDomainTruth }
+	domains: { [string]: Types.PublicationDomainTruth },
+	preserveQueued: boolean?,
+	owned: boolean?
 ): ()
 	local stream: Stream = find(self, key, true) :: Stream
-	table.clear(stream.records)
-	stream.pendingEvents = 0
-	stream.queuedBytes = 0
-	stream.barriers = 0
+
+	if not preserveQueued then
+		abandon(self, stream)
+
+		for _, pending in stream.records do
+			if pending.charge ~= nil then
+				pending.charge.release()
+			end
+		end
+
+		table.clear(stream.records)
+		stream.pendingEvents = 0
+		stream.queuedBytes = 0
+		stream.barriers = 0
+		deactivate(self, stream)
+	end
+
 	stream.needsBaseline = false
-	stream.delivered = copy(domains)
-	deactivate(self, stream)
+	-- N3 canonical values are already frozen and owned; applying a patch copies
+	-- changed paths. Only the top-level delivered index must be writable here.
+	stream.delivered = if owned then table.clone(domains) else Composition.Copy(domains)
 end
 
 function PublicationScheduler.RemoveStream(self: Runtime, key: Types.PublicationStreamKey): ()
@@ -362,6 +284,13 @@ function PublicationScheduler.RemoveStream(self: Runtime, key: Types.Publication
 	end
 
 	deactivate(self, stream)
+	abandon(self, stream)
+
+	for _, pending in stream.records do
+		if pending.charge ~= nil then
+			pending.charge.release()
+		end
+	end
 
 	local actors = self.streams[key.recipient]
 	actors[key.actor] = nil
@@ -403,6 +332,13 @@ function PublicationScheduler.GetNextRecordOrder(self: Runtime, key: Types.Publi
 	return if pending ~= nil then pending.order else nil
 end
 
+function PublicationScheduler.GetNextRecordQueuedAt(self: Runtime, key: Types.PublicationStreamKey): number?
+	local stream = find(self, key, false)
+	local pending = if stream ~= nil then stream.records[1] else nil
+
+	return if pending ~= nil then pending.queuedAt else nil
+end
+
 function PublicationScheduler.DrainBudgeted(
 	self: Runtime,
 	maxBytes: number,
@@ -428,14 +364,40 @@ function PublicationScheduler.DrainBudgeted(
 
 		if pending ~= nil and encodedBytes + pending.bytes <= maxBytes then
 			table.remove(stream.records, 1)
+			local owner = diagnosticOwner(self)
+			Metrics.Adjust(owner, "publicationQueuedRecords", -1)
+			Metrics.Adjust(owner, "publicationQueuedBytes", -pending.bytes)
+
+			Metrics.Observe(
+				owner,
+				"reliableQueueResidenceSeconds",
+				math.max(0, (self.options.Now or os.clock)() - pending.queuedAt)
+			)
+
 			stream.pendingEvents -= #pending.commit.events
 			stream.queuedBytes -= pending.bytes
 			stream.barriers -= if #pending.commit.events > 0 then 1 else 0
-			table.insert(records, { stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes })
+
+			local charge = pending.charge
+
+			if charge ~= nil then
+				if self.options.retainDrained then
+					charge.stage()
+				else
+					charge.release()
+					charge = nil
+				end
+			end
+
+			table.insert(
+				records,
+				{ stream = stream.key, commit = pending.commit, encodedSizeBytes = pending.bytes, charge = charge }
+			)
+
 			encodedBytes += pending.bytes
 
 			for _, item in pending.commit.patches do
-				applyKnown(stream.delivered, item.domainId, item.patch)
+				Composition.ApplyKnown(stream.delivered, item.domainId, item.patch)
 			end
 
 			if #stream.records > 0 then
@@ -450,6 +412,18 @@ function PublicationScheduler.DrainBudgeted(
 end
 
 function PublicationScheduler.Destroy(self: Runtime): ()
+	for _, actors in self.streams do
+		for _, stream in actors do
+			abandon(self, stream)
+
+			for _, pending in stream.records do
+				if pending.charge ~= nil then
+					pending.charge.release()
+				end
+			end
+		end
+	end
+
 	table.clear(self.active)
 	table.clear(self.streams)
 end

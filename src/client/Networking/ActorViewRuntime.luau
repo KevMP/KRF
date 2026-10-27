@@ -38,8 +38,8 @@ function ActorViewRuntime.new(
 	local destroyed: boolean = false
 	local admit: () -> boolean = Recovery.Admission(options.Now)
 
-	local function report(actor: Types.ActorStreamRecord, reason: string): ()
-		pcall(options.ReportFault, { actorId = actor.actorId, reason = reason })
+	local function report(actor: Types.ActorStreamRecord, reason: string, terminal: boolean?): ()
+		pcall(options.ReportFault, { actorId = actor.actorId, reason = reason }, terminal)
 	end
 
 	local function halt(state: State, reason: string): ()
@@ -69,7 +69,7 @@ function ActorViewRuntime.new(
 			owner:NotifyUnavailable()
 		end
 
-		report(state.actor, reason)
+		report(state.actor, reason, true)
 	end
 
 	local function stateFor(actor: Types.ActorStreamRecord): State?
@@ -236,7 +236,7 @@ function ActorViewRuntime.new(
 					state.domains = stage.domains
 					state.revision = revision
 					state.status = "Live"
-					state.recovery.Cancel()
+					state.recovery.Cancel(true)
 					RegistryOwner.Added:Fire(owner.view)
 
 					return
@@ -253,7 +253,7 @@ function ActorViewRuntime.new(
 				state.domains = stage.domains
 				state.revision = revision
 				state.status = "Live"
-				state.recovery.Cancel()
+				state.recovery.Cancel(true)
 
 				for id: string, domain: PublicTypes.DomainViewOwner in previous do
 					if stage.domains[id] == nil then

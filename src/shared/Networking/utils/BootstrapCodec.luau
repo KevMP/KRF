@@ -165,6 +165,39 @@ local function writeManifest(writer: Writer, manifest: Types.ProtocolManifest): 
 			writeSchema(writer, command.result, 1)
 		end
 	end
+
+	local hints: { Types.ManifestHint } = if manifest.hints ~= nil then manifest.hints else {}
+	local hintCount = if type(hints) == "table" then Collections.GetArrayLength(hints) else nil
+
+	if hintCount == nil then
+		error("InvalidProtocolManifest", 0)
+	end
+
+	writeUnsigned(writer, hintCount, 4)
+	local hintFields = { id = true, code = true, direction = true, target = true, mode = true, payload = true }
+
+	for _, hint: Types.ManifestHint in hints do
+		for field in next, hint :: any do
+			if type(field) ~= "string" or not hintFields[field] then
+				error("InvalidProtocolManifest", 0)
+			end
+		end
+
+		if
+			(hint.direction ~= "ClientToServer" and hint.direction ~= "ServerToClient")
+			or (hint.target ~= "None" and hint.target ~= "Actor")
+			or (hint.mode ~= "Latest" and hint.mode ~= "Pulse")
+		then
+			error("InvalidProtocolManifest", 0)
+		end
+
+		writeString(writer, hint.id)
+		writeUnsigned(writer, hint.code, 2)
+		writeUnsigned(writer, if hint.direction == "ClientToServer" then 0 else 1, 1)
+		writeUnsigned(writer, if hint.target == "None" then 0 else 1, 1)
+		writeUnsigned(writer, if hint.mode == "Latest" then 0 else 1, 1)
+		writeSchema(writer, hint.payload, 1)
+	end
 end
 
 local function take(reader: Reader, count: number): number
@@ -333,11 +366,42 @@ function BootstrapCodec.Decode(source: buffer): Types.ProtocolManifest
 		table.insert(commands, command)
 	end
 
+	local hints: { Types.ManifestHint } = {}
+	local hintCount = readCount(reader, 10)
+
+	for _ = 1, hintCount do
+		local id = readString(reader)
+		local code = readUnsigned(reader, 2)
+		local direction = readUnsigned(reader, 1)
+		local target = readUnsigned(reader, 1)
+		local mode = readUnsigned(reader, 1)
+
+		if direction > 1 or target > 1 or mode > 1 then
+			error("MalformedPacket", 0)
+		end
+
+		local hint: Types.ManifestHint = {
+			id = id,
+			code = code,
+			direction = if direction == 0 then "ClientToServer" else "ServerToClient",
+			target = if target == 0 then "None" else "Actor",
+			mode = if mode == 0 then "Latest" else "Pulse",
+			payload = readSchema(reader, 1),
+		}
+
+		table.insert(hints, hint)
+	end
+
 	if reader.offset ~= reader.limit then
 		error("MalformedPacket", 0)
 	end
 
-	return { version = version, domains = domains, commands = if commandCount > 0 then commands else nil }
+	return {
+		version = version,
+		domains = domains,
+		commands = if commandCount > 0 then commands else nil,
+		hints = if hintCount > 0 then hints else nil,
+	}
 end
 
 return BootstrapCodec

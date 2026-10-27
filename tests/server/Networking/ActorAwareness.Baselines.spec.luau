@@ -87,9 +87,10 @@ it("does not leave a yield gap between stream creation and fence installation", 
 
 	fixture.publication.CaptureBaseline = function(
 		self,
-		current: ActorTypes.Actor
+		current: ActorTypes.Actor,
+		publicOnly: boolean?
 	): ServerNetworkingTypes.PublicationBaseline?
-		local baseline: ServerNetworkingTypes.PublicationBaseline? = original(self, current)
+		local baseline: ServerNetworkingTypes.PublicationBaseline? = original(self, current, publicOnly)
 		assert(baseline ~= nil, "Expected canonical capture")
 		capturedSequence = baseline.sequence
 

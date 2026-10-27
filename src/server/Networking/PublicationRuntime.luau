@@ -10,6 +10,7 @@ PublicationRuntime.__index = PublicationRuntime
 
 type Attachment = {
 	sequence: number,
+	baselineBytes: number,
 	captures: { [string]: Types.PublicationCaptureResult },
 	disconnects: { { domainId: string, callback: () -> () } },
 	active: boolean,
@@ -259,6 +260,7 @@ local function publish(self: Runtime, actor: ActorTypes.Actor, attachment: Attac
 	end
 
 	for domainId, captured in staged do
+		attachment.baselineBytes += captured.encodedSizeBytes - attachment.captures[domainId].encodedSizeBytes
 		attachment.captures[domainId] = captured
 	end
 
@@ -351,6 +353,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 
 	local attachment: Attachment = {
 		sequence = 0,
+		baselineBytes = 4,
 		captures = {},
 		disconnects = {},
 		active = true,
@@ -364,6 +367,7 @@ function PublicationRuntime.AttachActor(self: Runtime, actor: ActorTypes.Actor):
 	local success, failure = pcall(function()
 		for _, domain in self.domains do
 			attachment.captures[domain.id] = captureDomain(self, actor, domain, nil)
+			attachment.baselineBytes += 4 + attachment.captures[domain.id].encodedSizeBytes
 
 			if domain.observe ~= nil then
 				local ok, kind, disconnect = runSync(function(): (() -> ())?
@@ -449,11 +453,39 @@ function PublicationRuntime.IsActorAttached(self: Runtime, actor: ActorTypes.Act
 	return not self.destroyed and self.attachments[actor] ~= nil
 end
 
+-- Use N3's already-measured canonical weights. Public membership selection
+-- only walks catalogue metadata; it never measures or encodes values again.
+function PublicationRuntime.GetBaselineWeight(self: Runtime, actor: ActorTypes.Actor, publicOnly: boolean?): number
+	local attachment = self.attachments[actor]
+
+	if attachment == nil then
+		return 0
+	end
+
+	if not publicOnly then
+		return attachment.baselineBytes
+	end
+
+	local bytes = 4
+
+	for _, domain in self.domains do
+		if domain.audience == "All" then
+			bytes += 4 + attachment.captures[domain.id].encodedSizeBytes
+		end
+	end
+
+	return bytes
+end
+
 function PublicationRuntime.GetAttachedActors(self: Runtime): { ActorTypes.Actor }
 	return table.clone(self.orderedActors)
 end
 
-function PublicationRuntime.CaptureBaseline(self: Runtime, actor: ActorTypes.Actor): Types.PublicationBaseline?
+function PublicationRuntime.CaptureBaseline(
+	self: Runtime,
+	actor: ActorTypes.Actor,
+	publicOnly: boolean?
+): Types.PublicationBaseline?
 	local attachment: Attachment? = self.attachments[actor]
 
 	if attachment == nil then
@@ -462,8 +494,12 @@ function PublicationRuntime.CaptureBaseline(self: Runtime, actor: ActorTypes.Act
 
 	local domains: { [string]: Types.PublicationDomainTruth } = {}
 
-	for domainId, captured in attachment.captures do
-		domains[domainId] = table.freeze({ value = captured.value })
+	-- Audience membership is cheap metadata selection at the locked anchor
+	-- boundary. Hidden values must never enter retained public ownership.
+	for _, domain in self.domains do
+		if not publicOnly or domain.audience == "All" then
+			domains[domain.id] = table.freeze({ value = attachment.captures[domain.id].value })
+		end
 	end
 
 	return table.freeze({ sequence = attachment.sequence, domains = table.freeze(domains) })

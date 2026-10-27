@@ -5,6 +5,127 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 
 local types = {}
 
+-- Private local introspection; absent outside the owning runtime lifetime.
+export type NetworkingDiagnostics = {
+	read GetServerSnapshot: () -> SharedNetworkingTypes.DiagnosticSnapshot?,
+	read GetConnectionSnapshot: (Player) -> SharedNetworkingTypes.DiagnosticSnapshot?,
+}
+
+export type HintRuntime = {
+	read SendTo: (Player, string, ActorTypes.Actor?, any?) -> (boolean, string?),
+}
+
+export type HintSendLimits = {
+	windowSeconds: number,
+	maxAttempts: number,
+	maxBytes: number,
+	maxGlobalAttempts: number,
+	maxGlobalBytes: number,
+	maxPending: number,
+	maxPendingBytes: number,
+	maxGlobalPending: number,
+	maxGlobalPendingBytes: number,
+	maxLatestKeys: number,
+	maxGlobalLatestKeys: number,
+	maxSequence: number,
+	maxRecords: number,
+	maxConnectionRecords: number,
+	maxSends: number,
+	maxStepBytes: number,
+}
+
+export type HintSendDependencies = {
+	Now: () -> number,
+	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
+	ObserveClientClosed: ((Player) -> ()) -> () -> (),
+	ObserveActorRemoved: ((ActorTypes.Actor) -> ()) -> () -> (),
+	SendUnreliable: (Player, buffer) -> (),
+	awareness: ActorAwarenessRuntime,
+}
+
+export type HintSenderRuntime = {
+	SendTo: (self: HintSenderRuntime, Player, string, ActorTypes.Actor?, any?) -> (boolean, string?),
+	Step: (self: HintSenderRuntime) -> (number, number),
+	ForgetActor: (self: HintSenderRuntime, ActorTypes.Actor) -> (),
+	Destroy: (self: HintSenderRuntime) -> (),
+}
+
+-- Disposable presentation definitions; callbacks remain server-local.
+export type HintContext = {
+	read player: Player,
+	read actor: ActorTypes.Actor?,
+	read hintId: string,
+}
+
+export type HintAuthorize = (HintContext, any) -> (boolean, string?)
+export type HintReceive = (HintContext, any) -> ()
+
+export type HintDefinition = {
+	id: string,
+	direction: SharedNetworkingTypes.HintDirection,
+	target: SharedNetworkingTypes.HintTarget,
+	mode: SharedNetworkingTypes.HintMode,
+	payload: SharedNetworkingTypes.SchemaDefinition,
+	authorize: HintAuthorize?,
+	receive: HintReceive?,
+}
+
+export type LoadedHintDefinition = {
+	read id: string,
+	read direction: SharedNetworkingTypes.HintDirection,
+	read target: SharedNetworkingTypes.HintTarget,
+	read mode: SharedNetworkingTypes.HintMode,
+	read payload: SharedNetworkingTypes.CompiledSchema,
+	read authorize: HintAuthorize?,
+	read receive: HintReceive?,
+}
+
+export type PreparedHintCatalog = {
+	read definitionsById: { [string]: LoadedHintDefinition },
+	read orderedDefinitions: { LoadedHintDefinition },
+}
+
+export type HintRegistry = {
+	read Prepare: ({ HintDefinition }) -> (PreparedHintCatalog?, string?),
+	read Publish: (PreparedHintCatalog) -> (boolean, string?),
+	read Get: (string) -> LoadedHintDefinition?,
+	read GetAll: () -> { LoadedHintDefinition },
+	read IsLoaded: () -> boolean,
+	read _RollbackStartup: () -> (),
+}
+
+export type ServerHintLimits = {
+	maxPackets: number?,
+	maxBytes: number?,
+	maxGlobalPackets: number?,
+	maxGlobalBytes: number?,
+	maxPendingPackets: number?,
+	maxPendingBytes: number?,
+	maxGlobalPendingPackets: number?,
+	maxGlobalPendingBytes: number?,
+	maxRecords: number?,
+	maxLatestKeys: number?,
+	maxGlobalLatestKeys: number?,
+	windowSeconds: number?,
+}
+
+export type ServerHintDependencies = {
+	Now: () -> number,
+	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
+	ObserveClientClosed: ((Player) -> ()) -> () -> (),
+	ObserveActorRemoved: (((ActorTypes.Actor) -> ()) -> () -> ())?,
+	awareness: ActorAwarenessRuntime,
+}
+
+export type ServerHintRuntime = {
+	Handle: (self: ServerHintRuntime, Player, any, ...any) -> (boolean, string?),
+	Step: (self: ServerHintRuntime) -> (number, number),
+	ForgetActor: (self: ServerHintRuntime, ActorTypes.Actor) -> (),
+	Destroy: (self: ServerHintRuntime) -> (),
+}
+
 -- Commands are startup definitions. Context and outcomes contain semantic data
 -- only; connection identities, handles, buffers and egress ownership stay private.
 export type CommandOutcome = {
@@ -65,12 +186,19 @@ export type ServerCommandLimits = {
 	maxHistory: number?,
 	maxHistoryBytes: number?,
 	historySeconds: number?,
+	maxGlobalRequests: number?,
+	maxGlobalBytes: number?,
+	maxGlobalQueuedRequests: number?,
+	maxGlobalQueuedBytes: number?,
+	maxDispatchRequests: number?,
+	maxDispatchVisits: number?,
 }
 
 export type ServerCommandDependencies = {
 	Now: () -> number,
 	ScheduleTimeout: ((number, () -> ()) -> () -> ())?,
 	IsClientReady: (Player) -> boolean,
+	ObserveClientReady: ((Player) -> ()) -> () -> (),
 	ObserveClientClosed: ((Player) -> ()) -> () -> (),
 	awareness: ActorAwarenessRuntime,
 	ReportFault: (Player, string) -> (),
@@ -79,6 +207,8 @@ export type ServerCommandDependencies = {
 
 export type ServerCommandRuntime = {
 	Handle: (self: ServerCommandRuntime, Player, any, ...any) -> (boolean, string?),
+	Step: (self: ServerCommandRuntime) -> (number, number),
+	_GetPendingForTests: (self: ServerCommandRuntime) -> (number, number),
 	Destroy: (self: ServerCommandRuntime) -> (),
 }
 
@@ -114,7 +244,8 @@ export type ServerHandshakeModule = {
 export type ServerNetworking = {
 	Prepare: (
 		catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
-		commands: PreparedCommandCatalog?
+		commands: PreparedCommandCatalog?,
+		hints: PreparedHintCatalog?
 	) -> (SharedNetworkingTypes.PreparedProtocol?, string?),
 	Publish: (protocol: SharedNetworkingTypes.PreparedProtocol) -> (boolean, string?),
 	IsClientReady: (player: Player) -> boolean,
@@ -159,7 +290,9 @@ export type PublicationCommit = {
 
 -- The wrapper preserves a present domain whose Optional state is nil.
 export type PublicationDomainTruth = SharedNetworkingTypes.ActorDomainTruth
+
 export type PublicationBaseline = { read sequence: number, read domains: { [string]: PublicationDomainTruth } }
+
 export type PublicationFault = { read actorId: string, read domainId: string, read reason: string }
 export type PublicationRuntimeOptions = { ReportFault: ((fault: PublicationFault) -> ())? }
 
@@ -168,8 +301,9 @@ export type PublicationRuntime = {
 	AttachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (boolean, string?),
 	DetachActor: (self: PublicationRuntime, actor: ActorTypes.Actor) -> (),
 	GetActorSequence: (self: PublicationRuntime, actor: ActorTypes.Actor) -> number,
+	GetBaselineWeight: (self: PublicationRuntime, actor: ActorTypes.Actor, publicOnly: boolean?) -> number,
 	GetAttachedActors: (self: PublicationRuntime) -> { ActorTypes.Actor },
-	CaptureBaseline: (self: PublicationRuntime, actor: ActorTypes.Actor) -> PublicationBaseline?,
+	CaptureBaseline: (self: PublicationRuntime, actor: ActorTypes.Actor, publicOnly: boolean?) -> PublicationBaseline?,
 	ObserveCommits: (self: PublicationRuntime, observer: (commit: PublicationCommit) -> ()) -> () -> (),
 	WithActorCommit: (self: PublicationRuntime, actor: ActorTypes.Actor, callback: () -> ()) -> (),
 	Destroy: (self: PublicationRuntime) -> (),
@@ -205,6 +339,38 @@ export type PublicationRecord = {
 	read stream: PublicationStreamKey,
 	read commit: PublicationFilteredCommit,
 	read encodedSizeBytes: number,
+	read charge: PublicationCharge?,
+}
+
+-- Private retained-work ownership; staging transfers cleanup to the pump epilogue.
+export type PublicationCharge = { release: () -> (), stage: () -> (), resume: () -> () }
+
+export type ReliableBacklogLimits = {
+	maxRecords: number?,
+	maxBytes: number?,
+	actorRecords: number?,
+	actorBytes: number?,
+	recipientRecords: number?,
+	recipientBytes: number?,
+	recoveryRecords: number?,
+	recoveryBytes: number?,
+}
+
+export type ReliableBacklog = {
+	read maxStreamRecords: number,
+	read maxStreamBytes: number,
+	Acquire: (
+		self: ReliableBacklog,
+		key: PublicationStreamKey,
+		payload: any,
+		bytes: number,
+		previous: PublicationCharge?,
+		baseline: boolean?,
+		onUnused: (() -> ())?,
+		reuseQueued: boolean?
+	) -> PublicationCharge?,
+	CloseRecipient: (self: ReliableBacklog, recipient: any) -> (),
+	Destroy: (self: ReliableBacklog) -> (),
 }
 
 export type PublicationStreamStatus = {
@@ -221,6 +387,11 @@ export type PublicationDrainResult = {
 }
 
 export type PublicationSchedulerOptions = {
+	read diagnostics: SharedNetworkingTypes.DiagnosticCollector?,
+	read IsCurrent: (() -> boolean)?,
+	read Now: (() -> number)?,
+	read backlog: ReliableBacklog?,
+	read retainDrained: boolean?,
 	read maxBarriers: number,
 	read maxEvents: number,
 	read maxQueuedBytes: number,
@@ -240,12 +411,15 @@ export type PublicationScheduler = {
 	ResetAfterBaseline: (
 		self: PublicationScheduler,
 		stream: PublicationStreamKey,
-		domains: { [string]: PublicationDomainTruth }
+		domains: { [string]: PublicationDomainTruth },
+		preserveQueued: boolean?,
+		owned: boolean?
 	) -> (),
 	RemoveStream: (self: PublicationScheduler, stream: PublicationStreamKey) -> (),
 	GetStreamStatus: (self: PublicationScheduler, stream: PublicationStreamKey) -> PublicationStreamStatus,
 	GetNextRecordBytes: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
 	GetNextRecordOrder: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
+	GetNextRecordQueuedAt: (self: PublicationScheduler, stream: PublicationStreamKey) -> number?,
 	DrainBudgeted: (self: PublicationScheduler, maxBytes: number, maxRecords: number) -> PublicationDrainResult,
 	Destroy: (self: PublicationScheduler) -> (),
 }
@@ -256,6 +430,7 @@ export type PublicationSchedulerModule = { new: (options: PublicationSchedulerOp
 export type ActorAwarenessFault = { player: Player, actorId: string, reason: string }
 
 export type ActorAwarenessDependencies = {
+	Now: (() -> number)?,
 	CloseConnection: ((Player, string) -> ())?,
 	IsClientReady: (Player) -> boolean,
 	ObserveClientReady: ((Player) -> ()) -> () -> (),
@@ -268,7 +443,21 @@ export type ActorAwarenessDependencies = {
 }
 
 -- Small injected limits exercise boundaries without large allocations. Defaults are private tuning.
+export type ReliableWorkLimits = {
+	connections: number?,
+	streams: number?,
+	checks: number?,
+	prepares: number?,
+	measurements: number?,
+	encodes: number?,
+	sends: number?,
+	captures: number?,
+	priorities: number?,
+}
+
 export type ActorAwarenessOptions = {
+	backlogLimits: ReliableBacklogLimits?,
+	workLimits: ReliableWorkLimits?,
 	maxBaselineBytes: number,
 	maxChunkBytes: number,
 	maxQueuedBytes: number,
@@ -279,6 +468,7 @@ export type ActorAwarenessOptions = {
 }
 
 export type ActorAwarenessRuntime = {
+	ObserveActorRemoved: (self: ActorAwarenessRuntime, (ActorTypes.Actor) -> ()) -> () -> (),
 	ResolveActor: (self: ActorAwarenessRuntime, player: Player, handle: number) -> (ActorTypes.Actor?, string?),
 	ReserveCommandResult: (
 		self: ActorAwarenessRuntime,

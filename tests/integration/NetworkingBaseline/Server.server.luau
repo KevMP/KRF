@@ -4,19 +4,35 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local StudioTestService = game:GetService("StudioTestService")
+local Stats = game:GetService("Stats")
 local KRF = ReplicatedStorage.Packages.KRF
+local Scheduling = require(KRF.server.Networking.utils.AwarenessScheduling)
 local ActorTypes = require(KRF.server.Actor.types)
 local TagTypes = require(KRF.server.Tags.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
+local SharedTypes = require(KRF.shared.Networking.types)
+local ReplicationTypes = require(KRF.server.Replication.types)
 local Server = require(KRF.server)
 local Actors: ActorTypes.ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local Networking: NetworkingTypes.ServerNetworking = require(KRF.server.Networking.ServerNetworking)
 local Constants = require(KRF.shared.Networking.utils.ActorProtocolConstants)
 local Awareness = require(KRF.server.Networking.ActorAwarenessRuntime)
 local Scenario = require(ReplicatedStorage.NetworkingBaselineScenario)
+local diagnosticsModule = KRF.server.Networking:FindFirstChild("NetworkingDiagnostics")
+local Diagnostics = if diagnosticsModule ~= nil then require(diagnosticsModule) else nil
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("NetworkingBaselineControl") :: RemoteEvent
 
+Scheduling.GetBudget = function(): NetworkingTypes.AwarenessStepBudget
+	local bytes, records = Scenario.budget()
+
+	return { maxBytes = bytes, maxRecords = records }
+end
+
 Players.CharacterAutoLoads = false
+
+local testArgs = StudioTestService:GetTestArgs()
+local clientCount = if type(testArgs) == "table" then testArgs.clientCount else 2
+assert(clientCount == 2 or clientCount == 4 or clientCount == 6 or clientCount == 8, "Unsupported client count")
 
 local subjects: { ActorTypes.Actor } = {}
 local models: { Model } = {}
@@ -30,12 +46,18 @@ local frames: { number } = {}
 local frameTimes: { number } = {}
 local packetSizes: { number } = {}
 local steps: { { number } } = {}
+local workSamples: { any } = {}
+local engineSamples: { { number } } = {}
+local nextEngineSample = 0
 local measuring, finished = false, false
 local phase = "Ready"
 local commits = 0
 local caseStart = 0
 local heap: { { number } } = {}
-local originalSend = Networking.SendReliable
+local idleFrames: { number } = {}
+local idleMeasuring = false
+local idle: { any } = {}
+local originalAwarenessNew = Awareness.new
 local originalStep = Awareness.Step
 
 Awareness.Step = function(...: any): ()
@@ -44,28 +66,60 @@ Awareness.Step = function(...: any): ()
 
 	if measuring then
 		table.insert(steps, { started - caseStart, (os.clock() - started) * 1e6 })
+		table.insert(workSamples, Scenario.work((...)))
 	end
 end
 
-Networking.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
-	local success, reason = originalSend(player, payload)
+-- Observe the actual installed delegate on both revisions. N10's installation
+-- calls its owner directly rather than routing through the public facade.
+Awareness.new = function(
+	publication: NetworkingTypes.PublicationRuntime,
+	catalog: ReplicationTypes.PreparedReplicationDomainCatalog,
+	protocol: SharedTypes.ClientProtocol,
+	dependencies: NetworkingTypes.ActorAwarenessDependencies,
+	options: NetworkingTypes.ActorAwarenessOptions
+): NetworkingTypes.ActorAwarenessRuntime
+	local observed = table.clone(dependencies)
+	local send = dependencies.SendReliable
 
-	if measuring and success and buffer.readu8(payload, 0) == Constants.PACKET_KIND then
-		local traffic = sent[player] or { bytes = 0, packets = 0 }
-		traffic.bytes += buffer.len(payload)
-		traffic.packets += 1
-		sent[player] = traffic
-		table.insert(packetSizes, buffer.len(payload))
+	observed.SendReliable = function(player: Player, payload: buffer): (boolean, string?)
+		local success, reason = send(player, payload)
+
+		if measuring and success and buffer.readu8(payload, 0) == Constants.PACKET_KIND then
+			local traffic = sent[player] or { bytes = 0, packets = 0 }
+			traffic.bytes += buffer.len(payload)
+			traffic.packets += 1
+			sent[player] = traffic
+			table.insert(packetSizes, buffer.len(payload))
+		end
+
+		return success, reason
 	end
 
-	return success, reason
+	return originalAwarenessNew(publication, catalog, protocol, observed, options)
 end
 
 local heartbeat = RunService.Heartbeat:Connect(function(delta: number)
+	if idleMeasuring then
+		table.insert(idleFrames, delta * 1000)
+	end
+
 	if measuring then
 		table.insert(frames, delta * 1000)
 		table.insert(frameTimes, os.clock() - caseStart)
 		table.insert(heap, { os.clock() - caseStart, gcinfo() })
+
+		if os.clock() >= nextEngineSample then
+			nextEngineSample = os.clock() + 1
+
+			-- Engine-wide approximate KB/s and scheduler seconds, not KRF bytes or RTT.
+			table.insert(engineSamples, {
+				os.clock() - caseStart,
+				Stats.DataSendKbps,
+				Stats.DataReceiveKbps,
+				Stats.HeartbeatTime,
+			})
+		end
 	end
 end)
 
@@ -89,14 +143,16 @@ local function finish(success: boolean, reason: string?): ()
 		end
 	end)
 
-	Networking.SendReliable = originalSend
+	Awareness.new = originalAwarenessNew
 	Awareness.Step = originalStep
 
 	StudioTestService:EndTest({
 		success = success and cleaned,
 		reason = reason or (if cleaned then nil else tostring(cleanupReason)),
 		phase = phase,
-		clients = 2,
+		clients = clientCount,
+		workloadVersion = 2,
+		idle = idle,
 		cases = cases,
 	})
 end
@@ -132,7 +188,7 @@ local function request(kind: string, extra: any?): ()
 	end
 
 	waitFor(function(): boolean
-		return replyCount() == 2
+		return replyCount() == clientCount
 	end, "Incomplete native " .. kind)
 end
 
@@ -150,7 +206,8 @@ control.OnServerEvent:Connect(function(player: Player, payload: any)
 			assert(Networking.IsClientReady(player) and not ready[player], "Bad READY")
 			ready[player] = true
 		else
-			assert(report.phase == phase and replies[player] == nil, "Duplicate/wrong phase")
+			assert(ready[player] and report.phase == phase and replies[player] == nil, "Duplicate/wrong phase")
+			report.clientId = player.UserId
 			report.serverAckAt = os.clock()
 			replies[player] = report
 		end
@@ -225,8 +282,18 @@ else
 			waitFor(function(): boolean
 				local players = Players:GetPlayers()
 
-				return #players == 2 and ready[players[1]] == true and ready[players[2]] == true
-			end, "Expected two real clients")
+				if #players ~= clientCount then
+					return false
+				end
+
+				for _, player in players do
+					if not ready[player] then
+						return false
+					end
+				end
+
+				return true
+			end, "Expected all configured real clients")
 
 			local publication = Networking._GetPublicationRuntimeForTests()
 			assert(publication ~= nil, "Missing startup-owned N3 runtime")
@@ -257,7 +324,25 @@ else
 
 				generations = table.create(#subjects, 0)
 				request("Baseline", { actorIds = ids })
+				idleFrames = {}
+				local idleStartedUnixMs = DateTime.now().UnixTimestampMillis
+				idleMeasuring = true
 				request("Quiet")
+				idleMeasuring = false
+				local idleClients: { any } = {}
+
+				for _, reply in replies do
+					table.insert(idleClients, reply)
+				end
+
+				table.insert(idle, {
+					actors = #subjects,
+					startedUnixMs = idleStartedUnixMs,
+					endedUnixMs = DateTime.now().UnixTimestampMillis,
+					serverHeartbeatMs = Scenario.summarize(idleFrames),
+					clients = idleClients,
+				})
+
 				local beforeQuiet = commits
 
 				for _, actor in subjects do
@@ -272,12 +357,22 @@ else
 					local epoch = workspace:GetServerTimeNow()
 					request("Arm", { mode = mode, epoch = epoch, previous = generations })
 					frames, frameTimes, heap, starts, sent, packetSizes, steps = {}, {}, {}, {}, {}, {}, {}
+					workSamples = {}
+					engineSamples, nextEngineSample = {}, 0
+					local diagnostics = Diagnostics
+					local diagnosticStart: SharedTypes.DiagnosticSnapshot? = nil
+
+					if diagnostics ~= nil then
+						diagnosticStart = diagnostics.GetServerSnapshot()
+					end
+
 					local mutationUs: { number } = {}
 					local tickCpuUs: { number } = {}
 					local tickTimes: { number } = {}
 					local expected = 0
 					local beforeCommits = commits
 					caseStart = os.clock()
+					local startedUnixMs = DateTime.now().UnixTimestampMillis
 					measuring = true
 					replies = {}
 
@@ -316,7 +411,7 @@ else
 					end
 
 					waitFor(function(): boolean
-						return replyCount() == 2
+						return replyCount() == clientCount
 					end, "Lost native generations/events")
 
 					RunService.Heartbeat:Wait()
@@ -334,19 +429,36 @@ else
 							"Send/receive mismatch"
 						)
 
+						local clientObserved: { number } = {}
+
 						for index, times in reply.observed do
 							for ordinal, timestamp in times do
-								table.insert(observed, (timestamp - starts[index][ordinal]) * 1000)
+								local latency = (timestamp - starts[index][ordinal]) * 1000
+								table.insert(observed, latency)
+								table.insert(clientObserved, latency)
 							end
 						end
 
+						reply.observedMs = Scenario.summarize(clientObserved)
+
 						table.insert(clients, reply)
+					end
+
+					local diagnosticEnd: SharedTypes.DiagnosticSnapshot? = nil
+
+					if diagnostics ~= nil then
+						diagnosticEnd = diagnostics.GetServerSnapshot()
 					end
 
 					table.insert(cases, {
 						actors = #subjects,
 						modeledPlayers = population.players,
 						mode = mode,
+						recipients = clientCount,
+						hz = Scenario.hz,
+						ticks = #plan,
+						startedUnixMs = startedUnixMs,
+						endedUnixMs = DateTime.now().UnixTimestampMillis,
 						commits = expected,
 						seconds = os.clock() - caseStart,
 						mutationUs = Scenario.summarize(mutationUs),
@@ -354,6 +466,8 @@ else
 						serverHeartbeatMs = Scenario.summarize(frames),
 						observedMs = Scenario.summarize(observed),
 						packetBytes = Scenario.summarize(packetSizes),
+						diagnosticStart = diagnosticStart,
+						diagnosticEnd = diagnosticEnd,
 						clients = clients,
 						raw = {
 							mutationUs = mutationUs,
@@ -363,6 +477,8 @@ else
 							frameTimes = frameTimes,
 							heapKiB = heap,
 							n4Steps = steps,
+							work = workSamples,
+							engine = engineSamples,
 							observedMs = observed,
 							packetBytes = packetSizes,
 						},
