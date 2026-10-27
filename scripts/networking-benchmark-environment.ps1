@@ -12,12 +12,16 @@ function Get-NetworkingBenchmarkEnvironment([string]$Repository, [string]$Studio
         'tests/integration/NetworkingCommands/Utils/Scenario.luau',
         'tests/integration/NetworkingBaseline/Server.server.luau',
         'tests/integration/NetworkingBaseline/Client.client.luau',
+        'tests/integration/NetworkingBaseline/Soak.server.luau',
+        'tests/integration/NetworkingBaseline/Soak.client.luau',
+        'tests/integration/NetworkingBaseline/Utils/Soak.luau',
         'tests/integration/NetworkingBaseline/Utils/Scenario.luau',
         'tests/integration/NetworkingBaseline/Utils/Probe.luau',
         'networking-baseline-test.project.json',
         'test.project.json',
         'rokit.toml'
         'scripts/test-networking-baseline.ps1'
+        'scripts/test-networking-soak.ps1'
         'scripts/run-networking-baseline-tests.luau'
         'scripts/networking-host-monitor.ps1'
     )

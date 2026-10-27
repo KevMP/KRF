@@ -18,6 +18,9 @@
       "NetworkingBaselineScenario": {
         "$path": "tests/integration/NetworkingBaseline/Utils/Scenario.luau"
       },
+      "NetworkingSoak": {
+        "$path": "tests/integration/NetworkingBaseline/Utils/Soak.luau"
+      },
       "TagsLoadScenario": {
         "$path": "tests/integration/TagsLoad/Utils/Scenario.luau"
       },

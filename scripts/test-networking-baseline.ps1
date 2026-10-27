@@ -1,11 +1,12 @@
 param(
     [string]$StudioPath,
     [ValidateSet(2, 4, 6, 8)][int]$ClientCount = 2,
-    [ValidateSet('Publication', 'Commands')][string]$Workload = 'Publication',
+    [ValidateSet('Publication', 'Commands', 'Soak')][string]$Workload = 'Publication',
+    [switch]$SoakSmoke,
     [string]$ImplementationRevision,
     [ValidateRange(1, 4096)][int]$Records = 64,
     [ValidateRange(1024, 4194304)][int]$Bytes = 32768,
-    [ValidateRange(30, 600)][int]$TimeoutSeconds = 300
+    [ValidateRange(30, 3600)][int]$TimeoutSeconds = 300
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +19,9 @@ $stdoutFile = Join-Path $runDirectory "studio.stdout.log"
 $stderrFile = Join-Path $runDirectory "studio.stderr.log"
 $launcherFile = Join-Path $runDirectory "launcher.luau"
 $launcher = Get-Content -LiteralPath (Join-Path $PSScriptRoot "run-networking-baseline-tests.luau") -Raw
-[System.IO.File]::WriteAllText($launcherFile, $launcher.Replace('local clientCount = 2 --', "local clientCount = $ClientCount --"), [System.Text.UTF8Encoding]::new($false))
+$launcher = $launcher.Replace('local clientCount = 2 --', "local clientCount = $ClientCount --")
+if ($SoakSmoke) { $launcher = $launcher.Replace('local soakSmoke = false --', 'local soakSmoke = true --') }
+[System.IO.File]::WriteAllText($launcherFile, $launcher, [System.Text.UTF8Encoding]::new($false))
 
 if (-not $StudioPath) {
     $version = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "Roblox\Versions") -Directory |
@@ -60,6 +63,12 @@ if ($Workload -eq 'Commands') {
     $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingCommandScenario -NotePropertyValue ([pscustomobject]@{ '$path' = (Join-Path $repository 'tests/integration/NetworkingCommands/Utils/Scenario.luau') })
     $project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingCommands/Server.server.luau'
     $project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingCommands/Client.client.luau'
+}
+if ($Workload -eq 'Soak') {
+    if ($ClientCount -ne 2 -or $ImplementationRevision) { throw 'Soak requires two clients and the current implementation.' }
+    $project.tree.ReplicatedStorage | Add-Member -NotePropertyName NetworkingSoak -NotePropertyValue ([pscustomobject]@{ '$path' = (Join-Path $repository 'tests/integration/NetworkingBaseline/Utils/Soak.luau') })
+    $project.tree.ServerScriptService.NetworkingBaselineServer.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Soak.server.luau'
+    $project.tree.StarterPlayer.StarterPlayerScripts.NetworkingBaselineClient.'$path' = Join-Path $repository 'tests/integration/NetworkingBaseline/Soak.client.luau'
 }
 $projectFile = Join-Path $runDirectory 'fixture.project.json'
 [System.IO.File]::WriteAllText($projectFile, ($project | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
