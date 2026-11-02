@@ -79,9 +79,11 @@ it("owns nested declarations and returns deeply frozen snapshots without native 
 	expect(table.isfrozen(bindings.Keyboard.definition)).toBe(true)
 	expect((input :: any).action).toBeNil()
 
-	expect(pcall(function()
+	local mutable: boolean = pcall(function()
 		(bindings.Keyboard.definition :: any).keyCode = Enum.KeyCode.E
-	end)).toBe(false)
+	end)
+
+	expect(mutable).toBe(false)
 end)
 
 it("rejects empty source ID before any native mutation", function()

@@ -20,6 +20,10 @@ function Installation.Install(isReady: () -> boolean): () -> ()
 			end
 		end,
 		ReportFault = function(reason: string): ()
+			if reason == "InputRuntimeFaulted" then
+				State.Disconnect()
+			end
+
 			warn("[Input] " .. reason)
 		end,
 	})

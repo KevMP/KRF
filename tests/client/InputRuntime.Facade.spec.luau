@@ -57,13 +57,17 @@ end)
 it("exports a frozen facade and read-only event without private owner operations", function()
 	expect(table.isfrozen(Runtime)).toBe(true)
 
-	expect(pcall(function()
+	local mutable: boolean = pcall(function()
 		(Runtime :: any).SetSource = function() end
-	end)).toBe(false)
+	end)
 
-	expect(pcall(function()
+	expect(mutable).toBe(false)
+
+	local writableEvent: boolean = pcall(function()
 		return (Runtime.OnInput :: any).Fire
-	end)).toBe(false)
+	end)
+
+	expect(writableEvent).toBe(false)
 
 	expect((Runtime :: any).RegisterGraphValidator).toBeNil()
 	expect((Runtime :: any).ObservePrimitive).toBeNil()

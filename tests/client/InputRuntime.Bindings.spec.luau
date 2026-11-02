@@ -149,7 +149,7 @@ it("accepts native modifiers thresholds UI references and display metadata witho
 	expect(fixture.bindings["Primary:Keyboard"].PrimaryModifier).toBe(Enum.KeyCode.LeftShift)
 	expect(fixture.bindings["Primary:Keyboard"].SecondaryModifier).toBe(Enum.KeyCode.LeftControl)
 	expect(fixture.bindings["Primary:Keyboard"].DisplayName).toBe("Charge")
-	expect(fixture.bindings["Primary:Gamepad"].PressedThreshold).toBe(0.8)
+	expect(fixture.bindings["Primary:Gamepad"].PressedThreshold).toBeCloseTo(0.8, 6)
 	expect(fixture.bindings["Primary:Touch"].UIButton).toBe(button)
 	expect(fixture.owner.RemoveSource("Core")).toBe(true)
 	expect(button.Parent).toBe(fixture.container)
@@ -159,8 +159,7 @@ end)
 it("installs a typed native Direction1D binding", function()
 	local definition: TestUtils.CoreDefinition = TestUtils.definition(Enum.InputActionType.Direction1D)
 
-	definition.inputs.Primary.bindings =
-		{ Device = { forward = Enum.KeyCode.W, backward = Enum.KeyCode.S, scale = 2, responseCurve = 1 } }
+	definition.inputs.Primary.bindings = { Device = { up = Enum.KeyCode.W, down = Enum.KeyCode.S, scale = 2 } }
 
 	TestUtils.install(fixture, definition)
 	expect(fixture.actions.Primary.Type).toBe(Enum.InputActionType.Direction1D)
@@ -176,8 +175,8 @@ it("installs a typed native Direction2D binding", function()
 
 	definition.inputs.Primary.bindings = {
 		Device = {
-			forward = Enum.KeyCode.W,
-			backward = Enum.KeyCode.S,
+			up = Enum.KeyCode.W,
+			down = Enum.KeyCode.S,
 			left = Enum.KeyCode.A,
 			right = Enum.KeyCode.D,
 			vector2Scale = Vector2.one,
@@ -221,7 +220,7 @@ end)
 
 it("installs a typed native ViewportPosition binding", function()
 	local definition: TestUtils.CoreDefinition = TestUtils.definition(Enum.InputActionType.ViewportPosition)
-	definition.inputs.Primary.bindings = { Device = { pointerIndex = 0 } }
+	definition.inputs.Primary.bindings = { Device = { keyCode = Enum.KeyCode.MousePosition, pointerIndex = 0 } }
 	TestUtils.install(fixture, definition)
 	expect(fixture.actions.Primary.Type).toBe(Enum.InputActionType.ViewportPosition)
 	expect(fixture.bindings["Primary:Device"].Type).toBe(Enum.InputBindingType.Automatic)

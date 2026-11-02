@@ -134,11 +134,11 @@ it("retires release provenance before routing and never reuses a press epoch ID"
 	TestUtils.emit(fixture, "Pressed", true)
 	TestUtils.emit(fixture, "Released", false)
 	TestUtils.emit(fixture, "Pressed", true)
-	expect(assert(occurrences[1].pressEpochId, "Expected Bool press epoch")).never.toBeNil()
+	local firstEpoch: number = assert(occurrences[1].pressEpochId, "Expected Bool press epoch")
+	local releasedEpoch: number = assert(occurrences[2].pressEpochId, "Expected Bool press epoch")
+	expect(firstEpoch > 0).toBe(true)
 
-	expect(assert(occurrences[2].pressEpochId, "Expected Bool press epoch")).toBe(
-		assert(occurrences[1].pressEpochId, "Expected Bool press epoch")
-	)
+	expect(releasedEpoch).toBe(firstEpoch)
 
 	expect(
 		assert(occurrences[3].pressEpochId, "Expected Bool press epoch")

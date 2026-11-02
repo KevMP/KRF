@@ -126,7 +126,7 @@ end)
 
 it("treats viewport zero as a position and never creates a held cancellation", function()
 	local definition: TestUtils.CoreDefinition = TestUtils.definition(Enum.InputActionType.ViewportPosition)
-	definition.inputs.Primary.bindings = { Pointer = { pointerIndex = 0 } }
+	definition.inputs.Primary.bindings = { Pointer = { keyCode = Enum.KeyCode.MousePosition, pointerIndex = 0 } }
 	TestUtils.install(fixture, definition)
 	TestUtils.enable(fixture)
 	TestUtils.emit(fixture, "StateChanged", Vector2.new(100, 50))
