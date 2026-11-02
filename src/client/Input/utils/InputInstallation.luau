@@ -19,6 +19,11 @@ function Installation.Install(isReady: () -> boolean): () -> ()
 				State.Notify(event)
 			end
 		end,
+		PublishGesture = function(event: Types.GestureEvent): ()
+			if active and State.Get() == owner then
+				State.NotifyGesture(event)
+			end
+		end,
 		ReportFault = function(reason: string): ()
 			if reason == "InputRuntimeFaulted" then
 				State.Disconnect()

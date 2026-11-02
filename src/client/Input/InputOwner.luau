@@ -69,6 +69,14 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	) :: Observers.Registry<CommitObserver>
 
 	local labels: Labels.Owner = Labels.new()
+
+	local dispatchGroups: Observers.Registry<(Types.GestureDispatchGroup) -> ()> = Observers.new(
+		Constants.MAX_GESTURE_OBSERVERS,
+		"InputGestureObserverLimitExceeded"
+	) :: Observers.Registry<
+		(Types.GestureDispatchGroup) -> ()
+	>
+
 	local native: NativeGraph.Owner
 
 	local function report(reason: string): ()
@@ -98,6 +106,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		primitives.Destroy()
 		validators.Destroy()
 		commits.Destroy()
+		dispatchGroups.Destroy()
 		pcall(labels.Destroy)
 		local success: boolean, reason: any = pcall(native.Destroy)
 
@@ -346,6 +355,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 				next(definition.contexts or {}) == nil
 				and next(definition.inputs or {}) == nil
 				and next(definition.bindingOverrides or {}) == nil
+				and next(definition.gestures or {}) == nil
 			)
 		then
 			sources[sourceId] = nil
@@ -738,6 +748,50 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 
 	function owner.GetInput(inputId: string): Types.InputSnapshot?
 		return graph.inputs[inputId]
+	end
+
+	function owner.GetGestures(inputId: string): { [Types.GestureKind]: Types.GestureSnapshot }?
+		if graph.inputs[inputId] == nil then
+			return nil
+		end
+
+		local snapshots: { [Types.GestureKind]: Types.GestureSnapshot } = {}
+
+		for sourceId: string, source: Types.InputSourceDefinition in graph.sources do
+			local definitions: Types.GestureDefinitions? = if source.gestures ~= nil
+				then source.gestures[inputId]
+				else nil
+
+			if definitions ~= nil then
+				for kind: Types.GestureKind, definition in definitions :: any do
+					snapshots[kind] = table.freeze({ sourceId = sourceId, definition = definition })
+				end
+			end
+		end
+
+		return table.freeze(snapshots)
+	end
+
+	function owner.ObserveDispatchGroup(callback: (Types.GestureDispatchGroup) -> ()): () -> ()
+		assert(type(callback) == "function", "InvalidInputObserver")
+
+		return dispatchGroups.Add(callback)
+	end
+
+	-- I2 red-phase seams: recognition/reset state is deliberately not implemented yet.
+	function owner.ResetRecognition(_inputIds: { string }?, _reason: string): (boolean, string?)
+		return false, unavailable() or "GestureRecognitionNotImplemented"
+	end
+
+	function owner.PrepareRecognitionReset(
+		_inputIds: { string }?,
+		_reason: string
+	): (Types.PreparedRecognitionReset?, string?)
+		return nil, unavailable() or "GestureRecognitionNotImplemented"
+	end
+
+	function owner.CommitPreparedRecognitionReset(_plan: Types.PreparedRecognitionReset): (boolean, string?)
+		return false, unavailable() or "GestureRecognitionNotImplemented"
 	end
 
 	function owner.GetContext(contextId: string): Types.ContextSnapshot?

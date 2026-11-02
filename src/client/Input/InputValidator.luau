@@ -2,9 +2,10 @@
 local Types = require(script.Parent.types)
 local Constants = require(script.Parent.utils.InputConstants)
 local Value = require(script.Parent.utils.InputValue)
+local GestureDefinitions = require(script.Parent.utils.InputGestureDefinitions)
 
 local Validator = {}
-local sourceFields = { priority = true, contexts = true, inputs = true, bindingOverrides = true }
+local sourceFields = { priority = true, contexts = true, inputs = true, bindingOverrides = true, gestures = true }
 local inputFields = { context = true, type = true, displayName = true, bindings = true }
 local contextFields = { priority = true, sink = true }
 
@@ -250,6 +251,14 @@ function Validator.Normalize(sourceId: string, declaration: any): (Types.InputSo
 	end
 
 	local contexts: { [string]: Types.ContextDefinition } = {}
+
+	local gestures: { [string]: Types.GestureDefinitions }?, gestureReason: string? =
+		GestureDefinitions.Normalize(declaration.gestures)
+
+	if gestures == nil then
+		return nil, gestureReason
+	end
+
 	local inputs: { [string]: Types.InputDefinition } = {}
 	local overrides: { [string]: { [string]: Types.BindingDefinition } } = {}
 	local rawContexts: any = declaration.contexts or {}
@@ -358,6 +367,7 @@ function Validator.Normalize(sourceId: string, declaration: any): (Types.InputSo
 		contexts = table.freeze(contexts),
 		inputs = table.freeze(inputs),
 		bindingOverrides = table.freeze(overrides),
+		gestures = gestures,
 	}),
 		nil
 end
@@ -432,6 +442,12 @@ function Validator.Compose(
 
 	if not count(inputs, Constants.MAX_INPUTS) then
 		return nil, "InputLimitExceeded"
+	end
+
+	local gesturesValid: boolean, gestureReason: string? = GestureDefinitions.Compose(sources, inputs)
+
+	if not gesturesValid then
+		return nil, gestureReason
 	end
 
 	if totalBindings > Constants.MAX_BINDINGS then
