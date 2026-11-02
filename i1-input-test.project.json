@@ -1,0 +1,19 @@
+{
+  "name": "KRF-I1-Input-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "InputControls": { "$path": "tests/examples/InputControls.luau" },
+      "InputTestControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": {
+      "InputTestServer": { "$path": "tests/integration/Input/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "InputTestClient": { "$path": "tests/integration/Input/Client.client.luau" }
+      }
+    }
+  }
+}

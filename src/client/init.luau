@@ -9,6 +9,7 @@ local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompile
 local Diagnostics = require(script.Networking.utils.NetworkingDiagnosticsState)
 local SendMetrics = require(script.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
+local InputInstallation = require(script.Input.utils.InputInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -48,6 +49,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	local disconnect: (() -> ())? = nil
 	local cancelTimeout: (() -> ())? = nil
 	local cleanupConsumers: (() -> ())? = nil
+	local cleanupInput: (() -> ())? = nil
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -58,6 +60,9 @@ function Client.Init(): (boolean, StartupFailure?)
 	end
 
 	local function cleanup(): ()
+		local stopInput: (() -> ())? = cleanupInput
+		cleanupInput = nil
+		dispose(stopInput)
 		receiveActors = nil
 		cancelTimer()
 		local listener: (() -> ())? = disconnect
@@ -235,6 +240,10 @@ function Client.Init(): (boolean, StartupFailure?)
 
 					return
 				end
+
+				cleanupInput = InputInstallation.Install(function(): boolean
+					return initialized and success
+				end)
 
 				state = "AwaitAck"
 				local ready: buffer?, readyReason: string? = ProtocolCodec.Encode({ kind = "Ready" })
