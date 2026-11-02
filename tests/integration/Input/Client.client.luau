@@ -114,12 +114,10 @@ local function run(): ()
 	end, "NativeDisableCancellationMissing")
 
 	assert(events[4].kind == "Cancelled" and #events == 4, "DisableGeneratedGameplayRelease")
-	driver:Fire(false)
 	assert(Input.SetContextEnabled("Gameplay", true), "Context enablement failed")
-	driver:Fire(true)
 	RunService.Heartbeat:Wait()
 	RunService.Heartbeat:Wait()
-	assert(#events == 4, "UncertainNativePressWasNotSuppressed")
+	assert(#events == 4, "HeldNativeInputGeneratedPhantomPress")
 	driver:Fire(false)
 	RunService.Heartbeat:Wait()
 	RunService.Heartbeat:Wait()
@@ -136,6 +134,40 @@ local function run(): ()
 	waitFor(function(): boolean
 		return #events >= 6
 	end, "NativeRearmReleaseMissing")
+
+	driver:Fire(true)
+
+	waitFor(function(): boolean
+		return #events >= 7
+	end, "NativePressBeforeUnobservedReleaseMissing")
+
+	assert(Input.SetContextEnabled("Gameplay", false), "Context disable failed")
+
+	waitFor(function(): boolean
+		return #events >= 8
+	end, "NativeUnobservedReleaseCancellationMissing")
+
+	assert(events[8].kind == "Cancelled", "NativeDisableDidNotCancel")
+	driver:Fire(false)
+	assert(Input.SetContextEnabled("Gameplay", true), "Context enablement failed")
+	assert(action:GetState() == false, "NativeInputDidNotConfirmNeutral")
+	RunService.Heartbeat:Wait()
+	RunService.Heartbeat:Wait()
+	assert(#events == 8, "NeutralSampleGeneratedGameplayInput")
+	driver:Fire(true)
+
+	waitFor(function(): boolean
+		return #events >= 9
+	end, "FirstNativePressAfterConfirmedNeutralMissing")
+
+	assert(events[9].kind == "Pressed", "FirstFreshNativePressWasNotAccepted")
+	driver:Fire(false)
+
+	waitFor(function(): boolean
+		return #events >= 10
+	end, "FirstFreshNativeReleaseMissing")
+
+	assert(#events == 10 and events[10].kind == "Released", "FreshNativeReleaseDuplicated")
 
 	connection:Disconnect()
 

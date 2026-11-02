@@ -19,6 +19,88 @@ afterEach(function()
 	TestUtils.destroy(fixture)
 end)
 
+type NeutralRecoveryCase = {
+	name: string,
+	inputType: Enum.InputActionType,
+	kind: Types.NativeTransition,
+	active: any,
+	neutral: any,
+	bindings: { [string]: Types.BindingDefinition },
+}
+
+local neutralRecoveryCases: { NeutralRecoveryCase } = {
+	{
+		name = "Bool",
+		inputType = Enum.InputActionType.Bool,
+		kind = "Pressed",
+		active = true,
+		neutral = false,
+		bindings = { Keyboard = { keyCode = Enum.KeyCode.Q } },
+	},
+	{
+		name = "Direction1D",
+		inputType = Enum.InputActionType.Direction1D,
+		kind = "StateChanged",
+		active = 0.75,
+		neutral = 0,
+		bindings = { Gamepad = { keyCode = Enum.KeyCode.ButtonR2 } },
+	},
+	{
+		name = "Direction2D",
+		inputType = Enum.InputActionType.Direction2D,
+		kind = "StateChanged",
+		active = Vector2.new(0.25, 0.75),
+		neutral = Vector2.zero,
+		bindings = { Gamepad = { keyCode = Enum.KeyCode.Thumbstick1 } },
+	},
+	{
+		name = "Direction3D",
+		inputType = Enum.InputActionType.Direction3D,
+		kind = "StateChanged",
+		active = Vector3.new(0.25, 0.5, 0.75),
+		neutral = Vector3.zero,
+		bindings = { Keyboard = { up = Enum.KeyCode.W, down = Enum.KeyCode.S } },
+	},
+}
+
+for _, case: NeutralRecoveryCase in neutralRecoveryCases do
+	it(
+		"accepts the first fresh " .. case.name .. " activation after re-enable confirms an unobserved neutral",
+		function()
+			local definition: TestUtils.CoreDefinition = TestUtils.definition(case.inputType)
+			definition.inputs.Primary.bindings = case.bindings
+			TestUtils.install(fixture, definition)
+			TestUtils.enable(fixture)
+			local occurrences: { Types.PrimitiveOccurrence } = {}
+
+			fixture.owner.ObservePrimitive("Routing", function(occurrence: Types.PrimitiveOccurrence)
+				table.insert(occurrences, occurrence)
+			end)
+
+			TestUtils.emit(fixture, case.kind, case.active)
+			expect(fixture.owner.SetContextEnabled("Gameplay", false)).toBe(true)
+			fixture.states[fixture.actions.Primary] = case.neutral
+			TestUtils.enable(fixture)
+			expect(TestUtils.kinds(fixture)).toEqual({ case.kind, "Cancelled" })
+			TestUtils.emit(fixture, case.kind, case.active)
+			expect(TestUtils.kinds(fixture)).toEqual({ case.kind, "Cancelled", case.kind })
+			local event: Types.SemanticInputEvent = fixture.events[3]
+			assert(event.kind ~= "Cancelled", "Expected a fresh activation")
+			expect(event.value).toBe(case.active)
+
+			if case.inputType == Enum.InputActionType.Bool then
+				local original: Types.PrimitiveOccurrence = occurrences[1]
+				local fresh: Types.PrimitiveOccurrence = occurrences[3]
+				local originalEpoch: number = assert(original.pressEpochId, "Expected original Bool epoch")
+				local freshEpoch: number = assert(fresh.pressEpochId, "Expected fresh Bool epoch")
+				expect(freshEpoch > originalEpoch).toBe(true)
+				expect(fixture.owner.IsPressEpochActive("Primary", originalEpoch, original.generation)).toBe(false)
+				expect(fixture.owner.IsPressEpochActive("Primary", freshEpoch, fresh.generation)).toBe(true)
+			end
+		end
+	)
+end
+
 it("cancels active Direction1D once and suppresses stale values until typed neutral", function()
 	local definition: TestUtils.CoreDefinition = TestUtils.definition(Enum.InputActionType.Direction1D)
 	definition.inputs.Primary.bindings = { Device = { keyCode = Enum.KeyCode.ButtonR2 } }
@@ -142,6 +224,38 @@ it("conservatively rejects an uncertain press when neutral cannot be proven", fu
 	TestUtils.emit(fixture, "Pressed", true)
 	expect(fixture.owner.SetContextEnabled("Gameplay", false)).toBe(true)
 	fixture.states[fixture.actions.Primary] = nil
+	TestUtils.enable(fixture)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(TestUtils.kinds(fixture)).toEqual({ "Pressed", "Cancelled" })
+	TestUtils.emit(fixture, "Released", false)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(TestUtils.kinds(fixture)).toEqual({ "Pressed", "Cancelled", "Pressed" })
+end)
+
+it("does not treat an invalid Bool payload as confirmed neutral on re-enable", function()
+	TestUtils.install(fixture)
+	TestUtils.enable(fixture)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(fixture.owner.SetContextEnabled("Gameplay", false)).toBe(true)
+	fixture.states[fixture.actions.Primary] = 0
+	TestUtils.enable(fixture)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(TestUtils.kinds(fixture)).toEqual({ "Pressed", "Cancelled" })
+	TestUtils.emit(fixture, "Released", false)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(TestUtils.kinds(fixture)).toEqual({ "Pressed", "Cancelled", "Pressed" })
+end)
+
+it("keeps the input disarmed when the native state read fails on re-enable", function()
+	TestUtils.install(fixture)
+	TestUtils.enable(fixture)
+	TestUtils.emit(fixture, "Pressed", true)
+	expect(fixture.owner.SetContextEnabled("Gameplay", false)).toBe(true)
+
+	fixture.native.ReadState = function(_action: InputAction): any
+		error("NativeStateUnavailable")
+	end
+
 	TestUtils.enable(fixture)
 	TestUtils.emit(fixture, "Pressed", true)
 	expect(TestUtils.kinds(fixture)).toEqual({ "Pressed", "Cancelled" })

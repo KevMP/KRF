@@ -548,9 +548,9 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			then
 				local read: boolean, value: any = pcall(options.Native.ReadState, native.Actions()[inputId])
 
-				if not read or not Value.IsTyped(input.inputType, value) or value ~= Value.Neutral(input.inputType) then
-					installed.disarmed = true
-				end
+				installed.disarmed = not read
+					or not Value.IsTyped(input.inputType, value)
+					or value ~= Value.Neutral(input.inputType)
 			end
 		end
 
