@@ -7,6 +7,8 @@ local Observers = require(script.Parent.utils.InputObservers)
 local Epochs = require(script.Parent.utils.InputEpochs)
 local NativeGraph = require(script.Parent.utils.InputNativeGraph)
 local Labels = require(script.Parent.utils.InputLabels)
+local GestureRecognition = require(script.Parent.utils.InputGestureRecognition)
+local GestureScheduler = require(script.Parent.utils.InputGestureScheduler)
 
 type PrimitiveObserver = (Types.PrimitiveOccurrence) -> ()
 type CommitObserver = (Types.InputGraphChange) -> ()
@@ -20,6 +22,8 @@ type PreparedRecord = {
 	profiles: any?,
 	reason: string?,
 	consumed: boolean,
+	inputIds: { string }?,
+	recognitionRevision: number?,
 }
 
 local InputOwner = {}
@@ -78,6 +82,12 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	>
 
 	local native: NativeGraph.Owner
+	local recognition: GestureRecognition.Owner
+	local gestureNotifications: { Types.GestureEvent }? = nil
+	local timerCallbacks: { () -> () } = {}
+	local timersQueued: boolean = false
+	local recognitionFenceGeneration: number? = nil
+	local recognitionFenceRevision: number? = nil
 
 	local function report(reason: string): ()
 		pcall(options.ReportFault, reason)
@@ -103,6 +113,8 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		table.clear(pending)
 		table.clear(prepared)
 		table.clear(states)
+		table.clear(timerCallbacks)
+		recognition.Destroy()
 		primitives.Destroy()
 		validators.Destroy()
 		commits.Destroy()
@@ -126,6 +138,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		fenced = true
 		local previous: Types.InputGraphSnapshot = graph
 		graph = empty(previous.generation + 1)
+		recognition.Destroy()
 		local epochs: { number } = table.clone(retiredEpochs or {})
 
 		for _, state: Epochs.State in states do
@@ -194,6 +207,111 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		return true, nil
 	end
 
+	local function readTime(): number
+		local now: number = options.Now()
+
+		if Value.IsFinite(now) then
+			timestamp = math.max(timestamp, now)
+		end
+
+		return timestamp
+	end
+
+	local function publishGestures(events: { Types.GestureEvent }): ()
+		for _, event: Types.GestureEvent in events do
+			if destroyed or faulted then
+				break
+			end
+
+			local publish: ((Types.GestureEvent) -> ())? = options.PublishGesture
+
+			if publish ~= nil then
+				local success: boolean, reason: any = pcall(publish, event)
+
+				if not success then
+					report(tostring(reason))
+				end
+			end
+		end
+	end
+
+	local function deliverGroup(group: Types.GestureDispatchGroup, event: Types.GestureEvent?): ()
+		for _, entry in dispatchGroups.Snapshot() do
+			if destroyed or faulted then
+				break
+			end
+
+			if entry.active then
+				local success: boolean, reason: string? = Observers.Run(entry.callback, group)
+
+				if not success then
+					report("InputGestureObserver" .. (reason or "Failed"))
+				end
+			end
+		end
+
+		if event ~= nil and gestureNotifications ~= nil then
+			table.insert(gestureNotifications, event)
+		end
+	end
+
+	local runTimer: (callback: () -> ()) -> ()
+
+	runTimer = function(callback: () -> ()): ()
+		if destroyed or faulted or not options.IsReady() then
+			return
+		end
+
+		if fenced or validating or dispatchDepth > 0 then
+			assert(#timerCallbacks < Constants.MAX_GESTURE_DEADLINES, "InputGestureDeadlineLimitExceeded")
+			table.insert(timerCallbacks, callback)
+
+			if not timersQueued then
+				timersQueued = true
+
+				local accepted: boolean = queue(function(): ()
+					timersQueued = false
+					local callbacks: { () -> () } = timerCallbacks
+					timerCallbacks = {}
+
+					for _, pendingCallback in callbacks do
+						runTimer(pendingCallback)
+					end
+				end)
+
+				if not accepted then
+					fail(nil)
+				end
+			end
+
+			return
+		end
+
+		dispatchDepth += 1
+		local events: { Types.GestureEvent } = {}
+		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
+		gestureNotifications = events
+		local success: boolean, reason: any = pcall(callback)
+		gestureNotifications = previousNotifications
+
+		if not success then
+			report(tostring(reason))
+			fail(nil)
+		else
+			publishGestures(events)
+		end
+
+		dispatchDepth -= 1
+		flush()
+	end
+
+	recognition = GestureRecognition.new({
+		Now = readTime,
+		Scheduler = options.Scheduler or GestureScheduler.new(readTime, report),
+		RunTimer = runTimer,
+		Deliver = deliverGroup,
+	})
+
 	local function deliver(
 		input: Types.InputSnapshot,
 		transition: Epochs.Transition,
@@ -204,11 +322,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		end
 
 		ordinal += 1
-		local now: number = options.Now()
-
-		if Value.IsFinite(now) then
-			timestamp = math.max(timestamp, now)
-		end
+		readTime()
 
 		local event: Types.SemanticInputEvent
 
@@ -248,6 +362,14 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			table.freeze({ event = event, generation = transition.generation, pressEpochId = transition.epochId })
 
 		dispatchDepth += 1
+		local gestures: { Types.GestureEvent } = {}
+		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
+		gestureNotifications = gestures
+		local interpreted: boolean = pcall(recognition.Before, occurrence)
+
+		if not interpreted then
+			fail(nil)
+		end
 
 		for _, phase: Types.ObserverPhase in { "Interpretation", "Arbitration", "Routing" } do
 			for _, entry in primitives.Snapshot() do
@@ -263,7 +385,17 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 					end
 				end
 			end
+
+			if phase == "Interpretation" and not destroyed and not faulted then
+				local accepted: boolean = pcall(recognition.Accept, occurrence)
+
+				if not accepted then
+					fail(nil)
+				end
+			end
 		end
+
+		gestureNotifications = previousNotifications
 
 		if not destroyed and not faulted then
 			if deferred ~= nil then
@@ -277,6 +409,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			end
 		end
 
+		publishGestures(gestures)
 		dispatchDepth -= 1
 	end
 
@@ -469,6 +602,8 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			end
 		end
 
+		local gesturePlan: GestureRecognition.Plan = recognition.Prepare(nextGraph)
+		local previousRecognitionRevision: number = recognition.Revision()
 		fenced = true
 		local oldStates: { [string]: Epochs.State } = {}
 		local cancellations: { { input: Types.InputSnapshot, transition: Epochs.Transition } } = {}
@@ -525,6 +660,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		end
 
 		graph = nextGraph
+		recognition.Commit(gesturePlan, invalidated)
 
 		for inputId in states do
 			if graph.inputs[inputId] == nil then
@@ -570,7 +706,11 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			labels.Reconcile(native.Actions())
 
 			if publishSelection ~= nil then
+				recognitionFenceGeneration = previous.generation
+				recognitionFenceRevision = previousRecognitionRevision
 				local selected: boolean = Observers.Run(publishSelection)
+				recognitionFenceGeneration = nil
+				recognitionFenceRevision = nil
 
 				if not selected then
 					error("InputSelectionPublicationFailed", 0)
@@ -751,25 +891,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	end
 
 	function owner.GetGestures(inputId: string): { [Types.GestureKind]: Types.GestureSnapshot }?
-		if graph.inputs[inputId] == nil then
-			return nil
-		end
-
-		local snapshots: { [Types.GestureKind]: Types.GestureSnapshot } = {}
-
-		for sourceId: string, source: Types.InputSourceDefinition in graph.sources do
-			local definitions: Types.GestureDefinitions? = if source.gestures ~= nil
-				then source.gestures[inputId]
-				else nil
-
-			if definitions ~= nil then
-				for kind: Types.GestureKind, definition in definitions :: any do
-					snapshots[kind] = table.freeze({ sourceId = sourceId, definition = definition })
-				end
-			end
-		end
-
-		return table.freeze(snapshots)
+		return recognition.Get(inputId)
 	end
 
 	function owner.ObserveDispatchGroup(callback: (Types.GestureDispatchGroup) -> ()): () -> ()
@@ -778,20 +900,72 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		return dispatchGroups.Add(callback)
 	end
 
-	-- I2 red-phase seams: recognition/reset state is deliberately not implemented yet.
-	function owner.ResetRecognition(_inputIds: { string }?, _reason: string): (boolean, string?)
-		return false, unavailable() or "GestureRecognitionNotImplemented"
+	local function resetSelection(inputIds: { string }?, reason: string): ({ string }?, string?)
+		if type(reason) ~= "string" or #reason == 0 then
+			return nil, "InvalidRecognitionResetReason"
+		end
+
+		if inputIds == nil then
+			return Value.Keys(graph.inputs), nil
+		end
+
+		if type(inputIds) ~= "table" or getmetatable(inputIds) ~= nil then
+			return nil, "InvalidRecognitionResetInputs"
+		end
+
+		local selected: { string } = {}
+		local seen: { [string]: boolean } = {}
+
+		for index, inputId in inputIds do
+			if
+				type(index) ~= "number"
+				or index % 1 ~= 0
+				or index < 1
+				or index > #inputIds
+				or type(inputId) ~= "string"
+				or seen[inputId]
+			then
+				return nil, "InvalidRecognitionResetInputs"
+			end
+
+			if graph.inputs[inputId] == nil then
+				return nil, "UnknownInput"
+			end
+
+			seen[inputId] = true
+			table.insert(selected, inputId)
+		end
+
+		if #selected ~= #inputIds then
+			return nil, "InvalidRecognitionResetInputs"
+		end
+
+		return selected, nil
 	end
 
-	function owner.PrepareRecognitionReset(
-		_inputIds: { string }?,
-		_reason: string
-	): (Types.PreparedRecognitionReset?, string?)
-		return nil, unavailable() or "GestureRecognitionNotImplemented"
-	end
+	function owner.ResetRecognition(inputIds: { string }?, reason: string): (boolean, string?)
+		local rejection: string? = unavailable()
 
-	function owner.CommitPreparedRecognitionReset(_plan: Types.PreparedRecognitionReset): (boolean, string?)
-		return false, unavailable() or "GestureRecognitionNotImplemented"
+		if rejection ~= nil then
+			return false, rejection
+		end
+
+		if fenced or dispatchDepth > 0 then
+			return false, "InputMutationReentrant"
+		end
+
+		local selected: { string }?, failure: string? = resetSelection(inputIds, reason)
+
+		if selected == nil then
+			return false, failure
+		end
+
+		fenced = true
+		recognition.Reset(selected)
+		fenced = false
+		flush()
+
+		return true, nil
 	end
 
 	function owner.GetContext(contextId: string): Types.ContextSnapshot?
@@ -894,6 +1068,68 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		prepared[plan] = record
 
 		return plan, nil
+	end
+
+	function owner.PrepareRecognitionReset(
+		inputIds: { string }?,
+		reason: string
+	): (Types.PreparedRecognitionReset?, string?)
+		local rejection: string? = unavailable()
+
+		if rejection ~= nil then
+			return nil, rejection
+		end
+
+		if fenced or dispatchDepth > 0 then
+			return nil, "InputMutationReentrant"
+		end
+
+		local selected: { string }?, failure: string? = resetSelection(inputIds, reason)
+
+		if selected == nil then
+			return nil, failure
+		end
+
+		return prepare({
+			generation = graph.generation,
+			validators = validatorVersion,
+			kind = "Recognition",
+			inputIds = selected,
+			recognitionRevision = recognition.Revision(),
+			consumed = false,
+		})
+	end
+
+	function owner.CommitPreparedRecognitionReset(plan: Types.PreparedRecognitionReset): (boolean, string?)
+		local rejection: string? = unavailable()
+
+		if rejection ~= nil then
+			return false, rejection
+		end
+
+		if not fenced or recognitionFenceGeneration == nil then
+			return false, "InputCommitFenceRequired"
+		end
+
+		local record: PreparedRecord? = prepared[plan]
+
+		if record == nil or record.kind ~= "Recognition" then
+			return false, "InvalidRecognitionReset"
+		end
+
+		if
+			record.consumed
+			or record.generation ~= recognitionFenceGeneration
+			or record.recognitionRevision ~= recognitionFenceRevision
+			or record.validators ~= validatorVersion
+		then
+			return false, "StaleRecognitionReset"
+		end
+
+		record.consumed = true
+		recognition.Reset(record.inputIds)
+
+		return true, nil
 	end
 
 	function owner.PrepareSource(

@@ -10,11 +10,13 @@ export type Fixture = {
 	events: { Types.GestureEvent },
 	groups: { Types.GestureDispatchGroup },
 	jobs: { Job },
+	onGesture: ((Types.GestureEvent) -> ())?,
 }
 
 local Utils = {}
 
 function Utils.new(): Fixture
+	local fixture: Fixture
 	local events: { Types.GestureEvent } = {}
 	local jobs: { Job } = {}
 
@@ -31,10 +33,16 @@ function Utils.new(): Fixture
 		},
 		PublishGesture = function(event: Types.GestureEvent): ()
 			table.insert(events, event)
+			local notify: ((Types.GestureEvent) -> ())? = fixture.onGesture
+
+			if notify ~= nil then
+				notify(event)
+			end
 		end,
 	})
 
-	local fixture: Fixture = { input = input, events = events, groups = {}, jobs = jobs }
+	fixture =
+		{ input = input, events = events, groups = {}, jobs = jobs, onGesture = nil :: ((Types.GestureEvent) -> ())? }
 
 	input.now = 0
 
