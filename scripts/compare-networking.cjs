@@ -301,7 +301,7 @@ async function main(args) {
 	const manifestFile = path.join(directory, "manifest.json");
 	save(manifestFile, manifest);
 	try {
-		const studio = config.studio || spawnSync("powershell", ["-NoProfile", "-Command", "$v = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'Roblox/Versions') -Directory | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'RobloxStudioBeta.exe') } | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $v) { throw 'Studio not found; use --studio' }; Write-Output (Join-Path $v.FullName 'RobloxStudioBeta.exe')"], { encoding: "utf8", windowsHide: true, env: powershellEnvironment }).stdout?.trim();
+		const studio = config.studio || spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "scripts/fix-studio-path.ps1"), "-ResolveOnly"], { encoding: "utf8", windowsHide: true, env: powershellEnvironment }).stdout?.trim();
 		if (!studio || !fs.existsSync(studio)) throw Error("Studio executable unavailable; supply --studio");
 		manifest.studioPath = path.resolve(studio); manifest.studioSHA256 = hash(studio);
 		console.log(`Comparison artifacts: ${directory}`);
