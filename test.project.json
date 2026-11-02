@@ -9,6 +9,9 @@
       }
     },
     "ReplicatedStorage": {
+      "InputControls": {
+        "$path": "tests/examples/InputControls.luau"
+      },
       "NetworkingCommandScenario": {
         "$path": "tests/integration/NetworkingCommands/Utils/Scenario.luau"
       },

@@ -1,33 +1,28 @@
 param(
     [string]$StudioPath,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 180,
-    [ValidateSet("n7", "n8", "n9")][string]$Suite = "n7"
+    [ValidateSet("n7", "n8", "n9", "i1")][string]$Suite = "n7"
 )
 
 $ErrorActionPreference = "Stop"
 $repository = Split-Path -Parent $PSScriptRoot
 $runDirectory = Join-Path $repository ("build\" + $Suite + "-native\" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
-$viewName = switch ($Suite) { "n9" { "Commands" } "n8" { "ActionsView" } default { "ResourcesView" } }
+$viewName = switch ($Suite) { "i1" { "Input" } "n9" { "Commands" } "n8" { "ActionsView" } default { "ResourcesView" } }
 $placeFile = Join-Path $runDirectory ($viewName + ".rbxl")
 $outputFile = Join-Path $runDirectory "result.log"
 $stdoutFile = Join-Path $runDirectory "studio.stdout.log"
 $stderrFile = Join-Path $runDirectory "studio.stderr.log"
-$launcherName = switch ($Suite) { "n9" { "run-n9-command-tests.luau" } "n8" { "run-n8-actions-view-tests.luau" } default { "run-n7-resources-view-tests.luau" } }
+$launcherName = switch ($Suite) { "i1" { "run-i1-input-tests.luau" } "n9" { "run-n9-command-tests.luau" } "n8" { "run-n8-actions-view-tests.luau" } default { "run-n7-resources-view-tests.luau" } }
 $launcherFile = Join-Path $PSScriptRoot $launcherName
 
 if (-not $StudioPath) {
-    $version = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "Roblox\Versions") -Directory |
-        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "RobloxStudioBeta.exe") } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if (-not $version) { throw "Roblox Studio was not found; supply -StudioPath." }
-    $StudioPath = Join-Path $version.FullName "RobloxStudioBeta.exe"
+    $StudioPath = & "$PSScriptRoot\fix-studio-path.ps1" -ResolveOnly
 }
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 
 Write-Host "Building native two-client $Suite fixture..."
-$projectName = switch ($Suite) { "n9" { "n9-command-test.project.json" } "n8" { "n8-actions-view-test.project.json" } default { "n7-resources-view-test.project.json" } }
+$projectName = switch ($Suite) { "i1" { "i1-input-test.project.json" } "n9" { "n9-command-test.project.json" } "n8" { "n8-actions-view-test.project.json" } default { "n7-resources-view-test.project.json" } }
 & rojo build (Join-Path $repository $projectName) -o $placeFile
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

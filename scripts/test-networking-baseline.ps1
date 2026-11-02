@@ -24,12 +24,7 @@ if ($SoakSmoke) { $launcher = $launcher.Replace('local soakSmoke = false --', 'l
 [System.IO.File]::WriteAllText($launcherFile, $launcher, [System.Text.UTF8Encoding]::new($false))
 
 if (-not $StudioPath) {
-    $version = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "Roblox\Versions") -Directory |
-        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "RobloxStudioBeta.exe") } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if (-not $version) { throw "Roblox Studio was not found; supply -StudioPath." }
-    $StudioPath = Join-Path $version.FullName "RobloxStudioBeta.exe"
+    $StudioPath = & "$PSScriptRoot\fix-studio-path.ps1" -ResolveOnly
 }
 $StudioPath = (Resolve-Path -LiteralPath $StudioPath).Path
 . "$PSScriptRoot\networking-benchmark-environment.ps1"
