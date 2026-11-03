@@ -25,6 +25,7 @@ export type Owner = {
 	PublishInput: (event: Types.SemanticInputEvent) -> (),
 	ObservePrimitive: (phase: Types.ObserverPhase, callback: PrimitiveObserver) -> () -> (),
 	ObserveGroups: (callback: (Types.GestureDispatchGroup) -> ()) -> () -> (),
+	ObserveEnvelopes: (callback: (Types.InputCandidateEnvelope) -> ()) -> () -> (),
 	Destroy: () -> (),
 }
 
@@ -50,6 +51,14 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		"InputGestureObserverLimitExceeded"
 	) :: Observers.Registry<
 		(Types.GestureDispatchGroup) -> ()
+	>
+
+	-- I3 owns finalized envelope production; registration/teardown is ready here.
+	local envelopes: Observers.Registry<(Types.InputCandidateEnvelope) -> ()> = Observers.new(
+		Constants.MAX_CANDIDATE_OBSERVERS,
+		"InputCandidateObserverLimitExceeded"
+	) :: Observers.Registry<
+		(Types.InputCandidateEnvelope) -> ()
 	>
 
 	local function publishInput(event: Types.SemanticInputEvent): ()
@@ -282,10 +291,16 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			return dispatchGroups.Add(callback)
 		end,
 		Destroy = function(): ()
+			envelopes.Destroy()
 			table.clear(timerCallbacks)
 			recognition.Destroy()
 			primitives.Destroy()
 			dispatchGroups.Destroy()
+		end,
+		ObserveEnvelopes = function(callback: (Types.InputCandidateEnvelope) -> ()): () -> ()
+			assert(type(callback) == "function", "InvalidInputObserver")
+
+			return envelopes.Add(callback)
 		end,
 	}
 end

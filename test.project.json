@@ -9,6 +9,9 @@
       }
     },
     "ReplicatedStorage": {
+      "InputSequences": {
+        "$path": "tests/examples/InputSequences.luau"
+      },
       "InputGestures": {
         "$path": "tests/examples/InputGestures.luau"
       },

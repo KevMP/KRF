@@ -50,6 +50,14 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	}, gate, dispatch.Recognition)
 
 	return {
+		-- I3 TDD scaffolding: inspection is empty until graph compilation is implemented.
+		GetSequence = function(_sequenceId: string): Types.SequenceSnapshot?
+			return nil
+		end,
+		GetRecognizer = function(_recognizerId: string): Types.RecognizerSnapshot?
+			return nil
+		end,
+		ObserveCandidateEnvelope = dispatch.ObserveEnvelopes,
 		SetSource = configuration.SetSource,
 		RemoveSource = configuration.RemoveSource,
 		SetContextEnabled = configuration.SetContextEnabled,
