@@ -7,6 +7,7 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local Types = require(ReplicatedStorage.Packages.KRF.client.Input.types)
 local Utils = require(script.Parent.Utils.SequenceTestUtils)
+local InputUtils = require(script.Parent.Utils.InputTestUtils)
 local fixture: Utils.Fixture
 
 beforeEach(function()
@@ -173,4 +174,22 @@ it("keeps immediate same-root custom alternatives from advancing a mixed lineage
 	Utils.emit(fixture, 0.125, "Q")
 	expect(#fixture.recognizers).toBe(previous + 1)
 	expect(Utils.ids(fixture)).toEqual({})
+end)
+
+it("commits recognition reset and epoch invalidation before any controls have been installed", function()
+	Utils.destroy(fixture)
+	fixture.input = InputUtils.new()
+
+	local reset: Types.PreparedRecognitionReset? = fixture.input.owner.PrepareRecognitionReset(nil, "ActorChanged")
+	local invalidation: Types.PreparedInputInvalidation? = fixture.input.owner.PrepareEpochInvalidation("ActorChanged")
+
+	expect({
+		fixture.input.owner.CommitEpochInvalidation(assert(invalidation, "Expected epoch plan"), function(): ()
+			expect({ fixture.input.owner.CommitPreparedRecognitionReset(assert(reset, "Expected reset plan")) }).toEqual({
+				true,
+			})
+		end),
+	}).toEqual({ true })
+
+	expect(Utils.pending(fixture)).toBe(0)
 end)

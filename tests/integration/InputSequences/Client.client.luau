@@ -7,6 +7,7 @@ local Types = require(ReplicatedStorage.Packages.KRF.client.Input.types)
 local Input: Types.InputRuntime = require(ReplicatedStorage.Packages.KRF.client.Input.InputRuntime)
 local State = require(ReplicatedStorage.Packages.KRF.client.Input.utils.InputRuntimeState)
 local Examples = require(ReplicatedStorage.InputSequences)
+local Workload = require(ReplicatedStorage.InputRecognitionWorkload)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("InputTestControl") :: RemoteEvent
 
 local function waitFor(predicate: () -> boolean): ()
@@ -17,6 +18,9 @@ local function waitFor(predicate: () -> boolean): ()
 		RunService.Heartbeat:Wait()
 	end
 end
+
+type Measurement = { iterations: number, matches: number, dispatchSeconds: number } & Workload.Measurement
+local measurement: Measurement? = nil
 
 local function run(): ()
 	local initialized: boolean, failure = Client.Init()
@@ -115,6 +119,14 @@ local function run(): ()
 	press("Z")
 	task.wait(0.6)
 	assert(#matches == 0, "DormantContextRetainedPrefix")
+	drivers.X:Fire(true)
+	assert(Input.SetContextEnabled("Signs", false), "HeldContextDisableFailed")
+	assert(primitives[#primitives].kind == "Cancelled", "NativeDisableFabricatedRelease")
+	assert(Input.SetContextEnabled("Signs", true), "HeldContextEnableFailed")
+	drivers.X:Fire(false)
+	press("Q")
+	press("Z")
+	assert(#matches == 0, "CancelledPrefixCompleted")
 	assert(Input.SetSource("Sword", Examples.Sword()))
 	drivers.Aim:Fire(Vector2.new(-1, 0))
 	drivers.Aim:Fire(Vector2.new(1, 0))
@@ -125,7 +137,110 @@ local function run(): ()
 
 	assert(customs[1].recognizerId == "SwipeRight", "AnalogCustomMissing")
 	assert(Input.RemoveSource("Sword"))
-	assert(Input.RemoveSource("Manual"))
+	assert(owner.ResetRecognition(nil, "FixtureReset"), "ResetFailed")
+	table.clear(matches)
+	table.clear(customs)
+
+	assert(
+		Input.SetSource(
+			"NativeGestures",
+			{ gestures = { Q = { DoubleTapped = { maxTapDurationSeconds = 0.25, maxGapSeconds = 0.5 } } } }
+		),
+		"NativeGestureInstallFailed"
+	)
+
+	assert(
+		Input.SetSource("NativeCustom", {
+			recognizers = {
+				DoubleSign = {
+					inputs = { "Q" },
+					gestures = { Q = { "DoubleTapped" } },
+					maxWindowSeconds = 1,
+					onEvent = function(_ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+						return if event.kind == "Gesture" then {} else nil
+					end,
+				},
+			},
+		}),
+		"NativeCustomInstallFailed"
+	)
+
+	press("Q")
+
+	assert(
+		Input.SetSource("NativeCombos", {
+			sequences = {
+				DoubleSign = {
+					steps = { "X", { inputId = "Q", kind = "DoubleTapped" } },
+					maxGapSeconds = 0.5,
+					maxTotalSeconds = 2,
+				},
+				FromCustom = {
+					steps = { "X", { recognizerId = "DoubleSign", kind = "Custom" } },
+					maxGapSeconds = 0.5,
+					maxTotalSeconds = 2,
+				},
+				OneRoot = {
+					steps = { "Q", { inputId = "Q", kind = "DoubleTapped" } },
+					maxGapSeconds = 0.5,
+					maxTotalSeconds = 2,
+				},
+			},
+		}),
+		"NativeSequenceInstallFailed"
+	)
+
+	press("X")
+	press("Q")
+
+	waitFor(function(): boolean
+		return #matches == 2 and #customs == 1
+	end)
+
+	assert(matches[1] == "DoubleSign" and matches[2] == "FromCustom", "NativeAlternativeTokenFailure")
+	assert(Input.RemoveSource("NativeCombos"), "RemoveNativeSequencesFailed")
+	assert(Input.RemoveSource("NativeCustom"), "RemoveNativeCustomFailed")
+	assert(Input.RemoveSource("NativeGestures"), "RemoveNativeGesturesFailed")
+	assert(Input.RemoveSource("Manual"), "RemoveManualFailed")
+	table.clear(matches)
+	local catalog: { [string]: Types.SequenceDefinition } = {}
+
+	for index: number = 1, 256 do
+		catalog[string.format("Stress%03d", index)] =
+			{ steps = { "X", "X", "Q" }, maxGapSeconds = 1, maxTotalSeconds = 2 }
+	end
+
+	assert(Input.SetSource("Benchmark", { sequences = catalog }), "BenchmarkInstallFailed")
+	local started: number = os.clock()
+
+	for _ = 1, 16 do
+		press("X")
+		press("X")
+		press("Q")
+	end
+
+	local dispatchSeconds: number = os.clock() - started
+
+	waitFor(function(): boolean
+		return #matches == 4096
+	end)
+
+	local matchCount: number = #matches
+	assert(Input.RemoveSource("Benchmark"), "BenchmarkCleanupFailed")
+	table.clear(matches)
+
+	local custom: Workload.Measurement = Workload.Run(Input, press)
+
+	measurement = {
+		iterations = 16,
+		matches = matchCount,
+		dispatchSeconds = dispatchSeconds,
+		customCalls = custom.customCalls,
+		customDispatchSeconds = custom.customDispatchSeconds,
+		faultCalls = custom.faultCalls,
+		faultDispatchSeconds = custom.faultDispatchSeconds,
+	}
+
 	assert(Input.RemoveSource("Rebind"))
 	assert(Input.RemoveSource("Game.Signs"))
 	sequenceConnection:Disconnect()
@@ -136,4 +251,4 @@ local function run(): ()
 end
 
 local success: boolean, reason: any = pcall(run)
-control:FireServer(success, if success then nil else tostring(reason))
+control:FireServer(success, if success then measurement else tostring(reason))

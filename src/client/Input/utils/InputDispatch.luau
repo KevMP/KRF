@@ -5,7 +5,7 @@ local Value = require(script.Parent.InputValue)
 local Observers = require(script.Parent.InputObservers)
 local Epochs = require(script.Parent.InputEpochs)
 local MutationGate = require(script.Parent.InputMutationGate)
-local GestureRecognition = require(script.Parent.InputGestureRecognition)
+local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
 local GestureScheduler = require(script.Parent.InputGestureScheduler)
 
 type PrimitiveObserver = (Types.PrimitiveOccurrence) -> ()
@@ -15,12 +15,15 @@ export type Options = {
 	Now: () -> number,
 	Publish: (Types.SemanticInputEvent) -> (),
 	PublishGesture: ((Types.GestureEvent) -> ())?,
+	PublishSequence: ((Types.SequenceMatchEvent) -> ())?,
+	PublishRecognizer: ((Types.CustomRecognitionEvent) -> ())?,
+	IsEpochActive: (string, number, number) -> boolean,
 	Scheduler: Types.GestureScheduler?,
 	ReportFault: (string) -> (),
 }
 
 export type Owner = {
-	Recognition: GestureRecognition.Owner,
+	Recognition: RecognitionPipeline.Owner,
 	Deliver: (input: Types.InputSnapshot, transition: Epochs.Transition, deferred: { Types.SemanticInputEvent }?) -> (),
 	PublishInput: (event: Types.SemanticInputEvent) -> (),
 	ObservePrimitive: (phase: Types.ObserverPhase, callback: PrimitiveObserver) -> () -> (),
@@ -36,9 +39,11 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 	local ordinal: number = 0
 	local timestamp: number = 0
 	local gestureNotifications: { Types.GestureEvent }? = nil
+	local sequenceNotifications: { Types.SequenceMatchEvent }? = nil
+	local customNotifications: { Types.CustomRecognitionEvent }? = nil
 	local timerCallbacks: { () -> () } = {}
 	local timersQueued: boolean = false
-	local recognition: GestureRecognition.Owner
+	local recognition: RecognitionPipeline.Owner
 	local report: (string) -> () = options.ReportFault
 
 	local primitives: Observers.Registry<PhasedObserver> = Observers.new(
@@ -92,6 +97,60 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 
 				if not success then
 					report(tostring(reason))
+				end
+			end
+		end
+	end
+
+	local function publishRecognition(
+		customs: { Types.CustomRecognitionEvent },
+		sequences: { Types.SequenceMatchEvent }
+	): ()
+		for _, event: Types.CustomRecognitionEvent in customs do
+			if gate.IsTerminal() then
+				break
+			end
+
+			local publish: ((Types.CustomRecognitionEvent) -> ())? = options.PublishRecognizer
+
+			if publish ~= nil then
+				local success: boolean, reason: any = pcall(publish, event)
+
+				if not success then
+					report(tostring(reason))
+				end
+			end
+		end
+
+		for _, event: Types.SequenceMatchEvent in sequences do
+			if gate.IsTerminal() then
+				break
+			end
+
+			local publish: ((Types.SequenceMatchEvent) -> ())? = options.PublishSequence
+
+			if publish ~= nil then
+				local success: boolean, reason: any = pcall(publish, event)
+
+				if not success then
+					report(tostring(reason))
+				end
+			end
+		end
+	end
+
+	local function deliverEnvelope(envelope: Types.InputCandidateEnvelope): ()
+		for _, entry in envelopes.Snapshot() do
+			if gate.IsTerminal() then
+				break
+			end
+
+			if entry.active then
+				local success: boolean, reason: string? = Observers.Run(entry.callback, envelope)
+
+				if not success then
+					report("InputCandidateObserver" .. (reason or "Failed"))
+					break
 				end
 			end
 		end
@@ -152,26 +211,53 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		gate.EnterDispatch()
 		local events: { Types.GestureEvent } = {}
 		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
+		local sequences: { Types.SequenceMatchEvent } = {}
+		local customs: { Types.CustomRecognitionEvent } = {}
+		local previousSequences: { Types.SequenceMatchEvent }? = sequenceNotifications
+		local previousCustoms: { Types.CustomRecognitionEvent }? = customNotifications
+		sequenceNotifications = sequences
+		customNotifications = customs
 		gestureNotifications = events
-		local success: boolean, reason: any = pcall(callback)
+
+		local success: boolean, reason: any = pcall(function(): ()
+			callback()
+			recognition.Finish(nil)
+		end)
+
 		gestureNotifications = previousNotifications
+		sequenceNotifications = previousSequences
+		customNotifications = previousCustoms
 
 		if not success then
 			report(tostring(reason))
 			onFault()
 		else
 			publishGestures(events)
+			publishRecognition(customs, sequences)
 		end
 
 		gate.LeaveDispatch()
 		gate.Flush()
 	end
 
-	recognition = GestureRecognition.new({
+	recognition = RecognitionPipeline.new({
 		Now = readTime,
 		Scheduler = options.Scheduler or GestureScheduler.new(readTime, report),
 		RunTimer = runTimer,
-		Deliver = deliverGroup,
+		DeliverGroup = deliverGroup,
+		DeliverEnvelope = deliverEnvelope,
+		IsEpochActive = options.IsEpochActive,
+		Report = report,
+		NotifySequence = function(event: Types.SequenceMatchEvent): ()
+			if sequenceNotifications ~= nil then
+				table.insert(sequenceNotifications, event)
+			end
+		end,
+		NotifyCustom = function(event: Types.CustomRecognitionEvent): ()
+			if customNotifications ~= nil then
+				table.insert(customNotifications, event)
+			end
+		end,
 	})
 
 	local function deliver(
@@ -226,6 +312,12 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		gate.EnterDispatch()
 		local gestures: { Types.GestureEvent } = {}
 		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
+		local sequences: { Types.SequenceMatchEvent } = {}
+		local customs: { Types.CustomRecognitionEvent } = {}
+		local previousSequences: { Types.SequenceMatchEvent }? = sequenceNotifications
+		local previousCustoms: { Types.CustomRecognitionEvent }? = customNotifications
+		sequenceNotifications = sequences
+		customNotifications = customs
 		gestureNotifications = gestures
 		local interpreted: boolean = pcall(recognition.Before, occurrence)
 
@@ -257,7 +349,18 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			end
 		end
 
+		if not gate.IsTerminal() then
+			local completed: boolean, failure: any = pcall(recognition.Finish, occurrence)
+
+			if not completed then
+				report(tostring(failure))
+				onFault()
+			end
+		end
+
 		gestureNotifications = previousNotifications
+		sequenceNotifications = previousSequences
+		customNotifications = previousCustoms
 
 		if not gate.IsTerminal() then
 			if deferred ~= nil then
@@ -268,6 +371,7 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		end
 
 		publishGestures(gestures)
+		publishRecognition(customs, sequences)
 		gate.LeaveDispatch()
 	end
 

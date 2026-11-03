@@ -17,14 +17,22 @@ afterEach(function()
 	Utils.destroy(fixture)
 end)
 
-for _, mode: string in { "Throw", "Yield", "Return", "State", "Deadline" } do
+for _, mode: string in { "Throw", "Yield", "Return", "State", "Deadline", "NonStringThrow" } do
 	it("isolates " .. mode .. " faults and preserves other committed recognition", function()
 		local callback = function(ctx: Types.RecognizerContext, event: Types.RecognizerEvent): any
 			if event.kind ~= "Pressed" then
 				return nil
 			end
 
-			if mode == "Throw" then
+			if mode == "NonStringThrow" then
+				error(setmetatable({}, {
+					__tostring = function(): string
+						coroutine.yield()
+
+						return "unsafe"
+					end,
+				}))
+			elseif mode == "Throw" then
 				error("InjectedCustomFault")
 			elseif mode == "Yield" then
 				coroutine.yield()
@@ -185,3 +193,60 @@ for _, mode: string in { "Throw", "Yield", "Return" } do
 		expect(#fixture.input.events).toBe(4)
 	end)
 end
+
+it("discards provisional output when a later I2 callback faults on the same root", function()
+	expect({
+		fixture.input.owner.SetSource(
+			"Gestures",
+			{ gestures = { Q = { DoubleTapped = { maxTapDurationSeconds = 0.25, maxGapSeconds = 0.5 } } } }
+		),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0, "Q")
+
+	local definition: Types.RecognizerDefinition = Utils.recognizer(
+		function(_ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+			if event.kind == "Gesture" then
+				error("LaterSameRootFault")
+			end
+
+			return if event.kind == "Pressed" then {} else nil
+		end
+	)
+
+	definition.inputs = { "Q" }
+	definition.gestures = { Q = { "DoubleTapped" } }
+
+	local independent: Types.RecognizerDefinition = Utils.recognizer(
+		function(_ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+			return if event.kind == "Pressed" then {} else nil
+		end
+	)
+
+	independent.inputs = { "Q" }
+
+	expect({ fixture.input.owner.SetSource("Custom", { recognizers = { Sign = definition, AGood = independent } }) }).toEqual({
+		true,
+	})
+
+	expect({ Utils.install(fixture, { Combo = Utils.pattern({ { recognizerId = "Sign", kind = "Custom" } }) }) }).toEqual({
+		true,
+	})
+
+	Utils.emit(fixture, 0.125, "Q")
+	expect(assert(fixture.input.owner.GetRecognizer("Sign"), "Expected recognizer").faulted).toBe(true)
+	expect(#fixture.recognizers).toBe(1)
+	expect(fixture.recognizers[1].recognizerId).toBe("AGood")
+	expect(Utils.ids(fixture)).toEqual({})
+	local envelope: Types.RootCandidateEnvelope = Utils.lastRoot(fixture)
+
+	for _, candidate: Types.RecognitionCandidate in envelope.candidates do
+		if candidate.kind == "Custom" then
+			expect(candidate.recognizerId).toBe("AGood")
+		else
+			expect(candidate.kind).toBe("Input")
+		end
+	end
+
+	expect(fixture.events[1].gesture).toBe("DoubleTapped")
+end)

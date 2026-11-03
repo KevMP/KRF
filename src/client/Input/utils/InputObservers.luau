@@ -57,7 +57,10 @@ function Observers.Run(callback: (...any) -> ...any, ...: any): (boolean, string
 		return false, "Yielded", nil, nil
 	end
 
-	return success, if success then nil else tostring(result), result, reason
+	return success,
+		if success then nil else if type(result) == "string" then result else "NonStringError",
+		result,
+		reason
 end
 
 return Observers

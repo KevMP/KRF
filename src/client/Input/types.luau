@@ -186,6 +186,38 @@ export type DeferredCandidateEnvelope = CandidateEmission & {
 
 export type InputCandidateEnvelope = RootCandidateEnvelope | DeferredCandidateEnvelope
 
+-- Compiled framework-private recognition graph. Built before native application.
+export type RecognitionToken = {
+	read key: string,
+	read ordinal: number,
+	read timestamp: number,
+	read causeRootInputOrdinal: number?,
+}
+
+export type SequenceNode = { edges: { [string]: number }, completed: { string }, depth: number }
+
+export type SequenceMachine = {
+	id: string,
+	sourceId: string,
+	deferred: boolean,
+	dependencies: { [string]: unknown },
+	nodes: { SequenceNode },
+	watched: { [string]: boolean },
+	inputs: { [string]: boolean },
+	recognizers: { [string]: boolean },
+	maxGapSeconds: number,
+	maxTotalSeconds: number,
+}
+
+export type RecognitionCatalog = {
+	sequences: { [string]: SequenceSnapshot },
+	recognizers: { [string]: RecognizerSnapshot },
+	machines: { [string]: SequenceMachine },
+	machineIndex: { [string]: { string } },
+	recognizerIndex: { [string]: { string } },
+	recognizerDependencies: { [string]: { [string]: unknown } },
+}
+
 export type GestureKind = "Tap" | "Held" | "LongHeld" | "DoubleTapped"
 export type DoubleTapArbitration = "PreferSpecific" | "Independent" | "DeferredTap"
 export type TapDefinition = { maxDurationSeconds: number, suppressIfHoldRecognized: boolean? }
@@ -309,6 +341,7 @@ export type InputRuntime = {
 }
 
 export type InputGraphSnapshot = {
+	read recognition: RecognitionCatalog?,
 	read generation: number,
 	read sources: { [string]: InputSourceDefinition },
 	read contexts: { [string]: ContextSnapshot },

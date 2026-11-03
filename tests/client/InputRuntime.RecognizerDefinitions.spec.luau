@@ -149,3 +149,27 @@ for _, size: number in { Constants.MAX_RECOGNIZERS, Constants.MAX_RECOGNIZERS + 
 		}).toEqual(if size <= Constants.MAX_RECOGNIZERS then { true } else { false, "InputRecognizerLimitExceeded" })
 	end)
 end
+
+it("delivers declared cancellation observations without emitting a custom completion", function()
+	local observed: { string } = {}
+
+	expect({
+		fixture.input.owner.SetSource("Custom", {
+			recognizers = {
+				Cancel = Utils.recognizer(
+					function(_ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+						table.insert(observed, event.kind)
+
+						return if event.kind == "Cancelled" then {} else nil
+					end
+				),
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.emit(fixture, 0, "X")
+	expect({ fixture.input.owner.SetContextEnabled("Signs", false) }).toEqual({ true })
+	expect(observed).toEqual({ "Pressed", "Cancelled" })
+	expect(#fixture.recognizers).toBe(0)
+	expect(Utils.pending(fixture)).toBe(0)
+end)

@@ -2,12 +2,20 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage.Packages.KRF.client.Input.types)
 
--- Executable declaration examples for the I3 acceptance fixtures. The red-phase
--- branch rejects these with InvalidDefinition until I3 is built.
+-- Source-owned semantic sequences and a bounded scalar-state sword recognizer.
+-- Install these declarations through InputRuntime after client initialization.
 local Examples = {}
 
 function Examples.Inputs(): Types.InputSourceDefinition
 	local inputs: { [string]: Types.InputDefinition } = {}
+
+	local gamepad: { [string]: Enum.KeyCode } = {
+		X = Enum.KeyCode.ButtonX,
+		Q = Enum.KeyCode.ButtonA,
+		Z = Enum.KeyCode.ButtonB,
+		A = Enum.KeyCode.ButtonR1,
+		C = Enum.KeyCode.ButtonL1,
+	}
 
 	local keys: { [string]: Enum.KeyCode } =
 		{ X = Enum.KeyCode.X, Q = Enum.KeyCode.Q, Z = Enum.KeyCode.Z, A = Enum.KeyCode.A, C = Enum.KeyCode.C }
@@ -16,7 +24,7 @@ function Examples.Inputs(): Types.InputSourceDefinition
 		inputs[id] = {
 			context = "Signs",
 			type = Enum.InputActionType.Bool,
-			bindings = { Keyboard = { keyCode = key }, Gamepad = { keyCode = Enum.KeyCode.ButtonX } },
+			bindings = { Keyboard = { keyCode = key }, Gamepad = { keyCode = gamepad[id] } },
 		}
 	end
 

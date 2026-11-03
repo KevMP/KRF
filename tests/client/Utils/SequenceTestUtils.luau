@@ -97,13 +97,7 @@ function Utils.new(): Fixture
 end
 
 function Utils.pattern(steps: { Types.SequenceStep }, gap: number?, total: number?): Types.SequenceDefinition
-	local owned: { Types.SequenceStep } = {}
-
-	for _, step in steps do
-		table.insert(owned, step)
-	end
-
-	return { steps = owned, maxGapSeconds = gap or 0.5, maxTotalSeconds = total or 2 }
+	return { steps = steps, maxGapSeconds = gap or 0.5, maxTotalSeconds = total or 2 }
 end
 
 function Utils.install(

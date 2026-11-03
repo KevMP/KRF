@@ -3,6 +3,7 @@
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
+      "InputRecognitionWorkload": { "$path": "tests/benchmarks/InputRecognition/Workload.luau" },
       "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
       "InputSequences": { "$path": "tests/examples/InputSequences.luau" },
       "InputTestControl": { "$className": "RemoteEvent" }

@@ -4,8 +4,23 @@ local Constants = require(script.Parent.utils.InputConstants)
 local Value = require(script.Parent.utils.InputValue)
 local GestureDefinitions = require(script.Parent.utils.InputGestureDefinitions)
 
+local SequenceDefinitions = require(script.Parent.utils.InputSequenceDefinitions)
+local SequenceCompiler = require(script.Parent.utils.InputSequenceCompiler)
+local RecognizerDefinitions = require(script.Parent.utils.InputRecognizerDefinitions)
+
 local Validator = {}
-local sourceFields = { priority = true, contexts = true, inputs = true, bindingOverrides = true, gestures = true }
+
+local sourceFields = {
+	priority = true,
+	contexts = true,
+	inputs = true,
+	bindingOverrides = true,
+	gestures = true,
+	sequences = true,
+	sequenceGroups = true,
+	recognizers = true,
+}
+
 local inputFields = { context = true, type = true, displayName = true, bindings = true }
 local contextFields = { priority = true, sink = true }
 
@@ -250,6 +265,27 @@ function Validator.Normalize(sourceId: string, declaration: any): (Types.InputSo
 		end
 	end
 
+	local sequences: { [string]: Types.SequenceDefinition }?, sequenceReason: string? =
+		SequenceDefinitions.Normalize(declaration.sequences)
+
+	if sequences == nil then
+		return nil, sequenceReason
+	end
+
+	local groups: { [string]: Types.SequenceGroupDefinition }?, groupReason: string? =
+		SequenceDefinitions.NormalizeGroups(declaration.sequenceGroups)
+
+	if groups == nil then
+		return nil, groupReason
+	end
+
+	local recognizers: { [string]: Types.RecognizerDefinition }?, recognizerReason: string? =
+		RecognizerDefinitions.Normalize(declaration.recognizers)
+
+	if recognizers == nil then
+		return nil, recognizerReason
+	end
+
 	local contexts: { [string]: Types.ContextDefinition } = {}
 
 	local gestures: { [string]: Types.GestureDefinitions }?, gestureReason: string? =
@@ -368,6 +404,9 @@ function Validator.Normalize(sourceId: string, declaration: any): (Types.InputSo
 		inputs = table.freeze(inputs),
 		bindingOverrides = table.freeze(overrides),
 		gestures = gestures,
+		sequences = sequences,
+		sequenceGroups = groups,
+		recognizers = recognizers,
 	}),
 		nil
 end
@@ -450,6 +489,12 @@ function Validator.Compose(
 		return nil, gestureReason
 	end
 
+	local catalog: Types.RecognitionCatalog?, catalogReason: string? = SequenceCompiler.Compile(sources, inputs)
+
+	if catalog == nil then
+		return nil, catalogReason
+	end
+
 	if totalBindings > Constants.MAX_BINDINGS then
 		return nil, "InputBindingLimitExceeded"
 	end
@@ -513,6 +558,7 @@ function Validator.Compose(
 
 	return table.freeze({
 		generation = previous.generation + 1,
+		recognition = catalog,
 		sources = table.freeze(table.clone(sources)),
 		contexts = table.freeze(contexts),
 		inputs = table.freeze(inputs),

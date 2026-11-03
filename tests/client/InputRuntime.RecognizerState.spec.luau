@@ -229,3 +229,24 @@ for _, mode: string in { "Slots", "Bytes", "Key" } do
 		expect(assert(fixture.input.owner.GetRecognizer("Bad")).faulted).toBe(true)
 	end)
 end
+
+it("faults an invalid state read without exposing storage or publishing a match", function()
+	expect({
+		fixture.input.owner.SetSource("Custom", {
+			recognizers = {
+				Bad = Utils.recognizer(function(ctx: Types.RecognizerContext): Types.CustomMatch?
+					ctx:GetState("")
+
+					return {}
+				end),
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0, "X")
+	expect(#fixture.recognizers).toBe(0)
+
+	expect(assert(fixture.input.owner.GetRecognizer("Bad"), "Expected recognizer").faultReason).toBe(
+		"InvalidRecognizerState"
+	)
+end)

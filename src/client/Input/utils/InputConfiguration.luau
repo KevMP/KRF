@@ -10,7 +10,7 @@ local Changes = require(script.Parent.InputGraphChanges)
 local MutationGate = require(script.Parent.InputMutationGate)
 local Dispatch = require(script.Parent.InputDispatch)
 local GraphObservers = require(script.Parent.InputGraphObservers)
-local GestureRecognition = require(script.Parent.InputGestureRecognition)
+local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
 
 export type SelectionFence = { generation: number, recognitionRevision: number }
 
@@ -53,7 +53,7 @@ function Configuration.new(
 	local epochId: number = 0
 	local selectionFence: SelectionFence? = nil
 	local labels: Labels.Owner = Labels.new()
-	local recognition: GestureRecognition.Owner = dispatch.Recognition
+	local recognition: RecognitionPipeline.Owner = dispatch.Recognition
 	local native: NativeGraph.Owner
 	local owner: Owner
 	local report: (string) -> () = options.ReportFault
@@ -153,6 +153,9 @@ function Configuration.new(
 				and next(definition.inputs or {}) == nil
 				and next(definition.bindingOverrides or {}) == nil
 				and next(definition.gestures or {}) == nil
+				and next(definition.sequences or {}) == nil
+				and next(definition.sequenceGroups or {}) == nil
+				and next(definition.recognizers or {}) == nil
 			)
 		then
 			sources[sourceId] = nil
@@ -185,7 +188,7 @@ function Configuration.new(
 		end
 
 		local changes: Changes.Plan = Changes.Diff(previous, nextGraph, forcedReason)
-		local gesturePlan: GestureRecognition.Plan = recognition.Prepare(nextGraph)
+		local gesturePlan: RecognitionPipeline.Plan = recognition.Prepare(nextGraph)
 		local previousRecognitionRevision: number = recognition.Revision()
 		gate.SetFenced(true)
 		local invalidation: Epochs.Invalidation = Epochs.Invalidate(states, changes.invalidated, nextGraph.generation)

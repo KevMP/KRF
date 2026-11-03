@@ -359,3 +359,80 @@ it("queues source changes requested by a recognizer behind the complete current 
 	Utils.press(fixture, 0.125, "X")
 	expect(Utils.ids(fixture)).toEqual({ "Later" })
 end)
+
+it("isolates a late DeferredTap expired by the next press from that press's live root", function()
+	expect({
+		fixture.input.owner.SetSource("Gestures", {
+			gestures = {
+				X = {
+					Tap = { maxDurationSeconds = 0.25 },
+					DoubleTapped = {
+						maxTapDurationSeconds = 0.25,
+						maxGapSeconds = 0.5,
+						arbitration = "DeferredTap",
+					},
+				},
+			},
+		}),
+	}).toEqual({ true })
+
+	expect({ Utils.install(fixture, { TapSequence = Utils.pattern({ { inputId = "X", kind = "Tap" } }) }) }).toEqual({
+		true,
+	})
+
+	Utils.press(fixture, 0, "X")
+	local count: number = #fixture.envelopes
+	Utils.emit(fixture, 1, "X")
+	expect(#fixture.envelopes).toBe(count + 2)
+	local deferred: Types.InputCandidateEnvelope = fixture.envelopes[count + 1]
+	expect(deferred.kind).toBe("Deferred")
+
+	for _, candidate: Types.RecognitionCandidate in deferred.candidates do
+		if candidate.kind == "Sequence" then
+			expect(candidate.immediate).toBe(false)
+			expect(candidate.holdOwner).toBeNil()
+		end
+	end
+
+	local root: Types.RootCandidateEnvelope = Utils.lastRoot(fixture)
+	expect(root.isRootEpochActiveAfterCommit).toBe(true)
+	expect(#root.candidates).toBe(1)
+	local pressed: Types.RecognitionCandidate = root.candidates[1]
+	assert(pressed.kind == "Input", "Expected primitive candidate")
+	expect(pressed.gesture).toBe("Pressed")
+	expect(Utils.ids(fixture)).toEqual({ "TapSequence" })
+end)
+
+it("disconnects observers within the current immutable envelope snapshot", function()
+	local laterCalls: number = 0
+	local disconnect: () -> () = function() end
+
+	fixture.input.owner.ObserveCandidateEnvelope(function(): ()
+		disconnect()
+	end)
+
+	disconnect = fixture.input.owner.ObserveCandidateEnvelope(function(): ()
+		laterCalls += 1
+	end)
+
+	Utils.emit(fixture, 0, "X")
+	expect(laterCalls).toBe(0)
+	expect(#fixture.input.events).toBe(1)
+end)
+
+it("stops remaining observers and public delivery after terminal teardown inside an envelope", function()
+	local laterCalls: number = 0
+
+	fixture.input.owner.ObserveCandidateEnvelope(function(): ()
+		fixture.input.owner.Destroy()
+	end)
+
+	fixture.input.owner.ObserveCandidateEnvelope(function(): ()
+		laterCalls += 1
+	end)
+
+	Utils.emit(fixture, 0, "X")
+	expect(laterCalls).toBe(0)
+	expect(#fixture.input.events).toBe(0)
+	expect(fixture.input.connections).toBe(0)
+end)

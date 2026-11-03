@@ -195,3 +195,82 @@ it("allows two sources to use the same source-local group name", function()
 	Utils.wake(fixture, 0.250001)
 	expect(Utils.ids(fixture)).toEqual({ "OtherShort" })
 end)
+
+it("emits both overlapping pending completions of the same ID in distinct deferred occurrences", function()
+	expect({
+		fixture.input.owner.SetSource("Manual", {
+			sequenceGroups = {
+				Repeated = { policy = "DeferredPrefix", maxGapSeconds = 0.5, maxTotalSeconds = 2, scope = { "X", "Q" } },
+			},
+			sequences = {
+				Short = { steps = { "X" }, exclusiveGroup = "Repeated" },
+				Long = { steps = { "X", "X", "Q" }, exclusiveGroup = "Repeated" },
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.play(fixture, { "X", "X" })
+	local count: number = #fixture.envelopes
+	Utils.wake(fixture, 0.625001)
+	expect(Utils.ids(fixture)).toEqual({ "Short", "Short" })
+	expect(fixture.sequences[1].recognizedAt).toBe(0)
+	expect(fixture.sequences[2].recognizedAt).toBe(0.125)
+	expect(#fixture.envelopes).toBe(count + 2)
+	expect(fixture.envelopes[count + 1].kind).toBe("Deferred")
+	expect(fixture.envelopes[count + 2].kind).toBe("Deferred")
+	expect(Utils.pending(fixture)).toBe(0)
+end)
+
+it("reschedules an early prefix wake without completing before its inclusive deadline", function()
+	expect({ fixture.input.owner.SetSource("Manual", Utils.deferred()) }).toEqual({ true })
+	Utils.play(fixture, { "X", "Q" })
+
+	local job = fixture.jobs[#fixture.jobs]
+	job.fired = true
+	fixture.input.now = 0.25
+	job.callback()
+	expect(Utils.ids(fixture)).toEqual({})
+	expect(Utils.pending(fixture)).toBe(1)
+	Utils.wake(fixture, 0.625001)
+	expect(Utils.ids(fixture)).toEqual({ "Short" })
+end)
+
+it("emits identical deferred signatures under separate canonical IDs in one causal envelope", function()
+	local source: Types.InputSourceDefinition = Utils.deferred()
+	assert(source.sequences, "Expected sequence declarations").Twin = { steps = { "X", "Q" }, exclusiveGroup = "Signs" }
+	expect({ fixture.input.owner.SetSource("Manual", source) }).toEqual({ true })
+	Utils.play(fixture, { "X", "Q" })
+	local count: number = #fixture.envelopes
+	Utils.wake(fixture, 0.625001)
+	expect(Utils.ids(fixture)).toEqual({ "Short", "Twin" })
+	expect(#fixture.envelopes).toBe(count + 1)
+	expect(#fixture.envelopes[count + 1].candidates).toBe(2)
+end)
+
+it("halts deferred batches if the owner is destroyed while the first completion is observed", function()
+	expect({
+		fixture.input.owner.SetSource("Manual", {
+			sequenceGroups = {
+				Repeated = { policy = "DeferredPrefix", maxGapSeconds = 0.5, maxTotalSeconds = 2, scope = { "X", "Q" } },
+			},
+			sequences = {
+				Short = { steps = { "X" }, exclusiveGroup = "Repeated" },
+				Long = { steps = { "X", "X", "Q" }, exclusiveGroup = "Repeated" },
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.play(fixture, { "X", "X" })
+	local count: number = #fixture.envelopes
+
+	fixture.input.owner.ObserveCandidateEnvelope(function(envelope: Types.InputCandidateEnvelope): ()
+		if envelope.kind == "Deferred" then
+			fixture.input.owner.Destroy()
+		end
+	end)
+
+	Utils.wake(fixture, 0.625001)
+	expect(#fixture.envelopes).toBe(count + 1)
+	expect(Utils.ids(fixture)).toEqual({})
+	expect(Utils.pending(fixture)).toBe(0)
+end)

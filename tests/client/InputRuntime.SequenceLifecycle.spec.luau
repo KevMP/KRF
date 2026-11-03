@@ -206,6 +206,14 @@ it("removal and terminal teardown cancel every deadline and reject stale callbac
 
 	expect({ fixture.input.owner.RemoveSource("Manual") }).toEqual({ true })
 	expect(Utils.pending(fixture)).toBe(0)
+	fixture.input.now = 10
+
+	for _, callback in callbacks do
+		callback()
+	end
+
+	expect(Utils.ids(fixture)).toEqual({})
+	expect(Utils.pending(fixture)).toBe(0)
 	fixture.input.owner.Destroy()
 	fixture.input.now = 10
 
@@ -216,4 +224,119 @@ it("removal and terminal teardown cancel every deadline and reject stale callbac
 	expect(Utils.ids(fixture)).toEqual({})
 	expect(fixture.input.connections).toBe(0)
 	expect(fixture.input.owner.GetSequence("Short")).toBeNil()
+end)
+
+it("preserves custom state when only an unwatched gesture changes on the same input", function()
+	local observed: { boolean } = {}
+
+	local definition: Types.RecognizerDefinition = Utils.recognizer(
+		function(ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+			if event.kind == "Pressed" then
+				table.insert(observed, ctx:GetState("seen") == true)
+				ctx:SetState("seen", true)
+			end
+
+			return nil
+		end
+	)
+
+	definition.gestures = { X = { "Held" } }
+
+	expect({
+		fixture.input.owner.SetSource(
+			"Gestures",
+			{ gestures = { X = { Held = { afterSeconds = 1 }, Tap = { maxDurationSeconds = 0.25 } } } }
+		),
+	}).toEqual({ true })
+
+	expect({ fixture.input.owner.SetSource("Custom", { recognizers = { State = definition } }) }).toEqual({ true })
+	Utils.press(fixture, 0, "X")
+
+	expect({
+		fixture.input.owner.SetSource(
+			"Gestures",
+			{ gestures = { X = { Held = { afterSeconds = 1 }, Tap = { maxDurationSeconds = 0.5 } } } }
+		),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0.125, "X")
+
+	expect({
+		fixture.input.owner.SetSource(
+			"Gestures",
+			{ gestures = { X = { Held = { afterSeconds = 2 }, Tap = { maxDurationSeconds = 0.5 } } } }
+		),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0.25, "X")
+	expect(observed).toEqual({ false, true, false })
+end)
+
+it("canonicalizes unordered whitelists before deciding whether a source changed", function()
+	expect({
+		fixture.input.owner.SetSource("Gestures", {
+			gestures = {
+				X = {
+					Tap = { maxDurationSeconds = 0.25 },
+					Held = { afterSeconds = 1 },
+					LongHeld = { afterSeconds = 2 },
+				},
+			},
+		}),
+	}).toEqual({ true })
+
+	local seen: { boolean } = {}
+
+	local definition: Types.RecognizerDefinition = Utils.recognizer(
+		function(ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+			if event.kind == "Pressed" then
+				table.insert(seen, ctx:GetState("seen") == true)
+				ctx:SetState("seen", true)
+			end
+
+			return nil
+		end
+	)
+
+	definition.inputs = { "X", "Q" }
+	definition.gestures = { X = { "Tap", "Held" } }
+
+	local pattern: Types.SequenceDefinition = Utils.pattern({ "X", "Q" })
+	pattern.scope = { "Q", "X" }
+	pattern.watchedTokens = { { inputId = "X", kind = "Held" }, { inputId = "X", kind = "LongHeld" } }
+
+	expect({
+		fixture.input.owner.SetSource(
+			"Manual",
+			{ sequences = { Combo = pattern }, recognizers = { State = definition } }
+		),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0, "X")
+	local previous: Types.RecognizerSnapshot = assert(fixture.input.owner.GetRecognizer("State"), "Expected recognizer")
+	local commits: number = 0
+
+	fixture.input.owner.ObserveConfigurationCommit(function()
+		commits += 1
+	end)
+
+	definition.inputs = { "Q", "X" }
+	definition.gestures = { X = { "Held", "Tap" } }
+	pattern.scope = { "X", "Q" }
+
+	pattern.watchedTokens =
+		{ { inputId = "X", kind = "LongHeld" }, { inputId = "X", kind = "Held" }, { inputId = "X", kind = "Held" } }
+
+	expect({
+		fixture.input.owner.SetSource(
+			"Manual",
+			{ sequences = { Combo = pattern }, recognizers = { State = definition } }
+		),
+	}).toEqual({ true })
+
+	expect(commits).toBe(0)
+	expect(fixture.input.owner.GetRecognizer("State")).toBe(previous)
+	Utils.press(fixture, 0.125, "Q")
+	expect(seen).toEqual({ false, true })
+	expect(Utils.ids(fixture)).toEqual({ "Combo" })
 end)
