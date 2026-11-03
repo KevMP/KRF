@@ -3,6 +3,12 @@ local Types = require(script.Parent.types)
 local State = require(script.Parent.utils.InputRuntimeState)
 
 local facade: Types.InputRuntime = {
+	OnGesture = State.OnGesture,
+	GetGestures = function(inputId: string): { [Types.GestureKind]: Types.GestureSnapshot }?
+		local owner: Types.InputOwner? = State.Get()
+
+		return if owner == nil then nil else owner.GetGestures(inputId)
+	end,
 	OnInput = State.OnInput,
 	SetSource = function(sourceId: string, definition: Types.InputSourceDefinition): (boolean, string?)
 		local owner: Types.InputOwner? = State.Get()

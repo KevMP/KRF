@@ -40,6 +40,41 @@ Organize source by execution side and system: `src/<side>/<System>/`.
 - Follow the existing structure before inventing another directory layer. Split
   a new system only when it has a distinct responsibility and lifecycle.
 
+## Module cohesion and design review
+
+- Judge module boundaries by responsibility, state ownership, lifecycle and
+  coupling. There is no numeric line limit. A larger module can be appropriate
+  after deliberate review; neither its size nor an existing large module is
+  evidence that its structure is sound.
+- Before extending a system, identify what the owner must coordinate and what
+  belongs in cohesive collaborators. Inspect existing helpers before adding more
+  logic to the owner. A large constructor full of nested closures needs the same
+  review as a large module; having a `utils/` directory is not sufficient.
+- Review graph compilation/diffing, commit planning/application,
+  dispatch/publication, scheduling, prepared-plan storage, validation and cleanup
+  as potential extraction boundaries. Extract responsibilities that have their
+  own reason to change and a useful narrow contract. Keep tightly coupled logic
+  together when it shares an invariant or lifecycle and extraction would only
+  add indirection or spread ownership.
+- Keep one clear owner for mutable state and commit fences. Give collaborators
+  explicitly typed contracts and one-way dependencies. Do not pass the entire
+  owner/facade or an `any` context into every helper, introduce circular requires,
+  or distribute mutation so atomic installation and notification order become
+  unclear.
+- Complete necessary decomposition in the same change. Boilerplate, TDD setup,
+  milestone scope, and passing tests or coverage do not justify accumulating
+  unrelated responsibilities or deferring cleanup to another pass.
+- Splitting must improve the design. Do not create arbitrary `Part1`/`Part2`
+  files, ticket/phase modules, forwarding-only helpers or a relocated monolith.
+  Do not compress useful code, comments, types or spacing to make a file look
+  smaller. Preserve the one-`types.luau` rule for system contracts.
+- Before completing production changes, review the cohesion of every new or
+  substantially expanded module. For a larger module, identify the extraction
+  candidates considered and why the retained responsibilities belong together.
+  Briefly explain consequential boundary decisions in the PR or completion
+  summary; do not substitute a line count or a generic "kept cohesive" claim for
+  that reasoning.
+
 ## One type module per system folder
 
 - Use exactly one lowercase `types.luau` for cross-module system contracts.

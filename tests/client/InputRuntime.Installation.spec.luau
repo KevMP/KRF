@@ -54,13 +54,22 @@ it("publishes through the stable event only during the installed owner lifetime"
 	TestUtils.install(fixture)
 	TestUtils.enable(fixture)
 	local calls: number = 0
+	local gestureCalls: number = 0
 
 	event:Connect(function()
 		calls += 1
 	end)
 
+	Runtime.OnGesture:Connect(function()
+		gestureCalls += 1
+	end)
+
+	expect(Runtime.SetSource("Gestures", { gestures = { Primary = { Tap = { maxDurationSeconds = 1 } } } })).toBe(true)
+
 	TestUtils.emit(fixture, "Pressed", true)
 	expect(calls).toBe(1)
+	TestUtils.emit(fixture, "Released", false)
+	expect(gestureCalls).toBe(1)
 	assert(stop, "Expected cleanup")()
 	assert(stop, "Expected cleanup")()
 	expect(State.Get()).toBeNil()
@@ -91,9 +100,14 @@ it("rejects a retained old publication callback after a new owner is installed",
 	fixture.owner = assert(State.Get(), "Expected replacement owner")
 
 	local calls: number = 0
+	local gestureCalls: number = 0
 
 	Runtime.OnInput:Connect(function()
 		calls += 1
+	end)
+
+	Runtime.OnGesture:Connect(function()
+		gestureCalls += 1
 	end)
 
 	local sample: Types.SemanticInputEvent = {
@@ -110,6 +124,26 @@ it("rejects a retained old publication callback after a new owner is installed",
 	expect(calls).toBe(0)
 	captured[2].Publish(sample)
 	expect(calls).toBe(1)
+
+	local gesture: Types.TapGestureEvent = {
+		gesture = "Tap",
+		inputId = "Primary",
+		contextId = "Gameplay",
+		timestamp = 1,
+		ordinal = 1,
+		triggerInputOrdinal = 2,
+		recognizedAt = 1,
+		pressDurationSeconds = 0.125,
+	}
+
+	assert(captured[1].PublishGesture, "Expected gesture publication")(gesture)
+	expect(gestureCalls).toBe(0)
+	State.Install(nil)
+	assert(captured[2].PublishGesture, "Expected gesture publication")(gesture)
+	expect(gestureCalls).toBe(0)
+	State.Install(fixture.owner)
+	assert(captured[2].PublishGesture, "Expected gesture publication")(gesture)
+	expect(gestureCalls).toBe(1)
 end)
 
 it("contains ordinary observer faults and disconnects public listeners on terminal input failure", function()

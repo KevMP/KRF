@@ -1,0 +1,17 @@
+{
+  "name": "KRF-Input-Gestures-Manual",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } }
+    },
+    "ServerScriptService": {
+      "GestureManualServer": { "$path": "tests/integration/InputGestures/Manual.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "GestureManualClient": { "$path": "tests/integration/InputGestures/Manual.client.luau" }
+      }
+    }
+  }
+}
