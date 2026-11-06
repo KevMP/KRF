@@ -130,6 +130,12 @@ function Custom.new(options: Options): Owner
 					return false, violation
 				end
 
+				-- Cancellation retires this window, and a graph commit may already
+				-- have done so. Nothing is left to schedule, but that is not a fault.
+				if event ~= nil and event.kind == "Cancelled" then
+					return false, "RecognizerCancelled"
+				end
+
 				local deadline: number = options.Now() + seconds
 
 				if entry.horizon == nil or deadline > entry.horizon then

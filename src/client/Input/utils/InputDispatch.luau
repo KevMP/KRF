@@ -106,35 +106,38 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		customs: { Types.CustomRecognitionEvent },
 		sequences: { Types.SequenceMatchEvent }
 	): ()
-		for _, event: Types.CustomRecognitionEvent in customs do
-			if gate.IsTerminal() then
+		-- Both lanes share one ordinal counter and each is already ascending.
+		local customIndex: number = 1
+		local sequenceIndex: number = 1
+
+		while not gate.IsTerminal() do
+			local custom: Types.CustomRecognitionEvent? = customs[customIndex]
+			local sequence: Types.SequenceMatchEvent? = sequences[sequenceIndex]
+			local success: boolean = true
+			local reason: any = nil
+
+			if custom ~= nil and (sequence == nil or custom.ordinal < sequence.ordinal) then
+				customIndex += 1
+
+				local publish: ((Types.CustomRecognitionEvent) -> ())? = options.PublishRecognizer
+
+				if publish ~= nil then
+					success, reason = pcall(publish, custom)
+				end
+			elseif sequence ~= nil then
+				sequenceIndex += 1
+
+				local publish: ((Types.SequenceMatchEvent) -> ())? = options.PublishSequence
+
+				if publish ~= nil then
+					success, reason = pcall(publish, sequence)
+				end
+			else
 				break
 			end
 
-			local publish: ((Types.CustomRecognitionEvent) -> ())? = options.PublishRecognizer
-
-			if publish ~= nil then
-				local success: boolean, reason: any = pcall(publish, event)
-
-				if not success then
-					report(tostring(reason))
-				end
-			end
-		end
-
-		for _, event: Types.SequenceMatchEvent in sequences do
-			if gate.IsTerminal() then
-				break
-			end
-
-			local publish: ((Types.SequenceMatchEvent) -> ())? = options.PublishSequence
-
-			if publish ~= nil then
-				local success: boolean, reason: any = pcall(publish, event)
-
-				if not success then
-					report(tostring(reason))
-				end
+			if not success then
+				report(tostring(reason))
 			end
 		end
 	end

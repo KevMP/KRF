@@ -193,3 +193,55 @@ it("commits recognition reset and epoch invalidation before any controls have be
 
 	expect(Utils.pending(fixture)).toBe(0)
 end)
+
+it("keeps a prepared reset valid across axis input that no recognition owner watches", function()
+	expect({ fixture.input.owner.SetSource("Manual", Utils.deferred()) }).toEqual({ true })
+	Utils.play(fixture, { "X", "Q" })
+
+	local reset: Types.PreparedRecognitionReset? = fixture.input.owner.PrepareRecognitionReset(nil, "ActorChanged")
+	local invalidation: Types.PreparedInputInvalidation? = fixture.input.owner.PrepareEpochInvalidation("ActorChanged")
+
+	Utils.emit(fixture, 0.25, "Aim", "StateChanged", Vector2.new(1, 0))
+
+	local outcome: { any } = {}
+
+	expect({
+		fixture.input.owner.CommitEpochInvalidation(assert(invalidation, "Expected epoch plan"), function(): ()
+			outcome = { fixture.input.owner.CommitPreparedRecognitionReset(assert(reset, "Expected reset plan")) }
+		end),
+	}).toEqual({ true })
+
+	expect(outcome).toEqual({ true })
+	expect(Utils.pending(fixture)).toBe(0)
+end)
+
+it("rejects a prepared reset after a watched axis event changes recognizer state", function()
+	expect({
+		fixture.input.owner.SetSource("Custom", {
+			recognizers = {
+				Track = {
+					inputs = { "Aim" },
+					maxWindowSeconds = 1,
+					onEvent = function(): Types.CustomMatch?
+						return nil
+					end,
+				},
+			},
+		}),
+	}).toEqual({ true })
+
+	local reset: Types.PreparedRecognitionReset? = fixture.input.owner.PrepareRecognitionReset(nil, "ActorChanged")
+	local invalidation: Types.PreparedInputInvalidation? = fixture.input.owner.PrepareEpochInvalidation("ActorChanged")
+
+	Utils.emit(fixture, 0.25, "Aim", "StateChanged", Vector2.new(1, 0))
+
+	local outcome: { any } = {}
+
+	expect({
+		fixture.input.owner.CommitEpochInvalidation(assert(invalidation, "Expected epoch plan"), function(): ()
+			outcome = { fixture.input.owner.CommitPreparedRecognitionReset(assert(reset, "Expected reset plan")) }
+		end),
+	}).toEqual({ true })
+
+	expect(outcome).toEqual({ false, "StaleRecognitionReset" })
+end)

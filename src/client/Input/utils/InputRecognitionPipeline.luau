@@ -56,6 +56,7 @@ function Pipeline.new(options: Options): Owner
 	local tokenOrdinal: number = 0
 	local occurrenceOrdinal: number = 0
 	local resultOrdinal: number = 0
+	local emissionIdentity: number = 0
 	local generation: number = 0
 	local revision: number = 0
 	local previousCatalog: Types.RecognitionCatalog? = nil
@@ -379,6 +380,7 @@ function Pipeline.new(options: Options): Owner
 
 		if root ~= nil and root.event.kind == "Cancelled" then
 			sequences.Reset({ root.event.inputId })
+			changed()
 		end
 
 		local active: Frame = frame(root, cause)
@@ -438,11 +440,10 @@ function Pipeline.new(options: Options): Owner
 		-- The finalized I2 lane is authoritative for primitive candidates.
 		-- A fresh emission identity also deduplicates primitive and I2 callback
 		-- output before the (separate) public counters are assigned.
-		revision += 1
-		local identity: number = revision
+		emissionIdentity += 1
 
 		for _, watched in watchedEvents do
-			custom.Accept(watched.event, watched.token.key, identity, watched.token)
+			custom.Accept(watched.event, watched.token.key, emissionIdentity, watched.token)
 		end
 
 		sequences.Accept(active.tokens)

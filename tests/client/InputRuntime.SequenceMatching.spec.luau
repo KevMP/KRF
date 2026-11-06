@@ -165,3 +165,21 @@ it("keeps a lineage awaiting a gesture when the same root also supplies a watche
 	Utils.emit(fixture, 0.25, "Q")
 	expect(Utils.ids(fixture)).toEqual({ "Combo" })
 end)
+
+it("treats a press that begins a scoped gesture step as progress rather than an interruption", function()
+	local tap: Types.GestureDefinitions = { Tap = { maxDurationSeconds = 0.25 } }
+
+	expect({ fixture.input.owner.SetSource("Gestures", { gestures = { X = tap, Q = tap } }) }).toEqual({ true })
+
+	local pattern: Types.SequenceDefinition =
+		Utils.pattern({ { inputId = "X", kind = "Tap" }, { inputId = "Q", kind = "Tap" } })
+
+	pattern.scope = { "X", "Q", "Z" }
+	expect({ Utils.install(fixture, { Combo = pattern }) }).toEqual({ true })
+
+	Utils.play(fixture, { "X", "Q" }, 0, 0.0625)
+	expect(Utils.ids(fixture)).toEqual({ "Combo" })
+
+	Utils.play(fixture, { "X", "Z", "Q" }, 1, 0.0625)
+	expect(Utils.ids(fixture)).toEqual({ "Combo" })
+end)

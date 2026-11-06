@@ -44,6 +44,8 @@ function Compiler.Compile(
 	local sequenceCount: number = 0
 	local groupCount: number = 0
 	local recognizerDependencies: { [string]: { [string]: unknown } } = {}
+	local scopedKeys: { [string]: { [string]: string } } = {}
+	local gestureStepInputs: { [string]: { [string]: boolean } } = {}
 
 	local function token(step: Types.SequenceStep, machine: Types.SequenceMachine): (string?, string?)
 		if type(step) ~= "string" and step.kind == "Custom" then
@@ -156,6 +158,8 @@ function Compiler.Compile(
 				}
 
 				machines[machineId] = created
+				scopedKeys[machineId] = {}
+				gestureStepInputs[machineId] = {}
 			end
 
 			local machine: Types.SequenceMachine = machines[machineId]
@@ -172,6 +176,10 @@ function Compiler.Compile(
 
 				table.insert(keys, key)
 				machine.watched[key] = true
+
+				if type(step) ~= "string" and step.kind ~= "Custom" and step.kind ~= "Pressed" then
+					gestureStepInputs[machineId][step.inputId] = true
+				end
 
 				local node: Types.SequenceNode = machine.nodes[nodeIndex]
 				local child: number? = node.edges[key]
@@ -205,7 +213,7 @@ function Compiler.Compile(
 					return nil, failure
 				end
 
-				machine.watched[key] = true
+				scopedKeys[machineId][key] = inputId
 			end
 
 			for _, step: Types.WatchedToken in
@@ -253,6 +261,13 @@ function Compiler.Compile(
 
 	for _, id: string in Value.Keys(machines) do
 		local machine: Types.SequenceMachine = machines[id]
+
+		-- Pressing an input is how its gesture step begins, not an interruption.
+		for key: string, inputId: string in scopedKeys[id] do
+			if not gestureStepInputs[id][inputId] then
+				machine.watched[key] = true
+			end
+		end
 
 		for key in machine.watched do
 			append(machineIndex, key, id)

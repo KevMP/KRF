@@ -265,3 +265,26 @@ it("cannot perpetually renew a window from onDeadline", function()
 	expect(Utils.pending(fixture)).toBe(0)
 	expect(#fixture.recognizers).toBe(0)
 end)
+
+it("refuses a deadline during cancellation without faulting a recognizer retired by the commit", function()
+	local outcomes: { { any } } = {}
+
+	expect({
+		fixture.input.owner.SetSource("Custom", {
+			recognizers = {
+				Cancel = Utils.recognizer(function(ctx: Types.RecognizerContext): Types.CustomMatch?
+					table.insert(outcomes, { ctx:ScheduleAfter(0.25) })
+
+					return nil
+				end),
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.emit(fixture, 0, "X")
+	expect({ fixture.input.owner.SetContextEnabled("Signs", false) }).toEqual({ true })
+
+	expect(outcomes).toEqual({ { true }, { false, "RecognizerCancelled" } })
+	expect(assert(fixture.input.owner.GetRecognizer("Cancel"), "Expected recognizer").faulted).toBe(false)
+	expect(Utils.pending(fixture)).toBe(0)
+end)

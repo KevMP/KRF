@@ -436,3 +436,39 @@ it("stops remaining observers and public delivery after terminal teardown inside
 	expect(#fixture.input.events).toBe(0)
 	expect(fixture.input.connections).toBe(0)
 end)
+
+it("publishes recognition results in ordinal order across a deferred and a root envelope", function()
+	expect({
+		fixture.input.owner.SetSource("Manual", {
+			gestures = {
+				X = {
+					Tap = { maxDurationSeconds = 0.25 },
+					DoubleTapped = { maxTapDurationSeconds = 0.25, maxGapSeconds = 0.5, arbitration = "DeferredTap" },
+				},
+			},
+			sequences = { Single = Utils.pattern({ { inputId = "X", kind = "Tap" } }) },
+			recognizers = {
+				Follow = Utils.recognizer(
+					function(_ctx: Types.RecognizerContext, event: Types.RecognizerEvent): Types.CustomMatch?
+						return if event.kind == "Pressed" then {} else nil
+					end
+				),
+			},
+		}),
+	}).toEqual({ true })
+
+	Utils.press(fixture, 0, "X")
+	table.clear(fixture.trace)
+	Utils.emit(fixture, 2, "X")
+
+	local published: { string } = {}
+
+	for _, entry: string in fixture.trace do
+		if string.sub(entry, 1, 9) == "Sequence:" or string.sub(entry, 1, 7) == "Custom:" then
+			table.insert(published, entry)
+		end
+	end
+
+	expect(published).toEqual({ "Sequence:Single", "Custom:Follow" })
+	expect(fixture.sequences[1].ordinal < fixture.recognizers[#fixture.recognizers].ordinal).toBe(true)
+end)
