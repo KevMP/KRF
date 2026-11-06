@@ -144,6 +144,45 @@ it("rejects a retained old publication callback after a new owner is installed",
 	State.Install(fixture.owner)
 	assert(captured[2].PublishGesture, "Expected gesture publication")(gesture)
 	expect(gestureCalls).toBe(1)
+
+	local sequenceCalls: number = 0
+	local recognizerCalls: number = 0
+
+	Runtime.OnSequenceMatched:Connect(function()
+		sequenceCalls += 1
+	end)
+
+	Runtime.OnRecognizerMatched:Connect(function()
+		recognizerCalls += 1
+	end)
+
+	local sequence: Types.SequenceMatchEvent = {
+		sequenceId = "Combo",
+		sourceId = "Manual",
+		recognizedAt = 1,
+		timestamp = 1,
+		ordinal = 1,
+		matchedStepCount = 2,
+		triggerTokenOrdinal = 1,
+	}
+
+	local custom: Types.CustomRecognitionEvent =
+		{ recognizerId = "Swipe", sourceId = "Sword", timestamp = 1, ordinal = 1 }
+
+	assert(captured[1].PublishSequence, "Expected sequence publication")(sequence)
+	assert(captured[1].PublishRecognizer, "Expected custom publication")(custom)
+	expect(sequenceCalls).toBe(0)
+	expect(recognizerCalls).toBe(0)
+	State.Install(nil)
+	assert(captured[2].PublishSequence, "Expected sequence publication")(sequence)
+	assert(captured[2].PublishRecognizer, "Expected custom publication")(custom)
+	expect(sequenceCalls).toBe(0)
+	expect(recognizerCalls).toBe(0)
+	State.Install(fixture.owner)
+	assert(captured[2].PublishSequence, "Expected sequence publication")(sequence)
+	assert(captured[2].PublishRecognizer, "Expected custom publication")(custom)
+	expect(sequenceCalls).toBe(1)
+	expect(recognizerCalls).toBe(1)
 end)
 
 it("contains ordinary observer faults and disconnects public listeners on terminal input failure", function()

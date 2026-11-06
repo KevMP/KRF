@@ -19,6 +19,16 @@ function Installation.Install(isReady: () -> boolean): () -> ()
 				State.Notify(event)
 			end
 		end,
+		PublishSequence = function(event: Types.SequenceMatchEvent): ()
+			if active and State.Get() == owner then
+				State.NotifySequence(event)
+			end
+		end,
+		PublishRecognizer = function(event: Types.CustomRecognitionEvent): ()
+			if active and State.Get() == owner then
+				State.NotifyRecognizer(event)
+			end
+		end,
 		PublishGesture = function(event: Types.GestureEvent): ()
 			if active and State.Get() == owner then
 				State.NotifyGesture(event)

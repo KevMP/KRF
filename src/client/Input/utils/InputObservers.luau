@@ -4,6 +4,7 @@ export type Entry<Callback> = { callback: Callback, active: boolean }
 export type Registry<Callback> = {
 	Add: (callback: Callback) -> () -> (),
 	Snapshot: () -> { Entry<Callback> },
+	IsEmpty: () -> boolean,
 	Destroy: () -> (),
 }
 
@@ -34,6 +35,9 @@ function Observers.new<Callback>(maximum: number, reason: string): Registry<Call
 		Snapshot = function(): { Entry<Callback> }
 			return table.clone(entries)
 		end,
+		IsEmpty = function(): boolean
+			return #entries == 0
+		end,
 		Destroy = function(): ()
 			destroyed = true
 
@@ -57,7 +61,10 @@ function Observers.Run(callback: (...any) -> ...any, ...: any): (boolean, string
 		return false, "Yielded", nil, nil
 	end
 
-	return success, if success then nil else tostring(result), result, reason
+	return success,
+		if success then nil else if type(result) == "string" then result else "NonStringError",
+		result,
+		reason
 end
 
 return Observers

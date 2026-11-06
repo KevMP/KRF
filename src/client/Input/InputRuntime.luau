@@ -3,6 +3,18 @@ local Types = require(script.Parent.types)
 local State = require(script.Parent.utils.InputRuntimeState)
 
 local facade: Types.InputRuntime = {
+	OnSequenceMatched = State.OnSequenceMatched,
+	OnRecognizerMatched = State.OnRecognizerMatched,
+	GetSequence = function(sequenceId: string): Types.SequenceSnapshot?
+		local owner: Types.InputOwner? = State.Get()
+
+		return if owner == nil then nil else owner.GetSequence(sequenceId)
+	end,
+	GetRecognizer = function(recognizerId: string): Types.RecognizerSnapshot?
+		local owner: Types.InputOwner? = State.Get()
+
+		return if owner == nil then nil else owner.GetRecognizer(recognizerId)
+	end,
 	OnGesture = State.OnGesture,
 	GetGestures = function(inputId: string): { [Types.GestureKind]: Types.GestureSnapshot }?
 		local owner: Types.InputOwner? = State.Get()

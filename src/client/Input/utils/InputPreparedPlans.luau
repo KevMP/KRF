@@ -6,7 +6,7 @@ local Value = require(script.Parent.InputValue)
 local Changes = require(script.Parent.InputGraphChanges)
 local Configuration = require(script.Parent.InputConfiguration)
 local MutationGate = require(script.Parent.InputMutationGate)
-local GestureRecognition = require(script.Parent.InputGestureRecognition)
+local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
 
 export type GraphAccess = {
 	Current: () -> Types.InputGraphSnapshot,
@@ -47,7 +47,7 @@ type PreparedRecord = {
 local Plans = {}
 
 -- Owns bounded, generation-qualified capabilities, not the installed graph.
-function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: GestureRecognition.Owner): Owner
+function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: RecognitionPipeline.Owner): Owner
 	local prepared: { [any]: PreparedRecord } = setmetatable({}, { __mode = "k" })
 
 	local function resetSelection(inputIds: { string }?, reason: string): ({ string }?, string?)

@@ -23,6 +23,11 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 			Now = options.Now,
 			Publish = options.Publish,
 			PublishGesture = options.PublishGesture,
+			PublishSequence = options.PublishSequence,
+			PublishRecognizer = options.PublishRecognizer,
+			IsEpochActive = function(inputId: string, epochId: number, generation: number): boolean
+				return configuration.IsPressEpochActive(inputId, epochId, generation)
+			end,
 			Scheduler = options.Scheduler,
 			ReportFault = report,
 		},
@@ -50,6 +55,9 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	}, gate, dispatch.Recognition)
 
 	return {
+		GetSequence = dispatch.Recognition.GetSequence,
+		GetRecognizer = dispatch.Recognition.GetRecognizer,
+		ObserveCandidateEnvelope = dispatch.ObserveEnvelopes,
 		SetSource = configuration.SetSource,
 		RemoveSource = configuration.RemoveSource,
 		SetContextEnabled = configuration.SetContextEnabled,

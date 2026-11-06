@@ -52,9 +52,12 @@ function TestUtils.definition(inputType: Enum.InputActionType?): CoreDefinition
 	}
 end
 
-function TestUtils.new(
-	gestureOptions: { Scheduler: Types.GestureScheduler, PublishGesture: (Types.GestureEvent) -> () }?
-): Fixture
+function TestUtils.new(gestureOptions: {
+	Scheduler: Types.GestureScheduler,
+	PublishGesture: (Types.GestureEvent) -> (),
+	PublishSequence: ((Types.SequenceMatchEvent) -> ())?,
+	PublishRecognizer: ((Types.CustomRecognitionEvent) -> ())?,
+}?): Fixture
 	local fixture: Fixture = {
 		owner = {} :: Types.InputOwner,
 		native = {} :: Types.NativeInputAdapter,
@@ -166,6 +169,8 @@ function TestUtils.new(
 	}
 
 	fixture.owner = Owner.new({
+		PublishSequence = if gestureOptions ~= nil then gestureOptions.PublishSequence else nil,
+		PublishRecognizer = if gestureOptions ~= nil then gestureOptions.PublishRecognizer else nil,
 		Scheduler = if gestureOptions ~= nil then gestureOptions.Scheduler else nil,
 		PublishGesture = if gestureOptions ~= nil then gestureOptions.PublishGesture else nil,
 		Native = fixture.native,

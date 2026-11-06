@@ -40,6 +40,181 @@ export type InputSourceDefinition = {
 	read inputs: { [string]: InputDefinition }?,
 	read bindingOverrides: { [string]: { [string]: BindingDefinition } }?,
 	read gestures: { [string]: GestureDefinitions }?,
+	read sequences: { [string]: SequenceDefinition }?,
+	read sequenceGroups: { [string]: SequenceGroupDefinition }?,
+	read recognizers: { [string]: RecognizerDefinition }?,
+}
+
+export type InputSequenceStep = { inputId: string, kind: "Pressed" | GestureKind }
+export type CustomSequenceStep = { recognizerId: string, kind: "Custom" }
+export type SequenceStep = string | InputSequenceStep | CustomSequenceStep
+export type WatchedToken = InputSequenceStep | CustomSequenceStep
+
+export type SequenceDefinition = {
+	steps: { SequenceStep },
+	maxGapSeconds: number?,
+	maxTotalSeconds: number?,
+	scope: { string }?,
+	watchedTokens: { WatchedToken }?,
+	exclusiveGroup: string?,
+}
+
+export type SequenceGroupDefinition = {
+	policy: "DeferredPrefix",
+	maxGapSeconds: number,
+	maxTotalSeconds: number,
+	scope: { string },
+	watchedTokens: { WatchedToken }?,
+}
+
+export type RecognitionScalar = string | number | boolean
+export type CustomMatch = { metadata: { [string]: RecognitionScalar }? }
+
+-- Framework-owned scalar storage; consumer closures are trusted, unsandboxed code.
+export type RecognizerContext = {
+	read GetState: (self: RecognizerContext, key: string) -> RecognitionScalar?,
+	read SetState: (self: RecognizerContext, key: string, value: RecognitionScalar?) -> (boolean, string?),
+	read Now: (self: RecognizerContext) -> number,
+	read ScheduleAfter: (self: RecognizerContext, seconds: number) -> (boolean, string?),
+	read ClearDeadline: (self: RecognizerContext) -> (),
+}
+
+export type RecognizerEvent = SemanticInputEvent | (GestureEvent & { read kind: "Gesture" })
+
+export type RecognizerDefinition = {
+	inputs: { string },
+	gestures: { [string]: { GestureKind } }?,
+	maxWindowSeconds: number,
+	onEvent: (RecognizerContext, RecognizerEvent) -> CustomMatch?,
+	onDeadline: ((RecognizerContext) -> CustomMatch?)?,
+}
+
+export type SequenceSnapshot = { read sequenceId: string, read sourceId: string, read definition: SequenceDefinition }
+
+export type RecognizerSnapshot = {
+	read recognizerId: string,
+	read sourceId: string,
+	read definition: RecognizerDefinition,
+	read faulted: boolean,
+	read faultReason: string?,
+}
+
+export type SequenceMatchEvent = {
+	read sequenceId: string,
+	read sourceId: string,
+	read recognizedAt: number,
+	read timestamp: number,
+	read ordinal: number,
+	read matchedStepCount: number,
+	read triggerTokenOrdinal: number,
+}
+
+export type CustomRecognitionEvent = {
+	read recognizerId: string,
+	read sourceId: string,
+	read timestamp: number,
+	read ordinal: number,
+	read triggerTokenOrdinal: number?,
+	read metadata: { [string]: RecognitionScalar }?,
+}
+
+-- Private I4 seam: these identities do not select or execute Actions.
+export type RecognitionRouteKey =
+	{ kind: "Input", inputId: string, gesture: "Pressed" | GestureKind }
+	| { kind: "Sequence", sequenceId: string }
+	| { kind: "Custom", recognizerId: string }
+
+export type RecognitionHoldOwner = {
+	read inputId: string,
+	read inputGeneration: number,
+	read pressEpochId: number,
+	read isActiveAfterCommit: boolean,
+}
+
+export type InputRecognitionCandidate = {
+	read kind: "Input",
+	read inputId: string,
+	read gesture: "Pressed" | GestureKind,
+	read recognitionOrdinal: number,
+	read pressEpochId: number?,
+	read routeEligible: boolean,
+}
+
+export type SequenceRecognitionCandidate = {
+	read kind: "Sequence",
+	read sequenceId: string,
+	read recognitionOrdinal: number,
+	read matchedStepCount: number,
+	read immediate: boolean,
+	read rootInputOrdinal: number?,
+	read holdOwner: RecognitionHoldOwner?,
+}
+
+export type CustomRecognitionCandidate = {
+	read kind: "Custom",
+	read recognizerId: string,
+	read recognitionOrdinal: number,
+	read immediate: boolean,
+	read rootInputOrdinal: number?,
+	read holdOwner: RecognitionHoldOwner?,
+}
+
+export type RecognitionCandidate = InputRecognitionCandidate | SequenceRecognitionCandidate | CustomRecognitionCandidate
+
+type CandidateEmission = {
+	read occurrenceOrdinal: number,
+	read timestamp: number,
+	read inputGeneration: number,
+	read candidates: { RecognitionCandidate },
+	read inputPolicy: DoubleTapArbitration?,
+}
+
+export type RootCandidateEnvelope = CandidateEmission & {
+	read kind: "Root",
+	read rootInputOrdinal: number,
+	read rootInputId: string,
+	read rootContextId: string,
+	read rootInputEpochId: number?,
+	read isRootEpochActiveAfterCommit: boolean,
+	read lifecycleDelivered: boolean,
+}
+
+export type DeferredCandidateEnvelope = CandidateEmission & {
+	read kind: "Deferred",
+	read causeRootInputOrdinal: number?,
+}
+
+export type InputCandidateEnvelope = RootCandidateEnvelope | DeferredCandidateEnvelope
+
+-- Compiled framework-private recognition graph. Built before native application.
+export type RecognitionToken = {
+	read key: string,
+	read ordinal: number,
+	read causeRootInputOrdinal: number?,
+}
+
+export type SequenceNode = { edges: { [string]: number }, completed: { string } }
+
+export type SequenceMachine = {
+	id: string,
+	sourceId: string,
+	deferred: boolean,
+	dependencies: { [string]: unknown },
+	nodes: { SequenceNode },
+	watched: { [string]: boolean },
+	inputs: { [string]: boolean },
+	recognizers: { [string]: boolean },
+	maxGapSeconds: number,
+	maxTotalSeconds: number,
+}
+
+export type RecognitionCatalog = {
+	sequences: { [string]: SequenceSnapshot },
+	recognizers: { [string]: RecognizerSnapshot },
+	machines: { [string]: SequenceMachine },
+	machineIndex: { [string]: { string } },
+	recognizerIndex: { [string]: { string } },
+	recognizerDependencies: { [string]: { [string]: unknown } },
 }
 
 export type GestureKind = "Tap" | "Held" | "LongHeld" | "DoubleTapped"
@@ -147,6 +322,10 @@ export type InputCancellation = EventIdentity & { read kind: "Cancelled", read r
 export type SemanticInputEvent = BoolTransition | ValueChange | InputCancellation
 
 export type InputRuntime = {
+	read GetSequence: (sequenceId: string) -> SequenceSnapshot?,
+	read GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
+	read OnSequenceMatched: SignalTypes.Event<SequenceMatchEvent>,
+	read OnRecognizerMatched: SignalTypes.Event<CustomRecognitionEvent>,
 	read GetGestures: (inputId: string) -> { [GestureKind]: GestureSnapshot }?,
 	read OnGesture: SignalTypes.Event<GestureEvent>,
 	read SetSource: (sourceId: string, definition: InputSourceDefinition) -> (boolean, string?),
@@ -161,6 +340,7 @@ export type InputRuntime = {
 }
 
 export type InputGraphSnapshot = {
+	read recognition: RecognitionCatalog?,
 	read generation: number,
 	read sources: { [string]: InputSourceDefinition },
 	read contexts: { [string]: ContextSnapshot },
@@ -201,6 +381,8 @@ export type NativeInputAdapter = {
 }
 
 export type InputOwnerOptions = {
+	PublishSequence: ((event: SequenceMatchEvent) -> ())?,
+	PublishRecognizer: ((event: CustomRecognitionEvent) -> ())?,
 	Scheduler: GestureScheduler?,
 	PublishGesture: ((event: GestureEvent) -> ())?,
 	Native: NativeInputAdapter,
@@ -213,6 +395,9 @@ export type InputOwnerOptions = {
 export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: any?) -> (boolean, string?)
 
 export type InputOwner = {
+	GetSequence: (sequenceId: string) -> SequenceSnapshot?,
+	GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
+	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> ()) -> () -> (),
 	GetGestures: (inputId: string) -> { [GestureKind]: GestureSnapshot }?,
 	ObserveDispatchGroup: (callback: (GestureDispatchGroup) -> ()) -> () -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),

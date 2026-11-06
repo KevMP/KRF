@@ -114,9 +114,9 @@ it("rejects malformed gesture declarations before any native mutation", function
 	expect(fixture.owner.GetInput("Primary")).toBeNil()
 end)
 
-it("rejects unsupported sequence fields before any native mutation", function()
-	local success: boolean, reason: string? = fixture.owner.SetSource("Core", { sequences = {} } :: any)
-	expect({ success, reason }).toEqual({ false, "InvalidDefinition" })
+it("accepts an empty sequence contribution without native mutation", function()
+	local success: boolean, reason: string? = fixture.owner.SetSource("Core", { sequences = {} })
+	expect({ success, reason }).toEqual({ true })
 	expect(#fixture.writes).toBe(0)
 	expect(fixture.owner.GetInput("Primary")).toBeNil()
 end)

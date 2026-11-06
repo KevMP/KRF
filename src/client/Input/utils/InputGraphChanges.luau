@@ -120,6 +120,7 @@ function Changes.Next(
 	return table.freeze({
 		generation = previous.generation + 1,
 		sources = previous.sources,
+		recognition = previous.recognition,
 		contexts = if contexts ~= nil then table.freeze(contexts) else previous.contexts,
 		inputs = previous.inputs,
 		bindings = previous.bindings,
