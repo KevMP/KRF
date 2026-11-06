@@ -91,3 +91,46 @@ for _, mode: string in { "Missing", "Throw", "Destroy" } do
 		end
 	end)
 end
+
+it("recognizes watched input without an envelope audience and delivers envelopes once observed", function()
+	local matches: { Types.SequenceMatchEvent } = {}
+	local envelopes: { Types.InputCandidateEnvelope } = {}
+
+	local input: Utils.Fixture = Utils.new({
+		Scheduler = {
+			Schedule = function(): () -> ()
+				return function() end
+			end,
+		},
+		PublishGesture = function() end,
+		PublishSequence = function(event: Types.SequenceMatchEvent): ()
+			table.insert(matches, event)
+		end,
+	})
+
+	fixture = input
+	Utils.install(input)
+	Utils.enable(input)
+
+	expect({
+		input.owner.SetSource("Recognition", {
+			sequences = { Combo = { steps = { "Primary" }, maxGapSeconds = 1, maxTotalSeconds = 2 } },
+		}),
+	}).toEqual({ true })
+
+	Utils.emit(input, "Pressed", true)
+	Utils.emit(input, "Released", false)
+	expect(#matches).toBe(1)
+	expect(#input.events).toBe(2)
+
+	input.owner.ObserveCandidateEnvelope(function(envelope: Types.InputCandidateEnvelope): ()
+		table.insert(envelopes, envelope)
+	end)
+
+	Utils.emit(input, "Pressed", true)
+	Utils.emit(input, "Released", false)
+	expect(#matches).toBe(2)
+	expect(#envelopes).toBe(2)
+	expect(envelopes[1].candidates[#envelopes[1].candidates].kind).toBe("Sequence")
+	expect(#envelopes[2].candidates).toBe(0)
+end)

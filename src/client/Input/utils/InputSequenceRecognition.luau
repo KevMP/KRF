@@ -2,7 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Constants = require(script.Parent.InputConstants)
 local Value = require(script.Parent.InputValue)
-local Validation = require(script.Parent.InputRecognitionValidation)
+local DeadlineTimer = require(script.Parent.InputDeadlineTimer)
 export type Match = { id: string, recognizedAt: number, token: Types.RecognitionToken }
 
 type Lineage = { nodes: { number }, startedAt: number, lastAt: number, pending: { Match } }
@@ -10,9 +10,7 @@ type Lineage = { nodes: { number }, startedAt: number, lastAt: number, pending: 
 type ActiveMachine = {
 	definition: Types.SequenceMachine,
 	lineages: { Lineage },
-	cancel: (() -> ())?,
-	armedAt: number?,
-	revision: number,
+	timer: DeadlineTimer.Owner,
 }
 
 export type Options = {
@@ -26,6 +24,7 @@ export type Owner = {
 	Commit: (Types.RecognitionCatalog?, { [string]: string }) -> (),
 	Before: () -> (),
 	Accept: ({ Types.RecognitionToken }) -> (),
+	Watches: (string) -> boolean,
 	Reset: ({ string }?) -> (),
 	Block: (string, boolean) -> (),
 	Get: (string) -> Types.SequenceSnapshot?,
@@ -43,15 +42,15 @@ function Sequences.new(options: Options): Owner
 	local destroyed: boolean = false
 	local arm: (ActiveMachine) -> ()
 
+	local function lineageDeadline(machine: ActiveMachine, lineage: Lineage): number
+		return math.min(
+			lineage.startedAt + machine.definition.maxTotalSeconds,
+			lineage.lastAt + machine.definition.maxGapSeconds
+		)
+	end
+
 	local function clear(machine: ActiveMachine): ()
-		machine.armedAt = nil
-		machine.revision += 1
-
-		if machine.cancel ~= nil then
-			machine.cancel()
-			machine.cancel = nil
-		end
-
+		machine.timer.Cancel()
 		table.clear(machine.lineages)
 		active[machine.definition.id] = nil
 	end
@@ -61,13 +60,7 @@ function Sequences.new(options: Options): Owner
 		local emitted: { Match } = {}
 
 		for _, lineage: Lineage in machine.lineages do
-			if
-				options.Now()
-				> math.min(
-					lineage.startedAt + machine.definition.maxTotalSeconds,
-					lineage.lastAt + machine.definition.maxGapSeconds
-				)
-			then
+			if options.Now() > lineageDeadline(machine, lineage) then
 				for _, match: Match in lineage.pending do
 					table.insert(emitted, match)
 				end
@@ -91,14 +84,7 @@ function Sequences.new(options: Options): Owner
 
 	arm = function(machine: ActiveMachine): ()
 		if #machine.lineages == 0 or destroyed then
-			machine.revision += 1
-
-			if machine.cancel ~= nil then
-				machine.cancel()
-				machine.cancel = nil
-			end
-
-			machine.armedAt = nil
+			machine.timer.Cancel()
 			active[machine.definition.id] = nil
 
 			return
@@ -109,37 +95,27 @@ function Sequences.new(options: Options): Owner
 		local deadline: number = math.huge
 
 		for _, lineage: Lineage in machine.lineages do
-			deadline = math.min(
-				deadline,
-				lineage.startedAt + machine.definition.maxTotalSeconds,
-				lineage.lastAt + machine.definition.maxGapSeconds
-			)
+			deadline = math.min(deadline, lineageDeadline(machine, lineage))
 		end
 
-		if machine.armedAt == deadline and machine.cancel ~= nil then
-			return
-		end
+		machine.timer.Arm(deadline)
+	end
 
-		machine.revision += 1
+	local function create(definition: Types.SequenceMachine): ActiveMachine
+		local machine: ActiveMachine
 
-		if machine.cancel ~= nil then
-			machine.cancel()
-		end
+		machine = {
+			definition = definition,
+			lineages = {},
+			timer = DeadlineTimer.new(options.Schedule, function(): ()
+				if not destroyed and machines[definition.id] == machine then
+					options.Changed()
+					expire(machine)
+				end
+			end),
+		} :: ActiveMachine
 
-		machine.armedAt = deadline
-
-		local revision: number = machine.revision
-
-		machine.cancel = options.Schedule(Validation.After(deadline), function(): ()
-			if destroyed or machines[machine.definition.id] ~= machine or machine.revision ~= revision then
-				return
-			end
-
-			machine.cancel = nil
-			machine.armedAt = nil
-			options.Changed()
-			expire(machine)
-		end)
+		return machine
 	end
 
 	-- Every watched occurrence advances a live start by one compiled edge or
@@ -236,7 +212,7 @@ function Sequences.new(options: Options): Owner
 
 			for id: string, definition: Types.SequenceMachine in desired do
 				if machines[id] == nil then
-					machines[id] = { definition = definition, lineages = {}, revision = 0 }
+					machines[id] = create(definition)
 				end
 			end
 
@@ -248,13 +224,7 @@ function Sequences.new(options: Options): Owner
 				local machine: ActiveMachine = active[id]
 
 				for _, lineage: Lineage in machine.lineages do
-					if
-						options.Now()
-						> math.min(
-							lineage.startedAt + machine.definition.maxTotalSeconds,
-							lineage.lastAt + machine.definition.maxGapSeconds
-						)
-					then
+					if options.Now() > lineageDeadline(machine, lineage) then
 						expire(machine)
 						break
 					end
@@ -367,6 +337,9 @@ function Sequences.new(options: Options): Owner
 					end
 				end
 			end
+		end,
+		Watches = function(key: string): boolean
+			return index[key] ~= nil
 		end,
 		Get = function(id: string): Types.SequenceSnapshot?
 			return snapshots[id]

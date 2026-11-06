@@ -1,20 +1,22 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Value = require(script.Parent.InputValue)
-local Validation = require(script.Parent.InputRecognitionValidation)
 local Observers = require(script.Parent.InputObservers)
 local ScalarState = require(script.Parent.InputRecognizerState)
+local DeadlineTimer = require(script.Parent.InputDeadlineTimer)
 
 type Entry = {
 	snapshot: Types.RecognizerSnapshot,
 	state: ScalarState.Store,
 	horizon: number?,
 	deadline: number?,
-	cancel: (() -> ())?,
-	armedAt: number?,
+	timer: DeadlineTimer.Owner,
+	context: Types.RecognizerContext,
+	live: boolean,
+	cancelling: boolean,
+	violation: string?,
 	cause: number?,
 	lastOutput: number?,
-	revision: number,
 }
 
 export type Options = {
@@ -30,6 +32,7 @@ export type Owner = {
 	Commit: (Types.RecognitionCatalog?, { [string]: string }, { [string]: boolean }) -> (),
 	Accept: (Types.RecognizerEvent, string, number, Types.RecognitionToken) -> (),
 	Before: () -> (),
+	Watches: (string) -> boolean,
 	Reset: ({ string }?) -> (),
 	Get: (string) -> Types.RecognizerSnapshot?,
 	Destroy: () -> (),
@@ -43,19 +46,12 @@ function Custom.new(options: Options): Owner
 	local active: { [string]: Entry } = {}
 	local destroyed: boolean = false
 	local owner: Owner
-	local arm: (string, Entry) -> ()
+	local arm: (Entry) -> ()
 	local settle: (string, Entry) -> ()
 
 	local function retire(id: string, entry: Entry): ()
 		options.Changed()
-		entry.armedAt = nil
-		entry.revision += 1
-
-		if entry.cancel ~= nil then
-			entry.cancel()
-			entry.cancel = nil
-		end
-
+		entry.timer.Cancel()
 		entry.state = ScalarState.new()
 		entry.horizon = nil
 		entry.deadline = nil
@@ -78,26 +74,19 @@ function Custom.new(options: Options): Owner
 		options.Report("InputRecognizer:" .. id .. ":" .. string.sub(reason, 1, 512))
 	end
 
-	local function invoke(
-		id: string,
-		entry: Entry,
-		callback: (...any) -> ...any,
-		event: Types.RecognizerEvent?,
-		occurrence: number?,
-		token: Types.RecognitionToken?
-	): ()
-		options.Changed()
-		local live: boolean = true
-		local violation: string? = nil
+	-- One context per entry: callbacks are never reentrant, and `live` keeps a
+	-- retained context unusable outside the callback that received it.
+	local function create(id: string, snapshot: Types.RecognizerSnapshot): Entry
+		local entry: Entry
 
 		local context: Types.RecognizerContext = table.freeze({
 			GetState = function(_self: Types.RecognizerContext, key: string): Types.RecognitionScalar?
-				assert(live, "InactiveRecognizerContext")
+				assert(entry.live, "InactiveRecognizerContext")
 
 				local value: Types.RecognitionScalar?, reason: string? = ScalarState.Get(entry.state, key)
 
 				if reason ~= nil then
-					violation = reason
+					entry.violation = reason
 				end
 
 				return value
@@ -107,41 +96,41 @@ function Custom.new(options: Options): Owner
 				key: string,
 				value: Types.RecognitionScalar?
 			): (boolean, string?)
-				assert(live, "InactiveRecognizerContext")
+				assert(entry.live, "InactiveRecognizerContext")
 				local success: boolean, reason: string? = ScalarState.Set(entry.state, key, value)
 
 				if not success then
-					violation = reason
+					entry.violation = reason
 				end
 
 				return success, reason
 			end,
 			Now = function(_self: Types.RecognizerContext): number
-				assert(live, "InactiveRecognizerContext")
+				assert(entry.live, "InactiveRecognizerContext")
 
 				return options.Now()
 			end,
 			ScheduleAfter = function(_self: Types.RecognizerContext, seconds: number): (boolean, string?)
-				assert(live, "InactiveRecognizerContext")
+				assert(entry.live, "InactiveRecognizerContext")
 
 				if not Value.IsFinite(seconds) or seconds <= 0 then
-					violation = "InvalidRecognizerDeadline"
+					entry.violation = "InvalidRecognizerDeadline"
 
-					return false, violation
+					return false, "InvalidRecognizerDeadline"
 				end
 
 				-- Cancellation retires this window, and a graph commit may already
 				-- have done so. Nothing is left to schedule, but that is not a fault.
-				if event ~= nil and event.kind == "Cancelled" then
+				if entry.cancelling then
 					return false, "RecognizerCancelled"
 				end
 
 				local deadline: number = options.Now() + seconds
 
 				if entry.horizon == nil or deadline > entry.horizon then
-					violation = "RecognizerWindowExceeded"
+					entry.violation = "RecognizerWindowExceeded"
 
-					return false, violation
+					return false, "RecognizerWindowExceeded"
 				end
 
 				entry.deadline = deadline
@@ -149,13 +138,42 @@ function Custom.new(options: Options): Owner
 				return true, nil
 			end,
 			ClearDeadline = function(_self: Types.RecognizerContext): ()
-				assert(live, "InactiveRecognizerContext")
+				assert(entry.live, "InactiveRecognizerContext")
 				entry.deadline = nil
 			end,
 		})
 
-		local success: boolean, failure: string?, raw: any = Observers.Run(callback, context, event)
-		live = false
+		entry = {
+			snapshot = snapshot,
+			state = ScalarState.new(),
+			context = context,
+			live = false,
+			cancelling = false,
+			timer = DeadlineTimer.new(options.Schedule, function(): ()
+				if not destroyed and entries[id] == entry then
+					settle(id, entry)
+				end
+			end),
+		} :: Entry
+
+		return entry
+	end
+
+	local function invoke(
+		id: string,
+		entry: Entry,
+		callback: (...any) -> ...any,
+		event: Types.RecognizerEvent?,
+		occurrence: number?,
+		token: Types.RecognitionToken?
+	): ()
+		options.Changed()
+		entry.live = true
+		entry.violation = nil
+		entry.cancelling = event ~= nil and event.kind == "Cancelled"
+
+		local success: boolean, failure: string?, raw: any = Observers.Run(callback, entry.context, event)
+		entry.live = false
 
 		if not success then
 			fault(
@@ -166,6 +184,8 @@ function Custom.new(options: Options): Owner
 
 			return
 		end
+
+		local violation: string? = entry.violation
 
 		if violation ~= nil then
 			fault(id, entry, violation)
@@ -197,43 +217,18 @@ function Custom.new(options: Options): Owner
 		end
 
 		if event == nil or event.kind ~= "Cancelled" then
-			arm(id, entry)
+			arm(entry)
 		end
 	end
 
-	arm = function(id: string, entry: Entry): ()
+	arm = function(entry: Entry): ()
 		local horizon: number? = entry.horizon
 
 		if horizon == nil or destroyed or entry.snapshot.faulted then
 			return
 		end
 
-		local due: number = math.min(horizon, entry.deadline or horizon)
-
-		if entry.armedAt == due and entry.cancel ~= nil then
-			return
-		end
-
-		entry.revision += 1
-
-		if entry.cancel ~= nil then
-			entry.cancel()
-			entry.cancel = nil
-		end
-
-		entry.armedAt = due
-
-		local revision: number = entry.revision
-
-		entry.cancel = options.Schedule(Validation.After(due), function(): ()
-			if destroyed or entries[id] ~= entry or entry.revision ~= revision then
-				return
-			end
-
-			entry.cancel = nil
-			entry.armedAt = nil
-			settle(id, entry)
-		end)
+		entry.timer.Arm(math.min(horizon, entry.deadline or horizon))
 	end
 
 	settle = function(id: string, entry: Entry): ()
@@ -253,7 +248,7 @@ function Custom.new(options: Options): Owner
 		if entry.horizon ~= nil and now > entry.horizon then
 			retire(id, entry)
 		else
-			arm(id, entry)
+			arm(entry)
 		end
 	end
 
@@ -291,7 +286,7 @@ function Custom.new(options: Options): Owner
 
 			for id: string, snapshot: Types.RecognizerSnapshot in desired do
 				if entries[id] == nil then
-					entries[id] = { snapshot = snapshot, state = ScalarState.new(), revision = 0 }
+					entries[id] = create(id, snapshot)
 				end
 			end
 
@@ -336,6 +331,9 @@ function Custom.new(options: Options): Owner
 				entry.cause = token.causeRootInputOrdinal
 				invoke(id, entry, entry.snapshot.definition.onEvent, event, occurrence, token)
 			end
+		end,
+		Watches = function(key: string): boolean
+			return index[key] ~= nil
 		end,
 		Reset = function(inputIds: { string }?): ()
 			local selected: { [string]: boolean } = {}

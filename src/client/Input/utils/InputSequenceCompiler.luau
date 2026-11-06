@@ -144,7 +144,7 @@ function Compiler.Compile(
 					id = machineId,
 					sourceId = sourceId,
 					deferred = group ~= nil,
-					nodes = { { edges = {}, completed = {}, depth = 0 } },
+					nodes = { { edges = {}, completed = {} } },
 					inputs = {},
 					recognizers = {},
 					dependencies = {},
@@ -188,7 +188,7 @@ function Compiler.Compile(
 					child = #machine.nodes + 1
 					node.edges[key] = child
 
-					local createdNode: Types.SequenceNode = { edges = {}, completed = {}, depth = node.depth + 1 }
+					local createdNode: Types.SequenceNode = { edges = {}, completed = {} }
 					table.insert(machine.nodes, createdNode)
 				end
 

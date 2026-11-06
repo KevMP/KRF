@@ -11,6 +11,12 @@ local GestureScheduler = require(script.Parent.InputGestureScheduler)
 type PrimitiveObserver = (Types.PrimitiveOccurrence) -> ()
 type PhasedObserver = { phase: Types.ObserverPhase, callback: PrimitiveObserver }
 
+type NotificationBatch = {
+	gestures: { Types.GestureEvent },
+	sequences: { Types.SequenceMatchEvent },
+	customs: { Types.CustomRecognitionEvent },
+}
+
 export type Options = {
 	Now: () -> number,
 	Publish: (Types.SemanticInputEvent) -> (),
@@ -38,9 +44,7 @@ local Dispatch = {}
 function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () -> ()): Owner
 	local ordinal: number = 0
 	local timestamp: number = 0
-	local gestureNotifications: { Types.GestureEvent }? = nil
-	local sequenceNotifications: { Types.SequenceMatchEvent }? = nil
-	local customNotifications: { Types.CustomRecognitionEvent }? = nil
+	local notifications: NotificationBatch? = nil
 	local timerCallbacks: { () -> () } = {}
 	local timersQueued: boolean = false
 	local recognition: RecognitionPipeline.Owner
@@ -66,12 +70,20 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		(Types.InputCandidateEnvelope) -> ()
 	>
 
-	local function publishInput(event: Types.SemanticInputEvent): ()
-		local success: boolean, reason: any = pcall(options.Publish, event)
+	local function publish<Event>(publisher: ((Event) -> ())?, event: Event): ()
+		if publisher == nil then
+			return
+		end
+
+		local success: boolean, reason: any = pcall(publisher, event)
 
 		if not success then
 			report(tostring(reason))
 		end
+	end
+
+	local function publishInput(event: Types.SemanticInputEvent): ()
+		publish(options.Publish, event)
 	end
 
 	local function readTime(): number
@@ -84,60 +96,31 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		return timestamp
 	end
 
-	local function publishGestures(events: { Types.GestureEvent }): ()
-		for _, event: Types.GestureEvent in events do
+	local function publishNotifications(batch: NotificationBatch): ()
+		for _, event: Types.GestureEvent in batch.gestures do
 			if gate.IsTerminal() then
 				break
 			end
 
-			local publish: ((Types.GestureEvent) -> ())? = options.PublishGesture
-
-			if publish ~= nil then
-				local success: boolean, reason: any = pcall(publish, event)
-
-				if not success then
-					report(tostring(reason))
-				end
-			end
+			publish(options.PublishGesture, event)
 		end
-	end
 
-	local function publishRecognition(
-		customs: { Types.CustomRecognitionEvent },
-		sequences: { Types.SequenceMatchEvent }
-	): ()
 		-- Both lanes share one ordinal counter and each is already ascending.
 		local customIndex: number = 1
 		local sequenceIndex: number = 1
 
 		while not gate.IsTerminal() do
-			local custom: Types.CustomRecognitionEvent? = customs[customIndex]
-			local sequence: Types.SequenceMatchEvent? = sequences[sequenceIndex]
-			local success: boolean = true
-			local reason: any = nil
+			local custom: Types.CustomRecognitionEvent? = batch.customs[customIndex]
+			local sequence: Types.SequenceMatchEvent? = batch.sequences[sequenceIndex]
 
 			if custom ~= nil and (sequence == nil or custom.ordinal < sequence.ordinal) then
 				customIndex += 1
-
-				local publish: ((Types.CustomRecognitionEvent) -> ())? = options.PublishRecognizer
-
-				if publish ~= nil then
-					success, reason = pcall(publish, custom)
-				end
+				publish(options.PublishRecognizer, custom)
 			elseif sequence ~= nil then
 				sequenceIndex += 1
-
-				local publish: ((Types.SequenceMatchEvent) -> ())? = options.PublishSequence
-
-				if publish ~= nil then
-					success, reason = pcall(publish, sequence)
-				end
+				publish(options.PublishSequence, sequence)
 			else
 				break
-			end
-
-			if not success then
-				report(tostring(reason))
 			end
 		end
 	end
@@ -174,8 +157,8 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			end
 		end
 
-		if event ~= nil and gestureNotifications ~= nil then
-			table.insert(gestureNotifications, event)
+		if event ~= nil and notifications ~= nil then
+			table.insert(notifications.gestures, event)
 		end
 	end
 
@@ -212,31 +195,22 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		end
 
 		gate.EnterDispatch()
-		local events: { Types.GestureEvent } = {}
-		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
-		local sequences: { Types.SequenceMatchEvent } = {}
-		local customs: { Types.CustomRecognitionEvent } = {}
-		local previousSequences: { Types.SequenceMatchEvent }? = sequenceNotifications
-		local previousCustoms: { Types.CustomRecognitionEvent }? = customNotifications
-		sequenceNotifications = sequences
-		customNotifications = customs
-		gestureNotifications = events
+		local batch: NotificationBatch = { gestures = {}, sequences = {}, customs = {} }
+		local previousNotifications: NotificationBatch? = notifications
+		notifications = batch
 
 		local success: boolean, reason: any = pcall(function(): ()
 			callback()
 			recognition.Finish(nil)
 		end)
 
-		gestureNotifications = previousNotifications
-		sequenceNotifications = previousSequences
-		customNotifications = previousCustoms
+		notifications = previousNotifications
 
 		if not success then
 			report(tostring(reason))
 			onFault()
 		else
-			publishGestures(events)
-			publishRecognition(customs, sequences)
+			publishNotifications(batch)
 		end
 
 		gate.LeaveDispatch()
@@ -249,16 +223,19 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		RunTimer = runTimer,
 		DeliverGroup = deliverGroup,
 		DeliverEnvelope = deliverEnvelope,
+		HasEnvelopeObservers = function(): boolean
+			return not envelopes.IsEmpty()
+		end,
 		IsEpochActive = options.IsEpochActive,
 		Report = report,
 		NotifySequence = function(event: Types.SequenceMatchEvent): ()
-			if sequenceNotifications ~= nil then
-				table.insert(sequenceNotifications, event)
+			if notifications ~= nil then
+				table.insert(notifications.sequences, event)
 			end
 		end,
 		NotifyCustom = function(event: Types.CustomRecognitionEvent): ()
-			if customNotifications ~= nil then
-				table.insert(customNotifications, event)
+			if notifications ~= nil then
+				table.insert(notifications.customs, event)
 			end
 		end,
 	})
@@ -313,15 +290,9 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			table.freeze({ event = event, generation = transition.generation, pressEpochId = transition.epochId })
 
 		gate.EnterDispatch()
-		local gestures: { Types.GestureEvent } = {}
-		local previousNotifications: { Types.GestureEvent }? = gestureNotifications
-		local sequences: { Types.SequenceMatchEvent } = {}
-		local customs: { Types.CustomRecognitionEvent } = {}
-		local previousSequences: { Types.SequenceMatchEvent }? = sequenceNotifications
-		local previousCustoms: { Types.CustomRecognitionEvent }? = customNotifications
-		sequenceNotifications = sequences
-		customNotifications = customs
-		gestureNotifications = gestures
+		local batch: NotificationBatch = { gestures = {}, sequences = {}, customs = {} }
+		local previousNotifications: NotificationBatch? = notifications
+		notifications = batch
 		local interpreted: boolean = pcall(recognition.Before, occurrence)
 
 		if not interpreted then
@@ -361,9 +332,7 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			end
 		end
 
-		gestureNotifications = previousNotifications
-		sequenceNotifications = previousSequences
-		customNotifications = previousCustoms
+		notifications = previousNotifications
 
 		if not gate.IsTerminal() then
 			if deferred ~= nil then
@@ -373,8 +342,7 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			end
 		end
 
-		publishGestures(gestures)
-		publishRecognition(customs, sequences)
+		publishNotifications(batch)
 		gate.LeaveDispatch()
 	end
 

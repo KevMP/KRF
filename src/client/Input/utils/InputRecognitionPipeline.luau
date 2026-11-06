@@ -19,6 +19,7 @@ export type Options = {
 	RunTimer: (() -> ()) -> (),
 	DeliverGroup: (Types.GestureDispatchGroup, Types.GestureEvent?) -> (),
 	DeliverEnvelope: (Types.InputCandidateEnvelope) -> (),
+	HasEnvelopeObservers: () -> boolean,
 	NotifySequence: (Types.SequenceMatchEvent) -> (),
 	NotifyCustom: (Types.CustomRecognitionEvent) -> (),
 	IsEpochActive: (string, number, number) -> boolean,
@@ -81,7 +82,6 @@ function Pipeline.new(options: Options): Owner
 		return table.freeze({
 			key = key,
 			ordinal = tokenOrdinal,
-			timestamp = options.Now(),
 			causeRootInputOrdinal = cause,
 		})
 	end
@@ -381,6 +381,15 @@ function Pipeline.new(options: Options): Owner
 		if root ~= nil and root.event.kind == "Cancelled" then
 			sequences.Reset({ root.event.inputId })
 			changed()
+		end
+
+		-- High-frequency axis input usually has no audience; skip building a frame.
+		if root ~= nil and #pending == 0 and not options.HasEnvelopeObservers() then
+			local key: string = Validation.InputKey(root.event.inputId, root.event.kind)
+
+			if not custom.Watches(key) and not sequences.Watches(key) then
+				return
+			end
 		end
 
 		local active: Frame = frame(root, cause)

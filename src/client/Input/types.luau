@@ -190,11 +190,10 @@ export type InputCandidateEnvelope = RootCandidateEnvelope | DeferredCandidateEn
 export type RecognitionToken = {
 	read key: string,
 	read ordinal: number,
-	read timestamp: number,
 	read causeRootInputOrdinal: number?,
 }
 
-export type SequenceNode = { edges: { [string]: number }, completed: { string }, depth: number }
+export type SequenceNode = { edges: { [string]: number }, completed: { string } }
 
 export type SequenceMachine = {
 	id: string,
