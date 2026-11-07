@@ -77,7 +77,7 @@ it("rechecks dependent graphs on prepared commit and context enablement", functi
 
 	expect({ fixture.owner.CommitEpochInvalidation(epochs, function()
 		error("MustNotPublish")
-	end) }).toEqual({ false, "ReferencedByControlProfile" })
+	end) }).toEqual({ false, "ReferencedByControlProfile", "Rejected" })
 
 	expect({ fixture.owner.SetContextEnabled("Gameplay", true) }).toEqual({ false, "ReferencedByControlProfile" })
 	local rejected: Types.PreparedInputUpdate?, reason: string? = fixture.owner.PrepareSource("Core", definition)
@@ -148,7 +148,7 @@ it("rejects prepared operations during primitive delivery without touching the g
 	expect(results[1][2]).toBe("InputMutationReentrant")
 	expect(results[2][2]).toBe("InputMutationReentrant")
 	expect(results[3]).toEqual({ false, "InputMutationReentrant" })
-	expect(results[4]).toEqual({ false, "InputMutationReentrant" })
+	expect(results[4]).toEqual({ false, "InputMutationReentrant", "Rejected" })
 	expect(fixture.faults).toEqual({})
 end)
 

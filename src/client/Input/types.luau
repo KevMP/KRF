@@ -375,6 +375,9 @@ export type PrimitiveOccurrence = {
 export type ObserverPhase = "Interpretation" | "Arbitration" | "Routing"
 export type PreparedInputUpdate = { read generation: number, read token: unknown }
 export type PreparedInputInvalidation = { read generation: number, read token: unknown }
+-- Rejected guarantees that commit was not attempted. Failed requires callers to
+-- treat the local commit as uncertain, even if native rollback was possible.
+export type InputCommitFailurePhase = "Rejected" | "Failed"
 export type NativeTransition = "Pressed" | "Released" | "StateChanged"
 
 export type NativeInputAdapter = {
@@ -438,7 +441,10 @@ export type InputOwner = {
 	CommitPrepared: (plan: PreparedInputUpdate) -> (boolean, string?),
 	CommitPreparedWithPublication: (plan: PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
 	PrepareEpochInvalidation: (reason: string) -> (PreparedInputInvalidation?, string?),
-	CommitEpochInvalidation: (plan: PreparedInputInvalidation, publishSelection: () -> ()) -> (boolean, string?),
+	CommitEpochInvalidation: (
+		plan: PreparedInputInvalidation,
+		publishSelection: () -> ()
+	) -> (boolean, string?, InputCommitFailurePhase?),
 	Destroy: () -> (),
 }
 

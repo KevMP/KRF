@@ -3,6 +3,8 @@ local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local State = require(script.Parent.utils.ClientActionRuntimeState)
 
+local emptySources: { Types.ProfileSourceSnapshot } = table.freeze({} :: { Types.ProfileSourceSnapshot })
+
 local facade: Types.ClientActionRuntime = {
 	SetProfileSource = function(
 		actor: ActorTypes.ActorView,
@@ -48,7 +50,7 @@ local facade: Types.ClientActionRuntime = {
 	GetProfileSources = function(actor: ActorTypes.ActorView): { Types.ProfileSourceSnapshot }
 		local owner: Types.ClientActionOwner? = State.Get()
 
-		return if owner == nil then {} else owner.GetProfileSources(actor)
+		return if owner == nil then emptySources else owner.GetProfileSources(actor)
 	end,
 }
 

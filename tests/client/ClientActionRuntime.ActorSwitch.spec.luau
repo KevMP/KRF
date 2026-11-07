@@ -114,6 +114,112 @@ for _, collaborator: string in { "EpochPrepare", "RecognitionPrepare", "Activati
 	end)
 end
 
+for _, rejection: string in { "SwitchRevalidationRejected", "InputRuntimeFaulted" } do
+	it(
+		"preserves the old Actor, epoch and recognition history when commit revalidation rejects with " .. rejection,
+		function()
+			expect({ SequenceUtils.install(fixture.input, { Combo = SequenceUtils.pattern({ "X", "Q" }) }) }).toEqual({
+				true,
+			})
+
+			Utils.set(fixture, { Utils.fixed(), Utils.fixed({ kind = "Sequence", sequenceId = "Combo" }, "Combo") })
+			Utils.select(fixture)
+			Utils.emit(fixture, 0)
+
+			local hold: InputTypes.RecognitionHoldOwner =
+				assert(fixture.selections[1].holdOwner, "Expected original live epoch")
+
+			local graph: InputTypes.InputGraphSnapshot = fixture.input.input.owner.GetGraphSnapshot()
+			local writes: number = #fixture.input.input.writes
+			local events: number = #fixture.input.input.events
+			table.clear(fixture.transitions)
+			local validations: number = 0
+
+			local stop = fixture.input.input.owner.RegisterGraphValidator(function(): (boolean, string?)
+				validations += 1
+
+				return validations ~= 2, if validations == 2 then rejection else nil
+			end)
+
+			local result: { any } = { fixture.owner.SetControlledActor(fixture.other) }
+			stop()
+			expect(result).toEqual({ false, rejection })
+			expect(validations).toBe(2)
+			expect(fixture.owner.GetControlledActor()).toBe(fixture.actor)
+			expect(fixture.input.input.owner.GetGraphSnapshot()).toBe(graph)
+			expect(#fixture.input.input.writes).toBe(writes)
+			expect(#fixture.input.input.events).toBe(events)
+
+			expect(fixture.input.input.owner.IsPressEpochActive(hold.inputId, hold.pressEpochId, hold.inputGeneration)).toBe(
+				true
+			)
+
+			expect(fixture.transitions).toEqual({})
+			expect(fixture.faults).toEqual({})
+			Utils.press(fixture, 0.125, "Q")
+			expect(Utils.actions(fixture)).toEqual({ "Combat.Punch", "Combo" })
+			expect({ fixture.owner.SetControlledActor(fixture.other) }).toEqual({ true })
+			expect(fixture.owner.GetControlledActor()).toBe(fixture.other)
+		end
+	)
+end
+
+it("fails closed when local activation retirement invalidates the destination before publication", function()
+	local active: boolean = false
+	local sends: number = 0
+	Utils.destroy(fixture)
+
+	fixture = Utils.new({
+		HasActive = function(): boolean
+			return active
+		end,
+		Prepare = function(): (Types.ActorSwitchRetirement?, string?)
+			return {
+				Commit = function(): ()
+					active = false
+					Registry.Remove(fixture.other)
+				end,
+				AfterCommit = function(): ()
+					sends += 1
+				end,
+			},
+				nil
+		end,
+	})
+
+	Utils.set(fixture, { Utils.fixed() })
+	Utils.set(fixture, { Utils.fixed(nil, "ActorB.Action") }, "Base", nil, fixture.other)
+	Utils.select(fixture)
+	Utils.emit(fixture, 0)
+
+	local hold: InputTypes.RecognitionHoldOwner =
+		assert(fixture.selections[1].holdOwner, "Expected original live epoch")
+
+	table.clear(fixture.selections)
+	table.clear(fixture.transitions)
+	active = true
+
+	expect({ fixture.owner.SetControlledActor(fixture.other) }).toEqual({ false, "ActorSwitchCommitFailed" })
+	expect(Registry.IsCurrent(fixture.other)).toBe(false)
+	expect(fixture.owner.GetControlledActor()).toBeNil()
+	expect(fixture.owner.GetProfileSources(fixture.actor)).toEqual({})
+
+	expect(fixture.input.input.owner.IsPressEpochActive(hold.inputId, hold.pressEpochId, hold.inputGeneration)).toBe(
+		false
+	)
+
+	expect(sends).toBe(0)
+
+	for _, change: Types.EffectiveRouteTransition in fixture.transitions do
+		expect(change.reason == "ActorChanged" and change.next.status == "Mapped").toBe(false)
+	end
+
+	Utils.emit(fixture, 0.125, "X", "Released")
+	Utils.press(fixture, 0.25)
+	expect(fixture.selections).toEqual({})
+	expect(fixture.input.input.connections > 0).toBe(true)
+end)
+
 it("rejects a missing required activation retirement guard instead of bypassing original activations", function()
 	local active: boolean = false
 	Utils.destroy(fixture)
@@ -190,7 +296,9 @@ it(
 	end
 )
 
-for _, fault: string in { "EpochCommit", "RecognitionCommit", "ActivationCommit" } do
+for _, fault: string in
+	{ "EpochCommit", "EpochCommitRejection", "EpochCommitFailed", "RecognitionCommit", "ActivationCommit" }
+do
 	it("clears selection and disarms routing safely after unexpected " .. fault .. " failure", function()
 		local active: boolean = false
 		local sends: number = 0
@@ -224,9 +332,21 @@ for _, fault: string in { "EpochCommit", "RecognitionCommit", "ActivationCommit"
 		table.clear(fixture.selections)
 		active = true
 
-		if fault == "EpochCommit" then
-			fixture.input.input.owner.CommitEpochInvalidation = function(): (boolean, string?)
-				error("InjectedCommitFault", 0)
+		if fault == "EpochCommit" or fault == "EpochCommitRejection" or fault == "EpochCommitFailed" then
+			fixture.input.input.owner.CommitEpochInvalidation = function(): (
+				boolean,
+				string?,
+				InputTypes.InputCommitFailurePhase?
+			)
+				if fault == "EpochCommit" then
+					error("InjectedCommitFault", 0)
+				end
+
+				if fault == "EpochCommitFailed" then
+					return false, "NativeCommitFailed", "Failed"
+				end
+
+				return false, "UnclassifiedCommitFailure", nil
 			end
 		elseif fault == "RecognitionCommit" then
 			fixture.input.input.owner.CommitPreparedRecognitionReset = function(): (boolean, string?)

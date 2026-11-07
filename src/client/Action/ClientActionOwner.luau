@@ -187,6 +187,9 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			return controlled
 		end,
 		Validate = validateActor,
+		CanPublish = function(actor: ActorTypes.ActorView?): boolean
+			return not destroyed and options.IsReady() and (actor == nil or available(actor))
+		end,
 		Fence = function(enter: boolean): ()
 			busy += if enter then 1 else -1
 			switching = enter

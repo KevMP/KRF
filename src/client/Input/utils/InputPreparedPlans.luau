@@ -31,7 +31,10 @@ export type Owner = {
 	CommitPrepared: (plan: Types.PreparedInputUpdate) -> (boolean, string?),
 	CommitPreparedWithPublication: (plan: Types.PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
 	PrepareEpochInvalidation: (reason: string) -> (Types.PreparedInputInvalidation?, string?),
-	CommitEpochInvalidation: (plan: Types.PreparedInputInvalidation, publishSelection: () -> ()) -> (boolean, string?),
+	CommitEpochInvalidation: (
+		plan: Types.PreparedInputInvalidation,
+		publishSelection: () -> ()
+	) -> (boolean, string?, Types.InputCommitFailurePhase?),
 	Clear: () -> (),
 }
 
@@ -335,22 +338,24 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 	local function CommitEpochInvalidation(
 		plan: Types.PreparedInputInvalidation,
 		publishSelection: () -> ()
-	): (boolean, string?)
+	): (boolean, string?, Types.InputCommitFailurePhase?)
 		local record: PreparedRecord?, reason: string? = take(plan, "Epoch")
 
 		if record == nil then
-			return false, reason
+			return false, reason, "Rejected"
 		end
 
 		reason = access.Validate(access.Current(), nil)
 
 		if reason ~= nil then
-			return false, reason
+			return false, reason, "Rejected"
 		end
 
 		local desired: Types.InputGraphSnapshot = Changes.Next(access.Current(), nil)
 
-		return access.Commit(desired, record.reason, publishSelection)
+		local committed: boolean, failure: string? = access.Commit(desired, record.reason, publishSelection)
+
+		return committed, failure, if committed then nil else "Failed"
 	end
 
 	return {

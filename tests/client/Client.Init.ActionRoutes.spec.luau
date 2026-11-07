@@ -48,6 +48,14 @@ it("keeps the frozen facade stable and returns ClientNotReady while uninstalled"
 	expect(Runtime.GetControlledActor()).toBeNil()
 	expect(Runtime.GetEffectiveRoute(actor.view, { kind = "Input", inputId = "X", gesture = "Pressed" })).toBeNil()
 	expect(Runtime.GetProfileSources(actor.view)).toEqual({})
+	local sources: { Types.ProfileSourceSnapshot } = Runtime.GetProfileSources(actor.view)
+	expect(table.isfrozen(sources)).toBe(true)
+	expect(Runtime.GetProfileSources(actor.view)).toBe(sources)
+
+	expect(function(): ()
+		table.insert(sources, { sourceId = "Injected", priority = 0, routeCount = 0 })
+	end).toThrow()
+
 	expect((Runtime :: any).Install).toBeNil()
 	expect((Runtime :: any).Sink).toBeNil()
 end)

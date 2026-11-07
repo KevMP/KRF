@@ -9,6 +9,7 @@ local Retirement = require(script.Parent.ActionActivationRetirement)
 export type Access = {
 	Current: () -> ActorTypes.ActorView?,
 	Validate: (ActorTypes.ActorView?) -> string?,
+	CanPublish: (ActorTypes.ActorView?) -> boolean,
 	Fence: (boolean) -> (),
 	Publish: (ActorTypes.ActorView?) -> (),
 	Fail: () -> (),
@@ -149,41 +150,57 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 		access.Fence(true)
 
+		local rejection: string? = nil
+
 		local success: boolean, _, committed: any = Observers.Run(function(): boolean
 			local epoch: InputTypes.PreparedInputInvalidation = assert(record.epoch, "Expected epoch plan")
 			local published: boolean = false
 
-			local accepted: boolean = input.CommitEpochInvalidation(epoch, function(): ()
-				local completed: boolean, _, reset: any = Observers.Run(
-					input.CommitPreparedRecognitionReset,
-					assert(record.recognition, "Expected recognition plan")
-				)
+			local accepted: boolean, failure: string?, phase: InputTypes.InputCommitFailurePhase? = input.CommitEpochInvalidation(
+				epoch,
+				function(): ()
+					local completed: boolean, _, reset: any = Observers.Run(
+						input.CommitPreparedRecognitionReset,
+						assert(record.recognition, "Expected recognition plan")
+					)
 
-				if not completed or reset ~= true then
-					return
+					if not completed or reset ~= true then
+						return
+					end
+
+					if record.retirement ~= nil and not Observers.Run(record.retirement.Commit) then
+						return
+					end
+
+					if not access.CanPublish(record.target) then
+						return
+					end
+
+					local installed: boolean = Observers.Run(access.Publish, record.target)
+					published = installed
 				end
+			)
 
-				if record.retirement ~= nil and not Observers.Run(record.retirement.Commit) then
-					return
-				end
-
-				local installed: boolean = Observers.Run(access.Publish, record.target)
-				published = installed
-			end)
+			if not accepted and phase == "Rejected" then
+				rejection = failure
+			end
 
 			return accepted and published
 		end)
 
 		dispose(record)
 
-		if not success or committed ~= true then
+		local failed: boolean = not success or committed ~= true
+		local rejected: boolean = success and rejection ~= nil
+
+		if failed and not rejected then
 			access.Fail()
 		end
 
 		access.Fence(false)
 
-		if not success or committed ~= true then
-			return false, "ActorSwitchCommitFailed"
+		if failed then
+			return false, if rejected then rejection else "ActorSwitchCommitFailed"
 		end
 
 		if record.retirement ~= nil then
