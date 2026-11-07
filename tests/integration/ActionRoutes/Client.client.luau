@@ -14,11 +14,14 @@ local State = require(KRF.client.Action.utils.ClientActionRuntimeState)
 local InputState = require(KRF.client.Input.utils.InputRuntimeState)
 local Registry: ActorTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
 local Owner = require(KRF.client.Action.ClientActionOwner)
+local Pipeline = require(KRF.client.Input.utils.InputRecognitionPipeline)
 local CommandState = require(KRF.client.Networking.utils.CommandRuntimeState)
 local Examples = require(ReplicatedStorage.ActionRouteExamples)
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("ActionRouteControl") :: RemoteEvent
 local subjects: Folder = ReplicatedStorage:WaitForChild("ActionRouteSubjects") :: Folder
 local originalNew: typeof(Owner.new) = Owner.new
+local originalPipelineNew: typeof(Pipeline.new) = Pipeline.new
+local recognitionFrames: number = 0
 local selections: { Types.ActionRouteSelection } = {}
 local latencies: { number } = {}
 local boundaryStarted: number = 0
@@ -38,12 +41,26 @@ end
 
 -- Instrument the real factory. Client.Init and its consumer installer remain
 -- intact. Measure final I3 envelope -> synchronous I4 sink, excluding frames.
+Pipeline.new = function(options: Pipeline.Options): Pipeline.Owner
+	local measured: Pipeline.Options = table.clone(options)
+
+	measured.DeliverEnvelope = function(envelope: InputTypes.InputCandidateEnvelope): ()
+		recognitionFrames += 1
+		options.DeliverEnvelope(envelope)
+	end
+
+	return originalPipelineNew(measured)
+end
+
 Owner.new = function(options: Types.ClientActionOwnerOptions): Types.ClientActionOwner
 	local measured: Types.ClientActionOwnerOptions = table.clone(options)
 
 	local input: InputTypes.InputOwner = table.clone(options.Input)
 
-	input.ObserveCandidateEnvelope = function(callback: (InputTypes.InputCandidateEnvelope) -> ()): () -> ()
+	input.ObserveCandidateEnvelope = function(
+		callback: (InputTypes.InputCandidateEnvelope) -> (),
+		hasDemand: (() -> boolean)?
+	): () -> ()
 		retainedReceiver = callback
 
 		return options.Input.ObserveCandidateEnvelope(function(envelope: InputTypes.InputCandidateEnvelope): ()
@@ -52,7 +69,7 @@ Owner.new = function(options: Types.ClientActionOwnerOptions): Types.ClientActio
 			lastEnvelope = envelope
 			callback(envelope)
 			boundaryOpen = false
-		end)
+		end, hasDemand)
 	end
 
 	measured.Input = input
@@ -70,6 +87,7 @@ end
 local function run(): ()
 	local initialized: boolean, failure = Client.Init()
 	Owner.new = originalNew
+	Pipeline.new = originalPipelineNew
 	assert(initialized, if failure ~= nil then failure.reason else "ClientInitFailed")
 	local owner: Types.ClientActionOwner = assert(State.Get(), "Client.InitDidNotInstallActionOwner")
 	local commands: NetworkingTypes.ClientCommandRuntime = assert(CommandState.Get(), "NativeCommandOwnerMissing")
@@ -117,6 +135,49 @@ local function run(): ()
 	assert(Input.SetSource("Core", Examples.Inputs(pad)), "NativeInputsFailed")
 	assert(Input.SetContextEnabled("Combat", true), "CombatContextFailed")
 	assert(Input.SetContextEnabled("Signs", true), "SignsContextFailed")
+
+	local container: Instance =
+		assert(Players.LocalPlayer.PlayerScripts:FindFirstChild("KRFInputs"), "MissingNativeInputs")
+
+	local combat: InputContext = assert(container:FindFirstChild("Combat"), "MissingCombatContext") :: InputContext
+	local signs: InputContext = assert(container:FindFirstChild("Signs"), "MissingSignsContext") :: InputContext
+	assert(combat.Enabled and signs.Enabled, "ConcurrentContextsNotEnabled")
+
+	assert(
+		Input.SetSource("AnalogProof", {
+			inputs = { UnwatchedAxis = { context = "Combat", type = Enum.InputActionType.Direction1D, bindings = {} } },
+		}),
+		"AnalogProofSourceFailed"
+	)
+
+	local axis: InputAction = assert(combat:FindFirstChild("UnwatchedAxis"), "MissingAnalogProofAction") :: InputAction
+
+	local axisDriver: InputBinding = Instance.new("InputBinding")
+	axisDriver.Type = Enum.InputBindingType.Scriptable
+	axisDriver.Parent = axis
+
+	local analogUpdates: number = 0
+
+	local analogConnection = Input.OnInput:Connect(function(event: InputTypes.SemanticInputEvent): ()
+		if event.inputId == "UnwatchedAxis" and event.kind == "StateChanged" then
+			analogUpdates += 1
+		end
+	end)
+
+	local framesBeforeAnalog: number = recognitionFrames
+
+	for index: number = 1, 128 do
+		axisDriver:Fire(if index % 2 == 0 then 0.5 else -0.5)
+	end
+
+	waitFor(function(): boolean
+		return analogUpdates == 128
+	end)
+
+	local unwatchedAnalogFrames: number = recognitionFrames - framesBeforeAnalog
+	assert(unwatchedAnalogFrames == 0, "InactiveActionOwnerForcedUnwatchedRecognitionFrames")
+	analogConnection:Disconnect()
+	assert(Input.RemoveSource("AnalogProof"), "AnalogProofCleanupFailed")
 	local equipped: string = "Technique.Rasengan"
 	local resolverCalls: number = 0
 
@@ -137,12 +198,6 @@ local function run(): ()
 	assert(Runtime.SetProfileSource(other, "Core", Examples.Sword()), "InactiveActorProfileFailed")
 	assert(Runtime.SetControlledActor(actor), "NativeActorSelectionFailed")
 
-	local container: Instance =
-		assert(Players.LocalPlayer.PlayerScripts:FindFirstChild("KRFInputs"), "MissingNativeInputs")
-
-	local combat: InputContext = assert(container:FindFirstChild("Combat"), "MissingCombatContext") :: InputContext
-	local signs: InputContext = assert(container:FindFirstChild("Signs"), "MissingSignsContext") :: InputContext
-	assert(combat.Enabled and signs.Enabled, "ConcurrentContextsNotEnabled")
 	local primary: InputAction = assert(combat:FindFirstChild("Primary"), "MissingPrimary") :: InputAction
 	local keyboard: Instance = assert(primary:FindFirstChild("Keyboard"), "MissingKeyboardBinding")
 
@@ -267,6 +322,8 @@ local function run(): ()
 	table.sort(latencies)
 
 	control:FireServer("Done", {
+		unwatchedAnalogUpdates = analogUpdates,
+		unwatchedAnalogFrames = unwatchedAnalogFrames,
 		intents = count,
 		samples = #latencies,
 		p50EnvelopeToSinkUs = latencies[math.max(1, math.ceil(#latencies * 0.5))],
@@ -278,6 +335,7 @@ end
 
 local completed: boolean, reason: any = pcall(run)
 Owner.new = originalNew
+Pipeline.new = originalPipelineNew
 
 if not completed then
 	if restoreCommands ~= nil then

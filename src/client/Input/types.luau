@@ -415,7 +415,9 @@ export type InputOwner = {
 	GetMutationStatus: () -> string?,
 	GetSequence: (sequenceId: string) -> SequenceSnapshot?,
 	GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
-	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> ()) -> () -> (),
+	-- The optional demand query is a pure, non-yielding framework state lookup.
+	-- Registration reserves capacity; only demanding observers require frames.
+	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> (), hasDemand: (() -> boolean)?) -> () -> (),
 	GetGestures: (inputId: string) -> { [GestureKind]: GestureSnapshot }?,
 	ObserveDispatchGroup: (callback: (GestureDispatchGroup) -> ()) -> () -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),

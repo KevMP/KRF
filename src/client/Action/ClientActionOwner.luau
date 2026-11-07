@@ -349,6 +349,8 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				end
 
 				busy -= 1
+			end, function(): boolean
+				return not destroyed and controlled ~= nil and catalog[controlled] ~= nil
 			end)
 		)
 
@@ -361,11 +363,23 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 
 				busy += 1
 
-				local retirement: Types.ActorSwitchRetirement?, retirementReason: string? =
-					Retirement.Prepare(options.ActivationGuard, actor, if controlled == actor then nil else controlled)
+				local retirement: Types.ActorSwitchRetirement? = nil
 
-				if retirementReason ~= nil then
-					report(retirementReason)
+				-- The switch owns this original retirement through its post-commit
+				-- handoff. Identity/catalog retirement still happens in this barrier.
+				if not switches.IsRetiring(actor) then
+					local preparedRetirement: Types.ActorSwitchRetirement?, retirementReason: string? =
+						Retirement.Prepare(
+							options.ActivationGuard,
+							actor,
+							if controlled == actor then nil else controlled
+						)
+
+					retirement = preparedRetirement
+
+					if retirementReason ~= nil then
+						report(retirementReason)
+					end
 				end
 
 				local previous: Graph.Graph? = catalog[actor]

@@ -20,9 +20,11 @@ export type Owner = {
 	Prepare: (ActorTypes.ActorView?) -> (Types.PreparedActorSwitch?, string?),
 	Commit: (Types.PreparedActorSwitch) -> (boolean, string?),
 	Clear: () -> (),
+	IsRetiring: (ActorTypes.ActorView) -> boolean,
 }
 
 type Switch = {
+	previous: ActorTypes.ActorView?,
 	target: ActorTypes.ActorView?,
 	epoch: InputTypes.PreparedInputInvalidation?,
 	recognition: InputTypes.PreparedRecognitionReset?,
@@ -32,6 +34,8 @@ type Switch = {
 local Switching = {}
 
 function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGuard?, access: Access): Owner
+	local retiring: { [ActorTypes.ActorView]: boolean } = {}
+
 	local function dispose(record: Switch): ()
 		if record.epoch ~= nil then
 			input.ReleasePrepared(record.epoch)
@@ -51,7 +55,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 			return nil, reason
 		end
 
-		local record: Switch = { target = target }
+		local record: Switch = { previous = access.Current(), target = target }
 
 		if not plans.CanCreate() then
 			return nil, "ActionPlanLimitExceeded"
@@ -84,7 +88,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 				record.recognition = recognition
 
 				local retirement: Types.ActorSwitchRetirement?, retirementReason: string? =
-					Retirement.Prepare(guard, access.Current(), target)
+					Retirement.Prepare(guard, record.previous, target)
 
 				if retirementReason ~= nil then
 					return false, retirementReason
@@ -137,6 +141,12 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 			return true, nil
 		end
 
+		if record.previous ~= access.Current() then
+			dispose(record)
+
+			return false, "StaleActorSwitch"
+		end
+
 		if
 			record.epoch == nil
 			or record.recognition == nil
@@ -151,6 +161,8 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 		access.Fence(true)
 
 		local rejection: string? = nil
+		local claimedActor: ActorTypes.ActorView? = nil
+		local previousClaim: boolean? = nil
 
 		local success: boolean, _, committed: any = Observers.Run(function(): boolean
 			local epoch: InputTypes.PreparedInputInvalidation = assert(record.epoch, "Expected epoch plan")
@@ -168,8 +180,21 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 						return
 					end
 
-					if record.retirement ~= nil and not Observers.Run(record.retirement.Commit) then
-						return
+					if record.retirement ~= nil then
+						if access.Current() ~= record.previous or not access.CanPublish(record.previous) then
+							return
+						end
+
+						claimedActor = record.previous
+
+						if claimedActor ~= nil then
+							previousClaim = retiring[claimedActor]
+							retiring[claimedActor] = true
+						end
+
+						if not Observers.Run(record.retirement.Commit) then
+							return
+						end
 					end
 
 					if not access.CanPublish(record.target) then
@@ -199,11 +224,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 		access.Fence(false)
 
-		if failed then
-			return false, if rejected then rejection else "ActorSwitchCommitFailed"
-		end
-
-		if record.retirement ~= nil then
+		if not failed and record.retirement ~= nil then
 			local delivered: boolean = Observers.Run(record.retirement.AfterCommit)
 
 			if not delivered then
@@ -211,10 +232,27 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 			end
 		end
 
+		-- Synchronous post-commit callbacks may themselves complete another
+		-- switch. Restore any enclosing claim rather than erasing it.
+		if claimedActor ~= nil then
+			retiring[claimedActor] = previousClaim
+		end
+
+		if failed then
+			return false, if rejected then rejection else "ActorSwitchCommitFailed"
+		end
+
 		return true, nil
 	end
 
-	return { Prepare = prepare, Commit = commit, Clear = plans.Clear }
+	return {
+		Prepare = prepare,
+		Commit = commit,
+		Clear = plans.Clear,
+		IsRetiring = function(actor: ActorTypes.ActorView): boolean
+			return retiring[actor] == true
+		end,
+	}
 end
 
 return Switching

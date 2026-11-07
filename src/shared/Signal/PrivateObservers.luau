@@ -3,8 +3,8 @@ export type Entry<Callback> = { callback: Callback, active: boolean }
 
 export type Registry<Callback> = {
 	Add: (callback: Callback) -> () -> (),
-	Snapshot: () -> { Entry<Callback> },
-	IsEmpty: () -> boolean,
+	Snapshot: (matches: ((Callback) -> boolean)?) -> { Entry<Callback> },
+	IsEmpty: (matches: ((Callback) -> boolean)?) -> boolean,
 	Destroy: () -> (),
 }
 
@@ -32,11 +32,33 @@ function Observers.new<Callback>(maximum: number, reason: string): Registry<Call
 				table.remove(entries, index)
 			end
 		end,
-		Snapshot = function(): { Entry<Callback> }
-			return table.clone(entries)
+		Snapshot = function(matches: ((Callback) -> boolean)?): { Entry<Callback> }
+			if matches == nil then
+				return table.clone(entries)
+			end
+
+			local selected: { Entry<Callback> } = {}
+
+			for _, entry: Entry<Callback> in entries do
+				if matches(entry.callback) then
+					table.insert(selected, entry)
+				end
+			end
+
+			return selected
 		end,
-		IsEmpty = function(): boolean
-			return #entries == 0
+		IsEmpty = function(matches: ((Callback) -> boolean)?): boolean
+			if matches == nil then
+				return #entries == 0
+			end
+
+			for _, entry: Entry<Callback> in entries do
+				if matches(entry.callback) then
+					return false
+				end
+			end
+
+			return true
 		end,
 		Destroy = function(): ()
 			destroyed = true
