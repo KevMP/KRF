@@ -164,6 +164,7 @@ function Pipeline.new(options: Options): Owner
 				rootInputId = root.event.inputId,
 				rootContextId = root.event.contextId,
 				rootInputEpochId = root.pressEpochId,
+				rootInputEpochGeneration = if root.pressEpochId ~= nil then root.generation else nil,
 				isRootEpochActiveAfterCommit = root.pressEpochId ~= nil
 					and options.IsEpochActive(root.event.inputId, root.pressEpochId, root.generation),
 				lifecycleDelivered = true,
@@ -423,6 +424,7 @@ function Pipeline.new(options: Options): Owner
 							then emission.event.ordinal
 							else candidate.rootInputOrdinal,
 						pressEpochId = candidate.pressEpochId,
+						pressEpochGeneration = if candidate.pressEpochId ~= nil then candidate.generation else nil,
 						routeEligible = candidate.routeEligible,
 					})
 				)

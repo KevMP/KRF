@@ -2,6 +2,7 @@
 local Constants = require(script.Parent.InputConstants)
 
 export type Owner = {
+	Depth: () -> number,
 	Unavailable: () -> string?,
 	IsTerminal: () -> boolean,
 	IsFaulted: () -> boolean,
@@ -33,6 +34,9 @@ function Gate.new(isReady: () -> boolean, report: (string) -> ()): Owner
 	local pending: { () -> () } = {}
 
 	return {
+		Depth = function(): number
+			return dispatchDepth
+		end,
 		Unavailable = function(): string?
 			if destroyed or not isReady() then
 				return "ClientNotReady"

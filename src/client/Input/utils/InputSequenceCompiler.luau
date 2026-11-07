@@ -27,6 +27,7 @@ function Compiler.Compile(
 	end
 
 	local gestures: { [string]: unknown } = {}
+	local sequenceOwners: { [string]: string } = {}
 
 	for sourceId: string, source: Types.InputSourceDefinition in sources do
 		for inputId: string, definitions: Types.GestureDefinitions in source.gestures or {} do
@@ -138,6 +139,8 @@ function Compiler.Compile(
 			local machineId: string = if group ~= nil
 				then "G" .. tostring(#sourceId) .. ":" .. sourceId .. (definition.exclusiveGroup or "")
 				else "S" .. id
+
+			sequenceOwners[id] = machineId
 
 			if machines[machineId] == nil then
 				local created: Types.SequenceMachine = {
@@ -326,6 +329,7 @@ function Compiler.Compile(
 	end
 
 	local catalog: Types.RecognitionCatalog = {
+		sequenceMachines = {},
 		sequences = table.freeze(sequences),
 		recognizers = recognizers,
 		machines = table.freeze(machines),
@@ -333,6 +337,12 @@ function Compiler.Compile(
 		recognizerIndex = recognizerIndex,
 		recognizerDependencies = recognizerDependencies,
 	}
+
+	for id: string, machineId: string in sequenceOwners do
+		catalog.sequenceMachines[id] = machines[machineId]
+	end
+
+	table.freeze(catalog.sequenceMachines)
 
 	return table.freeze(catalog) :: Types.RecognitionCatalog, nil
 end

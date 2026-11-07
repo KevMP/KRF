@@ -2,7 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Validator = require(script.Parent.Parent.InputValidator)
 local Value = require(script.Parent.InputValue)
-local Observers = require(script.Parent.InputObservers)
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local Epochs = require(script.Parent.InputEpochs)
 local NativeGraph = require(script.Parent.InputNativeGraph)
 local Labels = require(script.Parent.InputLabels)
@@ -12,7 +12,7 @@ local Dispatch = require(script.Parent.InputDispatch)
 local GraphObservers = require(script.Parent.InputGraphObservers)
 local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
 
-export type SelectionFence = { generation: number, recognitionRevision: number }
+export type SelectionFence = Types.InputCommitContext & { read generation: number, read recognitionRevision: number }
 
 export type Options = {
 	Native: Types.NativeInputAdapter,
@@ -21,6 +21,7 @@ export type Options = {
 }
 
 export type Owner = {
+	Disarm: (reason: string) -> (boolean, string?),
 	Graph: () -> Types.InputGraphSnapshot,
 	CompileSource: (sourceId: string, definition: Types.InputSourceDefinition?) -> (Types.InputGraphSnapshot?, string?),
 	Commit: (nextGraph: Types.InputGraphSnapshot, reason: string?, publishSelection: (() -> ())?) -> (boolean, string?),
@@ -184,7 +185,30 @@ function Configuration.new(
 			and Value.Equal(previous.sources, nextGraph.sources)
 			and Value.Equal(previous.contexts, nextGraph.contexts)
 		then
-			return true, nil
+			if publishSelection == nil then
+				return true, nil
+			end
+
+			gate.SetFenced(true)
+
+			selectionFence = table.freeze({
+				generation = graph.generation,
+				recognitionRevision = recognition.Revision(),
+				previous = graph,
+				invalidatedInputIds = table.freeze({} :: { [string]: string }),
+			})
+
+			local published: boolean = Observers.Run(publishSelection)
+			selectionFence = nil
+
+			if not published then
+				fail(nil)
+			end
+
+			gate.SetFenced(false)
+			gate.Flush()
+
+			return published, if published then nil else "InputRuntimeFaulted"
 		end
 
 		local changes: Changes.Plan = Changes.Diff(previous, nextGraph, forcedReason)
@@ -231,7 +255,13 @@ function Configuration.new(
 			labels.Reconcile(native.Actions())
 
 			if publishSelection ~= nil then
-				selectionFence = { generation = previous.generation, recognitionRevision = previousRecognitionRevision }
+				selectionFence = table.freeze({
+					generation = previous.generation,
+					recognitionRevision = previousRecognitionRevision,
+					previous = previous,
+					invalidatedInputIds = table.freeze(table.clone(changes.invalidated)),
+				})
+
 				local selected: boolean = Observers.Run(publishSelection)
 				selectionFence = nil
 
@@ -442,6 +472,13 @@ function Configuration.new(
 	end
 
 	owner = {
+		Disarm = function(reason: string): (boolean, string?)
+			if gate.IsBusy() then
+				return false, "InputMutationReentrant"
+			end
+
+			return commit(Changes.Next(graph, nil), reason, nil)
+		end,
 		Graph = function(): Types.InputGraphSnapshot
 			return graph
 		end,

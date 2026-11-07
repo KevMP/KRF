@@ -47,6 +47,10 @@ function ActorViewRuntime.new(
 			return
 		end
 
+		if state.owner ~= nil then
+			RegistryOwner.Invalidate(state.owner.view, reason)
+		end
+
 		state.status = "Halted"
 		state.recovery.Cancel()
 
@@ -138,6 +142,7 @@ function ActorViewRuntime.new(
 		local owner: PublicTypes.ActorViewOwner? = state.owner
 
 		if owner ~= nil then
+			RegistryOwner.Invalidate(owner.view, "ActorRemoved")
 			RegistryOwner.Removing:Fire(owner.view)
 			RegistryOwner.Remove(owner.view)
 			owner:Destroy()
