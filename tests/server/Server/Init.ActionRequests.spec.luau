@@ -21,7 +21,13 @@ local Registry = require(KRF.server.Networking.CommandRegistry)
 local Transport = require(KRF.shared.Networking.Transport)
 local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Constants = require(KRF.shared.ActionRequest.utils.ActionRequestConstants)
+local ActorTypes = require(KRF.server.Actor.types)
+local ActorEntity = require(KRF.server.Actor.ActorEntity)
+local ActionController = require(KRF.server.Action.ActionController)
+local CommandContext = require(KRF.server.Networking.utils.CommandContext)
+local ActionRequestCatalog = require(KRF.shared.ActionRequest.ActionRequestCatalog)
 local Commands = require(script.Parent.Parent.Utils.Networking.CommandRuntimeTestUtils)
+local ProtocolUtils = require(script.Parent.Parent.Parent.shared.Utils.Networking.ProtocolTestUtils)
 local RequestUtils = require(script.Parent.Parent.Parent.shared.Utils.ActionRequestTestUtils)
 
 local originalPublish: typeof(Networking.Publish) = Networking.Publish
@@ -227,4 +233,63 @@ it("rolls back the merged Action commands with every registry when transport act
 		{ actions = representativeActions(), actionRequestSchemas = RequestUtils.schemas() },
 		{ system = "Networking", reason = "TransportConflict" }
 	)
+end)
+
+it("starts a requested Action on the target Actor's own ActionController through the published command", function()
+	local schemas = RequestUtils.schemas()
+	local success: boolean = Server.Init({ actions = representativeActions(), actionRequestSchemas = schemas })
+	expect(success).toBe(true)
+
+	local start: NetworkingTypes.LoadedCommandDefinition? = Registry.Get(Constants.START_COMMAND_ID)
+	local catalog = ActionRequestCatalog.Compile(schemas)
+	assert(start ~= nil and catalog ~= nil, "Expected the published Start command and shared catalog")
+
+	local player: Player = ProtocolUtils.createPlayer()
+
+	local actor: ActorTypes.Actor = ActorEntity.new()
+	actor.enabled = true
+
+	local controller = ActionController.new(actor)
+	actor:SetController("ActionController", controller)
+
+	-- A real N9 invocation binding for the owner's current connection generation.
+	local context: NetworkingTypes.CommandContext, close: () -> () = CommandContext.new(
+		player,
+		actor,
+		1,
+		Constants.START_COMMAND_ID,
+		function(): NetworkingTypes.CommandOutcome?
+			return nil
+		end,
+		{
+			ready = function(): boolean
+				return true
+			end,
+			owns = function(): boolean
+				return true
+			end,
+			scope = table.freeze({
+				token = table.freeze({}),
+				ObserveClosing = function(): (() -> ())?
+					return function(): () end
+				end,
+			}),
+		}
+	)
+
+	local request: any = {
+		actionId = "Movement.Sprint",
+		contractTag = catalog.requestsById["Movement.Sprint"].contractTag,
+		payload = "",
+	}
+
+	expect({ start.authorize(context, request) }).toEqual({ true })
+	local result: NetworkingTypes.CommandHandlerResult = start.handle(context, request)
+	expect(result.reason).toBeNil()
+	expect(result.accepted).toBe(true)
+	expect(result.result).toEqual({ sequenceId = controller:_getActiveReplicationState()[1].sequenceId })
+
+	close()
+	controller:Destroy()
+	player:Destroy()
 end)

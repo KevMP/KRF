@@ -29,6 +29,8 @@ export type Port = {
 	order: { string },
 	nextId: number,
 	refusal: string?,
+	-- Refuses after the admission callback ran, as N9 does when the client resets mid-send.
+	refusalAfterAdmit: string?,
 	onSend: ((Sent) -> ())?,
 	observers: { (NetworkingTypes.CommandResult) -> () },
 }
@@ -50,6 +52,7 @@ function TestUtils.port(): Port
 		order = {},
 		nextId = 1,
 		refusal = nil,
+		refusalAfterAdmit = nil,
 		onSend = nil,
 		observers = {},
 	}
@@ -69,6 +72,8 @@ function TestUtils.port(): Port
 
 			if not admit(requestId) then
 				return nil, "CommandAdmissionRefused"
+			elseif fake.refusalAfterAdmit ~= nil then
+				return nil, fake.refusalAfterAdmit
 			end
 
 			fake.nextId += 1

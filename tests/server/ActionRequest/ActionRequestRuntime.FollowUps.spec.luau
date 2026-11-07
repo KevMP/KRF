@@ -222,9 +222,11 @@ it("keeps a long-running receipt stoppable after N9 outcome history has expired"
 	started(created, 1, "Movement.Sprint")
 
 	-- Exceed both the 128 record and 30 second history bounds with unrelated outcomes.
+	-- Each result is drained so N9's bounded outbound result backlog never stalls the queue.
 	for requestId: number = 2, 140 do
 		created.commands.now += 1
 		TestUtils.interrupt(created, requestId, 1000 + requestId, "FocusLost")
+		TestUtils.expectRejected(created, requestId, "ActionReceiptUnknown")
 	end
 
 	created.commands.now += 60
@@ -246,4 +248,20 @@ it("retires receipts when the original Actor's ActionController is destroyed", f
 	started(created, 1, "Movement.Sprint")
 	TestUtils.controller(created, created.commands.actor):Destroy()
 	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+end)
+
+it("ignores server-started Actions on a tracked controller and still retires the original receipt", function()
+	local created: TestUtils.Fixture, trace: Trace = setup()
+	local original: number = started(created, 1, "Movement.Sprint")
+	local controller: ActionTypes.InternalActionController = TestUtils.controller(created, created.commands.actor)
+	local server: ActionTypes.ActionRequestResult = controller:RequestAction("Stance.Guard")
+	assert(server.accepted, "Expected a server-started Action")
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(1)
+
+	TestUtils.stop(created, 2, 1, "Movement.Sprint")
+	TestUtils.expectAccepted(created, 2)
+	expect(trace.stops).toEqual({ false })
+	expect({ controller:EndAction(original) }).toEqual({ true })
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+	expect(#TestUtils.active(created)).toBe(1)
 end)

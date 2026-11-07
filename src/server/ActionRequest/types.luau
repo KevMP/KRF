@@ -83,12 +83,13 @@ export type ActionRequestRuntimeModule = {
 }
 
 export type ActionRequestValidatorModule = {
-	-- Verifies declared IDs against prepared Actions and the reserved fixed command IDs.
-	read Validate: (
+	-- Every registered request id must name an Action in the prepared catalog.
+	read ValidateCatalog: (
 		catalog: ActionRequestTypes.ActionRequestCatalog,
-		actions: ActionTypes.PreparedActionCatalog,
-		commands: { NetworkingTypes.CommandDefinition }
+		actions: ActionTypes.PreparedActionCatalog
 	) -> (boolean, string?),
+	-- The fixed Action command ids stay reserved even when request schemas are omitted.
+	read ValidateReservedCommands: (commands: any) -> (boolean, string?),
 }
 
 return types

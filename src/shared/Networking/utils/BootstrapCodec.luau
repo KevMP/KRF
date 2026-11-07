@@ -4,8 +4,22 @@ local Constants = require(script.Parent.ProtocolConstants)
 local BufferUtils = require(script.Parent.CodecBufferUtils)
 local Collections = require(script.Parent.SchemaCollectionUtils)
 
-type Writer = { destination: buffer?, offset: number }
-type Reader = { source: buffer, offset: number, limit: number }
+-- Identical Enum schemas are interned: the first occurrence is written inline and each
+-- later identical copy is a backward reference to its index. Visible catalogs repeat the
+-- same id Enum across a domain's state and event schemas.
+type Writer = {
+	destination: buffer?,
+	offset: number,
+	enums: { [string]: number },
+	enumCount: number,
+	enumValues: number,
+}
+
+type Reader = { source: buffer, offset: number, limit: number, enums: { { string } }, enumValues: number }
+
+-- Each inline Enum value costs at least four bytes, so references may never make the
+-- decoded manifest describe more values than an uninterned maximum bootstrap could.
+local MAX_DECODED_ENUM_VALUES: number = Constants.MAX_BOOTSTRAP_BYTES // 4
 
 local kinds: { string } = {
 	"Boolean",
@@ -23,6 +37,8 @@ local kinds: { string } = {
 	"Struct",
 	"Array",
 	"Map",
+	-- Wire-only: a backward reference to a previously encoded Enum.
+	"EnumReference",
 }
 
 local kindCodes: { [string]: number } = {}
@@ -69,10 +85,39 @@ local function writeSchema(writer: Writer, schema: Types.SchemaDefinition, depth
 		error("InvalidProtocolManifest", 0)
 	end
 
-	local code: number? = kindCodes[schema.kind]
+	local code: number? = if schema.kind == "EnumReference" then nil else kindCodes[schema.kind]
 
 	if code == nil then
 		error("UnsupportedSchema", 0)
+	end
+
+	if schema.kind == "Enum" then
+		local parts: { string } = {}
+
+		for _, value: string in schema.values do
+			table.insert(parts, #value .. ":" .. value)
+		end
+
+		local key: string = table.concat(parts)
+		local interned: number? = writer.enums[key]
+
+		writer.enumValues += #schema.values
+
+		-- The decoder enforces the same budget, so the server never publishes a manifest
+		-- that a client would refuse.
+		if writer.enumValues > MAX_DECODED_ENUM_VALUES then
+			error("BootstrapTooLarge", 0)
+		end
+
+		if interned ~= nil then
+			writeUnsigned(writer, kindCodes.EnumReference, 1)
+			writeUnsigned(writer, interned, 4)
+
+			return
+		end
+
+		writer.enums[key] = writer.enumCount
+		writer.enumCount += 1
 	end
 
 	writeUnsigned(writer, code, 1)
@@ -259,6 +304,30 @@ local function readSchema(reader: Reader, depth: number): Types.SchemaDefinition
 			table.insert(values, readString(reader))
 		end
 
+		-- Shared by every later reference, so a reference costs no copy and no rework.
+		table.freeze(values)
+		table.insert(reader.enums, values)
+		reader.enumValues += count
+
+		if reader.enumValues > MAX_DECODED_ENUM_VALUES then
+			error("MalformedPacket", 0)
+		end
+
+		return { kind = "Enum", values = values }
+	elseif kind == "EnumReference" then
+		-- Only completed earlier Enums are addressable, so forward and cyclic references are impossible.
+		local values: { string }? = reader.enums[readUnsigned(reader, 4) + 1]
+
+		if values == nil then
+			error("MalformedPacket", 0)
+		end
+
+		reader.enumValues += #values
+
+		if reader.enumValues > MAX_DECODED_ENUM_VALUES then
+			error("MalformedPacket", 0)
+		end
+
 		return { kind = "Enum", values = values }
 	elseif kind == "Optional" then
 		return { kind = "Optional", inner = readSchema(reader, depth + 1) }
@@ -296,18 +365,18 @@ local BootstrapCodec = {}
 -- These private routines throw stable parse/budget reasons; ProtocolCodec owns
 -- the protected boundary. Account for the packet opcode during measurement.
 function BootstrapCodec.Encode(manifest: Types.ProtocolManifest, opcode: number): buffer
-	local writer: Writer = { offset = 1 }
+	local writer: Writer = { offset = 1, enums = {}, enumCount = 0, enumValues = 0 }
 	writeManifest(writer, manifest)
 	local destination: buffer = buffer.create(writer.offset)
 	buffer.writeu8(destination, 0, opcode)
-	local encoder: Writer = { destination = destination, offset = 1 }
+	local encoder: Writer = { destination = destination, offset = 1, enums = {}, enumCount = 0, enumValues = 0 }
 	writeManifest(encoder, manifest)
 
 	return destination
 end
 
 function BootstrapCodec.Decode(source: buffer): Types.ProtocolManifest
-	local reader: Reader = { source = source, offset = 1, limit = buffer.len(source) }
+	local reader: Reader = { source = source, offset = 1, limit = buffer.len(source), enums = {}, enumValues = 0 }
 	local version: number = readUnsigned(reader, 2)
 
 	if version ~= Constants.PROTOCOL_VERSION then

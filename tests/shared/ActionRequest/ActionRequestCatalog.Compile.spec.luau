@@ -5,10 +5,12 @@ local KRF = ReplicatedStorage.Packages.KRF
 local JestGlobals: any = require(ReplicatedStorage.DevPackages.JestGlobals)
 local it: any = JestGlobals.it
 local expect: any = JestGlobals.expect
+local afterEach: any = JestGlobals.afterEach
 local ActionRequestTypes = require(KRF.shared.ActionRequest.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local Catalog: ActionRequestTypes.ActionRequestCatalogModule = require(KRF.shared.ActionRequest.ActionRequestCatalog)
+local CodecCompiler = require(KRF.shared.Networking.CodecCompiler)
 local TestUtils = require(script.Parent.Parent.Utils.ActionRequestTestUtils)
 
 it("compiles the shared request schemas into sorted Action ids with typed Start and Stop paths", function()
@@ -175,4 +177,22 @@ it("rejects an invalid entry even when valid entries precede it in iteration", f
 	local catalog: ActionRequestTypes.ActionRequestCatalog?, reason: string? = Catalog.Compile(schemas)
 	expect(catalog).toBeNil()
 	expect(reason).toBe("ActionRequestDisconnectPolicyInvalid")
+end)
+
+local originalCodecCompile: typeof(CodecCompiler.Compile) = CodecCompiler.Compile
+
+afterEach(function()
+	CodecCompiler.Compile = originalCodecCompile
+end)
+
+it("reports a schema the codec compiler cannot compile as an invalid payload schema", function()
+	CodecCompiler.Compile = function(): (SharedNetworkingTypes.CompiledCodec?, string?)
+		return nil, "CodecUnavailable"
+	end
+
+	local catalog: ActionRequestTypes.ActionRequestCatalog?, reason: string? =
+		Catalog.Compile({ ["Game.Bad"] = { start = Schema.U8 } })
+
+	expect(catalog).toBeNil()
+	expect(reason).toBe("ActionRequestStartSchemaInvalid")
 end)

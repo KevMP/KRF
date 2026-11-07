@@ -6,12 +6,13 @@ return table.freeze({
 	INTERRUPT_COMMAND_ID = "KRF.Action.Interrupt",
 	MAX_ACTION_ID_BYTES = 96,
 	MAX_PAYLOAD_BYTES = 8192,
+	-- Canonical sorted order, matching the compiled Enum ordinals on the wire.
 	INTERRUPT_REASONS = table.freeze({
-		"RouteInvalidated",
-		"ContextDisabled",
 		"ActorSwitched",
-		"FocusLost",
-		"StopPreparationFailed",
 		"ClientShutdown",
+		"ContextDisabled",
+		"FocusLost",
+		"RouteInvalidated",
+		"StopPreparationFailed",
 	}),
 })

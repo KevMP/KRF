@@ -9,6 +9,8 @@ local ActionRequestTypes = require(KRF.shared.ActionRequest.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
 local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 
+local SchemaCompiler = require(KRF.shared.Networking.utils.SchemaCompiler)
+
 local PayloadCodec: ActionRequestTypes.ActionPayloadCodecModule =
 	require(KRF.shared.ActionRequest.utils.ActionPayloadCodec)
 
@@ -190,3 +192,36 @@ it("rejects bytes encoded for one Action's Start when decoded with its Stop sche
 	local decoded: boolean = PayloadCodec.Decode(stopOf("Game.Typed"), encoded)
 	expect(decoded).toBe(false)
 end)
+
+type DisagreeingCodec = { label: string, measure: number?, written: number?, reason: string }
+
+-- The compiled codec owns byte layout; Encode must not trust it past validation.
+local disagreeingCodecs: { DisagreeingCodec } = {
+	{ label = "cannot measure a validated value", measure = nil, written = 1, reason = "ActionPayloadInvalid" },
+	{ label = "measures past the inner bound", measure = 8193, written = 8193, reason = "ActionPayloadTooLarge" },
+	{ label = "writes fewer bytes than it measured", measure = 2, written = 1, reason = "ActionPayloadInvalid" },
+}
+
+for _, disagreeing: DisagreeingCodec in disagreeingCodecs do
+	it("refuses to encode when the codec " .. disagreeing.label, function()
+		local schema: SharedNetworkingTypes.CompiledSchema? = SchemaCompiler.Compile(Schema.U8)
+		assert(schema ~= nil, "Expected a compiled U8 schema")
+
+		local codec: any = {
+			maxSizeBytes = 8192,
+			Measure = function(): (number?, string?)
+				return disagreeing.measure, nil
+			end,
+			Write = function(): (number?, string?)
+				return disagreeing.written, nil
+			end,
+			Read = function(): (any?, number?, string?)
+				return nil, nil, "Unused"
+			end,
+		}
+
+		local encoded: string?, reason: string? = PayloadCodec.Encode({ schema = schema, codec = codec }, 1)
+		expect(encoded).toBeNil()
+		expect(reason).toBe(disagreeing.reason)
+	end)
+end

@@ -34,6 +34,7 @@ local schemas: ActionRequestTypes.ActionRequestSchemas = {
 	["Technique.Cast"] = { start = Schema.Struct({ techniqueId = Schema.String(64) }) },
 }
 
+-- Parameterless requests are recorded as false so table.insert never drops them.
 type Trace = { canStart: { any }, started: { any } }
 
 local function definitions(trace: Trace, overrides: { [string]: { [string]: any } }?): { ActionTypes.ActionDefinition }
@@ -52,12 +53,12 @@ local function definitions(trace: Trace, overrides: { [string]: { [string]: any 
 			visibility = entry.visibility :: ActionTypes.ActionVisibility,
 			autoGrant = true,
 			onCanStart = function(context: ActionTypes.ActionStartContext): (boolean, string?)
-				table.insert(trace.canStart, context.parameters)
+				table.insert(trace.canStart, if context.parameters == nil then false else context.parameters)
 
 				return true, nil
 			end,
 			onStart = function(context: ActionTypes.ActionExecutionContext): ()
-				table.insert(trace.started, context.parameters)
+				table.insert(trace.started, if context.parameters == nil then false else context.parameters)
 			end,
 		}
 
@@ -100,8 +101,7 @@ it("starts a parameterless Action from an empty inner payload", function()
 	local created: TestUtils.Fixture, trace: Trace = setup()
 	TestUtils.start(created, 1, "Movement.Sprint")
 	TestUtils.expectAccepted(created, 1)
-	expect(#trace.started).toBe(1)
-	expect(trace.started[1]).toBeNil()
+	expect(trace.started).toEqual({ false })
 end)
 
 it("starts an explicitly registered ServerOnly Action without an ActionsView", function()
@@ -297,4 +297,31 @@ it("retires a rejected Start's provisional receipt", function()
 	TestUtils.start(created, 1, "Movement.Sprint")
 	TestUtils.expectRejected(created, 1, "Exhausted")
 	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+end)
+
+it("rejects a Start for an Actor whose ActionController is unavailable", function()
+	local created: TestUtils.Fixture, trace: Trace = setup()
+	local controller: ActionTypes.InternalActionController = TestUtils.controller(created, created.commands.actor)
+
+	created.controllers[created.commands.actor] = nil
+	TestUtils.start(created, 1, "Movement.Sprint")
+	TestUtils.expectRejected(created, 1, "ActionControllerUnavailable")
+	expect(trace.canStart).toEqual({})
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+	controller:Destroy()
+end)
+
+it("rejects every request after the runtime is destroyed while its commands stay registered", function()
+	local created: TestUtils.Fixture, trace: Trace = setup()
+	TestUtils.start(created, 1, "Movement.Sprint")
+	TestUtils.expectAccepted(created, 1)
+	created.runtime:Destroy()
+	TestUtils.start(created, 2, "Movement.Sprint")
+	TestUtils.stop(created, 3, 1, "Movement.Sprint")
+	TestUtils.interrupt(created, 4, 1, "FocusLost")
+	TestUtils.expectRejected(created, 2, "ActionRequestRuntimeDestroyed")
+	TestUtils.expectRejected(created, 3, "ActionReceiptUnknown")
+	TestUtils.expectRejected(created, 4, "ActionReceiptUnknown")
+	expect(#trace.canStart).toBe(1)
+	expect(#TestUtils.active(created)).toBe(1)
 end)

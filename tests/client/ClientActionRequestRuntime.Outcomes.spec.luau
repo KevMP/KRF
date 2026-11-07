@@ -31,8 +31,15 @@ local function setup(): Setup
 	return { fixture = created, outcomes = outcomes }
 end
 
-local function admitStart(created: TestUtils.Fixture, actionId: string, actor: ActorTypes.ActorView?): number
-	local requestId: number?, reason: string? = created.runtime:Start(TestUtils.selection(created, actionId, actor))
+local function admitStart(
+	created: TestUtils.Fixture,
+	actionId: string,
+	actor: ActorTypes.ActorView?,
+	parameters: any?
+): number
+	local requestId: number?, reason: string? =
+		created.runtime:Start(TestUtils.selection(created, actionId, actor), parameters)
+
 	expect(reason).toBeNil()
 	assert(requestId ~= nil, "Expected a locally admitted Start")
 
@@ -84,7 +91,7 @@ end)
 
 it("drops a release-free Action's original Start once it is definitively accepted", function()
 	local state: Setup = setup()
-	local startId: number = admitStart(state.fixture, "Combat.Fireball")
+	local startId: number = admitStart(state.fixture, "Combat.Fireball", nil, { aim = { x = 0, y = 0, z = 0 } })
 	TestUtils.deliver(state.fixture, startId, Constants.START_COMMAND_ID, "Accepted", { sequenceId = 3 })
 	expect(state.outcomes[1].admission.actionId).toBe("Combat.Fireball")
 	expect(state.fixture.runtime:GetOriginalStart(startId)).toBeNil()
@@ -178,4 +185,23 @@ it("reports Unknown for unresolved requests on connection close and then discard
 	expect(state.fixture.runtime:_GetRetainedCountForTests()).toBe(0)
 	TestUtils.deliver(state.fixture, startId, Constants.START_COMMAND_ID, "Accepted", { sequenceId = 2 })
 	expect(#state.outcomes).toBe(1)
+end)
+
+it("reports an Accepted Start without a result payload with no sequence id", function()
+	local state: Setup = setup()
+	local startId: number = admitStart(state.fixture, "Movement.Sprint")
+	TestUtils.deliver(state.fixture, startId, Constants.START_COMMAND_ID, "Accepted")
+	expect(state.outcomes[1].status).toBe("Accepted")
+	expect(state.outcomes[1].sequenceId).toBeNil()
+end)
+
+it("ignores a follow-up result that names a different fixed command", function()
+	local state: Setup = setup()
+	local startId: number = admitStart(state.fixture, "Movement.Sprint")
+	local stopId: number? = state.fixture.runtime:Stop(startId)
+	assert(stopId ~= nil, "Expected an admitted Stop")
+	TestUtils.deliver(state.fixture, stopId, Constants.INTERRUPT_COMMAND_ID, "Accepted")
+	expect(state.outcomes).toEqual({})
+	TestUtils.deliver(state.fixture, stopId, Constants.STOP_COMMAND_ID, "Accepted")
+	expect(state.outcomes[1].admission.kind).toBe("Stop")
 end)

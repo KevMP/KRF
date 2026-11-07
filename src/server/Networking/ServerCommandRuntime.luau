@@ -10,6 +10,7 @@ local Execution = require(script.Parent.utils.CommandExecution)
 local CommandDiagnostics = require(script.Parent.utils.CommandDiagnostics)
 local Admission = require(script.Parent.utils.CommandAdmission)
 local Queue = require(script.Parent.utils.ActiveQueue)
+local Context = require(script.Parent.utils.CommandContext)
 
 type Queued = { queuedAt: number, request: SharedTypes.CommandRequest, bytes: number, ticket: Admission.Ticket }
 
@@ -24,6 +25,8 @@ type Connection = {
 	queue: { Queued },
 	queuedBytes: number,
 	history: History.Runtime,
+	scope: Context.ConnectionScope,
+	closing: { () -> () },
 }
 
 type Limits = {
@@ -86,7 +89,7 @@ function ServerCommandRuntime._deactivate(_self: Runtime, connection: Connection
 	end
 end
 
-function ServerCommandRuntime._close(self: Runtime, player: Player): ()
+function ServerCommandRuntime._close(self: Runtime, player: Player, notify: boolean): ()
 	self.admission:Closed(player)
 	local connection: Connection? = self.connections[player]
 
@@ -96,6 +99,16 @@ function ServerCommandRuntime._close(self: Runtime, player: Player): ()
 
 	self.connections[player] = nil
 	self:_deactivate(connection)
+	local closing: { () -> () } = table.clone(connection.closing)
+	table.clear(connection.closing)
+
+	-- The generation is already non-current, so observers cannot register again or
+	-- mistake a reconnect for this connection.
+	if notify then
+		for _, callback: () -> () in closing do
+			pcall(callback)
+		end
+	end
 
 	connection.history:Destroy()
 
@@ -137,6 +150,28 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	local existing: Connection? = self.connections[player]
 
 	if existing == nil then
+		local closing: { () -> () } = {}
+		local generation: { owner: Connection? } = { owner = nil }
+
+		local scope: Context.ConnectionScope = table.freeze({
+			token = table.freeze({}),
+			ObserveClosing = function(callback: () -> ()): (() -> ())?
+				if self.destroyed or generation.owner == nil or self.connections[player] ~= generation.owner then
+					return nil
+				end
+
+				table.insert(closing, callback)
+
+				return function(): ()
+					local index: number? = table.find(closing, callback)
+
+					if index ~= nil then
+						table.remove(closing, index)
+					end
+				end
+			end,
+		})
+
 		local created: Connection = {
 			diagnostics = Diagnostics.GetConnection(player),
 			player = player,
@@ -154,8 +189,11 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 				self.limits.historyBytes,
 				self.limits.lifetime
 			),
+			scope = scope,
+			closing = closing,
 		}
 
+		generation.owner = created
 		existing = created
 		self.connections[player] = created
 
@@ -284,7 +322,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 
 		local completed = pcall(function()
 			if not self.dependencies.IsClientReady(player) then
-				self:_close(player)
+				self:_close(player, true)
 
 				return
 			end
@@ -326,7 +364,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 
 			self.execution:Execute(player, connection.history, connection.diagnostics, function(): boolean
 				return not self.destroyed and self.connections[player] == connection
-			end, queued.request, reservation :: Types.CommandReservation, observed)
+			end, connection.scope, queued.request, reservation :: Types.CommandReservation, observed)
 		end)
 
 		if not completed then
@@ -343,7 +381,7 @@ function ServerCommandRuntime.Step(self: Runtime): (number, number)
 
 			pcall(self.dependencies.ReportFault, player, "CommandInternalFault")
 			pcall(self.dependencies.CloseConnection, player, "CommandInternalFault")
-			self:_close(player)
+			self:_close(player, true)
 		end
 
 		if running ~= nil then
@@ -394,8 +432,9 @@ function ServerCommandRuntime.Destroy(self: Runtime): ()
 		self.disconnect = nil
 	end
 
+	-- Runtime teardown is not a client close; owners release their own state.
 	for player: Player in self.connections do
-		self:_close(player)
+		self:_close(player, false)
 	end
 
 	self.admission:Destroy()
@@ -495,7 +534,7 @@ function ServerCommandRuntime.new(
 	end
 
 	self.disconnect = dependencies.ObserveClientClosed(function(player: Player): ()
-		self:_close(player)
+		self:_close(player, true)
 	end)
 
 	self.disconnectReady = dependencies.ObserveClientReady(function(player: Player): ()

@@ -25,6 +25,13 @@ local ActionController = require(script.Action.ActionController)
 local ServerNetworking = require(script.Networking.ServerNetworking)
 local PublicationRuntime = require(script.Networking.PublicationRuntime)
 local SharedNetworkingTypes = require(script.Parent.shared.Networking.types)
+local NetworkingTypes = require(script.Networking.types)
+local ActorTypes = require(script.Actor.types)
+local ActionRequestTypes = require(script.ActionRequest.types)
+local SharedActionRequestTypes = require(script.Parent.shared.ActionRequest.types)
+local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRequestCatalog)
+local ActionRequestRuntime = require(script.ActionRequest.ActionRequestRuntime)
+local ActionRequestValidator = require(script.ActionRequest.ActionRequestValidator)
 
 export type ServerStartConfig = ServerStartTypes.ServerStartConfig
 export type StartupFailure = ServerStartTypes.StartupFailure
@@ -40,8 +47,14 @@ type PreparedReplicationDomainCatalog = ReplicationTypes.PreparedReplicationDoma
 local Server = {}
 local initAttempted: boolean = false
 local initialized: boolean = false
+local actionRequests: ActionRequestTypes.ServerActionRequestRuntime? = nil
 
 local function rollbackStartup(): ()
+	if actionRequests ~= nil then
+		actionRequests:Destroy()
+		actionRequests = nil
+	end
+
 	ServerNetworking.Destroy()
 	CommandRegistry._RollbackStartup()
 	HintRegistry._RollbackStartup()
@@ -108,8 +121,65 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local resources: { ResourceDefinition } = config.resources or {}
 	local actions: { ActionFactory } = if config.actions ~= nil then config.actions else {}
 
-	local preparedCommands, commandReason =
-		CommandRegistry.Prepare(if config.commands ~= nil then config.commands else {})
+	local consumerCommands: any = if config.commands ~= nil then config.commands else {}
+
+	local reservedValid: boolean, reservedReason: string? =
+		ActionRequestValidator.ValidateReservedCommands(consumerCommands)
+
+	if not reservedValid then
+		return false, { system = "Command", reason = reservedReason :: string }
+	end
+
+	-- The shared wire catalog compiles before any consumer code runs; its runtime owns
+	-- only the three fixed commands and never grants an Action.
+	local requestCatalog: SharedActionRequestTypes.ActionRequestCatalog? = nil
+	local requestRuntime: ActionRequestTypes.ServerActionRequestRuntime? = nil
+	local commandDefinitions: any = consumerCommands
+
+	if config.actionRequestSchemas ~= nil then
+		local compiled: SharedActionRequestTypes.ActionRequestCatalog?, catalogReason: string? =
+			ActionRequestCatalog.Compile(config.actionRequestSchemas)
+
+		if compiled == nil then
+			return false, { system = "ActionRequest", reason = catalogReason :: string }
+		end
+
+		local authority: any = config.actionControlAuthority
+
+		if authority ~= nil and type(authority) ~= "function" then
+			return false, { system = "ActionRequest", reason = "ActionControlAuthorityInvalid" }
+		end
+
+		requestCatalog = compiled
+
+		local created: ActionRequestTypes.ServerActionRequestRuntime = ActionRequestRuntime.new(compiled, {
+			GetActionController = function(actor: ActorTypes.Actor): ActionTypes.InternalActionController?
+				return actor:GetController("ActionController") :: ActionTypes.InternalActionController?
+			end,
+			AuthorizeControl = authority,
+		})
+
+		-- Unpublished runtimes own no subscriptions, so an early startup failure needs no teardown.
+		requestRuntime = created
+		local consumerCount: number? = SchemaCollectionUtils.GetArrayLength(consumerCommands)
+
+		-- Malformed consumer collections are passed through so CommandRegistry reports them.
+		if type(consumerCommands) == "table" and consumerCount ~= nil then
+			local merged: { NetworkingTypes.CommandDefinition } = {}
+
+			for index: number = 1, consumerCount do
+				table.insert(merged, rawget(consumerCommands, index) :: NetworkingTypes.CommandDefinition)
+			end
+
+			for _, definition: NetworkingTypes.CommandDefinition in created:GetCommandDefinitions() do
+				table.insert(merged, definition)
+			end
+
+			commandDefinitions = merged
+		end
+	end
+
+	local preparedCommands, commandReason = CommandRegistry.Prepare(commandDefinitions)
 
 	if preparedCommands == nil then
 		return false, { system = "Command", reason = commandReason :: string }
@@ -161,6 +231,15 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	if preparedActions == nil then
 		return false, { system = "Action", reason = actionReason :: string }
+	end
+
+	if requestCatalog ~= nil then
+		local requestsValid: boolean, requestReason: string? =
+			ActionRequestValidator.ValidateCatalog(requestCatalog, preparedActions)
+
+		if not requestsValid then
+			return false, { system = "ActionRequest", reason = requestReason :: string }
+		end
 	end
 
 	local gameDomains: { ReplicationDomainDefinition } = if config.replicationDomains ~= nil
@@ -305,6 +384,8 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 		return ServerNetworking.Publish(protocol :: SharedNetworkingTypes.PreparedProtocol)
 	end)
+
+	actionRequests = requestRuntime
 
 	if not published or not loaded then
 		rollbackStartup()

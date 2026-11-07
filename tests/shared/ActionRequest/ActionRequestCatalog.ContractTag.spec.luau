@@ -115,3 +115,31 @@ for _, distinct: DistinctCase in distinctCases do
 		expect(tagOf(distinct.entry, distinct.actionId)).never.toBe(tagOf(baseline))
 	end)
 end
+
+type BoundCase = {
+	label: string,
+	first: SharedNetworkingTypes.SchemaDefinition,
+	second: SharedNetworkingTypes.SchemaDefinition,
+}
+
+-- Each pair differs only inside one schema kind, so the canonical form must encode it.
+local boundCases: { BoundCase } = {
+	{ label = "a String byte bound", first = Schema.String(8), second = Schema.String(9) },
+	{ label = "an Enum value", first = Schema.Enum({ "A", "B" }), second = Schema.Enum({ "A", "C" }) },
+	{ label = "an Array length bound", first = Schema.Array(Schema.U8, 2), second = Schema.Array(Schema.U8, 3) },
+	{
+		label = "a Map entry bound",
+		first = Schema.Map(Schema.String(4), Schema.U8, 2),
+		second = Schema.Map(Schema.String(4), Schema.U8, 3),
+	},
+	{ label = "optionality", first = Schema.Optional(Schema.U8), second = Schema.U8 },
+}
+
+for _, bound: BoundCase in boundCases do
+	it("changes the tag when only " .. bound.label .. " changes", function()
+		local first: number = tagOf({ start = Schema.Struct({ value = bound.first }) })
+		local second: number = tagOf({ start = Schema.Struct({ value = bound.second }) })
+		expect(second).never.toBe(first)
+		expect(tagOf({ start = Schema.Struct({ value = bound.first }) })).toBe(first)
+	end)
+end

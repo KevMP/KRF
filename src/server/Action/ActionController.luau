@@ -62,7 +62,30 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		return grants:GetGrantedActions()
 	end
 
-	function controller:RequestAction(actionId: string, parameters: any?): ActionRequestResult
+	-- The optional guard is the framework-private network authority fence. It runs inside
+	-- Start after every authored decision and before costs, preemption, Tags or commit.
+	local function runGuard(actionId: string, guard: ActionTypes.ActionStartGuard): string?
+		local succeeded: boolean, reason: any, _second: any, failureKind: string?, failureDetail: any =
+			ActionControllerHooks.RunNonSuspending(guard)
+
+		if not succeeded then
+			ActionControllerHooks.WarnFailure(actor, actionId, "startGuard", failureDetail or failureKind)
+
+			return if failureKind == "Yielded" then "ActionStartGuardYielded" else "ActionStartGuardFailed"
+		end
+
+		if reason ~= nil and (type(reason) ~= "string" or reason == "") then
+			return "ActionStartGuardFailed"
+		end
+
+		return reason
+	end
+
+	local function requestAction(
+		actionId: string,
+		parameters: any?,
+		guard: ActionTypes.ActionStartGuard?
+	): ActionRequestResult
 		if controllerState.destroyed then
 			return { accepted = false, reason = "ActionControllerDestroyed" }
 		end
@@ -173,7 +196,13 @@ function ActionControllerModule.new(actor: Actor): ActionController
 					return "ActionNotGranted"
 				end
 
-				return ActionControllerTagRequirements.Validate(actor, definition)
+				local currentTagReason: string? = ActionControllerTagRequirements.Validate(actor, definition)
+
+				if currentTagReason ~= nil then
+					return currentTagReason
+				end
+
+				return if guard ~= nil then runGuard(actionId, guard) else nil
 			end
 		)
 
@@ -184,13 +213,16 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		return { accepted = true, sequenceId = sequenceId }
 	end
 
-	-- I5 TDD seam: the network authority guard is not yet fenced inside Start.
+	function controller:RequestAction(actionId: string, parameters: any?): ActionRequestResult
+		return requestAction(actionId, parameters, nil)
+	end
+
 	function controller:_requestGuardedAction(
 		actionId: string,
 		parameters: any?,
-		_guard: ActionTypes.ActionStartGuard
+		guard: ActionTypes.ActionStartGuard
 	): ActionRequestResult
-		return controller:RequestAction(actionId, parameters)
+		return requestAction(actionId, parameters, guard)
 	end
 
 	function controller:RequestStop(sequenceId: number, parameters: any?): (boolean, string?)

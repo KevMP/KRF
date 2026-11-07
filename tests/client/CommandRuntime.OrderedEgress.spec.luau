@@ -209,3 +209,36 @@ it("stops notifying a disconnected private outcome observer", function()
 	TestUtils.result(fixture, second, "Accepted")
 	expect(calls).toBe(1)
 end)
+
+it("keeps a refused outer id unused while a nested admission that allocated past it still sends", function()
+	local commands: Types.ClientCommandRuntime = runtime()
+	local inner: number? = nil
+
+	local outer: number?, reason: string? = commands:_SendAdmitted("Game.Ping", nil, nil, function(): boolean
+		inner = commands:_SendAdmitted("Game.Ping", nil, nil, function(): boolean
+			return true
+		end)
+
+		return false
+	end)
+
+	expect(outer).toBeNil()
+	expect(reason).toBe("CommandAdmissionRefused")
+	expect(inner).toBe(2)
+	expect(sentIds()).toEqual({ 2 })
+	expect((Commands.Send("Game.Ping"))).toBe(3)
+end)
+
+it("sends nothing when the client resets while an admission callback runs", function()
+	local commands: Types.ClientCommandRuntime = runtime()
+
+	local requestId: number?, reason: string? = commands:_SendAdmitted("Game.Ping", nil, nil, function(): boolean
+		Client._ResetForTests()
+
+		return true
+	end)
+
+	expect(requestId).toBeNil()
+	expect(reason).toBe("ClientNotReady")
+	expect(fixture.sent).toEqual({})
+end)

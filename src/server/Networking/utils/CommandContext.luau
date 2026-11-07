@@ -2,7 +2,14 @@
 local Types = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
-type Binding = { ready: () -> boolean, owns: () -> boolean }
+-- One exact connection generation. The token is opaque and never reused by a reconnect;
+-- closing observers run synchronously while N9 closes that generation.
+export type ConnectionScope = {
+	read token: unknown,
+	read ObserveClosing: (callback: () -> ()) -> (() -> ())?,
+}
+
+type Binding = { ready: () -> boolean, owns: () -> boolean, scope: ConnectionScope }
 local bindings: { [Types.CommandContext]: Binding } = setmetatable({}, { __mode = "k" })
 local CommandContext = {}
 
@@ -48,15 +55,22 @@ function CommandContext.IsOwner(context: Types.CommandContext): boolean
 	return binding ~= nil and binding.ready() and binding.owns()
 end
 
--- I5 TDD seams: N9 does not yet expose its exact connection generation to framework
--- owners. GetConnection must return an opaque token that a reconnect never reuses, and
--- closing observers must run synchronously before public ObserveClientClosed delivery.
-function CommandContext.GetConnection(_context: Types.CommandContext): unknown?
-	return nil
+-- Framework-private: lets owners key state by the exact connection that sent a request.
+function CommandContext.GetConnection(context: Types.CommandContext): unknown?
+	local binding: Binding? = bindings[context]
+
+	return if binding ~= nil and binding.ready() then binding.scope.token else nil
 end
 
-function CommandContext.ObserveConnectionClosing(_context: Types.CommandContext, _callback: () -> ()): (() -> ())?
-	return nil
+-- Returns nil once the generation is no longer current, so callers treat it as closed.
+function CommandContext.ObserveConnectionClosing(context: Types.CommandContext, callback: () -> ()): (() -> ())?
+	local binding: Binding? = bindings[context]
+
+	if binding == nil or not binding.ready() then
+		return nil
+	end
+
+	return binding.scope.ObserveClosing(callback)
 end
 
 return CommandContext

@@ -354,3 +354,38 @@ it("refuses every request after destruction", function()
 	expect(created.runtime:GetOriginalStart(startId)).toBeNil()
 	expect(created.runtime:_GetRetainedCountForTests()).toBe(0)
 end)
+
+it("rolls back Start and follow-up metadata when N9 refuses after the admission callback", function()
+	local created: TestUtils.Fixture = setup()
+	local startId: number = admitStart(created, "Movement.Sprint")
+
+	created.port.refusalAfterAdmit = "ClientNotReady"
+	expect({ created.runtime:Start(TestUtils.selection(created, "Movement.Sprint")) }).toEqual({ nil, "ClientNotReady" })
+	expect({ created.runtime:Stop(startId) }).toEqual({ nil, "ClientNotReady" })
+	expect(created.runtime:GetOriginalStart(startId + 1)).toBeNil()
+	expect(created.runtime:_GetRetainedCountForTests()).toBe(1)
+end)
+
+it("refuses Interrupt after destruction", function()
+	local created: TestUtils.Fixture = setup()
+	local startId: number = admitStart(created, "Movement.Sprint")
+	created.runtime:Destroy()
+	expect({ created.runtime:Interrupt(startId, "FocusLost") }).toEqual({ nil, "ActionRequestRuntimeDestroyed" })
+end)
+
+it("skips an admission observer disconnected by an earlier observer during the same delivery", function()
+	local created: TestUtils.Fixture = setup()
+	local later: number = 0
+	local disconnectLater: () -> () = function(): () end
+
+	created.runtime:ObserveAdmissions(function(): ()
+		disconnectLater()
+	end)
+
+	disconnectLater = created.runtime:ObserveAdmissions(function(): ()
+		later += 1
+	end)
+
+	admitStart(created, "Movement.Sprint")
+	expect(later).toBe(0)
+end)
