@@ -102,6 +102,72 @@ for _, selected: boolean in { false, true } do
 	end)
 end
 
+it("skips unwatched analog frames while the selected Actor has an unrelated route", function()
+	local owner: Types.ClientActionOwner = assert(State.Get(), "Expected normal Action installation")
+	local actions: { string } = {}
+
+	owner.ObserveSelection(function(selection: Types.ActionRouteSelection): ()
+		table.insert(actions, selection.actionId)
+	end)
+
+	expect({
+		Runtime.SetProfileSource(actor.view, "Base", {
+			routes = {
+				{
+					when = { kind = "Input", inputId = "Primary", gesture = "Pressed" },
+					target = { kind = "Fixed", actionId = "Combat.Punch" },
+				},
+			},
+		}),
+	}).toEqual({ true })
+
+	expect({ Runtime.SetControlledActor(actor.view) }).toEqual({ true })
+	frames = 0
+
+	for index: number = 1, 256 do
+		InputUtils.emit(input, "StateChanged", if index % 2 == 0 then 0.5 else -0.5, "Move")
+	end
+
+	expect(frames).toBe(0)
+	InputUtils.emit(input, "Pressed", true)
+	expect(actions).toEqual({ "Combat.Punch" })
+	expect(input.faults).toEqual({})
+end)
+
+it("routes a watched analog recognition without requiring frames for unwatched input", function()
+	local owner: Types.ClientActionOwner = assert(State.Get(), "Expected normal Action installation")
+	local actions: { string } = {}
+
+	owner.ObserveSelection(function(selection: Types.ActionRouteSelection): ()
+		table.insert(actions, selection.actionId)
+	end)
+
+	local definition: InputTypes.RecognizerDefinition = {
+		inputs = { "Move" },
+		maxWindowSeconds = 1,
+		onEvent = function(): InputTypes.CustomMatch?
+			return {}
+		end,
+	}
+
+	expect({ input.owner.SetSource("Custom", { recognizers = { Motion = definition } }) }).toEqual({ true })
+
+	expect({
+		Runtime.SetProfileSource(actor.view, "Base", {
+			routes = {
+				{
+					when = { kind = "Custom", recognizerId = "Motion" },
+					target = { kind = "Fixed", actionId = "Combat.Lunge" },
+				},
+			},
+		}),
+	}).toEqual({ true })
+
+	expect({ Runtime.SetControlledActor(actor.view) }).toEqual({ true })
+	InputUtils.emit(input, "StateChanged", 0.5, "Move")
+	expect(actions).toEqual({ "Combat.Lunge" })
+end)
+
 it("preserves unrelated envelope consumers while I4 has no routing demand", function()
 	local seen: number = 0
 
@@ -113,8 +179,17 @@ it("preserves unrelated envelope consumers while I4 has no routing demand", func
 	InputUtils.emit(input, "StateChanged", 0.5, "Move")
 	expect({ frames, seen }).toEqual({ 1, 1 })
 	stop()
+	stop()
 	InputUtils.emit(input, "StateChanged", -0.5, "Move")
 	expect({ frames, seen }).toEqual({ 1, 1 })
+
+	local replacement = input.owner.ObserveCandidateEnvelope(function(): ()
+		seen += 1
+	end)
+
+	InputUtils.emit(input, "StateChanged", 0.5, "Move")
+	expect({ frames, seen }).toEqual({ 2, 2 })
+	replacement()
 end)
 
 it("routes the first eligible press after selection, profile restoration and prepared profile publication", function()

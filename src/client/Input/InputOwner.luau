@@ -57,12 +57,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	return {
 		ReleasePrepared = plans.Release,
 		ValidatePrepared = plans.Validate,
-		IsCommitFenced = function(): boolean
-			return configuration.SelectionFence() ~= nil
-		end,
-		GetCommitContext = function(): Types.InputCommitContext?
-			return configuration.SelectionFence()
-		end,
+		GetCommitContext = configuration.SelectionFence,
 		GetGraphSnapshot = configuration.Graph,
 		GetMutationStatus = function(): string?
 			return gate.Unavailable()

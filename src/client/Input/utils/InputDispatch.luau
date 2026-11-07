@@ -10,7 +10,6 @@ local GestureScheduler = require(script.Parent.InputGestureScheduler)
 
 type PrimitiveObserver = (Types.PrimitiveOccurrence) -> ()
 type PhasedObserver = { phase: Types.ObserverPhase, callback: PrimitiveObserver }
-type EnvelopeObserver = { callback: (Types.InputCandidateEnvelope) -> (), hasDemand: (() -> boolean)? }
 
 type NotificationBatch = {
 	gestures: { Types.GestureEvent },
@@ -36,21 +35,18 @@ export type Owner = {
 	PublishInput: (event: Types.SemanticInputEvent) -> (),
 	ObservePrimitive: (phase: Types.ObserverPhase, callback: PrimitiveObserver) -> () -> (),
 	ObserveGroups: (callback: (Types.GestureDispatchGroup) -> ()) -> () -> (),
-	ObserveEnvelopes: (callback: (Types.InputCandidateEnvelope) -> (), hasDemand: (() -> boolean)?) -> () -> (),
+	ObserveEnvelopes: (callback: (Types.InputCandidateEnvelope) -> (), candidatesOnly: boolean?) -> () -> (),
 	Destroy: () -> (),
 }
 
 local Dispatch = {}
-
-local function hasDemand(observer: EnvelopeObserver): boolean
-	return observer.hasDemand == nil or observer.hasDemand()
-end
 
 -- Owns occurrence stamping and the private-before-public delivery sequence.
 function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () -> ()): Owner
 	local ordinal: number = 0
 	local timestamp: number = 0
 	local publishingDepth: number = -1
+	local rootFrameObservers: number = 0
 	local notifications: NotificationBatch? = nil
 	local timerCallbacks: { () -> () } = {}
 	local timersQueued: boolean = false
@@ -70,10 +66,12 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 	>
 
 	-- I3 owns finalized envelope production; registration/teardown is ready here.
-	local envelopes: Observers.Registry<EnvelopeObserver> = Observers.new(
+	local envelopes: Observers.Registry<(Types.InputCandidateEnvelope) -> ()> = Observers.new(
 		Constants.MAX_CANDIDATE_OBSERVERS,
 		"InputCandidateObserverLimitExceeded"
-	) :: Observers.Registry<EnvelopeObserver>
+	) :: Observers.Registry<
+		(Types.InputCandidateEnvelope) -> ()
+	>
 
 	local function publish<Event>(publisher: ((Event) -> ())?, event: Event): ()
 		if publisher == nil then
@@ -134,13 +132,13 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 	end
 
 	local function deliverEnvelope(envelope: Types.InputCandidateEnvelope): ()
-		for _, entry in envelopes.Snapshot(hasDemand) do
+		for _, entry in envelopes.Snapshot() do
 			if gate.IsTerminal() then
 				break
 			end
 
 			if entry.active then
-				local success: boolean, reason: string? = Observers.Run(entry.callback.callback, envelope)
+				local success: boolean, reason: string? = Observers.Run(entry.callback, envelope)
 
 				if not success then
 					report("InputCandidateObserver" .. (reason or "Failed"))
@@ -231,8 +229,8 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		RunTimer = runTimer,
 		DeliverGroup = deliverGroup,
 		DeliverEnvelope = deliverEnvelope,
-		HasEnvelopeObservers = function(): boolean
-			return not envelopes.IsEmpty(hasDemand)
+		HasRootFrameObservers = function(): boolean
+			return rootFrameObservers > 0
 		end,
 		IsEpochActive = options.IsEpochActive,
 		Report = report,
@@ -383,11 +381,24 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			primitives.Destroy()
 			dispatchGroups.Destroy()
 		end,
-		ObserveEnvelopes = function(callback: (Types.InputCandidateEnvelope) -> (), demand: (() -> boolean)?): () -> ()
+		ObserveEnvelopes = function(callback: (Types.InputCandidateEnvelope) -> (), candidatesOnly: boolean?): () -> ()
 			assert(type(callback) == "function", "InvalidInputObserver")
-			assert(demand == nil or type(demand) == "function", "InvalidInputObserver")
+			local disconnect: () -> () = envelopes.Add(callback)
 
-			return envelopes.Add({ callback = callback, hasDemand = demand })
+			if candidatesOnly then
+				return disconnect
+			end
+
+			local active: boolean = true
+			rootFrameObservers += 1
+
+			return function(): ()
+				if active then
+					active = false
+					rootFrameObservers -= 1
+					disconnect()
+				end
+			end
 		end,
 	}
 end

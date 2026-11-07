@@ -407,7 +407,6 @@ export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: a
 
 export type InputOwner = {
 	GetCommitContext: () -> InputCommitContext?,
-	IsCommitFenced: () -> boolean,
 	ValidatePrepared: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
 	Disarm: (reason: string) -> (boolean, string?),
 	ReleasePrepared: (plan: { read token: unknown, read generation: number }) -> (),
@@ -415,9 +414,9 @@ export type InputOwner = {
 	GetMutationStatus: () -> string?,
 	GetSequence: (sequenceId: string) -> SequenceSnapshot?,
 	GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
-	-- The optional demand query is a pure, non-yielding framework state lookup.
-	-- Registration reserves capacity; only demanding observers require frames.
-	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> (), hasDemand: (() -> boolean)?) -> () -> (),
+	-- Candidate-only observers still receive every built frame, but do not require
+	-- one for input that has no gesture emission or recognition watcher.
+	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> (), candidatesOnly: boolean?) -> () -> (),
 	GetGestures: (inputId: string) -> { [GestureKind]: GestureSnapshot }?,
 	ObserveDispatchGroup: (callback: (GestureDispatchGroup) -> ()) -> () -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),

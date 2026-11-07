@@ -88,7 +88,11 @@ export type ProfileUpdate = { actor: ActorTypes.ActorView, sourceId: string, pro
 -- activation intents to I5 only after all local owners have published.
 export type ActorSwitchRetirement = { Commit: () -> (), AfterCommit: () -> () }
 
+-- Revision must change whenever the activation set changes, so a prepared switch
+-- cannot publish past activations it did not retire. Stale retirements are dropped
+-- without a release, so Prepare must not reserve anything.
 export type ActorSwitchGuard = {
+	Revision: () -> number,
 	HasActive: () -> boolean,
 	Prepare: ((ActorTypes.ActorView?, ActorTypes.ActorView?) -> (ActorSwitchRetirement?, string?))?,
 }

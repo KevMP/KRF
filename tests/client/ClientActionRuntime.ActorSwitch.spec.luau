@@ -73,6 +73,7 @@ for _, collaborator: string in { "EpochPrepare", "RecognitionPrepare", "Activati
 			Utils.destroy(fixture)
 
 			fixture = Utils.new({
+				Revision = Utils.stableRevision,
 				HasActive = function(): boolean
 					return active
 				end,
@@ -170,6 +171,7 @@ it("fails closed when local activation retirement invalidates the destination be
 	Utils.destroy(fixture)
 
 	fixture = Utils.new({
+		Revision = Utils.stableRevision,
 		HasActive = function(): boolean
 			return active
 		end,
@@ -225,6 +227,7 @@ it("rejects a missing required activation retirement guard instead of bypassing 
 	Utils.destroy(fixture)
 
 	fixture = Utils.new({
+		Revision = Utils.stableRevision,
 		HasActive = function(): boolean
 			return active
 		end,
@@ -245,6 +248,7 @@ it(
 		Utils.destroy(fixture)
 
 		fixture = Utils.new({
+			Revision = Utils.stableRevision,
 			HasActive = function(): boolean
 				return active
 			end,
@@ -307,6 +311,7 @@ do
 			Utils.destroy(fixture)
 
 			fixture = Utils.new({
+				Revision = Utils.stableRevision,
 				HasActive = function(): boolean
 					return active
 				end,
@@ -376,6 +381,7 @@ for _, failure: string in { "Throw", "Yield" } do
 		Utils.destroy(fixture)
 
 		fixture = Utils.new({
+			Revision = Utils.stableRevision,
 			HasActive = function(): boolean
 				return active
 			end,
@@ -432,6 +438,7 @@ for _, failure: string in { "HasActiveThrow", "HasActiveYield", "HasActiveMalfor
 		Utils.destroy(fixture)
 
 		fixture = Utils.new({
+			Revision = Utils.stableRevision,
 			HasActive = function(): boolean
 				if not active then
 					return false
@@ -470,6 +477,7 @@ for _, failure: string in { "Throw", "Yield" } do
 		Utils.destroy(fixture)
 
 		fixture = Utils.new({
+			Revision = Utils.stableRevision,
 			HasActive = function(): boolean
 				return active
 			end,
@@ -518,6 +526,7 @@ it(
 		Utils.destroy(fixture)
 
 		fixture = Utils.new({
+			Revision = Utils.stableRevision,
 			HasActive = function(): boolean
 				return active
 			end,

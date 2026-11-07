@@ -82,6 +82,11 @@ function Utils.new(guard: Types.ActorSwitchGuard?): Fixture
 	return fixture
 end
 
+-- For guards whose activation set does not change between prepare and commit.
+function Utils.stableRevision(): number
+	return 0
+end
+
 function Utils.key(id: string?, gesture: InputTypes.GestureKind?): Types.RouteKey
 	return { kind = "Input", inputId = id or "X", gesture = gesture or "Pressed" }
 end

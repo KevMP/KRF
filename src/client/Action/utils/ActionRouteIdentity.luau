@@ -67,7 +67,7 @@ function Identity.Key(value: any): Types.RouteKey?
 	return nil
 end
 
-function Identity.Canonical(key: Types.RouteKey): string
+function Identity.Canonical(key: Types.RouteKey | InputTypes.RecognitionCandidate): string
 	if key.kind == "Input" then
 		return string.format("I%d:%s:%s", #key.inputId, key.inputId, key.gesture)
 	end
@@ -77,22 +77,6 @@ function Identity.Canonical(key: Types.RouteKey): string
 	end
 
 	return "C" .. key.recognizerId
-end
-
-function Identity.Candidate(candidate: InputTypes.RecognitionCandidate): Types.RouteKey
-	if candidate.kind == "Input" then
-		return table.freeze({
-			kind = "Input",
-			inputId = candidate.inputId,
-			gesture = candidate.gesture,
-		}) :: Types.RouteKey
-	end
-
-	if candidate.kind == "Sequence" then
-		return table.freeze({ kind = "Sequence", sequenceId = candidate.sequenceId }) :: Types.RouteKey
-	end
-
-	return table.freeze({ kind = "Custom", recognizerId = candidate.recognizerId }) :: Types.RouteKey
 end
 
 return Identity

@@ -2,6 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local InputTypes = require(script.Parent.Parent.Parent.Input.types)
+local InputValue = require(script.Parent.Parent.Parent.Input.utils.InputValue)
 local Validator = require(script.Parent.Parent.ActionProfileValidator)
 local Identity = require(script.Parent.ActionRouteIdentity)
 local Limits = require(script.Parent.ActionRouteLimits)
@@ -58,7 +59,7 @@ function Graph.Build(sources: { [string]: Validator.Profile }, previous: Graph?,
 					if
 						old.sourceId == sourceId
 						and old.priority == profile.priority
-						and Validator.EqualRoute(old.route, route)
+						and InputValue.Equal(old.route, route)
 					then
 						routeVersion = old.version
 						break
@@ -122,19 +123,15 @@ function Graph.Select(graph: Graph, key: string, input: InputTypes.InputGraphSna
 	return nil
 end
 
-function Graph.Evaluate(
-	graph: Graph?,
-	key: string,
-	input: InputTypes.InputGraphSnapshot
-): (Types.RouteQuerySnapshot, Entry?)
+function Graph.Evaluate(graph: Graph?, key: string, input: InputTypes.InputGraphSnapshot): Types.RouteQuerySnapshot
 	if graph == nil then
-		return unmapped, nil
+		return unmapped
 	end
 
 	local entries: { Entry }? = graph.index[key]
 
 	if entries == nil then
-		return unmapped, nil
+		return unmapped
 	end
 
 	local winner: Entry? = Graph.Select(graph, key, input)
@@ -147,7 +144,7 @@ function Graph.Evaluate(
 	end
 
 	if winner == nil then
-		return table.freeze({ status = "Gated" :: "Gated", candidateSources = table.freeze(shadowed) }), nil
+		return table.freeze({ status = "Gated" :: "Gated", candidateSources = table.freeze(shadowed) })
 	end
 
 	local target: Types.RouteTarget = winner.route.target
@@ -163,8 +160,7 @@ function Graph.Evaluate(
 		requiredContexts = winner.route.requiredContexts,
 		shadowedSources = table.freeze(shadowed),
 		version = winner.version,
-	}),
-		winner
+	})
 end
 
 function Graph.Validate(catalog: Catalog, input: InputTypes.InputGraphSnapshot): boolean

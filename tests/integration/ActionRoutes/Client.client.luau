@@ -59,7 +59,7 @@ Owner.new = function(options: Types.ClientActionOwnerOptions): Types.ClientActio
 
 	input.ObserveCandidateEnvelope = function(
 		callback: (InputTypes.InputCandidateEnvelope) -> (),
-		hasDemand: (() -> boolean)?
+		candidatesOnly: boolean?
 	): () -> ()
 		retainedReceiver = callback
 
@@ -69,7 +69,7 @@ Owner.new = function(options: Types.ClientActionOwnerOptions): Types.ClientActio
 			lastEnvelope = envelope
 			callback(envelope)
 			boundaryOpen = false
-		end, hasDemand)
+		end, candidatesOnly)
 	end
 
 	measured.Input = input

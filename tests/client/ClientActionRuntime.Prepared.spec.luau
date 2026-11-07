@@ -46,7 +46,6 @@ it("publishes a prepared profile-only change under the existing input fence with
 
 	expect({
 		fixture.input.input.owner.CommitPreparedWithPublication(plan, function(): ()
-			expect(fixture.input.input.owner.IsCommitFenced()).toBe(true)
 			local commit: InputTypes.InputCommitContext = assert(fixture.input.input.owner.GetCommitContext())
 			expect(commit.previous).toBe(graph)
 			expect(commit.invalidatedInputIds).toEqual({})

@@ -250,39 +250,4 @@ function Validator.Normalize(value: any, graph: InputTypes.InputGraphSnapshot): 
 	return table.freeze({ priority = priority, routes = table.freeze(routes) }), nil
 end
 
-function Validator.EqualRoute(left: ValidatedRoute, right: ValidatedRoute): boolean
-	if
-		Identity.Canonical(left.when) ~= Identity.Canonical(right.when)
-		or left.dispatch.mode ~= right.dispatch.mode
-		or left.dispatch.priority ~= right.dispatch.priority
-		or left.target.kind ~= right.target.kind
-	then
-		return false
-	end
-
-	if left.target.kind == "Fixed" and right.target.kind == "Fixed" then
-		if left.target.actionId ~= right.target.actionId then
-			return false
-		end
-	elseif
-		left.target.kind == "Dynamic"
-		and right.target.kind == "Dynamic"
-		and left.target.resolve ~= right.target.resolve
-	then
-		return false
-	end
-
-	if #left.requiredContexts ~= #right.requiredContexts then
-		return false
-	end
-
-	for index: number, id: string in left.requiredContexts do
-		if right.requiredContexts[index] ~= id then
-			return false
-		end
-	end
-
-	return true
-end
-
 return Validator

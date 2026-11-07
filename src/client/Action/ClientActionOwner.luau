@@ -2,6 +2,7 @@
 local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local InputTypes = require(script.Parent.Parent.Input.types)
+local InputValue = require(script.Parent.Parent.Input.utils.InputValue)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local Validator = require(script.Parent.ActionProfileValidator)
@@ -82,19 +83,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		switches.Clear()
 	end
 
-	local function notify(changes: { Types.EffectiveRouteTransition }): ()
-		for _, change: Types.EffectiveRouteTransition in changes do
-			for _, entry in routes.Snapshot() do
-				if entry.active then
-					local success: boolean = Observers.Run(entry.callback, change)
-
-					if not success then
-						report("ActionRouteObserverFailed")
-					end
-				end
-			end
-		end
-	end
+	local notify: ({ Types.EffectiveRouteTransition }) -> () = Transitions.Publisher(routes, report)
 
 	local function destroy(): ()
 		if destroyed then
@@ -164,14 +153,12 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			then nextCatalog[actor].sources[sourceId]
 			else nil
 
-		local same: boolean = Updates.EqualSource(previousSource, nextSource)
+		if InputValue.Equal(previousSource, nextSource) then
+			return true, nil
+		end
 
 		local changes: { Types.EffectiveRouteTransition } =
 			Transitions.Diff(actor, catalog[actor], nextCatalog[actor], graph, graph, "ProfileChanged")
-
-		if same then
-			return true, nil
-		end
 
 		busy += 1
 		catalog = nextCatalog
@@ -225,17 +212,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				and input.GetGraphSnapshot().generation == inputGeneration
 				and input.GetMutationStatus() ~= "ClientNotReady"
 		end,
-		Notify = function(selection: Types.ActionRouteSelection): ()
-			for _, entry in selections.Snapshot() do
-				if entry.active then
-					local success: boolean = Observers.Run(entry.callback, selection)
-
-					if not success then
-						report("ActionSelectionObserverFailed")
-					end
-				end
-			end
-		end,
+		Selections = selections,
 		Sink = options.Sink,
 		Report = report,
 	})
@@ -281,11 +258,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 					catalog = {}
 					controlled = nil
 					advance()
-
-					for actor: ActorTypes.ActorView, graph: Graph.Graph in previous do
-						notify(Transitions.Diff(actor, graph, nil, change.previous, change.next, "InputInvalidated"))
-					end
-
+					notify(Transitions.DiffCatalogs(previous, {}, change.previous, change.next, "InputInvalidated"))
 					busy -= 1
 					destroy()
 					report(retirementReason)
@@ -307,23 +280,14 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 					invalidated[id] = true
 				end
 
-				local changes: { Types.EffectiveRouteTransition } = {}
-
-				for actor: ActorTypes.ActorView, graph: Graph.Graph in catalog do
-					for _, transition: Types.EffectiveRouteTransition in
-						Transitions.Diff(
-							actor,
-							graph,
-							graph,
-							change.previous,
-							change.next,
-							if #change.reasons > 0 then table.concat(change.reasons, ",") else "RecognitionChanged",
-							invalidated
-						)
-					do
-						table.insert(changes, transition)
-					end
-				end
+				local changes: { Types.EffectiveRouteTransition } = Transitions.DiffCatalogs(
+					catalog,
+					catalog,
+					change.previous,
+					change.next,
+					if #change.reasons > 0 then table.concat(change.reasons, ",") else "RecognitionChanged",
+					invalidated
+				)
 
 				profiles.Clear()
 				switches.Clear()
@@ -349,9 +313,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				end
 
 				busy -= 1
-			end, function(): boolean
-				return not destroyed and controlled ~= nil and catalog[controlled] ~= nil
-			end)
+			end, true)
 		)
 
 		table.insert(
@@ -455,7 +417,9 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				return false, "DispatchInProgress"
 			end
 
-			if not input.IsCommitFenced() then
+			local commit: InputTypes.InputCommitContext? = input.GetCommitContext()
+
+			if commit == nil then
 				return false, "InputCommitFenceRequired"
 			end
 
@@ -467,44 +431,18 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 
 			local graph: InputTypes.InputGraphSnapshot = input.GetGraphSnapshot()
 
-			local commit: InputTypes.InputCommitContext =
-				assert(input.GetCommitContext(), "Expected input commit fence")
-
 			if not Graph.Validate(desired, graph) then
 				return false, "ProfileDependencyMissing"
 			end
 
-			local changes: { Types.EffectiveRouteTransition } = {}
-			local actors: { [ActorTypes.ActorView]: boolean } = {}
-			local invalidated: { [string]: boolean } = {}
-
-			for inputId: string in commit.invalidatedInputIds do
-				invalidated[inputId] = true
-			end
-
-			for actor: ActorTypes.ActorView in catalog do
-				actors[actor] = true
-			end
-
-			for actor: ActorTypes.ActorView in desired do
-				actors[actor] = true
-			end
-
-			for actor: ActorTypes.ActorView in actors do
-				for _, change: Types.EffectiveRouteTransition in
-					Transitions.Diff(
-						actor,
-						catalog[actor],
-						desired[actor],
-						commit.previous,
-						graph,
-						"ProfileChanged",
-						invalidated
-					)
-				do
-					table.insert(changes, change)
-				end
-			end
+			local changes: { Types.EffectiveRouteTransition } = Transitions.DiffCatalogs(
+				catalog,
+				desired,
+				commit.previous,
+				graph,
+				"ProfileChanged",
+				commit.invalidatedInputIds
+			)
 
 			busy += 1
 			catalog = desired
@@ -526,10 +464,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				return nil
 			end
 
-			local snapshot: Types.RouteQuerySnapshot =
-				Graph.Evaluate(catalog[actor], Identity.Canonical(normalized), input.GetGraphSnapshot())
-
-			return snapshot
+			return Graph.Evaluate(catalog[actor], Identity.Canonical(normalized), input.GetGraphSnapshot())
 		end,
 		GetProfileSources = function(actor: ActorTypes.ActorView): { Types.ProfileSourceSnapshot }
 			if destroyed or not options.IsReady() or not available(actor) or catalog[actor] == nil then

@@ -8,24 +8,6 @@ local Graph = require(script.Parent.ActionProfileGraph)
 local Limits = require(script.Parent.ActionRouteLimits)
 local Updates = {}
 
-function Updates.EqualSource(left: Validator.Profile?, right: Validator.Profile?): boolean
-	if left == right then
-		return true
-	end
-
-	if left == nil or right == nil or left.priority ~= right.priority or #left.routes ~= #right.routes then
-		return false
-	end
-
-	for index: number, route: Validator.ValidatedRoute in left.routes do
-		if not Validator.EqualRoute(route, right.routes[index]) then
-			return false
-		end
-	end
-
-	return true
-end
-
 -- Both ordinary replacement and future compound preflight use this compiler.
 -- No resolver or observer is invoked and no installed state is mutated.
 function Updates.Prepare(

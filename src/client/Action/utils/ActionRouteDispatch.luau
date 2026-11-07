@@ -9,12 +9,12 @@ local Limits = require(script.Parent.ActionRouteLimits)
 
 export type Access = {
 	IsCurrent: (ActorTypes.ActorView, number, number) -> boolean,
-	Notify: (Types.ActionRouteSelection) -> (),
+	Selections: Observers.Registry<(Types.ActionRouteSelection) -> ()>,
 	Sink: (Types.ActionRouteSelection, any?) -> (),
 	Report: (string) -> (),
 }
 
-type Mapped = { key: Types.RouteKey, canonical: string, entry: Graph.Entry, candidate: InputTypes.RecognitionCandidate }
+type Mapped = { canonical: string, entry: Graph.Entry, candidate: InputTypes.RecognitionCandidate }
 
 local Dispatch = {}
 
@@ -72,8 +72,7 @@ local function selectRoutes(
 			continue
 		end
 
-		local key: Types.RouteKey = Identity.Candidate(candidate)
-		local canonical: string = Identity.Canonical(key)
+		local canonical: string = Identity.Canonical(candidate)
 
 		if seen[canonical] then
 			continue
@@ -87,7 +86,7 @@ local function selectRoutes(
 			continue
 		end
 
-		local mapped: Mapped = { key = key, canonical = canonical, entry = entry, candidate = candidate }
+		local mapped: Mapped = { canonical = canonical, entry = entry, candidate = candidate }
 
 		if candidate.kind == "Input" then
 			if
@@ -204,7 +203,7 @@ local function resolve(
 		actor = actor,
 		actorId = actor:GetId(),
 		sourceId = mapped.entry.sourceId,
-		key = mapped.key,
+		key = mapped.entry.route.when,
 		timestamp = envelope.timestamp,
 		envelope = envelope,
 		candidate = mapped.candidate,
@@ -289,14 +288,23 @@ function Dispatch.new(
 				sourceId = route.entry.sourceId,
 				routeVersion = route.entry.version,
 				selectionGeneration = generation,
-				key = route.key,
+				key = route.entry.route.when,
 				actionId = resolved.actionId,
 				envelope = envelope,
 				candidate = route.candidate,
 				holdOwner = holdOwner(route.candidate, envelope, input),
 			})
 
-			access.Notify(selection)
+			-- An observer may retire this Actor: later observers and the sink stop there.
+			for _, entry in access.Selections.Snapshot() do
+				if not access.IsCurrent(actor, generation, inputGraph.generation) then
+					break
+				end
+
+				if entry.active and not Observers.Run(entry.callback, selection) then
+					access.Report("ActionSelectionObserverFailed")
+				end
+			end
 
 			if not access.IsCurrent(actor, generation, inputGraph.generation) then
 				break

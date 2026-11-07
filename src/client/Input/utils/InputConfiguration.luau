@@ -167,6 +167,25 @@ function Configuration.new(
 		return Validator.Compose(sources, graph)
 	end
 
+	local function publishFenced(
+		publishSelection: () -> (),
+		previous: Types.InputGraphSnapshot,
+		recognitionRevision: number,
+		invalidated: { [string]: string }
+	): boolean
+		selectionFence = table.freeze({
+			generation = previous.generation,
+			recognitionRevision = recognitionRevision,
+			previous = previous,
+			invalidatedInputIds = table.freeze(table.clone(invalidated)),
+		})
+
+		local published: boolean = Observers.Run(publishSelection)
+		selectionFence = nil
+
+		return published
+	end
+
 	local function commit(
 		nextGraph: Types.InputGraphSnapshot,
 		forcedReason: string?,
@@ -191,15 +210,7 @@ function Configuration.new(
 
 			gate.SetFenced(true)
 
-			selectionFence = table.freeze({
-				generation = graph.generation,
-				recognitionRevision = recognition.Revision(),
-				previous = graph,
-				invalidatedInputIds = table.freeze({} :: { [string]: string }),
-			})
-
-			local published: boolean = Observers.Run(publishSelection)
-			selectionFence = nil
+			local published: boolean = publishFenced(publishSelection, graph, recognition.Revision(), {})
 
 			if not published then
 				fail(nil)
@@ -255,17 +266,7 @@ function Configuration.new(
 			labels.Reconcile(native.Actions())
 
 			if publishSelection ~= nil then
-				selectionFence = table.freeze({
-					generation = previous.generation,
-					recognitionRevision = previousRecognitionRevision,
-					previous = previous,
-					invalidatedInputIds = table.freeze(table.clone(changes.invalidated)),
-				})
-
-				local selected: boolean = Observers.Run(publishSelection)
-				selectionFence = nil
-
-				if not selected then
+				if not publishFenced(publishSelection, previous, previousRecognitionRevision, changes.invalidated) then
 					error("InputSelectionPublicationFailed", 0)
 				end
 			end

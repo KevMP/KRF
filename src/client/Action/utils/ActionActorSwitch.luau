@@ -29,6 +29,7 @@ type Switch = {
 	epoch: InputTypes.PreparedInputInvalidation?,
 	recognition: InputTypes.PreparedRecognitionReset?,
 	retirement: Types.ActorSwitchRetirement?,
+	activationRevision: number?,
 }
 
 local Switching = {}
@@ -87,7 +88,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 				record.recognition = recognition
 
-				local retirement: Types.ActorSwitchRetirement?, retirementReason: string? =
+				local retirement: Types.ActorSwitchRetirement?, retirementReason: string?, activationRevision: number? =
 					Retirement.Prepare(guard, record.previous, target)
 
 				if retirementReason ~= nil then
@@ -95,6 +96,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 				end
 
 				record.retirement = retirement
+				record.activationRevision = activationRevision
 
 				return true, nil
 			end
@@ -158,6 +160,14 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 			return false, "StaleActorSwitch"
 		end
 
+		reason = Retirement.Validate(guard, record.activationRevision)
+
+		if reason ~= nil then
+			dispose(record)
+
+			return false, reason
+		end
+
 		access.Fence(true)
 
 		local rejection: string? = nil
@@ -177,6 +187,12 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 					)
 
 					if not completed or reset ~= true then
+						return
+					end
+
+					-- Reset runs recognizer callbacks. Input is already committed, so a
+					-- change here fails closed rather than rejecting.
+					if Retirement.Validate(guard, record.activationRevision) ~= nil then
 						return
 					end
 

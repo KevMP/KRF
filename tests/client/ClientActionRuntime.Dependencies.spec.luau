@@ -123,10 +123,10 @@ it(
 
 		input.ObserveCandidateEnvelope = function(
 			callback: (InputTypes.InputCandidateEnvelope) -> (),
-			hasDemand: (() -> boolean)?
+			candidatesOnly: boolean?
 		): () -> ()
 			table.insert(additions, "Envelope")
-			local stop = observeEnvelope(callback, hasDemand)
+			local stop = observeEnvelope(callback, candidatesOnly)
 
 			return function(): ()
 				table.insert(removals, "Envelope")
