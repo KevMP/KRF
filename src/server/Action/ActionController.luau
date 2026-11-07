@@ -184,6 +184,15 @@ function ActionControllerModule.new(actor: Actor): ActionController
 		return { accepted = true, sequenceId = sequenceId }
 	end
 
+	-- I5 TDD seam: the network authority guard is not yet fenced inside Start.
+	function controller:_requestGuardedAction(
+		actionId: string,
+		parameters: any?,
+		_guard: ActionTypes.ActionStartGuard
+	): ActionRequestResult
+		return controller:RequestAction(actionId, parameters)
+	end
+
 	function controller:RequestStop(sequenceId: number, parameters: any?): (boolean, string?)
 		return instances:RequestStop(sequenceId, parameters)
 	end

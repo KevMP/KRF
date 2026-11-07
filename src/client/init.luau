@@ -33,7 +33,9 @@ local function dispose(callback: (() -> ())?): ()
 	end
 end
 
-function Client.Init(): (boolean, StartupFailure?)
+-- I5 TDD scaffold: the optional Action request catalog is accepted but not yet compiled
+-- before READY or installed beside the command runtime.
+function Client.Init(_config: ClientTypes.ClientInitConfig?): (boolean, StartupFailure?)
 	if attempted then
 		return false, { system = "Client", reason = "ClientInitAlreadyAttempted" }
 	end

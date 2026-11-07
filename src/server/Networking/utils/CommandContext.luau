@@ -48,4 +48,15 @@ function CommandContext.IsOwner(context: Types.CommandContext): boolean
 	return binding ~= nil and binding.ready() and binding.owns()
 end
 
+-- I5 TDD seams: N9 does not yet expose its exact connection generation to framework
+-- owners. GetConnection must return an opaque token that a reconnect never reuses, and
+-- closing observers must run synchronously before public ObserveClientClosed delivery.
+function CommandContext.GetConnection(_context: Types.CommandContext): unknown?
+	return nil
+end
+
+function CommandContext.ObserveConnectionClosing(_context: Types.CommandContext, _callback: () -> ()): (() -> ())?
+	return nil
+end
+
 return CommandContext

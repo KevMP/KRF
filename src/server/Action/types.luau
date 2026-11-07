@@ -83,9 +83,19 @@ export type ActionController = {
 	OnActionInterrupted: SignalTypes.Event<ActionInterruptedEvent>,
 }
 
+-- Framework-private network authority fence. A non-nil reason rejects before costs,
+-- preemption, Tags or instance creation; the guard runs after authored callbacks.
+export type ActionStartGuard = () -> string?
+
 export type InternalActionController = ActionController & {
 	_observeMutations: (self: InternalActionController, callback: ({ ActionReplicationMutation }) -> ()) -> () -> (),
 	_getActiveReplicationState: (self: InternalActionController) -> { ActionReplicationIdentity },
+	_requestGuardedAction: (
+		self: InternalActionController,
+		actionId: string,
+		parameters: any?,
+		guard: ActionStartGuard
+	) -> ActionRequestResult,
 }
 
 export type OnCanStart = (ActionStartContext) -> (boolean, string?)

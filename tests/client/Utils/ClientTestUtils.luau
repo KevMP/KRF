@@ -101,11 +101,11 @@ function ClientTestUtils.new(): Fixture
 	return fixture
 end
 
-function ClientTestUtils.start(fixture: Fixture): ()
+function ClientTestUtils.start(fixture: Fixture, config: any?): ()
 	Client._SetDependenciesForTests(fixture.dependencies)
 
 	local initThread: thread = coroutine.create(function()
-		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
+		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init(config)
 		fixture.result = { success = success, failure = failure }
 	end)
 

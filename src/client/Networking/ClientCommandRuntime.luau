@@ -213,6 +213,22 @@ function ClientCommandRuntime.Send(
 	return id, nil
 end
 
+-- I5 TDD seams: vetoable before-egress admission, serialized physical egress and
+-- synchronous private outcome observation remain unimplemented.
+function ClientCommandRuntime._SendAdmitted(
+	_self: Runtime,
+	_commandId: string,
+	_actor: PublicTypes.ActorView?,
+	_request: any?,
+	_admit: Types.CommandAdmission
+): (number?, string?)
+	return nil, "CommandAdmissionUnavailable"
+end
+
+function ClientCommandRuntime._ObserveOutcomes(_self: Runtime, _observer: (Types.CommandResult) -> ()): () -> ()
+	return function(): () end
+end
+
 function ClientCommandRuntime.Handle(self: Runtime, payload: any): boolean
 	if self.destroyed or not self.options.IsReady() then
 		return false
