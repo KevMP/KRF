@@ -55,6 +55,19 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	}, gate, dispatch.Recognition)
 
 	return {
+		ReleasePrepared = plans.Release,
+		ValidatePrepared = plans.Validate,
+		GetCommitContext = configuration.SelectionFence,
+		GetGraphSnapshot = configuration.Graph,
+		GetMutationStatus = function(): string?
+			return gate.Unavailable()
+				or (
+					if gate.IsFenced() or (gate.IsBusy() and not dispatch.IsPublishing())
+						then "InputMutationReentrant"
+						else nil
+				)
+		end,
+		Disarm = configuration.Disarm,
 		GetSequence = dispatch.Recognition.GetSequence,
 		GetRecognizer = dispatch.Recognition.GetRecognizer,
 		ObserveCandidateEnvelope = dispatch.ObserveEnvelopes,
@@ -74,6 +87,7 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 		ObserveConfigurationCommit = observers.ObserveCommit,
 		PrepareSource = plans.PrepareSource,
 		CommitPrepared = plans.CommitPrepared,
+		CommitPreparedWithPublication = plans.CommitPreparedWithPublication,
 		PrepareEpochInvalidation = plans.PrepareEpochInvalidation,
 		CommitEpochInvalidation = plans.CommitEpochInvalidation,
 		ResetRecognition = plans.ResetRecognition,

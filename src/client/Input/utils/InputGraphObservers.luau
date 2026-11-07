@@ -1,7 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Constants = require(script.Parent.InputConstants)
-local Observers = require(script.Parent.InputObservers)
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local MutationGate = require(script.Parent.InputMutationGate)
 
 type CommitObserver = (Types.InputGraphChange) -> ()

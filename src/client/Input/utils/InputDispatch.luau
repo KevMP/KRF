@@ -2,7 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Constants = require(script.Parent.InputConstants)
 local Value = require(script.Parent.InputValue)
-local Observers = require(script.Parent.InputObservers)
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local Epochs = require(script.Parent.InputEpochs)
 local MutationGate = require(script.Parent.InputMutationGate)
 local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
@@ -29,12 +29,13 @@ export type Options = {
 }
 
 export type Owner = {
+	IsPublishing: () -> boolean,
 	Recognition: RecognitionPipeline.Owner,
 	Deliver: (input: Types.InputSnapshot, transition: Epochs.Transition, deferred: { Types.SemanticInputEvent }?) -> (),
 	PublishInput: (event: Types.SemanticInputEvent) -> (),
 	ObservePrimitive: (phase: Types.ObserverPhase, callback: PrimitiveObserver) -> () -> (),
 	ObserveGroups: (callback: (Types.GestureDispatchGroup) -> ()) -> () -> (),
-	ObserveEnvelopes: (callback: (Types.InputCandidateEnvelope) -> ()) -> () -> (),
+	ObserveEnvelopes: (callback: (Types.InputCandidateEnvelope) -> (), candidatesOnly: boolean?) -> () -> (),
 	Destroy: () -> (),
 }
 
@@ -44,6 +45,8 @@ local Dispatch = {}
 function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () -> ()): Owner
 	local ordinal: number = 0
 	local timestamp: number = 0
+	local publishingDepth: number = -1
+	local rootFrameObservers: number = 0
 	local notifications: NotificationBatch? = nil
 	local timerCallbacks: { () -> () } = {}
 	local timersQueued: boolean = false
@@ -75,7 +78,10 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			return
 		end
 
+		local previousDepth: number = publishingDepth
+		publishingDepth = gate.Depth()
 		local success: boolean, reason: any = pcall(publisher, event)
+		publishingDepth = previousDepth
 
 		if not success then
 			report(tostring(reason))
@@ -223,8 +229,8 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		RunTimer = runTimer,
 		DeliverGroup = deliverGroup,
 		DeliverEnvelope = deliverEnvelope,
-		HasEnvelopeObservers = function(): boolean
-			return not envelopes.IsEmpty()
+		HasRootFrameObservers = function(): boolean
+			return rootFrameObservers > 0
 		end,
 		IsEpochActive = options.IsEpochActive,
 		Report = report,
@@ -347,6 +353,9 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 	end
 
 	return {
+		IsPublishing = function(): boolean
+			return publishingDepth == gate.Depth()
+		end,
 		Recognition = recognition,
 		Deliver = deliver,
 		PublishInput = publishInput,
@@ -372,10 +381,24 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			primitives.Destroy()
 			dispatchGroups.Destroy()
 		end,
-		ObserveEnvelopes = function(callback: (Types.InputCandidateEnvelope) -> ()): () -> ()
+		ObserveEnvelopes = function(callback: (Types.InputCandidateEnvelope) -> (), candidatesOnly: boolean?): () -> ()
 			assert(type(callback) == "function", "InvalidInputObserver")
+			local disconnect: () -> () = envelopes.Add(callback)
 
-			return envelopes.Add(callback)
+			if candidatesOnly then
+				return disconnect
+			end
+
+			local active: boolean = true
+			rootFrameObservers += 1
+
+			return function(): ()
+				if active then
+					active = false
+					rootFrameObservers -= 1
+					disconnect()
+				end
+			end
 		end,
 	}
 end

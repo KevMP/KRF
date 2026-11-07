@@ -82,18 +82,21 @@ it("rejects stale and foreign plans without changing the current graph", functio
 
 	expect({ fixture.owner.CommitEpochInvalidation(plan, function()
 		error("MustNotPublish")
-	end) }).toEqual({ false, "StaleInputPlan" })
+	end) }).toEqual({ false, "StaleInputPlan", "Rejected" })
 
 	local other: TestUtils.Fixture = TestUtils.new()
 	local foreign: Types.PreparedInputInvalidation? = other.owner.PrepareEpochInvalidation("ActorChanged")
 	assert(foreign ~= nil, "Expected prepared input plan")
 
-	local success: boolean, reason: string? = fixture.owner.CommitEpochInvalidation(foreign, function()
-		error("MustNotPublish")
-	end)
+	local success: boolean, reason: string?, phase: Types.InputCommitFailurePhase? = fixture.owner.CommitEpochInvalidation(
+		foreign,
+		function()
+			error("MustNotPublish")
+		end
+	)
 
 	TestUtils.destroy(other)
-	expect({ success, reason }).toEqual({ false, "InvalidInputPlan" })
+	expect({ success, reason, phase }).toEqual({ false, "InvalidInputPlan", "Rejected" })
 	expect((assert(fixture.owner.GetContext("Gameplay"), "Expected installed context")).enabled).toBe(true)
 end)
 
@@ -106,7 +109,7 @@ it("fails closed if selected-Actor publication cannot complete", function()
 
 	expect({ fixture.owner.CommitEpochInvalidation(plan, function()
 		error("SelectionFailure")
-	end) }).toEqual({ false, "InputRuntimeFaulted" })
+	end) }).toEqual({ false, "InputRuntimeFaulted", "Failed" })
 
 	expect(fixture.connections).toBe(0)
 	expect(#fixture.container:GetDescendants()).toBe(0)

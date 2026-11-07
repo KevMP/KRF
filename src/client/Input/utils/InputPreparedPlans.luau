@@ -18,6 +18,8 @@ export type GraphAccess = {
 }
 
 export type Owner = {
+	Validate: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
+	Release: (plan: { read token: unknown, read generation: number }) -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),
 	PrepareRecognitionReset: (inputIds: { string }?, reason: string) -> (Types.PreparedRecognitionReset?, string?),
 	CommitPreparedRecognitionReset: (plan: Types.PreparedRecognitionReset) -> (boolean, string?),
@@ -27,8 +29,12 @@ export type Owner = {
 		profiles: any?
 	) -> (Types.PreparedInputUpdate?, string?),
 	CommitPrepared: (plan: Types.PreparedInputUpdate) -> (boolean, string?),
+	CommitPreparedWithPublication: (plan: Types.PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
 	PrepareEpochInvalidation: (reason: string) -> (Types.PreparedInputInvalidation?, string?),
-	CommitEpochInvalidation: (plan: Types.PreparedInputInvalidation, publishSelection: () -> ()) -> (boolean, string?),
+	CommitEpochInvalidation: (
+		plan: Types.PreparedInputInvalidation,
+		publishSelection: () -> ()
+	) -> (boolean, string?, Types.InputCommitFailurePhase?),
 	Clear: () -> (),
 }
 
@@ -312,7 +318,7 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 		return record, nil
 	end
 
-	local function CommitPrepared(plan: Types.PreparedInputUpdate): (boolean, string?)
+	local function CommitPrepared(plan: Types.PreparedInputUpdate, publishSelection: (() -> ())?): (boolean, string?)
 		local record: PreparedRecord?, reason: string? = take(plan, "Source")
 
 		if record == nil then
@@ -326,36 +332,62 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			return false, reason
 		end
 
-		return access.Commit(record.graph, nil, nil)
+		return access.Commit(record.graph, nil, publishSelection)
 	end
 
 	local function CommitEpochInvalidation(
 		plan: Types.PreparedInputInvalidation,
 		publishSelection: () -> ()
-	): (boolean, string?)
+	): (boolean, string?, Types.InputCommitFailurePhase?)
 		local record: PreparedRecord?, reason: string? = take(plan, "Epoch")
 
 		if record == nil then
-			return false, reason
+			return false, reason, "Rejected"
 		end
 
 		reason = access.Validate(access.Current(), nil)
 
 		if reason ~= nil then
-			return false, reason
+			return false, reason, "Rejected"
 		end
 
 		local desired: Types.InputGraphSnapshot = Changes.Next(access.Current(), nil)
 
-		return access.Commit(desired, record.reason, publishSelection)
+		local committed: boolean, failure: string? = access.Commit(desired, record.reason, publishSelection)
+
+		return committed, failure, if committed then nil else "Failed"
 	end
 
 	return {
+		Validate = function(plan: { read token: unknown, read generation: number }): (boolean, string?)
+			local record: PreparedRecord? = prepared[plan]
+
+			if record == nil then
+				return false, "InvalidInputPlan"
+			end
+
+			if
+				record.consumed
+				or record.generation ~= access.Current().generation
+				or record.validators ~= access.Version()
+				or (record.recognitionRevision ~= nil and record.recognitionRevision ~= recognition.Revision())
+			then
+				return false, "StaleInputPlan"
+			end
+
+			return true, nil
+		end,
+		Release = function(plan: { read token: unknown, read generation: number }): ()
+			prepared[plan] = nil
+		end,
 		ResetRecognition = ResetRecognition,
 		PrepareRecognitionReset = PrepareRecognitionReset,
 		CommitPreparedRecognitionReset = CommitPreparedRecognitionReset,
 		PrepareSource = PrepareSource,
-		CommitPrepared = CommitPrepared,
+		CommitPrepared = function(plan: Types.PreparedInputUpdate): (boolean, string?)
+			return CommitPrepared(plan, nil)
+		end,
+		CommitPreparedWithPublication = CommitPrepared,
 		PrepareEpochInvalidation = PrepareEpochInvalidation,
 		CommitEpochInvalidation = CommitEpochInvalidation,
 		Clear = function(): ()

@@ -19,7 +19,7 @@ export type Options = {
 	RunTimer: (() -> ()) -> (),
 	DeliverGroup: (Types.GestureDispatchGroup, Types.GestureEvent?) -> (),
 	DeliverEnvelope: (Types.InputCandidateEnvelope) -> (),
-	HasEnvelopeObservers: () -> boolean,
+	HasRootFrameObservers: () -> boolean,
 	NotifySequence: (Types.SequenceMatchEvent) -> (),
 	NotifyCustom: (Types.CustomRecognitionEvent) -> (),
 	IsEpochActive: (string, number, number) -> boolean,
@@ -164,6 +164,7 @@ function Pipeline.new(options: Options): Owner
 				rootInputId = root.event.inputId,
 				rootContextId = root.event.contextId,
 				rootInputEpochId = root.pressEpochId,
+				rootInputEpochGeneration = if root.pressEpochId ~= nil then root.generation else nil,
 				isRootEpochActiveAfterCommit = root.pressEpochId ~= nil
 					and options.IsEpochActive(root.event.inputId, root.pressEpochId, root.generation),
 				lifecycleDelivered = true,
@@ -383,8 +384,9 @@ function Pipeline.new(options: Options): Owner
 			changed()
 		end
 
-		-- High-frequency axis input usually has no audience; skip building a frame.
-		if root ~= nil and #pending == 0 and not options.HasEnvelopeObservers() then
+		-- Without a gesture emission or watcher this frame cannot hold a candidate.
+		-- High-frequency axis input usually has no audience; skip building it.
+		if root ~= nil and #pending == 0 and not options.HasRootFrameObservers() then
 			local key: string = Validation.InputKey(root.event.inputId, root.event.kind)
 
 			if not custom.Watches(key) and not sequences.Watches(key) then
@@ -423,6 +425,7 @@ function Pipeline.new(options: Options): Owner
 							then emission.event.ordinal
 							else candidate.rootInputOrdinal,
 						pressEpochId = candidate.pressEpochId,
+						pressEpochGeneration = if candidate.pressEpochId ~= nil then candidate.generation else nil,
 						routeEligible = candidate.routeEligible,
 					})
 				)

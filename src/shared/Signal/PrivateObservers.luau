@@ -4,7 +4,6 @@ export type Entry<Callback> = { callback: Callback, active: boolean }
 export type Registry<Callback> = {
 	Add: (callback: Callback) -> () -> (),
 	Snapshot: () -> { Entry<Callback> },
-	IsEmpty: () -> boolean,
 	Destroy: () -> (),
 }
 
@@ -34,9 +33,6 @@ function Observers.new<Callback>(maximum: number, reason: string): Registry<Call
 		end,
 		Snapshot = function(): { Entry<Callback> }
 			return table.clone(entries)
-		end,
-		IsEmpty = function(): boolean
-			return #entries == 0
 		end,
 		Destroy = function(): ()
 			destroyed = true

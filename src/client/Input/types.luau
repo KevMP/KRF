@@ -132,6 +132,7 @@ export type RecognitionHoldOwner = {
 }
 
 export type InputRecognitionCandidate = {
+	read pressEpochGeneration: number?,
 	read kind: "Input",
 	read inputId: string,
 	read gesture: "Pressed" | GestureKind,
@@ -170,6 +171,7 @@ type CandidateEmission = {
 }
 
 export type RootCandidateEnvelope = CandidateEmission & {
+	read rootInputEpochGeneration: number?,
 	read kind: "Root",
 	read rootInputOrdinal: number,
 	read rootInputId: string,
@@ -209,6 +211,7 @@ export type SequenceMachine = {
 }
 
 export type RecognitionCatalog = {
+	sequenceMachines: { [string]: SequenceMachine },
 	sequences: { [string]: SequenceSnapshot },
 	recognizers: { [string]: RecognizerSnapshot },
 	machines: { [string]: SequenceMachine },
@@ -348,6 +351,11 @@ export type InputGraphSnapshot = {
 	read bindings: { [string]: { [string]: BindingSnapshot } },
 }
 
+export type InputCommitContext = {
+	read previous: InputGraphSnapshot,
+	read invalidatedInputIds: { [string]: string },
+}
+
 export type InputGraphChange = {
 	read previous: InputGraphSnapshot,
 	read next: InputGraphSnapshot,
@@ -367,6 +375,9 @@ export type PrimitiveOccurrence = {
 export type ObserverPhase = "Interpretation" | "Arbitration" | "Routing"
 export type PreparedInputUpdate = { read generation: number, read token: unknown }
 export type PreparedInputInvalidation = { read generation: number, read token: unknown }
+-- Rejected guarantees that commit was not attempted. Failed requires callers to
+-- treat the local commit as uncertain, even if native rollback was possible.
+export type InputCommitFailurePhase = "Rejected" | "Failed"
 export type NativeTransition = "Pressed" | "Released" | "StateChanged"
 
 export type NativeInputAdapter = {
@@ -395,9 +406,17 @@ export type InputOwnerOptions = {
 export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: any?) -> (boolean, string?)
 
 export type InputOwner = {
+	GetCommitContext: () -> InputCommitContext?,
+	ValidatePrepared: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
+	Disarm: (reason: string) -> (boolean, string?),
+	ReleasePrepared: (plan: { read token: unknown, read generation: number }) -> (),
+	GetGraphSnapshot: () -> InputGraphSnapshot,
+	GetMutationStatus: () -> string?,
 	GetSequence: (sequenceId: string) -> SequenceSnapshot?,
 	GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
-	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> ()) -> () -> (),
+	-- Candidate-only observers still receive every built frame, but do not require
+	-- one for input that has no gesture emission or recognition watcher.
+	ObserveCandidateEnvelope: (callback: (InputCandidateEnvelope) -> (), candidatesOnly: boolean?) -> () -> (),
 	GetGestures: (inputId: string) -> { [GestureKind]: GestureSnapshot }?,
 	ObserveDispatchGroup: (callback: (GestureDispatchGroup) -> ()) -> () -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),
@@ -421,8 +440,12 @@ export type InputOwner = {
 		proposedProfiles: any?
 	) -> (PreparedInputUpdate?, string?),
 	CommitPrepared: (plan: PreparedInputUpdate) -> (boolean, string?),
+	CommitPreparedWithPublication: (plan: PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
 	PrepareEpochInvalidation: (reason: string) -> (PreparedInputInvalidation?, string?),
-	CommitEpochInvalidation: (plan: PreparedInputInvalidation, publishSelection: () -> ()) -> (boolean, string?),
+	CommitEpochInvalidation: (
+		plan: PreparedInputInvalidation,
+		publishSelection: () -> ()
+	) -> (boolean, string?, InputCommitFailurePhase?),
 	Destroy: () -> (),
 }
 

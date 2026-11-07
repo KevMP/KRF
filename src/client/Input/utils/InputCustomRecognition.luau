@@ -1,7 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Value = require(script.Parent.InputValue)
-local Observers = require(script.Parent.InputObservers)
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local ScalarState = require(script.Parent.InputRecognizerState)
 local DeadlineTimer = require(script.Parent.InputDeadlineTimer)
 

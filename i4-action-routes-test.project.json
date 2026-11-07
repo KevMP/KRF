@@ -1,0 +1,14 @@
+{
+  "name": "KRF-I4-Action-Routes-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "ActionRouteExamples": { "$path": "tests/examples/ActionRoutes.luau" },
+      "ActionRouteControl": { "$className": "RemoteEvent" },
+      "ActionRouteSubjects": { "$className": "Folder" }
+    },
+    "ServerScriptService": { "ActionRouteServer": { "$path": "tests/integration/ActionRoutes/Server.server.luau" } },
+    "StarterPlayer": { "StarterPlayerScripts": { "ActionRouteClient": { "$path": "tests/integration/ActionRoutes/Client.client.luau" } } }
+  }
+}

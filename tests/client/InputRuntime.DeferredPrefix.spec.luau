@@ -58,6 +58,7 @@ it("flushes a mismatched pending prefix in a separate earlier envelope before th
 			gesture = "Pressed",
 			routeEligible = true,
 			pressEpochId = root.rootInputEpochId,
+			pressEpochGeneration = root.rootInputEpochGeneration,
 			recognitionOrdinal = root.candidates[1].recognitionOrdinal,
 		},
 	})

@@ -131,6 +131,10 @@ export type ActorViewModule = {
 }
 
 export type ActorViewRegistryOwner = {
+	IsInvalidationInProgress: () -> boolean,
+	Invalidate: (view: ActorView, reason: string) -> (),
+	IsInvalidating: (view: ActorView) -> boolean,
+	ObserveInvalidation: (callback: (ActorView, string) -> ()) -> () -> (),
 	IsCurrent: (view: ActorView) -> boolean,
 	GetActorViewById: (actorId: string) -> ActorView?,
 	GetActorViewByModel: (model: Model) -> ActorView?,

@@ -10,6 +10,7 @@ local Diagnostics = require(script.Networking.utils.NetworkingDiagnosticsState)
 local SendMetrics = require(script.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
 local InputInstallation = require(script.Input.utils.InputInstallation)
+local ActionInstallation = require(script.Action.utils.ClientActionInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -50,6 +51,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	local cancelTimeout: (() -> ())? = nil
 	local cleanupConsumers: (() -> ())? = nil
 	local cleanupInput: (() -> ())? = nil
+	local cleanupActions: (() -> ())? = nil
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -60,6 +62,9 @@ function Client.Init(): (boolean, StartupFailure?)
 	end
 
 	local function cleanup(): ()
+		local stopActions: (() -> ())? = cleanupActions
+		cleanupActions = nil
+		dispose(stopActions)
 		local stopInput: (() -> ())? = cleanupInput
 		cleanupInput = nil
 		dispose(stopInput)
@@ -242,6 +247,10 @@ function Client.Init(): (boolean, StartupFailure?)
 				end
 
 				cleanupInput = InputInstallation.Install(function(): boolean
+					return initialized and success
+				end)
+
+				cleanupActions = ActionInstallation.Install(function(): boolean
 					return initialized and success
 				end)
 
