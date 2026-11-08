@@ -325,3 +325,79 @@ it("rejects every request after the runtime is destroyed while its commands stay
 	expect(#trace.canStart).toBe(1)
 	expect(#TestUtils.active(created)).toBe(1)
 end)
+
+it("never lets a Start that faulted before commit control a later server-started activation", function()
+	local created: TestUtils.Fixture = setup()
+	local actor: ActorTypes.Actor = created.commands.actor
+	local controller: ActionTypes.InternalActionController = TestUtils.controller(created, actor)
+
+	-- The guard passes, then authoritative activation preparation fails before any Started mutation.
+	local faulting: ActionTypes.InternalActionController = setmetatable({
+		_requestGuardedAction = function(
+			_self: ActionTypes.InternalActionController,
+			_actionId: string,
+			_parameters: any?,
+			guard: ActionTypes.ActionStartGuard
+		): ActionTypes.ActionRequestResult
+			expect(guard()).toBeNil()
+			error("ActivationPreparationFailed", 0)
+		end,
+	}, { __index = controller }) :: any
+
+	created.controllers[actor] = faulting
+	TestUtils.start(created, 1, "Movement.Sprint")
+	created.controllers[actor] = controller
+
+	local result: SharedTypes.CommandResult = TestUtils.result(created, 1)
+	expect(result.status).toBe("Unknown")
+	expect(result.reason).toBe("CommandHandlerFault")
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+
+	expect(controller:RequestAction("Movement.Sprint").accepted).toBe(true)
+	TestUtils.stop(created, 2, 1, "Movement.Sprint")
+	TestUtils.interrupt(created, 3, 1, "FocusLost")
+	TestUtils.expectRejected(created, 2, "ActionReceiptUnknown")
+	TestUtils.expectRejected(created, 3, "ActionReceiptUnknown")
+	expect(#TestUtils.active(created)).toBe(1)
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+end)
+
+it("keeps the committed activation's receipt and reports Unknown when a Start faults after commit", function()
+	local created: TestUtils.Fixture = setup()
+	local actor: ActorTypes.Actor = created.commands.actor
+	local controller: ActionTypes.InternalActionController = TestUtils.controller(created, actor)
+
+	-- Authority commits and publishes Started, then a later notification failure is rethrown.
+	local faulting: ActionTypes.InternalActionController = setmetatable({
+		_requestGuardedAction = function(
+			_self: ActionTypes.InternalActionController,
+			actionId: string,
+			parameters: any?,
+			guard: ActionTypes.ActionStartGuard
+		): ActionTypes.ActionRequestResult
+			expect(controller:_requestGuardedAction(actionId, parameters, guard).accepted).toBe(true)
+			error("ActivationNotificationFailed", 0)
+		end,
+	}, { __index = controller }) :: any
+
+	created.controllers[actor] = faulting
+	TestUtils.start(created, 1, "Movement.Sprint")
+	created.controllers[actor] = controller
+
+	local result: SharedTypes.CommandResult = TestUtils.result(created, 1)
+	expect(result.status).toBe("Unknown")
+	expect(result.reason).toBe("CommandHandlerFault")
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(1)
+
+	local active: { ActionTypes.ActionReplicationIdentity } = TestUtils.active(created)
+	TestUtils.interrupt(created, 2, 1, "FocusLost")
+	TestUtils.expectAccepted(created, 2)
+	expect(#active).toBe(1)
+	expect(TestUtils.active(created)).toEqual({})
+	expect(created.runtime:_GetReceiptCountForTests()).toBe(0)
+
+	-- The faulted Start left nothing armed for a later server-started activation.
+	expect(controller:RequestAction("Movement.Sprint").accepted).toBe(true)
+	TestUtils.stop(created, 3, 1, "Movement.Sprint")
+	TestUtils.expectRejected(created, 3, "ActionReceiptUnknown")
+end)

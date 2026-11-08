@@ -291,7 +291,9 @@ function ActionRequestRuntime._start(
 	local watch: Watch = self:_watch(controller)
 	watch.starting += 1
 
-	local result: ActionTypes.ActionRequestResult = controller:_requestGuardedAction(
+	local completed: boolean, outcome: any = pcall(
+		controller._requestGuardedAction,
+		controller,
 		compiled.actionId,
 		parameters,
 		function(): string?
@@ -310,6 +312,23 @@ function ActionRequestRuntime._start(
 
 	self.armed = nil
 	watch.starting -= 1
+
+	if not completed then
+		-- A committed activation already made its receipt Live and keeps it. A receipt
+		-- still Provisional never reached Started and must not outlive this request.
+		local snapshot: Types.ActionReceiptSnapshot? = self.receipts:Get(connection, context.requestId)
+
+		if snapshot ~= nil and snapshot.state == "Provisional" then
+			self.receipts:Retire(connection, context.requestId)
+		end
+
+		self:_release(controller)
+
+		-- N9 reports the fault as Unknown because authority may have committed.
+		error(outcome, 0)
+	end
+
+	local result: ActionTypes.ActionRequestResult = outcome
 
 	if not result.accepted then
 		self.receipts:Retire(connection, context.requestId)
