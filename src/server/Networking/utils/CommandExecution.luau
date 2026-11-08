@@ -65,7 +65,8 @@ function Execution._invoke(
 	definition: Types.LoadedCommandDefinition,
 	history: History.Runtime,
 	diagnostics: SharedTypes.DiagnosticCollector?,
-	current: () -> boolean
+	current: () -> boolean,
+	scope: Context.ConnectionScope
 ): (SharedTypes.CommandResult, ActorTypes.Actor?, string?)
 	local actor: ActorTypes.Actor? = nil
 	local targetReason: string? = nil
@@ -105,6 +106,7 @@ function Execution._invoke(
 						and self.dependencies.awareness:GetPlayerForActor(actor) == player
 						and self.dependencies.awareness:GetActorForPlayer(player) == actor
 				end,
+				scope = scope,
 			}
 		)
 
@@ -163,6 +165,7 @@ function Execution.Execute(
 	history: History.Runtime,
 	diagnostics: SharedTypes.DiagnosticCollector?,
 	current: () -> boolean,
+	scope: Context.ConnectionScope,
 	request: SharedTypes.CommandRequest,
 	reservation: Types.CommandReservation,
 	observation: CommandDiagnostics.Observation
@@ -172,7 +175,7 @@ function Execution.Execute(
 	local definition: Types.LoadedCommandDefinition = self.catalog.definitionsById[command.id]
 
 	local outcome: SharedTypes.CommandResult, actor: ActorTypes.Actor?, fault: string? =
-		self:_invoke(player, request, command, definition, history, diagnostics, current)
+		self:_invoke(player, request, command, definition, history, diagnostics, current, scope)
 
 	if fault ~= nil then
 		CommandDiagnostics.Fault(observation)

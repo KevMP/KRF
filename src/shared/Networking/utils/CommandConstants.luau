@@ -21,6 +21,10 @@ return table.freeze({
 	DISPATCH_REQUESTS = 16,
 	DISPATCH_VISITS = 64,
 	ADMISSION_RESERVE_DIVISOR = 4,
+	-- Lifecycle follow-ups such as Action Stop/Interrupt keep 1/8 of each budget,
+	-- and one server member may hold at most 1/4 of the global follow-up reserve.
+	FOLLOW_UP_RESERVE_DIVISOR = 8,
+	FOLLOW_UP_MEMBER_DIVISOR = 4,
 	MAX_OUTBOUND_RESULTS = 64,
 	MAX_OUTBOUND_BYTES = 131072,
 	OUTBOUND_SECONDS = 30,

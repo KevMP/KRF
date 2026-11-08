@@ -1,0 +1,13 @@
+{
+  "name": "KRF-I5-Action-Requests-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "ActionRequestSchemas": { "$path": "tests/examples/ActionRequestSchemas.luau" },
+      "ActionRequestControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": { "ActionRequestServer": { "$path": "tests/integration/ActionRequests/Server.server.luau" } },
+    "StarterPlayer": { "StarterPlayerScripts": { "ActionRequestClient": { "$path": "tests/integration/ActionRequests/Client.client.luau" } } }
+  }
+}

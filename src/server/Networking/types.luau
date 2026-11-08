@@ -165,6 +165,8 @@ export type LoadedCommandDefinition = {
 	read result: SharedNetworkingTypes.CompiledSchema?,
 	read authorize: CommandAuthorize,
 	read handle: CommandHandler,
+	-- Framework-owned lifecycle follow-ups may use a bounded protected admission reserve.
+	read followUp: boolean,
 }
 
 export type PreparedCommandCatalog = {

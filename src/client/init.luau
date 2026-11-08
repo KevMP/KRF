@@ -11,6 +11,9 @@ local SendMetrics = require(script.Parent.shared.Networking.utils.NetworkingSend
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
 local InputInstallation = require(script.Input.utils.InputInstallation)
 local ActionInstallation = require(script.Action.utils.ClientActionInstallation)
+local ActionRequestTypes = require(script.Parent.shared.ActionRequest.types)
+local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRequestCatalog)
+local ActionRequestInstallation = require(script.ActionRequest.utils.ClientActionRequestInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -20,6 +23,39 @@ local initialized: boolean = false
 local readyProtocol: SharedNetworkingTypes.ClientProtocol? = nil
 local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
+
+local CONFIG_FIELDS: { [string]: boolean } = { actionRequestSchemas = true }
+
+table.freeze(CONFIG_FIELDS)
+
+-- Configuration is validated and compiled before any transport or diagnostics work.
+local function prepare(config: any): (ActionRequestTypes.ActionRequestCatalog?, StartupFailure?)
+	if config == nil then
+		return nil, nil
+	elseif type(config) ~= "table" then
+		return nil, { system = "Client", reason = "ClientConfigInvalid" }
+	end
+
+	for field: any in next, config do
+		if type(field) ~= "string" or not CONFIG_FIELDS[field] then
+			return nil, { system = "Client", reason = "ClientConfigFieldUnknown" }
+		end
+	end
+
+	local schemas: any = rawget(config, "actionRequestSchemas")
+
+	if schemas == nil then
+		return nil, nil
+	end
+
+	local catalog: ActionRequestTypes.ActionRequestCatalog?, reason: string? = ActionRequestCatalog.Compile(schemas)
+
+	if catalog == nil then
+		return nil, { system = "ActionRequest", reason = reason :: string }
+	end
+
+	return catalog, nil
+end
 
 local function dispose(callback: (() -> ())?): ()
 	if callback == nil then
@@ -33,12 +69,18 @@ local function dispose(callback: (() -> ())?): ()
 	end
 end
 
-function Client.Init(): (boolean, StartupFailure?)
+function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFailure?)
 	if attempted then
 		return false, { system = "Client", reason = "ClientInitAlreadyAttempted" }
 	end
 
 	attempted = true
+	local requestCatalog: ActionRequestTypes.ActionRequestCatalog?, configFailure: StartupFailure? = prepare(config)
+
+	if configFailure ~= nil then
+		return false, configFailure
+	end
+
 	local diagnosticOwner = Diagnostics.Start()
 	local dependencies: ClientTypes.Dependencies = injectedDependencies or defaultDependencies
 	local deadline: number = dependencies.Now() + Constants.INIT_TIMEOUT_SECONDS
@@ -52,6 +94,7 @@ function Client.Init(): (boolean, StartupFailure?)
 	local cleanupConsumers: (() -> ())? = nil
 	local cleanupInput: (() -> ())? = nil
 	local cleanupActions: (() -> ())? = nil
+	local cleanupActionRequests: (() -> ())? = nil
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -76,11 +119,15 @@ function Client.Init(): (boolean, StartupFailure?)
 		local consumers: (() -> ())? = cleanupConsumers
 		cleanupConsumers = nil
 		dispose(consumers)
+		-- After the command runtime, so its closing Unknown outcomes still correlate.
+		local stopActionRequests: (() -> ())? = cleanupActionRequests
+		cleanupActionRequests = nil
+		dispose(stopActionRequests)
 		protocol = nil
 		Diagnostics.Stop(diagnosticOwner)
 	end
 
-	local function finish(accepted: boolean, reason: string?): ()
+	local function finish(accepted: boolean, reason: string?, system: string?): ()
 		if finished then
 			return
 		end
@@ -93,7 +140,7 @@ function Client.Init(): (boolean, StartupFailure?)
 			initialized = true
 			cancelTimer()
 		else
-			failure = { system = "Networking", reason = reason :: string }
+			failure = { system = system or "Networking", reason = reason :: string }
 			cleanup()
 		end
 
@@ -253,6 +300,19 @@ function Client.Init(): (boolean, StartupFailure?)
 				cleanupActions = ActionInstallation.Install(function(): boolean
 					return initialized and success
 				end)
+
+				if requestCatalog ~= nil then
+					local stopRequests: (() -> ())?, requestReason: string? =
+						ActionRequestInstallation.Install(requestCatalog, reconstructed)
+
+					if stopRequests == nil then
+						finish(false, requestReason, "ActionRequest")
+
+						return
+					end
+
+					cleanupActionRequests = stopRequests
+				end
 
 				state = "AwaitAck"
 				local ready: buffer?, readyReason: string? = ProtocolCodec.Encode({ kind = "Ready" })

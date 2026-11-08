@@ -101,9 +101,26 @@ export type ClientCommandOptions = {
 	graceSeconds: number?,
 }
 
+-- Framework-private vetoable admission. It runs once the request ID is allocated and the
+-- packet is encoded, before physical egress; returning false rolls back the unsent record.
+export type CommandAdmission = (requestId: number) -> boolean
+
 export type ClientCommandRuntime = {
 	Send: (self: ClientCommandRuntime, string, PublicTypes.ActorView?, any?) -> (number?, string?),
 	Handle: (self: ClientCommandRuntime, any) -> boolean,
+	-- Physical reliable egress is serialized: a reentrant send never overtakes a lower ID.
+	_SendAdmitted: (
+		self: ClientCommandRuntime,
+		commandId: string,
+		actor: PublicTypes.ActorView?,
+		request: any?,
+		admit: CommandAdmission
+	) -> (number?, string?),
+	-- Synchronous framework observation before the public yield-safe result Signals,
+	-- including the Unknown emitted for unresolved commands when the connection closes.
+	_ObserveOutcomes: (self: ClientCommandRuntime, observer: (CommandResult) -> ()) -> () -> (),
+	-- Framework-only: names lifecycle follow-ups that may use the protected pending headroom.
+	_ClassifyFollowUps: (self: ClientCommandRuntime, commandIds: { string }) -> (boolean, string?),
 	Destroy: (self: ClientCommandRuntime) -> (),
 }
 

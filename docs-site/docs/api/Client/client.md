@@ -11,16 +11,18 @@ local Client = require(ReplicatedStorage.Packages.KRF.client)
 
 | Kind | Signature |
 | --- | --- |
-| Method | [`Init() -> (boolean, StartupFailure?)`](#init) |
+| Method | [`Init(config: ClientInitConfig?) -> (boolean, StartupFailure?)`](#init) |
 
 ## Methods
 
-### `Init() -> (boolean, StartupFailure?)` {#init}
+### `Init(config: ClientInitConfig?) -> (boolean, StartupFailure?)` {#init}
 
-Discovers the framework transport and completes protocol initialization; may yield.
+Discovers the framework transport and completes protocol initialization; may yield. `config` is optional and accepts only `actionRequestSchemas`, the same [Action request](/Action/action-requests) module passed to `Server.Init`.
 
 - Returns `true, nil` after the server acknowledges readiness.
 - Returns `false, { system = "Client", reason = "ClientInitAlreadyAttempted" }` on any repeated attempt.
+- Returns a `Client` failure before any network work with `ClientConfigInvalid` when `config` is not a table, or `ClientConfigFieldUnknown` for any other field.
+- Action request failures use `system = "ActionRequest"`: a catalog reason when the module is invalid, `ActionRequestCommandsUnavailable` when the server published no request commands, or `ActionRequestCommandsIncompatible` when their contracts differ from this client's.
 - Networking failures return `false, { system = "Networking", reason }` with one of the categories below.
 
 | Reason | Meaning |
@@ -41,4 +43,5 @@ Unexpected startup errors use a reason beginning with `StartupInternalFailure:`;
 - [Initializing KRF](/initializing-krf)
 - [Networking startup](/Networking/startup)
 - [ActorViews](/Networking/actor-views)
+- [Action requests](/Action/action-requests)
 - [Server API](/api/Server/)

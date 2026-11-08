@@ -7,6 +7,8 @@ local ResourceTypes = require(serverFolder.Resource.types)
 local ActionTypes = require(serverFolder.Action.types)
 local ReplicationTypes = require(serverFolder.Replication.types)
 local NetworkingTypes = require(serverFolder.Networking.types)
+local ActionRequestTypes = require(serverFolder.ActionRequest.types)
+local SharedActionRequestTypes = require(serverFolder.Parent.shared.ActionRequest.types)
 
 local types = {}
 
@@ -18,6 +20,9 @@ export type ServerStartConfig = {
 	resources: { ResourceTypes.ResourceDefinition }?,
 	actions: { ActionTypes.ActionFactory }?,
 	replicationDomains: { ReplicationTypes.ReplicationDomainDefinition }?,
+	-- The same replicated network-only module passed to Client.Init.
+	actionRequestSchemas: SharedActionRequestTypes.ActionRequestSchemas?,
+	actionControlAuthority: ActionRequestTypes.ActionControlAuthority?,
 }
 
 export type StartupFailure = {

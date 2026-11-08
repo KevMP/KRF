@@ -10,6 +10,7 @@
     },
     "ReplicatedStorage": {
       "ActionRouteExamples": { "$path": "tests/examples/ActionRoutes.luau" },
+      "ActionRequestSchemas": { "$path": "tests/examples/ActionRequestSchemas.luau" },
       "InputRecognitionWorkload": { "$path": "tests/benchmarks/InputRecognition/Workload.luau" },
       "InputSequences": {
         "$path": "tests/examples/InputSequences.luau"

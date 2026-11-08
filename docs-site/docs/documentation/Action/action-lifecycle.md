@@ -15,7 +15,7 @@ sidebar_position: 4
 
 A rejection creates no activation, emits no Started event, and consumes no sequence id. An accepted result remains accepted even if a listener or `onStart` immediately terminates it. Several activations of the same Action can coexist when their locks allow it.
 
-[`RequestAction`](/api/Action/action-controller#request-action) is the low-level server boundary used by integrations and occasional server-driven behavior. An accepted result carries the activation's `sequenceId`; a rejected result carries its reason. Action authors normally work through definitions and callbacks. Input integration is outside this guide.
+[`RequestAction`](/api/Action/action-controller#request-action) is the low-level server boundary used by integrations and occasional server-driven behavior. An accepted result carries the activation's `sequenceId`; a rejected result carries its reason. Action authors normally work through definitions and callbacks. Clients reach these operations through [Action requests](./action-requests), which reuse the same checks.
 
 Sequence ids are positive integers scoped to one controller and allocated in acceptance commit order. Parameters are passed unchanged, without copying. Context tables are frozen; a table supplied as `parameters` is not deep-frozen by KRF.
 

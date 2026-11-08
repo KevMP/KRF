@@ -24,6 +24,8 @@ export type Fixture = {
 	sent: { buffer },
 	cleanup: () -> (),
 	protocol: SharedTypes.ClientProtocol?,
+	-- Runs before a non-handshake packet is recorded, simulating transport reentrancy.
+	beforeSend: ((buffer) -> ())?,
 }
 
 local TestUtils = {}
@@ -34,6 +36,7 @@ function TestUtils.new(): Fixture
 	local client: ClientUtils.Fixture = ClientUtils.new()
 	local stream: StreamUtils.Fixture = StreamUtils.new()
 	local sent: { buffer } = {}
+	local fixture: Fixture
 	local originalNow: typeof(Native.Now) = Native.Now
 	local originalDiscover: typeof(Native.DiscoverTransport) = Native.DiscoverTransport
 	local originalSchedule: typeof(Native.ScheduleTimeout) = Native.ScheduleTimeout
@@ -47,6 +50,10 @@ function TestUtils.new(): Fixture
 		if message ~= nil and (message.kind == "Hello" or message.kind == "Ready") then
 			sendHandshake(payload)
 		else
+			if fixture.beforeSend ~= nil then
+				fixture.beforeSend(payload)
+			end
+
 			table.insert(sent, payload)
 		end
 	end
@@ -65,7 +72,7 @@ function TestUtils.new(): Fixture
 		}
 	end
 
-	return {
+	local created: Fixture = {
 		client = client,
 		stream = stream,
 		sent = sent,
@@ -85,12 +92,16 @@ function TestUtils.new(): Fixture
 			StreamUtils.destroy(stream)
 		end,
 	}
+
+	fixture = created
+
+	return created
 end
 
-function TestUtils.start(fixture: Fixture): ()
+function TestUtils.start(fixture: Fixture, config: ClientTypes.ClientInitConfig?): ()
 	-- Use the production installer and real ActorStream/ActorView owners.
 	fixture.client.initThread = coroutine.create(function(): ()
-		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init()
+		local success: boolean, failure: ClientTypes.StartupFailure? = Client.Init(config)
 		fixture.client.result = { success = success, failure = failure }
 	end)
 
@@ -98,13 +109,14 @@ function TestUtils.start(fixture: Fixture): ()
 	assert(completed, tostring(reason))
 end
 
-function TestUtils.bootstrap(fixture: Fixture): ()
+function TestUtils.bootstrap(fixture: Fixture, commands: { SharedTypes.ManifestCommand }?): ()
 	local metadata: any = ProtocolUtils.manifest()
 
-	metadata.commands = {
-		{ id = "Game.Interact", code = 0, target = "Actor", request = Schema.Struct({ choice = Schema.U8 }) },
-		{ id = "Game.Ping", code = 1, target = "None" },
-	}
+	metadata.commands = commands
+		or {
+			{ id = "Game.Interact", code = 0, target = "Actor", request = Schema.Struct({ choice = Schema.U8 }) },
+			{ id = "Game.Ping", code = 1, target = "None" },
+		}
 
 	local protocol: SharedTypes.ClientProtocol?, compileReason: string? = Manifest.Reconstruct(metadata)
 	assert(protocol ~= nil, compileReason)
@@ -115,9 +127,13 @@ function TestUtils.bootstrap(fixture: Fixture): ()
 	ClientUtils.emit(fixture.client, payload)
 end
 
-function TestUtils.ready(fixture: Fixture): ()
-	TestUtils.start(fixture)
-	TestUtils.bootstrap(fixture)
+function TestUtils.ready(
+	fixture: Fixture,
+	config: ClientTypes.ClientInitConfig?,
+	commands: { SharedTypes.ManifestCommand }?
+): ()
+	TestUtils.start(fixture, config)
+	TestUtils.bootstrap(fixture, commands)
 	ClientUtils.acknowledge(fixture.client)
 	assert(fixture.client.result ~= nil and fixture.client.result.success, "Expected normal READY startup")
 end
