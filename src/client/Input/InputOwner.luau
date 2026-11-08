@@ -55,6 +55,17 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	}, gate, dispatch.Recognition)
 
 	return {
+		AfterCommit = function(callback: () -> ()): (boolean, string?)
+			if gate.IsTerminal() then
+				return false, "ClientNotReady"
+			elseif gate.IsFenced() then
+				return gate.Queue(callback)
+			end
+
+			callback()
+
+			return true, nil
+		end,
 		ReleasePrepared = plans.Release,
 		ValidatePrepared = plans.Validate,
 		GetCommitContext = configuration.SelectionFence,

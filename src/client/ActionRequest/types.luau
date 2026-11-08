@@ -14,6 +14,8 @@ export type ActionStartSelection = {
 	read actionId: string,
 	read origin: ActionRequestOrigin,
 	read inputTimestamp: number?,
+	-- Framework-only correlation assignment; no consumer code runs here.
+	read Reserve: ((ActionRequestAdmission) -> ())?,
 }
 
 -- Immutable correlation reserved before egress. Follow-ups carry their original Start's
@@ -27,6 +29,8 @@ export type ActionRequestAdmission = {
 	read actionId: string,
 	read origin: ActionRequestOrigin,
 	read inputTimestamp: number?,
+	read requestKey: unknown?,
+	read originalStartKey: unknown?,
 }
 
 -- Accepted carries the real server sequenceId only for Start. Unknown means it may have executed.
@@ -43,9 +47,21 @@ export type ActionRequestCommandPort = {
 		commandId: string,
 		actor: ActorTypes.ActorView?,
 		request: any,
-		admit: NetworkingTypes.CommandAdmission
+		admit: NetworkingTypes.CommandAdmission,
+		committed: ((number) -> ())?
 	) -> (number?, string?),
 	read ObserveOutcomes: (observer: (NetworkingTypes.CommandResult) -> ()) -> () -> (),
+	read ObserveCapacity: ((observer: () -> ()) -> () -> ())?,
+	read ObserveExpirations: ((observer: (number, string) -> ()) -> () -> ())?,
+	read AfterEgress: ((callback: () -> ()) -> ())?,
+}
+
+export type ActionFollowUpIntent = {
+	read originalStartRequestId: number,
+	read kind: "Stop" | "Interrupt",
+	read payload: string?,
+	read reason: ActionRequestTypes.ActionInputInterruptReason?,
+	read OnAdmitted: ((ActionRequestAdmission) -> ())?,
 }
 
 export type ClientActionRequestOptions = {
@@ -57,19 +73,28 @@ export type ClientActionRequestOptions = {
 export type ClientActionRequestRuntime = {
 	-- A non-nil ID means locally admitted, not Accepted. Nil means nothing was sent.
 	Start: (self: ClientActionRequestRuntime, selection: ActionStartSelection, parameters: any?) -> (number?, string?),
-	Stop: (self: ClientActionRequestRuntime, originalStartRequestId: number, parameters: any?) -> (number?, string?),
+	Stop: (
+		self: ClientActionRequestRuntime,
+		originalStartRequestId: number,
+		parameters: any?,
+		automatic: boolean?,
+		committed: ((ActionRequestAdmission) -> ())?
+	) -> (number?, string?),
 	Interrupt: (
 		self: ClientActionRequestRuntime,
 		originalStartRequestId: number,
-		reason: ActionRequestTypes.ActionInputInterruptReason
+		reason: ActionRequestTypes.ActionInputInterruptReason,
+		automatic: boolean?,
+		committed: ((ActionRequestAdmission) -> ())?
 	) -> (number?, string?),
 	GetOriginalStart: (self: ClientActionRequestRuntime, requestId: number) -> ActionRequestAdmission?,
-	-- I6 declares an original activation finished; pending command correlation is unaffected.
+	-- I6 releases input follow-up authority; pending command correlation is unaffected.
 	Retire: (self: ClientActionRequestRuntime, originalStartRequestId: number) -> (),
 	-- Bounded, non-yielding framework observers. They run after the packet is staged or
 	-- physically attempted and can never veto, delay or reorder egress.
 	ObserveAdmissions: (self: ClientActionRequestRuntime, observer: (ActionRequestAdmission) -> ()) -> () -> (),
 	ObserveOutcomes: (self: ClientActionRequestRuntime, observer: (ActionRequestOutcome) -> ()) -> () -> (),
+	StageDecision: (self: ClientActionRequestRuntime, originalStartRequestId: number, callback: () -> ()) -> (),
 	_GetRetainedCountForTests: (self: ClientActionRequestRuntime) -> number,
 	Destroy: (self: ClientActionRequestRuntime) -> (),
 }

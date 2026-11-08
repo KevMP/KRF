@@ -44,7 +44,9 @@ After success, [register Actors](./Actor/actor-runtime). KRF attaches its built-
 
 ## Client initialization
 
-Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. When the server uses Action requests, pass the same module: `Client.Init({ actionRequestSchemas = schemas })`. The client accepts no other configuration fields. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
+Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
+
+For Action requests, pass the shared wire schemas and optional client-only [input policies](./Action/action-input): `Client.Init({ actionRequestSchemas = schemas, actionInputPolicies = policies })`. Keep callbacks in the client policy module. A wire declaration with `requiresClientRelease = true` needs an explicit WhileDown policy. Invalid combinations fail before transport discovery or owner installation; policy callbacks do not run during startup.
 
 ```lua title="Startup.client.luau"
 --!strict

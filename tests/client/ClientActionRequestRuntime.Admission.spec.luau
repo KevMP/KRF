@@ -66,6 +66,9 @@ it("reserves immutable original Start metadata before the packet leaves", functi
 	end
 
 	local requestId: number = admitStart(created, "Movement.Sprint")
+	local reserved: Types.ActionRequestAdmission = assert(observedDuringSend, "Expected correlation before egress")
+	expect(type(reserved.requestKey)).toBe("table")
+	expect(table.isfrozen(reserved.requestKey :: {})).toBe(true)
 
 	local expected: Types.ActionRequestAdmission = {
 		kind = "Start",
@@ -76,6 +79,8 @@ it("reserves immutable original Start metadata before the packet leaves", functi
 		actionId = "Movement.Sprint",
 		origin = "Input",
 		inputTimestamp = 12.5,
+		requestKey = reserved.requestKey,
+		originalStartKey = reserved.requestKey,
 	}
 
 	expect(observedDuringSend).toEqual(expected)

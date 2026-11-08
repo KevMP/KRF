@@ -119,6 +119,7 @@ function Transitions.Diff(
 					previous = previous,
 					next = nextSnapshot,
 					reason = reason,
+					invalidated = if force then true else nil,
 				})
 			)
 		end

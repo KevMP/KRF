@@ -1,11 +1,51 @@
 --!strict
 local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local SharedRequestTypes = require(script.Parent.Parent.Parent.shared.ActionRequest.types)
 local State = require(script.Parent.utils.ClientActionRuntimeState)
 
 local emptySources: { Types.ProfileSourceSnapshot } = table.freeze({} :: { Types.ProfileSourceSnapshot })
 
 local facade: Types.ClientActionRuntime = {
+	RetireRequest = function(original: number): (boolean, string?)
+		local owner: Types.ActionInputOwner? = State.GetInput()
+
+		if owner == nil then
+			return false, "ClientNotReady"
+		end
+
+		return owner.RetireRequest(original)
+	end,
+	RequestAction = function(actor: ActorTypes.ActorView, actionId: string, parameters: any?): (number?, string?)
+		local owner: Types.ActionInputOwner? = State.GetInput()
+
+		if owner == nil then
+			return nil, "ClientNotReady"
+		end
+
+		return owner.RequestAction(actor, actionId, parameters)
+	end,
+	RequestStop = function(original: number, parameters: any?): (number?, string?)
+		local owner: Types.ActionInputOwner? = State.GetInput()
+
+		if owner == nil then
+			return nil, "ClientNotReady"
+		end
+
+		return owner.RequestStop(original, parameters)
+	end,
+	RequestInterrupt = function(
+		original: number,
+		reason: SharedRequestTypes.ActionInputInterruptReason
+	): (number?, string?)
+		local owner: Types.ActionInputOwner? = State.GetInput()
+
+		if owner == nil then
+			return nil, "ClientNotReady"
+		end
+
+		return owner.RequestInterrupt(original, reason)
+	end,
 	SetProfileSource = function(
 		actor: ActorTypes.ActorView,
 		sourceId: string,

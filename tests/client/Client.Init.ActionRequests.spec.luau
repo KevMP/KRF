@@ -7,6 +7,7 @@ local expect: any = JestGlobals.expect
 local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local ClientTypes = require(KRF.client.types)
+local ActionTypes = require(KRF.client.Action.types)
 local Types = require(KRF.client.ActionRequest.types)
 local PublicTypes = require(KRF.client.Actor.types)
 local SharedTypes = require(KRF.shared.Networking.types)
@@ -25,6 +26,7 @@ local SharedRequestUtils = require(script.Parent.Parent.shared.Utils.ActionReque
 local Clock = require(script.Parent.Parent.shared.Utils.TestClock)
 local clock = Clock.new()
 local commandFixture: CommandUtils.Fixture? = nil
+local inputPolicies: ActionTypes.ActionInputPolicies = { ["Movement.Sprint"] = { activation = "WhileDown" } }
 
 beforeEach(function()
 	Client._ResetForTests()
@@ -94,7 +96,12 @@ end)
 
 it("fails startup without READY when the server published no Action request commands", function()
 	local fixture: CommandUtils.Fixture = installing()
-	CommandUtils.start(fixture, { actionRequestSchemas = SharedRequestUtils.schemas() })
+
+	CommandUtils.start(
+		fixture,
+		{ actionRequestSchemas = SharedRequestUtils.schemas(), actionInputPolicies = inputPolicies }
+	)
+
 	CommandUtils.bootstrap(fixture)
 
 	local result: ClientUtils.InitResult? = fixture.client.result
@@ -111,7 +118,12 @@ end)
 
 it("installs the Action request runtime before READY and removes it on reset", function()
 	local fixture: CommandUtils.Fixture = installing()
-	CommandUtils.start(fixture, { actionRequestSchemas = SharedRequestUtils.schemas() })
+
+	CommandUtils.start(
+		fixture,
+		{ actionRequestSchemas = SharedRequestUtils.schemas(), actionInputPolicies = inputPolicies }
+	)
+
 	CommandUtils.bootstrap(fixture, RequestUtils.manifestCommands())
 	expect(State.Get()).never.toBeNil()
 	ClientUtils.acknowledge(fixture.client)
@@ -130,7 +142,13 @@ end)
 it("sends a typed Start through the real command runtime with the shared contract tag", function()
 	local fixture: CommandUtils.Fixture = installing()
 	local schemas: ActionRequestTypes.ActionRequestSchemas = SharedRequestUtils.schemas()
-	CommandUtils.ready(fixture, { actionRequestSchemas = schemas }, RequestUtils.manifestCommands())
+
+	CommandUtils.ready(
+		fixture,
+		{ actionRequestSchemas = schemas, actionInputPolicies = inputPolicies },
+		RequestUtils.manifestCommands()
+	)
+
 	local view: PublicTypes.ActorView = CommandUtils.baseline(fixture)
 	local runtime: Types.ClientActionRequestRuntime? = State.Get()
 	assert(runtime ~= nil, "Expected the installed Action request runtime")
@@ -166,7 +184,7 @@ it("still admits Stop and Interrupt for a running Sprint after ordinary commands
 
 	CommandUtils.ready(
 		fixture,
-		{ actionRequestSchemas = SharedRequestUtils.schemas() },
+		{ actionRequestSchemas = SharedRequestUtils.schemas(), actionInputPolicies = inputPolicies },
 		RequestUtils.manifestCommands()
 	)
 

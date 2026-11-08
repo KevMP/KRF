@@ -1,6 +1,8 @@
 --!strict
 local SharedNetworkingTypes = require(script.Parent.Parent.shared.Networking.types)
 local ActionRequestTypes = require(script.Parent.Parent.shared.ActionRequest.types)
+local ActionTypes = require(script.Parent.Action.types)
+local NetworkingTypes = require(script.Parent.Networking.types)
 
 local types = {}
 
@@ -10,10 +12,11 @@ export type StartupFailure = { system: string, reason: string }
 -- network-only module passed to Server.Init; omitting it keeps Client.Init() unchanged.
 export type ClientInitConfig = {
 	actionRequestSchemas: ActionRequestTypes.ActionRequestSchemas?,
+	actionInputPolicies: ActionTypes.ActionInputPolicies?,
 }
 
-export type ClientUnreliableObserver = (callback: (any, ...any) -> ()) -> () -> ()
-export type ClientStepObserver = (callback: () -> ()) -> () -> ()
+export type ClientUnreliableObserver = NetworkingTypes.ClientUnreliableObserver
+export type ClientStepObserver = NetworkingTypes.ClientStepObserver
 
 export type ClientTransport = {
 	ConnectReliable: (callback: (any, ...any) -> ()) -> () -> (),

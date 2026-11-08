@@ -6,7 +6,7 @@ sidebar_position: 12
 
 Action requests let a client ask the server to Start, Stop or Interrupt an Action on an Actor it controls. A shared request schema module declares which Actions accept client requests and the typed parameters each one carries. `ActionController` still decides every Start through grants, requirements, costs, locks and `onCanStart`; the request contract is not a grant.
 
-Game code does not send these requests directly; the client-side request runtime is framework-internal. Game code supplies the schema module, the Action definitions and, where needed, a server control policy.
+Use [Action input policies](./action-input) for routed input or [`ClientActionRuntime`](/api/Action/client-action-runtime) for explicit requests. Both use the same schema checks and server authority.
 
 ## Declare requestable Actions
 
@@ -44,7 +44,7 @@ return {
 | `start` | none | [Schema](../Networking/schemas) for Start parameters. Omitted means the Start carries no parameters. |
 | `stop` | none | Enables Stop. `{}` is a parameterless Stop; `{ parameters = schema }` types its parameters. |
 | `allowInputInterrupt` | `false` | Lets the client Interrupt its own activation with a fixed input reason. |
-| `requiresClientRelease` | `false` | Declares that the Action runs until the client releases it. Requires `stop` and `onDisconnect = "Interrupt"`. |
+| `requiresClientRelease` | `false` | Requires genuine release-driven Stop and an explicit client WhileDown policy. Requires `stop` and `onDisconnect = "Interrupt"`; Stop remains nonterminal. |
 | `onDisconnect` | `"Keep"` | `"Interrupt"` interrupts the activation when its requesting connection closes; `"Keep"` leaves it running. |
 
 Each Action id is a valid UTF-8 string of at most 96 bytes. Each parameter schema's encoded maximum must fit within 8,192 bytes. Unknown fields fail startup.
@@ -61,15 +61,7 @@ Each Action id is a valid UTF-8 string of at most 96 bytes. Each parameter schem
 
 ## Initialize both sides
 
-Pass the same module to [`Server.Init`](/api/Server/) and [`Client.Init`](/api/Client/). See [Initializing KRF](../initializing-krf) for the complete startup scripts.
-
-```lua
-local schemas = require(ReplicatedStorage.ActionRequestSchemas)
-
-Server.Init({ actions = actions, actionRequestSchemas = schemas })
--- On the client:
-Client.Init({ actionRequestSchemas = schemas })
-```
+Pass the same module to [`Server.Init`](/api/Server/) and [`Client.Init`](/api/Client/). Supply client-only `actionInputPolicies` alongside it. The Sprint declaration above requires an explicit `{ activation = "WhileDown" }` entry; a missing policy defaults to OneShot only when the wire contract permits it. See [Initializing KRF](../initializing-krf) for startup integration.
 
 The server compiles the module before any game callback runs and checks every listed id against the Action catalog (`ActionRequestUnknownAction`). Failures use `system = "ActionRequest"`. The client compiles its copy before it contacts the server, and fails startup if the server did not publish compatible request commands. A client without `actionRequestSchemas` starts normally and sends no Action requests.
 
@@ -132,6 +124,7 @@ Stop and Interrupt keep a small protected share of command capacity, so a burst 
 ## Related
 
 - [Action lifecycle](./action-lifecycle)
+- [Action input](./action-input)
 - [Commands](../Networking/commands)
 - [Schemas](../Networking/schemas)
 - [Initializing KRF](../initializing-krf)

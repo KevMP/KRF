@@ -38,6 +38,9 @@ type State = {
 	egress: { Egress },
 	flushing: boolean,
 	observers: { (Types.CommandResult) -> () },
+	capacityObservers: Observers.Registry<() -> ()>,
+	expirationObservers: Observers.Registry<(number, string) -> ()>,
+	afterEgress: { () -> () },
 	-- Framework-classified lifecycle follow-ups and the pending headroom kept for them.
 	followUps: { [string]: boolean },
 	followUpPending: number,
@@ -122,7 +125,20 @@ function ClientCommandRuntime._uncertain(self: Runtime, id: number, reason: stri
 
 	pending.cancel = self.options.ScheduleTimeout(self.options.graceSeconds or Constants.GRACE_SECONDS, function(): ()
 		pending.cancel = nil
-		self:_remove(id)
+
+		local removed: Pending? = self:_remove(id)
+
+		if removed ~= nil then
+			self:_AfterEgress(function(): ()
+				for _, entry in self.expirationObservers.Snapshot() do
+					if entry.active then
+						Observers.Run(entry.callback, id, removed.command.id)
+					end
+				end
+			end)
+		end
+
+		self:_capacity()
 	end)
 
 	self:_notify(id, pending, "Unknown", nil, reason)
@@ -253,6 +269,43 @@ function ClientCommandRuntime._flush(self: Runtime): ()
 	end
 
 	self.flushing = false
+
+	local callbacks: { () -> () } = self.afterEgress
+
+	self.afterEgress = {}
+
+	for _, callback in callbacks do
+		Observers.Run(callback)
+	end
+end
+
+function ClientCommandRuntime._AfterEgress(self: Runtime, callback: () -> ()): ()
+	-- Closing Unknown outcomes still need correlation after Destroy marks N9 terminal.
+	if self.flushing then
+		table.insert(self.afterEgress, callback)
+	else
+		Observers.Run(callback)
+	end
+end
+
+function ClientCommandRuntime._capacity(self: Runtime): ()
+	if not self.destroyed then
+		self:_AfterEgress(function(): ()
+			for _, entry in self.capacityObservers.Snapshot() do
+				if entry.active then
+					Observers.Run(entry.callback)
+				end
+			end
+		end)
+	end
+end
+
+function ClientCommandRuntime._ObserveCapacity(self: Runtime, observer: () -> ()): () -> ()
+	return self.capacityObservers.Add(observer)
+end
+
+function ClientCommandRuntime._ObserveExpirations(self: Runtime, observer: (number, string) -> ()): () -> ()
+	return self.expirationObservers.Add(observer)
 end
 
 function ClientCommandRuntime.Send(
@@ -282,7 +335,8 @@ function ClientCommandRuntime._SendAdmitted(
 	commandId: string,
 	actor: PublicTypes.ActorView?,
 	request: any?,
-	admit: Types.CommandAdmission
+	admit: Types.CommandAdmission,
+	committed: ((number) -> ())?
 ): (number?, string?)
 	local prepared: Prepared?, reason: string? = self:_prepare(commandId, actor, request)
 
@@ -323,6 +377,11 @@ function ClientCommandRuntime._SendAdmitted(
 	end
 
 	self:_track(prepared, actor)
+
+	if committed ~= nil then
+		Observers.Run(committed, id)
+	end
+
 	slot.reserved = false
 	self:_flush()
 
@@ -406,6 +465,7 @@ function ClientCommandRuntime.Handle(self: Runtime, payload: any): boolean
 	else
 		self:_remove(result.requestId)
 		self:_notify(result.requestId, pending, result.status, result.result, result.reason)
+		self:_capacity()
 	end
 
 	return true
@@ -418,6 +478,9 @@ function ClientCommandRuntime.Destroy(self: Runtime): ()
 
 	self.destroyed = true
 	table.clear(self.egress)
+	table.clear(self.afterEgress)
+	self.capacityObservers.Destroy()
+	self.expirationObservers.Destroy()
 
 	for id: number, pending: Pending in self.pending do
 		self:_remove(id)
@@ -447,6 +510,9 @@ function ClientCommandRuntime.new(
 		egress = {},
 		flushing = false,
 		observers = {},
+		capacityObservers = Observers.new(16, "CommandCapacityObserverLimitExceeded") :: Observers.Registry<() -> ()>,
+		expirationObservers = Observers.new(16, "CommandExpirationObserverLimitExceeded") :: Observers.Registry<(number, string) -> ()>,
+		afterEgress = {},
 		followUps = {},
 		followUpPending = 0,
 		followUpBytes = 0,

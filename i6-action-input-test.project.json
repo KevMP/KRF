@@ -1,0 +1,14 @@
+{
+  "name": "KRF-I6-Action-Input-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "ActionInputSchemas": { "$path": "tests/integration/ActionInput/Schemas.luau" },
+      "ActionInputControl": { "$className": "RemoteEvent" },
+      "ActionInputProbe": { "$className": "RemoteFunction" }
+    },
+    "ServerScriptService": { "ActionInputServer": { "$path": "tests/integration/ActionInput/Server.server.luau" } },
+    "StarterPlayer": { "StarterPlayerScripts": { "ActionInputClient": { "$path": "tests/integration/ActionInput/Client.client.luau" } } }
+  }
+}
