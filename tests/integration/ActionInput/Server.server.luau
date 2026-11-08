@@ -20,6 +20,7 @@ type Ledger = {
 	auraStarts: number,
 	auraStops: number,
 	oneShots: number,
+	keeps: number,
 	contexts: { ActionTypes.ActionExecutionContext },
 	aura: ActionTypes.ActionExecutionContext?,
 }
@@ -60,6 +61,18 @@ local function factory(definition: ActionTypes.ActionDefinition): ActionTypes.Ac
 end
 
 local actions: { ActionTypes.ActionFactory } = {
+	factory({
+		id = "Combat.Keep",
+		visibility = "ServerOnly",
+		autoGrant = true,
+		onStart = function(context: ActionTypes.ActionExecutionContext): ()
+			context:End()
+
+			if not context:IsActive() then
+				ledgers[context.actor].keeps += 1
+			end
+		end,
+	}),
 	factory({
 		id = "Combat.OneShot",
 		visibility = "ServerOnly",
@@ -123,6 +136,7 @@ local actions: { ActionTypes.ActionFactory } = {
 probe.OnServerInvoke = function(player: Player): any
 	local ledger: Ledger = ledgers[owned[player]]
 	local first: ActionTypes.ActionExecutionContext? = ledger.contexts[1]
+	local latest: ActionTypes.ActionExecutionContext? = ledger.contexts[#ledger.contexts]
 
 	return {
 		starts = table.clone(ledger.starts),
@@ -132,6 +146,7 @@ probe.OnServerInvoke = function(player: Player): any
 		auraStarts = ledger.auraStarts,
 		auraStops = ledger.auraStops,
 		releasedStillActive = first ~= nil and first:IsActive(),
+		latestStillActive = latest ~= nil and latest:IsActive(),
 		auraStillActive = ledger.aura ~= nil and ledger.aura:IsActive(),
 	}
 end
@@ -154,7 +169,13 @@ control.OnServerEvent:Connect(function(player: Player, report: any): ()
 
 	local ledger: Ledger = ledgers[owned[player]]
 
-	if #ledger.starts ~= 4 or #ledger.releases ~= 2 or ledger.releases[1] ~= 8 or ledger.interrupts ~= 2 then
+	if
+		#ledger.starts ~= 85
+		or #ledger.releases ~= 3
+		or ledger.releases[1] ~= 8
+		or ledger.releases[3] ~= 17
+		or ledger.interrupts ~= 82
+	then
 		finish(false, "OriginalActionLifecycleMismatch")
 
 		return
@@ -168,6 +189,10 @@ control.OnServerEvent:Connect(function(player: Player, report: any): ()
 		return
 	elseif ledger.oneShots ~= 80 then
 		finish(false, "RepeatableOneShotCapacityExhausted")
+
+		return
+	elseif ledger.keeps ~= 80 then
+		finish(false, "KeepDetachmentCapacityExhausted")
 
 		return
 	end
@@ -212,6 +237,7 @@ local function admit(player: Player): ()
 		auraStarts = 0,
 		auraStops = 0,
 		oneShots = 0,
+		keeps = 0,
 		contexts = {},
 	}
 

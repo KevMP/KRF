@@ -52,6 +52,7 @@ local function run(): any
 	local stopCalls: number = 0
 
 	local policies: Types.ActionInputPolicies = {
+		["Combat.Keep"] = { activation = "Toggle" },
 		["Combat.Rasengan"] = {
 			activation = "WhileDown",
 			startParameters = function(): any
@@ -251,6 +252,40 @@ local function run(): any
 		settled(started.requestId, "Accepted")
 		assert(requests:_GetRetainedCountForTests() == 0, "OneShotKeptCompletedCorrelation")
 	end
+
+	equipped = "Combat.Keep"
+
+	for _ = 1, 80 do
+		local previous: number = #admissions
+		tap("AbilitySlot1")
+		assert(#admissions == previous + 1, "KeepStartCapacityExhausted")
+		local started: RequestTypes.ActionRequestAdmission = admissions[previous + 1]
+		assert(Runtime.RemoveProfileSource(actor, "Core"))
+		assert(#admissions == previous + 1, "KeepDetachmentSentFollowUp")
+		assert(requests:GetOriginalStart(started.requestId) == nil, "KeepDetachmentKeptAuthority")
+		settled(started.requestId, "Accepted")
+		assert(requests:_GetRetainedCountForTests() == 0, "KeepDetachmentKeptCorrelation")
+		assert(Runtime.SetProfileSource(actor, "Core", profile))
+	end
+
+	for _ = 1, 80 do
+		local directOriginal: number = assert(direct.RequestAction(actor, "Combat.Rasengan", { aim = 5 }))
+		settled(directOriginal, "Accepted")
+		local interrupted: number = assert(direct.RequestInterrupt(directOriginal, "FocusLost"))
+		settled(interrupted, "Accepted")
+		assert(requests:GetOriginalStart(directOriginal) == nil, "AcceptedInterruptKeptAuthority")
+		assert(requests:_GetRetainedCountForTests() == 0, "AcceptedInterruptKeptCorrelation")
+	end
+
+	local nonterminal: number = assert(direct.RequestAction(actor, "Combat.Rasengan", { aim = 13 }))
+	settled(nonterminal, "Accepted")
+	settled(assert(direct.RequestStop(nonterminal, { releaseAim = 17 })), "Accepted")
+	assert(requests:GetOriginalStart(nonterminal) ~= nil, "NonterminalStopRetiredAuthority")
+	local beforeRetirement: number = #admissions
+	assert(Runtime.RetireRequest(nonterminal))
+	assert(#admissions == beforeRetirement, "LocalRetirementSentCommand")
+	assert(requests:_GetRetainedCountForTests() == 0, "LocalRetirementKeptAuthority")
+	assert(probe:InvokeServer().latestStillActive, "LocalRetirementEndedServerAction")
 
 	Client._ResetForTests()
 	assert(RequestState.Get() == nil, "TeardownRetainedRequestRuntime")

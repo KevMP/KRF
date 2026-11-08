@@ -37,7 +37,7 @@ type State = {
 	maxOriginalStarts: number,
 	originals: { [number]: Original },
 	originalCount: number,
-	-- Stop and Interrupt requests awaiting their first outcome.
+	-- Interrupt correlation survives Unknown until a definitive result or N9 expiry.
 	followUps: { [number]: Types.ActionRequestAdmission },
 	followUpCount: number,
 	facts: Facts.Owner,
@@ -76,9 +76,22 @@ end
 -- Losing late-result correlation does not prove denial or end a possible live
 -- activation. Its receipt remains usable only when the wire permits follow-ups.
 function ClientActionRequestRuntime._expire(self: Runtime, requestId: number, commandId: string): ()
+	if self.destroyed then
+		return
+	elseif commandId == Constants.INTERRUPT_COMMAND_ID then
+		local followUp: Types.ActionRequestAdmission? = self.followUps[requestId]
+
+		if followUp ~= nil and followUp.kind == "Interrupt" then
+			self.followUps[requestId] = nil
+			self.followUpCount -= 1
+		end
+
+		return
+	end
+
 	local original: Original? = self.originals[requestId]
 
-	if self.destroyed or commandId ~= Constants.START_COMMAND_ID or original == nil then
+	if commandId ~= Constants.START_COMMAND_ID or original == nil then
 		return
 	end
 
@@ -126,10 +139,18 @@ function ClientActionRequestRuntime._receive(self: Runtime, result: NetworkingTy
 			return
 		end
 
-		-- Unknown is final for a follow-up: I5 never retries or escalates it.
-		self.followUps[result.requestId] = nil
-		self.followUpCount -= 1
 		admission = followUp
+
+		-- Never replay Unknown. Retain Interrupt metadata during grace so a late
+		-- Accepted result can release authority for its definitively ended original.
+		if kind ~= "Interrupt" or result.status ~= "Unknown" then
+			self.followUps[result.requestId] = nil
+			self.followUpCount -= 1
+		end
+
+		if kind == "Interrupt" and result.status == "Accepted" then
+			self:Retire(admission.originalStartRequestId)
+		end
 	end
 
 	local outcome: Types.ActionRequestOutcome = table.freeze({

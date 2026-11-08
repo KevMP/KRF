@@ -15,6 +15,7 @@ local schemas: Types.ActionRequestSchemas = {
 	},
 	["Combat.Fireball"] = { start = Schema.Struct({ aim = Schema.F32 }) },
 	["Combat.OneShot"] = { stop = {}, allowInputInterrupt = true },
+	["Combat.Keep"] = { stop = {}, allowInputInterrupt = true },
 	["Movement.Sprint"] = { stop = {}, allowInputInterrupt = true, onDisconnect = "Interrupt" },
 	["Mode.Aura"] = { stop = {}, allowInputInterrupt = true },
 }

@@ -103,7 +103,7 @@ assert(Actions.SetProfileSource(actorView, "Signs", {
 
 Press X, Q, then hold Z. Z owns the charge; releasing X or Q does not stop it. WhileDown also accepts live Pressed, DoubleTapped, Held, LongHeld and compatible immediate custom matches. Tap, deferred matches, timeouts, analog inputs and stale/ambiguous press owners cannot start WhileDown. KRF rechecks the epoch after the producer; refusal does not fall through to a competing route.
 
-Toggle ignores key release. A second trigger must match the same ActorView, effective route continuity and concrete Action. It runs the original Stop producer without another Start producer. Locally admitted Stop retires toggle matching even if the server Action remains alive; the next trigger can request a new Start. Changing the selected Action does not toggle off a different one. Keep invalidation discards matching ownership permanently.
+Toggle ignores key release. A second trigger must match the same ActorView, effective route continuity and concrete Action. It runs the original Stop producer without another Start producer. Locally admitted Stop retires toggle matching even if the server Action remains alive; the next trigger can request a new Start. Changing the selected Action does not toggle off a different one. Keep invalidation discards matching ownership and the original's client follow-up authority permanently; the server Action continues under its independent lifetime rules.
 
 ## Explicit requests and server lifetime
 
@@ -128,7 +128,9 @@ end
 
 Here `actorView`, `aim` and `releaseAim` are game-supplied values matching the shared schema. Returned ids mean local admission, not server acceptance or a running instance. Stop delivers nonterminal intent to `onStopRequested`; only the server Action decides to End. Early release before Start acknowledgement is supported, and Unknown does not prove denial. Absence of an ActionsView never proves a ServerOnly Action ended.
 
-A successful direct follow-up for an automatic activation retires that input ownership before another release can duplicate it. There is no public activation-id enumeration. A detached Keep Action needs game-authored server lifetime handling or correlation already retained independently by game code. No public input-decision or presentation event stream is exposed.
+A successful direct follow-up for an automatic activation retires that input ownership before another release can duplicate it. There is no public activation-id enumeration. A detached Keep Action needs game-authored server lifetime handling. No public input-decision or presentation event stream is exposed.
+
+For directly started Actions, Accepted Stop leaves follow-up authority usable because Stop is nonterminal. A definitively Accepted Interrupt releases that authority automatically. When game code deliberately gives up further control, call `Actions.RetireRequest(original)`. This is local-only: it preserves pending results and does not end the server Action. Unknown or Rejected Interrupts do not imply termination; late Accepted results during the command grace window still retire the original.
 
 ## Validation {#validation}
 

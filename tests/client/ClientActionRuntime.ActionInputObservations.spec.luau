@@ -139,7 +139,7 @@ it("reports genuine local intent even when the Stop producer fails before admiss
 	})
 end)
 
-it("keeps original manual correlation after Keep detachment without synthetic release facts", function()
+it("retires Keep authority while preserving late result correlation without synthetic release facts", function()
 	local owner: Types.ActionInputOwner = ready()
 	Utils.set(fixture, { Utils.route("Mode.Aura") })
 	local facts: { Types.ActionInputDecision } = {}
@@ -154,11 +154,13 @@ it("keeps original manual correlation after Keep detachment without synthetic re
 	expect(#facts).toBe(1)
 	expect(facts[1].kind).toBe("InvalidatedKeep")
 	expect(facts[1].original.actor).toBe(fixture.actor)
-	expect({ Runtime.RequestStop(1) }).toEqual({ 2 })
+	expect({ Runtime.RequestStop(1) }).toEqual({ nil, "ActionStartUnknown" })
+	Utils.outcome(fixture, 1, "KRF.Action.Start", "Accepted")
+	expect(assert(Requests.Get()):_GetRetainedCountForTests()).toBe(0)
 	expect(#facts).toBe(1)
 	Utils.set(fixture, { Utils.route("Mode.Aura") })
 	Utils.tap(fixture)
-	expect(Utils.packets(fixture)[3].kind).toBe("KRF.Action.Start")
+	expect(Utils.packets(fixture)[2].kind).toBe("KRF.Action.Start")
 end)
 
 it("retires automatic ownership before a direct Stop's transport can release the key", function()

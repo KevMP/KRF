@@ -26,6 +26,7 @@ Public contract types are in `KRF.client.Action.types`. `ActorView` is the clien
 | Method | [`RequestAction(actor: ActorView, actionId: string, parameters: any?) -> (number?, string?)`](#request-action) |
 | Method | [`RequestStop(originalStartRequestId: number, parameters: any?) -> (number?, string?)`](#request-stop) |
 | Method | [`RequestInterrupt(originalStartRequestId: number, reason: ActionInputInterruptReason) -> (number?, string?)`](#request-interrupt) |
+| Method | [`RetireRequest(originalStartRequestId: number) -> (boolean, string?)`](#retire-request) |
 
 ## Methods
 
@@ -76,6 +77,14 @@ Returns `ActionStartUnknown` when the original is unknown, retired or belongs to
 Requests Interrupt against the exact original Start. Reasons are `"ActorSwitched"`, `"ClientShutdown"`, `"ContextDisabled"`, `"FocusLost"`, `"RouteInvalidated"` or `"StopPreparationFailed"`.
 
 Shares Stop's readiness, original identity, reentrancy and capacity denials. Returns `ActionInterruptNotAllowed` without wire permission, or `ActionInterruptReasonInvalid` for an unsupported reason. Local admission does not prove server cancellation.
+
+An Accepted Interrupt retires the original's follow-up authority, including a late Accepted result received during the command grace window. Unknown or Rejected Interrupts do not prove termination and retain that authority.
+
+### `RetireRequest(originalStartRequestId: number) -> (boolean, string?)` {#retire-request}
+
+Locally relinquishes the original request's follow-up authority. Sends no network command and does not Stop, Interrupt or End the server Action. Pending command results remain correlated. For an input-owned original, also detaches automatic ownership so a subsequent release cannot send a follow-up.
+
+Returns `true, nil` on retirement. Returns `false, reason` with `ClientNotReady`, `DispatchInProgress`, `ActionStartUnknown` for an unknown or already retired original, or `ActionInputRequestInProgress` while the same automatic activation is preparing a request. Use when game code deliberately gives up further control; Accepted Stop alone remains nonterminal and does not release a direct original's authority.
 
 ### Shared payload denials
 

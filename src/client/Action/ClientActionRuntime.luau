@@ -7,6 +7,15 @@ local State = require(script.Parent.utils.ClientActionRuntimeState)
 local emptySources: { Types.ProfileSourceSnapshot } = table.freeze({} :: { Types.ProfileSourceSnapshot })
 
 local facade: Types.ClientActionRuntime = {
+	RetireRequest = function(original: number): (boolean, string?)
+		local owner: Types.ActionInputOwner? = State.GetInput()
+
+		if owner == nil then
+			return false, "ClientNotReady"
+		end
+
+		return owner.RetireRequest(original)
+	end,
 	RequestAction = function(actor: ActorTypes.ActorView, actionId: string, parameters: any?): (number?, string?)
 		local owner: Types.ActionInputOwner? = State.GetInput()
 

@@ -93,6 +93,7 @@ export type ActionDirectRequests = {
 	read RequestAction: (ActorTypes.ActorView, string, any?) -> (number?, string?),
 	read RequestStop: (number, any?) -> (number?, string?),
 	read RequestInterrupt: (number, SharedRequestTypes.ActionInputInterruptReason) -> (number?, string?),
+	read RetireRequest: (number) -> (boolean, string?),
 }
 
 export type ClientActionRuntime = ClientActionRoutes & ActionDirectRequests

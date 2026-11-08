@@ -90,13 +90,12 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 		end)
 	end
 
-	-- Admission ends automatic authority before physical egress can reenter Input.
-	-- I5 keeps any unsettled Start result correlation independently.
+	-- Local ownership can finish independently of pending Start result correlation.
 	local function close(record: Activations.Record): ()
 		record.delivery = "Complete"
 		store.Remove(record)
 
-		requests:Retire(assert(record.admission, "Expected admitted follow-up").requestId)
+		requests:Retire(assert(record.admission, "Expected original admission").requestId)
 	end
 
 	pump = function(record: Activations.Record): ()
@@ -122,6 +121,12 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 
 		if requests:GetOriginalStart(original) == nil then
 			store.Remove(record)
+
+			return
+		end
+
+		if record.intent == "Keep" then
+			close(record)
 
 			return
 		end
@@ -173,7 +178,7 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 
 		record.busy = false
 
-		if requestId ~= nil or record.intent == "Keep" or not FollowUps.IsPressure(failure) then
+		if requestId ~= nil or not FollowUps.IsPressure(failure) then
 			record.delivery = "Complete"
 			store.Remove(record)
 		else
@@ -311,7 +316,10 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 		table.insert(
 			disconnects,
 			requests:ObserveOutcomes(function(outcome): ()
-				if outcome.admission.kind == "Start" and outcome.status == "Rejected" then
+				if
+					(outcome.admission.kind == "Start" and outcome.status == "Rejected")
+					or (outcome.admission.kind == "Interrupt" and outcome.status == "Accepted")
+				then
 					local record: Activations.Record? = store.ByRequest(outcome.admission.originalStartRequestId)
 
 					if record ~= nil then
@@ -423,6 +431,29 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 			return manual(original, function(committed): (number?, string?)
 				return requests:Interrupt(original, reason, nil, committed)
 			end)
+		end,
+		RetireRequest = function(original: number): (boolean, string?)
+			local unavailable: string? = requestStatus()
+
+			if unavailable ~= nil then
+				return false, unavailable
+			elseif requests:GetOriginalStart(original) == nil then
+				return false, "ActionStartUnknown"
+			end
+
+			local record: Activations.Record? = store.ByRequest(original)
+
+			if record ~= nil then
+				if record.busy then
+					return false, "ActionInputRequestInProgress"
+				end
+
+				close(record)
+			else
+				requests:Retire(original)
+			end
+
+			return true, nil
 		end,
 		ObserveDecisions = decisions.Add,
 		Destroy = destroy,
