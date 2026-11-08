@@ -38,6 +38,12 @@ local function commands(classified: { { string } }?): NetworkingTypes.ClientComm
 		_ObserveOutcomes = function(): () -> ()
 			return function(): () end
 		end,
+		_ObserveCapacity = function(): () -> ()
+			return function(): () end
+		end,
+		_AfterEgress = function(_self: NetworkingTypes.ClientCommandRuntime, callback: () -> ()): ()
+			callback()
+		end,
 		_ClassifyFollowUps = function(_self: any, commandIds: { string }): (boolean, string?)
 			if classified ~= nil then
 				table.insert(classified, table.clone(commandIds))

@@ -14,6 +14,20 @@ local invalidations: Observers.Registry<(Types.ActorView, string) -> ()> =
 
 local resetting: boolean = false
 local invalidationDepth: number = 0
+local afterInvalidation: { () -> () } = {}
+
+local function flush(): ()
+	if invalidationDepth > 0 or resetting then
+		return
+	end
+
+	local callbacks: { () -> () } = afterInvalidation
+	afterInvalidation = {}
+
+	for _, callback in callbacks do
+		Observers.Run(callback)
+	end
+end
 
 local function invalidate(view: Types.ActorView, reason: string): ()
 	if identities[view] ~= true or retired[view] then
@@ -36,7 +50,18 @@ local owner: Types.ActorViewRegistryOwner = {
 	IsInvalidationInProgress = function(): boolean
 		return invalidationDepth > 0
 	end,
-	Invalidate = invalidate,
+	AfterInvalidation = function(callback: () -> ()): ()
+		if invalidationDepth > 0 or resetting then
+			assert(#afterInvalidation < 64, "ActorInvalidationCallbackLimitExceeded")
+			table.insert(afterInvalidation, callback)
+		else
+			Observers.Run(callback)
+		end
+	end,
+	Invalidate = function(view, reason): ()
+		invalidate(view, reason)
+		flush()
+	end,
 	IsInvalidating = function(view: Types.ActorView): boolean
 		return retired[view] == true
 	end,
@@ -119,6 +144,7 @@ local owner: Types.ActorViewRegistryOwner = {
 		end
 
 		models[view] = nil
+		flush()
 	end,
 	Reset = function(): ()
 		if resetting then
@@ -136,6 +162,7 @@ local owner: Types.ActorViewRegistryOwner = {
 		table.clear(models)
 		table.clear(identities)
 		resetting = false
+		flush()
 	end,
 	Added = Signal.new(),
 	Removing = Signal.new(),

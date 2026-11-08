@@ -3,20 +3,21 @@ local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Network
 local PublicTypes = require(script.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
-local ClientTypes = require(script.Parent.Parent.types)
-
 local types = {}
+
+export type ClientUnreliableObserver = (callback: (any, ...any) -> ()) -> () -> ()
+export type ClientStepObserver = (callback: () -> ()) -> () -> ()
 
 export type ClientConsumerInstallationOptions = {
 	Now: () -> number,
 	ScheduleTimeout: (number, () -> ()) -> () -> (),
-	ObserveStep: ClientTypes.ClientStepObserver?,
+	ObserveStep: ClientStepObserver?,
 	installActorReceiver: (((any) -> ()) -> ())?,
 	sendReliable: ((buffer) -> ())?,
 	isReady: (() -> boolean)?,
 	onTerminalFailure: (() -> ())?,
 	sendUnreliable: ((buffer) -> ())?,
-	connectUnreliable: ClientTypes.ClientUnreliableObserver?,
+	connectUnreliable: ClientUnreliableObserver?,
 }
 
 -- Private local introspection; absent outside the owning runtime lifetime.
@@ -114,11 +115,14 @@ export type ClientCommandRuntime = {
 		commandId: string,
 		actor: PublicTypes.ActorView?,
 		request: any?,
-		admit: CommandAdmission
+		admit: CommandAdmission,
+		committed: ((number) -> ())?
 	) -> (number?, string?),
 	-- Synchronous framework observation before the public yield-safe result Signals,
 	-- including the Unknown emitted for unresolved commands when the connection closes.
 	_ObserveOutcomes: (self: ClientCommandRuntime, observer: (CommandResult) -> ()) -> () -> (),
+	_ObserveCapacity: (self: ClientCommandRuntime, observer: () -> ()) -> () -> (),
+	_AfterEgress: (self: ClientCommandRuntime, callback: () -> ()) -> (),
 	-- Framework-only: names lifecycle follow-ups that may use the protected pending headroom.
 	_ClassifyFollowUps: (self: ClientCommandRuntime, commandIds: { string }) -> (boolean, string?),
 	Destroy: (self: ClientCommandRuntime) -> (),

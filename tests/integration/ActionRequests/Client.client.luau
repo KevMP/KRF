@@ -51,7 +51,11 @@ local function outcome(requestId: number?, status: string, label: string): Types
 end
 
 local function run(): any
-	local initialized: boolean, failure = Client.Init({ actionRequestSchemas = schemas })
+	local initialized: boolean, failure = Client.Init({
+		actionRequestSchemas = schemas,
+		actionInputPolicies = { ["Movement.Sprint"] = { activation = "WhileDown" } },
+	})
+
 	assert(initialized, if failure ~= nil then failure.reason else "ClientInitFailed")
 	local runtime: Types.ClientActionRequestRuntime = assert(State.Get(), "Client.InitDidNotInstallActionRequests")
 

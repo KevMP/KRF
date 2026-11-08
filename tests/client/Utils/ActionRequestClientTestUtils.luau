@@ -32,6 +32,7 @@ export type Port = {
 	refusalAfterAdmit: string?,
 	onSend: ((Sent) -> ())?,
 	observers: { (NetworkingTypes.CommandResult) -> () },
+	capacityObservers: { () -> () },
 }
 
 export type Fixture = {
@@ -54,6 +55,7 @@ function TestUtils.port(): Port
 		refusalAfterAdmit = nil,
 		onSend = nil,
 		observers = {},
+		capacityObservers = {},
 	}
 
 	fake.port = table.freeze({
@@ -61,7 +63,8 @@ function TestUtils.port(): Port
 			commandId: string,
 			actor: ActorTypes.ActorView?,
 			request: any,
-			admit: NetworkingTypes.CommandAdmission
+			admit: NetworkingTypes.CommandAdmission,
+			committed: ((number) -> ())?
 		): (number?, string?)
 			if fake.refusal ~= nil then
 				return nil, fake.refusal
@@ -69,13 +72,19 @@ function TestUtils.port(): Port
 
 			local requestId: number = fake.nextId
 
-			if not admit(requestId) then
+			local ok: boolean, accepted: boolean = pcall(admit, requestId)
+
+			if not ok or not accepted then
 				return nil, "CommandAdmissionRefused"
 			elseif fake.refusalAfterAdmit ~= nil then
 				return nil, fake.refusalAfterAdmit
 			end
 
 			fake.nextId += 1
+
+			if committed ~= nil then
+				committed(requestId)
+			end
 
 			local sent: Sent = { commandId = commandId, actor = actor, request = request, requestId = requestId }
 			table.insert(fake.sent, sent)
@@ -98,9 +107,26 @@ function TestUtils.port(): Port
 				end
 			end
 		end,
+		ObserveCapacity = function(observer: () -> ()): () -> ()
+			table.insert(fake.capacityObservers, observer)
+
+			return function(): ()
+				local index: number? = table.find(fake.capacityObservers, observer)
+
+				if index ~= nil then
+					table.remove(fake.capacityObservers, index)
+				end
+			end
+		end,
 	})
 
 	return fake
+end
+
+function TestUtils.resumeCapacity(fixture: Fixture): ()
+	for _, observer in table.clone(fixture.port.capacityObservers) do
+		observer()
+	end
 end
 
 function TestUtils.view(fixture: Fixture?, actorId: string): ActorTypes.ActorViewOwner

@@ -88,11 +88,17 @@ function Installation.Install(
 	incarnations += 1
 
 	local port: Types.ActionRequestCommandPort = table.freeze({
-		SendAdmitted = function(commandId, actor, request, admit): (number?, string?)
-			return runtimeCommands:_SendAdmitted(commandId, actor, request, admit)
+		SendAdmitted = function(commandId, actor, request, admit, committed): (number?, string?)
+			return runtimeCommands:_SendAdmitted(commandId, actor, request, admit, committed)
 		end,
 		ObserveOutcomes = function(observer: (NetworkingTypes.CommandResult) -> ()): () -> ()
 			return runtimeCommands:_ObserveOutcomes(observer)
+		end,
+		ObserveCapacity = function(observer: () -> ()): () -> ()
+			return runtimeCommands:_ObserveCapacity(observer)
+		end,
+		AfterEgress = function(callback: () -> ()): ()
+			runtimeCommands:_AfterEgress(callback)
 		end,
 	})
 

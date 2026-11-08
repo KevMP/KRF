@@ -406,6 +406,7 @@ export type InputOwnerOptions = {
 export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: any?) -> (boolean, string?)
 
 export type InputOwner = {
+	AfterCommit: (() -> ()) -> (boolean, string?),
 	GetCommitContext: () -> InputCommitContext?,
 	ValidatePrepared: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
 	Disarm: (reason: string) -> (boolean, string?),

@@ -17,12 +17,13 @@ local Client = require(ReplicatedStorage.Packages.KRF.client)
 
 ### `Init(config: ClientInitConfig?) -> (boolean, StartupFailure?)` {#init}
 
-Discovers the framework transport and completes protocol initialization; may yield. `config` is optional and accepts only `actionRequestSchemas`, the same [Action request](/Action/action-requests) module passed to `Server.Init`.
+Discovers the framework transport and completes protocol initialization; may yield. `config` is optional and accepts `actionRequestSchemas`, the same [Action request](/Action/action-requests) module passed to `Server.Init`, and `actionInputPolicies`, a static client-only [Action policy catalog](/Action/action-input).
 
 - Returns `true, nil` after the server acknowledges readiness.
 - Returns `false, { system = "Client", reason = "ClientInitAlreadyAttempted" }` on any repeated attempt.
 - Returns a `Client` failure before any network work with `ClientConfigInvalid` when `config` is not a table, or `ClientConfigFieldUnknown` for any other field.
 - Action request failures use `system = "ActionRequest"`: a catalog reason when the module is invalid, `ActionRequestCommandsUnavailable` when the server published no request commands, or `ActionRequestCommandsIncompatible` when their contracts differ from this client's.
+- Policy validation failures use `system = "ActionInput"`; see [policy validation](/Action/action-input#validation). Both catalogs are validated before transport discovery, and consumer policy callbacks are not executed at startup.
 - Networking failures return `false, { system = "Networking", reason }` with one of the categories below.
 
 | Reason | Meaning |

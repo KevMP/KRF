@@ -13,6 +13,8 @@ local InputInstallation = require(script.Input.utils.InputInstallation)
 local ActionInstallation = require(script.Action.utils.ClientActionInstallation)
 local ActionRequestTypes = require(script.Parent.shared.ActionRequest.types)
 local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRequestCatalog)
+local ActionTypes = require(script.Action.types)
+local PolicyValidator = require(script.Action.ActionInputPolicyValidator)
 local ActionRequestInstallation = require(script.ActionRequest.utils.ClientActionRequestInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
@@ -24,37 +26,47 @@ local readyProtocol: SharedNetworkingTypes.ClientProtocol? = nil
 local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
 
-local CONFIG_FIELDS: { [string]: boolean } = { actionRequestSchemas = true }
+local CONFIG_FIELDS: { [string]: boolean } = { actionRequestSchemas = true, actionInputPolicies = true }
 
 table.freeze(CONFIG_FIELDS)
 
 -- Configuration is validated and compiled before any transport or diagnostics work.
-local function prepare(config: any): (ActionRequestTypes.ActionRequestCatalog?, StartupFailure?)
+local function prepare(
+	config: any
+): (ActionRequestTypes.ActionRequestCatalog?, ActionTypes.ActionInputCatalog?, StartupFailure?)
 	if config == nil then
-		return nil, nil
+		return nil, nil, nil
 	elseif type(config) ~= "table" then
-		return nil, { system = "Client", reason = "ClientConfigInvalid" }
+		return nil, nil, { system = "Client", reason = "ClientConfigInvalid" }
 	end
 
 	for field: any in next, config do
 		if type(field) ~= "string" or not CONFIG_FIELDS[field] then
-			return nil, { system = "Client", reason = "ClientConfigFieldUnknown" }
+			return nil, nil, { system = "Client", reason = "ClientConfigFieldUnknown" }
 		end
 	end
 
 	local schemas: any = rawget(config, "actionRequestSchemas")
 
-	if schemas == nil then
-		return nil, nil
+	local catalog: ActionRequestTypes.ActionRequestCatalog? = nil
+
+	if schemas ~= nil then
+		local reason: string?
+		catalog, reason = ActionRequestCatalog.Compile(schemas)
+
+		if catalog == nil then
+			return nil, nil, { system = "ActionRequest", reason = reason :: string }
+		end
 	end
 
-	local catalog: ActionRequestTypes.ActionRequestCatalog?, reason: string? = ActionRequestCatalog.Compile(schemas)
+	local policies: ActionTypes.ActionInputCatalog?, policyReason: string? =
+		PolicyValidator.Compile(rawget(config, "actionInputPolicies"), catalog)
 
-	if catalog == nil then
-		return nil, { system = "ActionRequest", reason = reason :: string }
+	if policies == nil then
+		return nil, nil, { system = "ActionInput", reason = policyReason :: string }
 	end
 
-	return catalog, nil
+	return catalog, policies, nil
 end
 
 local function dispose(callback: (() -> ())?): ()
@@ -75,7 +87,9 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	end
 
 	attempted = true
-	local requestCatalog: ActionRequestTypes.ActionRequestCatalog?, configFailure: StartupFailure? = prepare(config)
+
+	local requestCatalog: ActionRequestTypes.ActionRequestCatalog?, inputPolicies: ActionTypes.ActionInputCatalog?, configFailure: StartupFailure? =
+		prepare(config)
 
 	if configFailure ~= nil then
 		return false, configFailure
@@ -297,10 +311,6 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					return initialized and success
 				end)
 
-				cleanupActions = ActionInstallation.Install(function(): boolean
-					return initialized and success
-				end)
-
 				if requestCatalog ~= nil then
 					local stopRequests: (() -> ())?, requestReason: string? =
 						ActionRequestInstallation.Install(requestCatalog, reconstructed)
@@ -313,6 +323,10 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 
 					cleanupActionRequests = stopRequests
 				end
+
+				cleanupActions = ActionInstallation.Install(function(): boolean
+					return initialized and success
+				end, inputPolicies)
 
 				state = "AwaitAck"
 				local ready: buffer?, readyReason: string? = ProtocolCodec.Encode({ kind = "Ready" })
