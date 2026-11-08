@@ -7,8 +7,7 @@ local ActorTypes = require(KRF.client.Actor.types)
 local NetworkingTypes = require(KRF.client.Networking.types)
 local ActionRequestTypes = require(KRF.shared.ActionRequest.types)
 local SharedNetworkingTypes = require(KRF.shared.Networking.types)
-local Schema: SharedNetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
-local Constants = require(KRF.shared.ActionRequest.utils.ActionRequestConstants)
+local Envelopes = require(KRF.shared.ActionRequest.utils.ActionCommandEnvelopes)
 local Actor = require(KRF.client.Actor.ActorView)
 local Registry = require(KRF.client.Actor.utils.ActorViewRegistryState)
 local Runtime: Types.ClientActionRequestRuntimeModule = require(KRF.client.ActionRequest.ClientActionRequestRuntime)
@@ -170,40 +169,22 @@ function TestUtils.deliver(
 	end
 end
 
--- Bootstrap entries a server with request schemas publishes beside a consumer Game.Ping.
+-- Bootstrap entries a server with request schemas publishes beside a consumer Game.Ping,
+-- in the server's sorted code order.
 function TestUtils.manifestCommands(): { SharedNetworkingTypes.ManifestCommand }
-	return {
-		{ id = "Game.Ping", code = 0, target = "None" },
-		{
-			id = Constants.INTERRUPT_COMMAND_ID,
-			code = 1,
-			target = "None",
-			request = Schema.Struct({
-				originalStartRequestId = Schema.U32,
-				reason = Schema.Enum(table.clone(Constants.INTERRUPT_REASONS)),
-			}),
-		},
-		{
-			id = Constants.START_COMMAND_ID,
-			code = 2,
-			target = "Actor",
-			request = Schema.Struct({
-				actionId = Schema.String(Constants.MAX_ACTION_ID_BYTES),
-				contractTag = Schema.U32,
-				payload = Schema.String(Constants.MAX_PAYLOAD_BYTES),
-			}),
-			result = Schema.Struct({ sequenceId = Schema.U32 }),
-		},
-		{
-			id = Constants.STOP_COMMAND_ID,
-			code = 3,
-			target = "None",
-			request = Schema.Struct({
-				originalStartRequestId = Schema.U32,
-				payload = Schema.String(Constants.MAX_PAYLOAD_BYTES),
-			}),
-		},
-	}
+	local commands: { SharedNetworkingTypes.ManifestCommand } = { { id = "Game.Ping", code = 0, target = "None" } }
+
+	for _, envelope in { Envelopes.Interrupt, Envelopes.Start, Envelopes.Stop } do
+		table.insert(commands, {
+			id = envelope.id,
+			code = #commands,
+			target = envelope.target,
+			request = envelope.request,
+			result = envelope.result,
+		})
+	end
+
+	return commands
 end
 
 function TestUtils.destroy(fixture: Fixture?): ()

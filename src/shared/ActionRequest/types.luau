@@ -71,6 +71,8 @@ export type ActionContractTagModule = {
 		requiresClientRelease: boolean,
 		onDisconnect: ActionDisconnectPolicy
 	) -> number,
+	-- The canonical form both peers hash; equal descriptions mean identical wire contracts.
+	read Describe: (schema: NetworkingTypes.CompiledSchema?) -> string,
 }
 
 return types

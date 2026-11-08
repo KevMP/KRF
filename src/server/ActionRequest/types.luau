@@ -70,6 +70,8 @@ export type ActionRequestRuntimeOptions = {
 export type ServerActionRequestRuntime = {
 	-- Exactly the three fixed commands, ready to merge with consumer commands.
 	GetCommandDefinitions: (self: ServerActionRequestRuntime) -> { NetworkingTypes.CommandDefinition },
+	-- Stop and Interrupt, which N9 admits through its protected follow-up reserve.
+	GetFollowUpCommandIds: (self: ServerActionRequestRuntime) -> { string },
 	_GetReceiptCountForTests: (self: ServerActionRequestRuntime) -> number,
 	Destroy: (self: ServerActionRequestRuntime) -> (),
 }

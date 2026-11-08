@@ -16,6 +16,8 @@ local Native = require(KRF.client.Networking.utils.NativeClientDependencies)
 local State = require(KRF.client.ActionRequest.utils.ClientActionRequestState)
 local Catalog: ActionRequestTypes.ActionRequestCatalogModule = require(KRF.shared.ActionRequest.ActionRequestCatalog)
 local CommandCodec: SharedTypes.CommandCodecModule = require(KRF.shared.Networking.CommandCodec)
+local NetworkingTypes = require(KRF.client.Networking.types)
+local Commands: NetworkingTypes.CommandRuntime = require(KRF.client.Networking.CommandRuntime)
 local CommandUtils = require(script.Parent.Utils.CommandClientTestUtils)
 local ClientUtils = require(script.Parent.Utils.ClientTestUtils)
 local RequestUtils = require(script.Parent.Utils.ActionRequestClientTestUtils)
@@ -157,4 +159,48 @@ it("sends a typed Start through the real command runtime with the shared contrac
 		contractTag = fireball.contractTag,
 		payload = SharedRequestUtils.encode(fireball.start, { aim = aim }),
 	})
+end)
+
+it("still admits Stop and Interrupt for a running Sprint after ordinary commands fill their pending share", function()
+	local fixture: CommandUtils.Fixture = installing()
+
+	CommandUtils.ready(
+		fixture,
+		{ actionRequestSchemas = SharedRequestUtils.schemas() },
+		RequestUtils.manifestCommands()
+	)
+
+	local view: PublicTypes.ActorView = CommandUtils.baseline(fixture)
+	local runtime: Types.ClientActionRequestRuntime? = State.Get()
+	assert(runtime ~= nil, "Expected the installed Action request runtime")
+
+	local sprint: number? = runtime:Start({ actor = view, actionId = "Movement.Sprint", origin = "Input" }, nil)
+	assert(sprint ~= nil, "Expected the original Sprint Start")
+
+	local refusal: string? = nil
+
+	while refusal == nil do
+		local requestId: number?, reason: string? = Commands.Send("Game.Ping")
+
+		if requestId == nil then
+			refusal = reason
+		end
+	end
+
+	expect(refusal).toBe("CommandPendingFull")
+
+	-- An ordinary Start shares the ordinary bound and is refused with it.
+	local blocked: number?, blockedReason: string? =
+		runtime:Start({ actor = view, actionId = "Movement.Sprint", origin = "Input" }, nil)
+
+	expect(blocked).toBeNil()
+	expect(blockedReason).toBe("CommandPendingFull")
+
+	local stop: number?, stopReason: string? = runtime:Stop(sprint, nil)
+	expect(stopReason).toBeNil()
+	expect(stop).never.toBeNil()
+
+	local interrupt: number?, interruptReason: string? = runtime:Interrupt(sprint, "FocusLost")
+	expect(interruptReason).toBeNil()
+	expect(interrupt).never.toBeNil()
 end)

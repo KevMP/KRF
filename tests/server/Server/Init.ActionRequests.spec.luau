@@ -104,6 +104,8 @@ it("merges exactly the three fixed Action commands with consumer commands", func
 	end
 
 	expect(ids).toEqual({ "Game.Ping", "KRF.Action.Interrupt", "KRF.Action.Start", "KRF.Action.Stop" })
+	-- A consumer command never joins the framework follow-up reserve.
+	expect((Registry.Get("Game.Ping") :: NetworkingTypes.LoadedCommandDefinition).followUp).toBe(false)
 end)
 
 it("declares the fixed Start, Stop and Interrupt envelopes with bounded typed fields", function()
@@ -120,6 +122,10 @@ it("declares the fixed Start, Stop and Interrupt envelopes with bounded typed fi
 	expect(start.target).toBe("Actor")
 	expect(stop.target).toBe("None")
 	expect(interrupt.target).toBe("None")
+	-- Only the lifecycle follow-ups use N9's protected admission reserve.
+	expect(start.followUp).toBe(false)
+	expect(stop.followUp).toBe(true)
+	expect(interrupt.followUp).toBe(true)
 	expect(field(start.request, "actionId")).toEqual(expect.objectContaining({ kind = "String", maxBytes = 96 }))
 	expect(field(start.request, "contractTag").kind).toBe("U32")
 	expect(field(start.request, "payload")).toEqual(expect.objectContaining({ kind = "String", maxBytes = 8192 }))

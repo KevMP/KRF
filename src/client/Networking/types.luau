@@ -119,6 +119,8 @@ export type ClientCommandRuntime = {
 	-- Synchronous framework observation before the public yield-safe result Signals,
 	-- including the Unknown emitted for unresolved commands when the connection closes.
 	_ObserveOutcomes: (self: ClientCommandRuntime, observer: (CommandResult) -> ()) -> () -> (),
+	-- Framework-only: names lifecycle follow-ups that may use the protected pending headroom.
+	_ClassifyFollowUps: (self: ClientCommandRuntime, commandIds: { string }) -> (boolean, string?),
 	Destroy: (self: ClientCommandRuntime) -> (),
 }
 

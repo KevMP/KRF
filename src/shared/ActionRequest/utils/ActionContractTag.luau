@@ -88,6 +88,7 @@ local ActionContractTag: Types.ActionContractTagModule = table.freeze({
 			"D" .. onDisconnect,
 		}, "|"))
 	end,
+	Describe = optional,
 })
 
 return ActionContractTag

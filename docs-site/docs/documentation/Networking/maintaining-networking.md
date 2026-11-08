@@ -45,7 +45,28 @@ Retirement cancels queued history, anchors, retry state and disposable Actor wor
 
 The established command contract includes per-requester FIFO, prior-outcome history, pre-effect output reservation, result-first requester callbacks and timeout/Unknown handling. Global protected admission and bounded fair dispatch extend that contract; they do not create a second result queue or change request ids.
 
+Framework owners can classify lifecycle follow-ups at catalog preparation; consumer definitions cannot. Only Action request Stop and Interrupt use this today. When any follow-up exists, each client pending bound, per-connection rate and queue bound, and global attempt and queue budget keeps a share that ordinary commands cannot consume: one eighth of the bound, at most half, and enough for one maximal follow-up where the bound allows. One connection may hold at most a quarter of a global follow-up share. Follow-ups still count toward every total, are decoded and validated like any request, and keep their FIFO position behind earlier commands. Without follow-ups, every bound behaves exactly as before.
+
+The client sends on the caller's stack. A transport call that yields is cancelled and reported Unknown with `CommandTransportYielded`, because the packet may already have left; later packets still flow in request-id order. Private framework outcome observers are likewise contained: a throw or yield cannot suspend delivery or egress.
+
 The requester result follows older causally ordered baseline/publication work and precedes synchronous Actor effects caused by its handler, including effects on other Actors. Backoff and multipart replacement retain the earliest logical position, so a newer result cannot jump a delayed older baseline. Other recipients retain their normal streams. Deferred game tasks are outside the handler's causal scope. Unknown means effects may have happened; a client timeout does not cancel execution. See [command ordering and uncertainty](./commands#ordering-and-uncertainty).
+
+## Bootstrap schema references
+
+Protocol version 7 writes each distinct Enum schema once. A later structurally identical Enum, such as the visible Action id Enum repeated in `KRF.Actions` state and every lifecycle event, is written as a reference to the first copy. A reference may only name an Enum already decoded earlier in the same packet; the decoder rejects a forward or out-of-range reference as a malformed packet. Decoded copies share one frozen value list, and re-encoding a decoded bootstrap reproduces identical bytes.
+
+References shrink bytes, not decoded work. Both encoder and decoder therefore cap the total Enum values a bootstrap may describe, references included, at one per four bootstrap bytes (16,384). The encoder refuses a manifest over that cap with `BootstrapTooLarge` even if its interned bytes fit, and the decoder rejects such a packet as malformed. Distinct schemas are never merged, so a genuinely oversized catalog still fails `Server.Init` with `BootstrapManifestTooLarge`.
+
+Measured bootstrap sizes for a mixed catalog with 64 visible Tags, 8 visible Resources, 32 Actor commands, 8 Hints, the three Action request commands and visible Action ids of 19 bytes:
+
+| Visible Actions | Protocol 6 | Protocol 7 |
+| --- | --- | --- |
+| 50 | 14,038 bytes | 5,583 bytes |
+| 200 | 27,838 bytes | 9,033 bytes |
+| 500 | 55,438 bytes | 15,933 bytes |
+| 800 | over 65,536 (startup fails) | 22,833 bytes |
+
+The protocol 6 column omits the three request commands, which add under 512 bytes. Per-Action request parameter schemas never enter the bootstrap: both peers compile them from the shared request module and compare contract tags per Start. This does not make arbitrary catalog sizes safe; longer ids, more domains and wider schemas all consume the same 65,536-byte bound.
 
 ## Local diagnostics {#local-diagnostics}
 

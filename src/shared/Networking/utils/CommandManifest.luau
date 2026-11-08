@@ -46,6 +46,7 @@ function CommandManifest.Compile(
 		end
 
 		local codecs: { [string]: Types.CompiledCodec } = {}
+		local schemas: { [string]: Types.CompiledSchema } = {}
 
 		for _, field: string in { "request", "result" } do
 			if definition[field] ~= nil then
@@ -68,6 +69,7 @@ function CommandManifest.Compile(
 				end
 
 				codecs[field] = codec
+				schemas[field] = schema
 			end
 		end
 
@@ -77,6 +79,8 @@ function CommandManifest.Compile(
 			target = definition.target,
 			requestCodec = codecs.request,
 			resultCodec = codecs.result,
+			requestSchema = schemas.request,
+			resultSchema = schemas.result,
 		})
 
 		byId[installed.id] = installed

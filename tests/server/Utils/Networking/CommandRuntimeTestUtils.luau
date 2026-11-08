@@ -43,7 +43,11 @@ function TestUtils.definition(id: string, target: ("None" | "Actor")?): Types.Co
 	}
 end
 
-function TestUtils.new(definitions: { Types.CommandDefinition }, limits: Types.ServerCommandLimits?): Fixture
+function TestUtils.new(
+	definitions: { Types.CommandDefinition },
+	limits: Types.ServerCommandLimits?,
+	followUps: { string }?
+): Fixture
 	local base: AwarenessUtils.Fixture = AwarenessUtils.new()
 	AwarenessUtils.start(base)
 	local player: Player = AwarenessUtils.player(base)
@@ -54,7 +58,7 @@ function TestUtils.new(definitions: { Types.CommandDefinition }, limits: Types.S
 	AwarenessUtils.drain(base)
 	base.deliveries = {}
 
-	return TestUtils.bind(base, player, other, actor, definitions, limits)
+	return TestUtils.bind(base, player, other, actor, definitions, limits, followUps)
 end
 
 function TestUtils.bind(
@@ -63,11 +67,12 @@ function TestUtils.bind(
 	other: Player,
 	actor: ActorTypes.Actor,
 	definitions: { Types.CommandDefinition },
-	limits: Types.ServerCommandLimits?
+	limits: Types.ServerCommandLimits?,
+	followUps: { string }?
 ): Fixture
 	local awareness: Types.ActorAwarenessRuntime? = base.runtime
 	assert(awareness ~= nil, "Expected real N4 runtime")
-	local catalog: Types.PreparedCommandCatalog?, reason: string? = Registry.Prepare(definitions)
+	local catalog: Types.PreparedCommandCatalog?, reason: string? = Registry.Prepare(definitions, followUps)
 	assert(catalog ~= nil, reason)
 	local prepared: SharedTypes.PreparedProtocol?, prepareReason: string? = Networking.Prepare(base.catalog, catalog)
 	assert(prepared ~= nil, prepareReason)

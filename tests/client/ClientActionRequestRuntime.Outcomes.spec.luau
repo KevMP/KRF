@@ -205,3 +205,125 @@ it("ignores a follow-up result that names a different fixed command", function()
 	TestUtils.deliver(state.fixture, stopId, Constants.STOP_COMMAND_ID, "Accepted")
 	expect(state.outcomes[1].admission.kind).toBe("Stop")
 end)
+
+it("publishes Admission before an Outcome the transport delivered while sending", function()
+	local created: TestUtils.Fixture = TestUtils.new()
+	fixture = created
+	local facts: { string } = {}
+
+	created.runtime:ObserveAdmissions(function(admission: Types.ActionRequestAdmission): ()
+		table.insert(facts, "Admission:" .. admission.kind .. ":" .. admission.requestId)
+	end)
+
+	created.runtime:ObserveOutcomes(function(outcome: Types.ActionRequestOutcome): ()
+		table.insert(facts, "Outcome:" .. outcome.admission.kind .. ":" .. outcome.status)
+	end)
+
+	-- The send adapter answers synchronously before SendAdmitted returns.
+	created.port.onSend = function(sent: TestUtils.Sent): ()
+		TestUtils.deliver(created, sent.requestId, sent.commandId, "Accepted", { sequenceId = 9 })
+	end
+
+	admitStart(created, "Movement.Sprint")
+	expect(facts).toEqual({ "Admission:Start:1", "Outcome:Start:Accepted" })
+
+	-- Correlation was installed immediately; only the observation waited.
+	expect(created.runtime:GetOriginalStart(1)).never.toBeNil()
+end)
+
+it("keeps causal order when a reentrant transport admits another request mid-send", function()
+	local created: TestUtils.Fixture = TestUtils.new()
+	fixture = created
+	local facts: { string } = {}
+	local reentered: boolean = false
+
+	created.runtime:ObserveAdmissions(function(admission: Types.ActionRequestAdmission): ()
+		table.insert(facts, "Admission:" .. admission.kind .. ":" .. admission.requestId)
+	end)
+
+	created.runtime:ObserveOutcomes(function(outcome: Types.ActionRequestOutcome): ()
+		table.insert(facts, "Outcome:" .. outcome.admission.kind .. ":" .. outcome.admission.requestId)
+	end)
+
+	created.port.onSend = function(sent: TestUtils.Sent): ()
+		TestUtils.deliver(created, sent.requestId, sent.commandId, "Unknown", nil, "CommandTimeout")
+
+		if not reentered then
+			reentered = true
+			created.runtime:Stop(sent.requestId, nil)
+		end
+	end
+
+	admitStart(created, "Movement.Sprint")
+
+	expect(facts).toEqual({
+		"Admission:Start:1",
+		"Outcome:Start:1",
+		"Admission:Stop:2",
+		"Outcome:Stop:2",
+	})
+end)
+
+it("withdraws a refused reentrant follow-up without holding back the Start's facts", function()
+	local created: TestUtils.Fixture = TestUtils.new()
+	fixture = created
+	local facts: { string } = {}
+
+	created.runtime:ObserveAdmissions(function(admission: Types.ActionRequestAdmission): ()
+		table.insert(facts, "Admission:" .. admission.kind)
+	end)
+
+	created.runtime:ObserveOutcomes(function(outcome: Types.ActionRequestOutcome): ()
+		table.insert(facts, "Outcome:" .. outcome.admission.kind .. ":" .. outcome.status)
+	end)
+
+	created.port.onSend = function(sent: TestUtils.Sent): ()
+		created.port.onSend = nil
+		created.port.refusalAfterAdmit = "ClientNotReady"
+		local stop: number?, reason: string? = created.runtime:Stop(sent.requestId, nil)
+		expect(stop).toBeNil()
+		expect(reason).toBe("ClientNotReady")
+		created.port.refusalAfterAdmit = nil
+		TestUtils.deliver(created, sent.requestId, sent.commandId, "Accepted", { sequenceId = 4 })
+	end
+
+	admitStart(created, "Movement.Sprint")
+	expect(facts).toEqual({ "Admission:Start", "Outcome:Start:Accepted" })
+	expect(created.runtime:_GetRetainedCountForTests()).toBe(1)
+end)
+
+it("bounds framework observers of each fact stream", function()
+	local created: TestUtils.Fixture = TestUtils.new()
+	fixture = created
+
+	for _ = 1, 16 do
+		created.runtime:ObserveAdmissions(function(): () end)
+		created.runtime:ObserveOutcomes(function(): () end)
+	end
+
+	expect(function()
+		created.runtime:ObserveAdmissions(function(): () end)
+	end).toThrow("ActionRequestObserverLimitExceeded")
+
+	expect(function()
+		created.runtime:ObserveOutcomes(function(): () end)
+	end).toThrow("ActionRequestObserverLimitExceeded")
+end)
+
+it("frees an observer slot when that observer disconnects and keeps late observers inert", function()
+	local created: TestUtils.Fixture = TestUtils.new()
+	fixture = created
+	local disconnects: { () -> () } = {}
+
+	for _ = 1, 16 do
+		table.insert(disconnects, created.runtime:ObserveOutcomes(function(): () end))
+	end
+
+	disconnects[1]()
+	disconnects[1]()
+	created.runtime:ObserveOutcomes(function(): () end)
+	created.runtime:Destroy()
+
+	local disconnect: () -> () = created.runtime:ObserveAdmissions(function(): () end)
+	disconnect()
+end)

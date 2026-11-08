@@ -44,6 +44,11 @@ type Limits = {
 	globalQueuedBytes: number,
 	dispatchRequests: number,
 	dispatchVisits: number,
+	-- Per-connection headroom kept for follow-ups; zero when none are classified.
+	followUpRequests: number,
+	followUpBytes: number,
+	followUpQueued: number,
+	followUpQueuedBytes: number,
 }
 
 local ServerCommandRuntime = {}
@@ -56,6 +61,7 @@ type State = {
 	codec: SharedTypes.CommandCodec,
 	dependencies: Types.ServerCommandDependencies,
 	limits: Limits,
+	followUpCodes: { [number]: boolean },
 	connections: { [Player]: Connection },
 	destroyed: boolean,
 	disconnect: (() -> ())?,
@@ -215,8 +221,19 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 	end
 
 	local size: number = if typeof(payload) == "buffer" then buffer.len(payload) else 0
+	local limits: Limits = self.limits
 
-	if connection.count >= self.limits.requests or size > self.limits.bytes - connection.bytes then
+	-- Classified from the untrusted header only to choose a budget; the request is
+	-- still decoded and validated like any other, and a follow-up never exceeds
+	-- the same total quotas.
+	local followUp: boolean = size >= 3
+		and buffer.readu8(payload, 0) == Constants.REQUEST_KIND
+		and self.followUpCodes[buffer.readu16(payload, 1)] == true
+
+	local requestLimit: number = if followUp then limits.requests else limits.requests - limits.followUpRequests
+	local byteLimit: number = if followUp then limits.bytes else limits.bytes - limits.followUpBytes
+
+	if connection.count >= requestLimit or size > byteLimit - connection.bytes then
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
@@ -230,7 +247,7 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 
 	-- Charge attempted ingress before decoding, including malformed and refused
 	-- requests. Draining or disconnecting must not reset the aggregate rate gate.
-	if not self.admission:Attempt(player, size, now) then
+	if not self.admission:Attempt(player, size, now, followUp) then
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		Metrics.Count(connection.diagnostics, "commandsRateLimited", 1)
@@ -264,14 +281,20 @@ function ServerCommandRuntime.Handle(self: Runtime, player: Player, payload: any
 
 	connection.lastId = request.requestId
 
-	if #connection.queue >= self.limits.queued or size > self.limits.queuedBytes - connection.queuedBytes then
+	local queueLimit: number = if followUp then limits.queued else limits.queued - limits.followUpQueued
+
+	local queueByteLimit: number = if followUp
+		then limits.queuedBytes
+		else limits.queuedBytes - limits.followUpQueuedBytes
+
+	if #connection.queue >= queueLimit or size > queueByteLimit - connection.queuedBytes then
 		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandQueueFull")
 		Metrics.Count(Diagnostics.FindConnection(player) or self.diagnostics, "commandsRefused", 1)
 
 		return false, "CommandQueueFull"
 	end
 
-	local ticket = self.admission:Queue(player, size, self.queued, self.queuedBytes)
+	local ticket = self.admission:Queue(player, size, self.queued, self.queuedBytes, followUp)
 
 	if ticket == nil then
 		Metrics.Warn(connection.diagnostics, "CommandOverload", "CommandGlobalQueueFull")
@@ -448,12 +471,28 @@ function ServerCommandRuntime.new(
 ): Types.ServerCommandRuntime
 	local limits: Types.ServerCommandLimits = options or {}
 	local maximumRequest = 11
+	local maximumFollowUp: number? = nil
+	local followUpCodes: { [number]: boolean } = {}
 
-	for _, command in protocol.commandsByCode or {} do
-		maximumRequest = math.max(
-			maximumRequest,
-			11 + (if command.requestCodec ~= nil then command.requestCodec.maxSizeBytes else 0)
-		)
+	for code, command in protocol.commandsByCode or {} do
+		local size: number = 11 + (if command.requestCodec ~= nil then command.requestCodec.maxSizeBytes else 0)
+		maximumRequest = math.max(maximumRequest, size)
+		local definition: Types.LoadedCommandDefinition? = catalog.definitionsById[command.id]
+
+		if definition ~= nil and definition.followUp then
+			followUpCodes[code] = true
+			maximumFollowUp = math.max(maximumFollowUp or 0, size)
+		end
+	end
+
+	-- A reserve fits one maximal follow-up where the bound allows, and never takes
+	-- more than half of a bound, so ordinary commands are not starved either.
+	local function reserve(total: number, unit: number): number
+		if maximumFollowUp == nil then
+			return 0
+		end
+
+		return math.min(math.floor(total / 2), math.max(unit, math.floor(total / Constants.FOLLOW_UP_RESERVE_DIVISOR)))
 	end
 
 	local codec = Codec.Compile(protocol)
@@ -464,6 +503,7 @@ function ServerCommandRuntime.new(
 		protocol = protocol,
 		codec = codec,
 		dependencies = dependencies,
+		followUpCodes = followUpCodes,
 		limits = {
 			requests = limits.maxRequests or Constants.MAX_REQUESTS,
 			bytes = limits.maxBytes or Constants.MAX_BYTES,
@@ -479,6 +519,10 @@ function ServerCommandRuntime.new(
 			globalQueuedBytes = limits.maxGlobalQueuedBytes or Constants.MAX_GLOBAL_QUEUED_BYTES,
 			dispatchRequests = limits.maxDispatchRequests or Constants.DISPATCH_REQUESTS,
 			dispatchVisits = limits.maxDispatchVisits or Constants.DISPATCH_VISITS,
+			followUpRequests = reserve(limits.maxRequests or Constants.MAX_REQUESTS, 1),
+			followUpBytes = reserve(limits.maxBytes or Constants.MAX_BYTES, maximumFollowUp or 0),
+			followUpQueued = reserve(limits.maxQueuedRequests or Constants.MAX_QUEUED_REQUESTS, 1),
+			followUpQueuedBytes = reserve(limits.maxQueuedBytes or Constants.MAX_QUEUED_BYTES, maximumFollowUp or 0),
 		},
 		connections = {},
 		destroyed = false,
@@ -493,7 +537,8 @@ function ServerCommandRuntime.new(
 			limits.maxGlobalQueuedBytes or Constants.MAX_GLOBAL_QUEUED_BYTES,
 			maximumRequest,
 			limits.windowSeconds or Constants.WINDOW_SECONDS,
-			dependencies.Now()
+			dependencies.Now(),
+			maximumFollowUp
 		),
 	}
 

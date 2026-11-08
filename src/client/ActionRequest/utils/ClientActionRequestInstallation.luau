@@ -3,36 +3,72 @@ local Types = require(script.Parent.Parent.types)
 local NetworkingTypes = require(script.Parent.Parent.Parent.Networking.types)
 local ActionRequestTypes = require(script.Parent.Parent.Parent.Parent.shared.ActionRequest.types)
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
-local Constants = require(script.Parent.Parent.Parent.Parent.shared.ActionRequest.utils.ActionRequestConstants)
+local SchemaCompiler = require(script.Parent.Parent.Parent.Parent.shared.Networking.utils.SchemaCompiler)
+local ContractTag = require(script.Parent.Parent.Parent.Parent.shared.ActionRequest.utils.ActionContractTag)
+local Envelopes = require(script.Parent.Parent.Parent.Parent.shared.ActionRequest.utils.ActionCommandEnvelopes)
 local CommandState = require(script.Parent.Parent.Parent.Networking.utils.CommandRuntimeState)
 local Runtime = require(script.Parent.Parent.ClientActionRequestRuntime)
 local State = require(script.Parent.ClientActionRequestState)
 
-local FIXED_COMMANDS: { [string]: "None" | "Actor" } = {
-	[Constants.START_COMMAND_ID] = "Actor",
-	[Constants.STOP_COMMAND_ID] = "None",
-	[Constants.INTERRUPT_COMMAND_ID] = "None",
+-- Canonical descriptions of the fixed outer contracts the server must publish.
+type ExpectedCommand = {
+	envelope: Envelopes.ActionCommandEnvelope,
+	request: string,
+	result: string,
 }
 
-table.freeze(FIXED_COMMANDS)
+local function describe(definition: SharedNetworkingTypes.SchemaDefinition?): string
+	if definition == nil then
+		return ContractTag.Describe(nil)
+	end
+
+	local compiled: SharedNetworkingTypes.CompiledSchema?, reason: string? = SchemaCompiler.Compile(definition)
+	assert(compiled ~= nil, reason)
+
+	return ContractTag.Describe(compiled)
+end
+
+local EXPECTED_COMMANDS: { ExpectedCommand } = {}
+local FOLLOW_UP_COMMAND_IDS: { string } = {}
+
+for _, envelope: Envelopes.ActionCommandEnvelope in Envelopes.All do
+	table.insert(EXPECTED_COMMANDS, {
+		envelope = envelope,
+		request = describe(envelope.request),
+		result = describe(envelope.result),
+	})
+
+	if envelope.followUp then
+		table.insert(FOLLOW_UP_COMMAND_IDS, envelope.id)
+	end
+end
+
+table.freeze(EXPECTED_COMMANDS)
+table.freeze(FOLLOW_UP_COMMAND_IDS)
 
 -- Each READY installation is a new incarnation so I6 never confuses admissions across reconnects.
 local incarnations: number = 0
 local Installation = {}
 
 -- Runs after the command runtime is installed and before READY. A client configured with
--- request schemas requires the server to publish all three fixed commands.
+-- request schemas requires the server to publish all three fixed commands with exactly the
+-- shared outer contracts, so an incompatible protocol fails startup rather than each send.
 function Installation.Install(
 	catalog: ActionRequestTypes.ActionRequestCatalog,
 	protocol: SharedNetworkingTypes.ClientProtocol
 ): ((() -> ())?, string?)
 	local commandsById: { [string]: SharedNetworkingTypes.ClientCommand } = protocol.commandsById or {}
 
-	for commandId: string, target: "None" | "Actor" in FIXED_COMMANDS do
-		local command: SharedNetworkingTypes.ClientCommand? = commandsById[commandId]
+	for _, expected: ExpectedCommand in EXPECTED_COMMANDS do
+		local command: SharedNetworkingTypes.ClientCommand? = commandsById[expected.envelope.id]
 
-		if command == nil or command.target ~= target then
+		if command == nil or command.target ~= expected.envelope.target then
 			return nil, "ActionRequestCommandsUnavailable"
+		elseif
+			ContractTag.Describe(command.requestSchema) ~= expected.request
+			or ContractTag.Describe(command.resultSchema) ~= expected.result
+		then
+			return nil, "ActionRequestCommandsIncompatible"
 		end
 	end
 
@@ -43,6 +79,12 @@ function Installation.Install(
 	end
 
 	local runtimeCommands: NetworkingTypes.ClientCommandRuntime = commands
+	local classified: boolean = runtimeCommands:_ClassifyFollowUps(FOLLOW_UP_COMMAND_IDS)
+
+	if not classified then
+		return nil, "ActionRequestCommandsUnavailable"
+	end
+
 	incarnations += 1
 
 	local port: Types.ActionRequestCommandPort = table.freeze({
@@ -72,6 +114,7 @@ function Installation.Install(
 		end
 
 		installed:Destroy()
+		runtimeCommands:_ClassifyFollowUps({})
 	end,
 		nil
 end

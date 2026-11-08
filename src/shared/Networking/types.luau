@@ -150,6 +150,9 @@ export type ClientCommand = {
 	read target: "None" | "Actor",
 	read requestCodec: CompiledCodec?,
 	read resultCodec: CompiledCodec?,
+	-- Reconstructed contracts, so framework owners can verify a fixed command's shape.
+	read requestSchema: CompiledSchema?,
+	read resultSchema: CompiledSchema?,
 }
 
 export type CommandRequest = {

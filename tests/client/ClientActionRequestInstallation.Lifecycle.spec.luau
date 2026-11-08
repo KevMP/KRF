@@ -8,7 +8,10 @@ local afterEach: any = JestGlobals.afterEach
 local Types = require(KRF.client.ActionRequest.types)
 local NetworkingTypes = require(KRF.client.Networking.types)
 local SharedTypes = require(KRF.shared.Networking.types)
+local Schema: SharedTypes.Schema = require(KRF.shared.Networking.Schema)
 local Constants = require(KRF.shared.ActionRequest.utils.ActionRequestConstants)
+local Envelopes = require(KRF.shared.ActionRequest.utils.ActionCommandEnvelopes)
+local CommandManifest = require(KRF.shared.Networking.utils.CommandManifest)
 local CommandState = require(KRF.client.Networking.utils.CommandRuntimeState)
 local State = require(KRF.client.ActionRequest.utils.ClientActionRequestState)
 local Installation = require(KRF.client.ActionRequest.utils.ClientActionRequestInstallation)
@@ -19,8 +22,15 @@ afterEach(function()
 	State.Install(nil)
 end)
 
+type Override = {
+	missing: boolean?,
+	target: ("None" | "Actor")?,
+	request: SharedTypes.SchemaDefinition?,
+	result: SharedTypes.SchemaDefinition?,
+}
+
 -- Only the private seams the installation adapts; nothing is sent in these tests.
-local function commands(): NetworkingTypes.ClientCommandRuntime
+local function commands(classified: { { string } }?): NetworkingTypes.ClientCommandRuntime
 	local fake: any = {
 		_SendAdmitted = function(): (number?, string?)
 			return nil, "Unused"
@@ -28,23 +38,42 @@ local function commands(): NetworkingTypes.ClientCommandRuntime
 		_ObserveOutcomes = function(): () -> ()
 			return function(): () end
 		end,
+		_ClassifyFollowUps = function(_self: any, commandIds: { string }): (boolean, string?)
+			if classified ~= nil then
+				table.insert(classified, table.clone(commandIds))
+			end
+
+			return true, nil
+		end,
 	}
 
 	return fake
 end
 
-local function protocol(overrides: { [string]: "None" | "Actor" | false }?): SharedTypes.ClientProtocol
-	local byId: { [string]: any } = {
-		[Constants.START_COMMAND_ID] = { id = Constants.START_COMMAND_ID, code = 0, target = "Actor" },
-		[Constants.STOP_COMMAND_ID] = { id = Constants.STOP_COMMAND_ID, code = 1, target = "None" },
-		[Constants.INTERRUPT_COMMAND_ID] = { id = Constants.INTERRUPT_COMMAND_ID, code = 2, target = "None" },
-	}
+-- Reconstructs the fixed commands through the real manifest compiler, as the bootstrap does.
+local function protocol(overrides: { [string]: Override }?): SharedTypes.ClientProtocol
+	local manifest: { SharedTypes.ManifestCommand } = {}
 
-	for commandId: string, target: "None" | "Actor" | false in overrides or {} do
-		byId[commandId] = if target == false then nil else { id = commandId, code = 9, target = target }
+	for _, envelope: Envelopes.ActionCommandEnvelope in Envelopes.All do
+		local override: Override = if overrides ~= nil then overrides[envelope.id] or {} else {}
+
+		if not override.missing then
+			table.insert(manifest, {
+				id = envelope.id,
+				code = #manifest,
+				target = override.target or envelope.target,
+				request = override.request or envelope.request,
+				result = override.result or envelope.result,
+			})
+		end
 	end
 
-	local reconstructed: any = { commandsById = byId }
+	local byId: { [string]: SharedTypes.ClientCommand }?, byCode: { [number]: SharedTypes.ClientCommand }?, reason: string? =
+		CommandManifest.Compile(manifest)
+
+	assert(byId ~= nil, reason)
+
+	local reconstructed: any = { commandsById = byId, commandsByCode = byCode }
 
 	return reconstructed
 end
@@ -55,9 +84,12 @@ end
 
 for _, case in
 	{
-		{ label = "a missing Stop command", overrides = { [Constants.STOP_COMMAND_ID] = false } },
-		{ label = "a Start command without an Actor target", overrides = { [Constants.START_COMMAND_ID] = "None" } },
-	} :: { { label: string, overrides: { [string]: "None" | "Actor" | false } } }
+		{ label = "a missing Stop command", overrides = { [Constants.STOP_COMMAND_ID] = { missing = true } } },
+		{
+			label = "a Start command without an Actor target",
+			overrides = { [Constants.START_COMMAND_ID] = { target = "None" } },
+		},
+	} :: { { label: string, overrides: { [string]: Override } } }
 do
 	it("refuses " .. case.label .. " without installing a runtime", function()
 		CommandState.Install(commands())
@@ -67,6 +99,75 @@ do
 		expect(State.Get()).toBeNil()
 	end)
 end
+
+for _, case in
+	{
+		{
+			label = "a Start request with a different payload bound",
+			overrides = {
+				[Constants.START_COMMAND_ID] = {
+					request = Schema.Struct({
+						actionId = Schema.String(Constants.MAX_ACTION_ID_BYTES),
+						contractTag = Schema.U32,
+						payload = Schema.String(16),
+					}),
+				},
+			},
+		},
+		{
+			label = "a Start result without a sequence ID",
+			overrides = { [Constants.START_COMMAND_ID] = { result = Schema.Struct({ accepted = Schema.Boolean }) } },
+		},
+		{
+			label = "a Stop request with a renamed receipt field",
+			overrides = {
+				[Constants.STOP_COMMAND_ID] = {
+					request = Schema.Struct({
+						originalRequestId = Schema.U32,
+						payload = Schema.String(Constants.MAX_PAYLOAD_BYTES),
+					}),
+				},
+			},
+		},
+		{
+			label = "an Interrupt with a different reason Enum",
+			overrides = {
+				[Constants.INTERRUPT_COMMAND_ID] = {
+					request = Schema.Struct({
+						originalStartRequestId = Schema.U32,
+						reason = Schema.Enum({ "FocusLost" }),
+					}),
+				},
+			},
+		},
+		{
+			label = "a Stop that unexpectedly returns a result",
+			overrides = { [Constants.STOP_COMMAND_ID] = { result = Schema.U32 } },
+		},
+	} :: { { label: string, overrides: { [string]: Override } } }
+do
+	it("refuses correctly named commands with " .. case.label, function()
+		local classified: { { string } } = {}
+		CommandState.Install(commands(classified))
+		local cleanup: (() -> ())?, reason: string? = install(protocol(case.overrides))
+		expect(cleanup).toBeNil()
+		expect(reason).toBe("ActionRequestCommandsIncompatible")
+		expect(State.Get()).toBeNil()
+		expect(classified).toEqual({})
+	end)
+end
+
+it("classifies Stop and Interrupt as protected follow-ups only while installed", function()
+	local classified: { { string } } = {}
+	CommandState.Install(commands(classified))
+	local cleanup: (() -> ())? = install(protocol())
+	assert(cleanup ~= nil, "Expected an installation")
+	expect(classified).toEqual({ { Constants.STOP_COMMAND_ID, Constants.INTERRUPT_COMMAND_ID } })
+
+	cleanup()
+	cleanup()
+	expect(classified).toEqual({ { Constants.STOP_COMMAND_ID, Constants.INTERRUPT_COMMAND_ID }, {} })
+end)
 
 it("refuses when no command runtime is installed", function()
 	local cleanup: (() -> ())?, reason: string? = install(protocol())
@@ -88,5 +189,19 @@ it("installs a new incarnation each time and never lets a stale cleanup remove a
 	first()
 	expect(State.Get()).toBe(secondRuntime)
 	second()
+	expect(State.Get()).toBeNil()
+end)
+
+it("refuses when the command runtime cannot classify the follow-ups", function()
+	local refusing: any = commands()
+
+	refusing._ClassifyFollowUps = function(): (boolean, string?)
+		return false, "UnknownCommand"
+	end
+
+	CommandState.Install(refusing)
+	local cleanup: (() -> ())?, reason: string? = install(protocol())
+	expect(cleanup).toBeNil()
+	expect(reason).toBe("ActionRequestCommandsUnavailable")
 	expect(State.Get()).toBeNil()
 end)

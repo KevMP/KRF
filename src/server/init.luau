@@ -135,6 +135,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local requestCatalog: SharedActionRequestTypes.ActionRequestCatalog? = nil
 	local requestRuntime: ActionRequestTypes.ServerActionRequestRuntime? = nil
 	local commandDefinitions: any = consumerCommands
+	local followUpCommands: { string }? = nil
 
 	if config.actionRequestSchemas ~= nil then
 		local compiled: SharedActionRequestTypes.ActionRequestCatalog?, catalogReason: string? =
@@ -176,10 +177,11 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 			end
 
 			commandDefinitions = merged
+			followUpCommands = created:GetFollowUpCommandIds()
 		end
 	end
 
-	local preparedCommands, commandReason = CommandRegistry.Prepare(commandDefinitions)
+	local preparedCommands, commandReason = CommandRegistry.Prepare(commandDefinitions, followUpCommands)
 
 	if preparedCommands == nil then
 		return false, { system = "Command", reason = commandReason :: string }

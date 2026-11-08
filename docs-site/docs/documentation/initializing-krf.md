@@ -19,6 +19,8 @@ A starter template with initialization already wired is not available yet. Use t
 | `replicationDomains` | Game-owned state projections, event schemas, observers, and audiences |
 | `commands` | [Command definitions](./Networking/commands) with target modes, optional schemas, explicit authorization, and handlers |
 | `hints` | [Hint definitions](./Networking/hints) with direction, target, mode, bounded payload and explicit client-origin authorization/receive callbacks; ClientToServer authorization/receipt and explicit ServerToClient delivery |
+| `actionRequestSchemas` | The shared [Action request](./Action/action-requests) module declaring which Actions clients may Start, Stop or Interrupt; pass the same module to `Client.Init` |
+| `actionControlAuthority` | Optional server-only policy granting [delegated Action control](./Action/action-requests#who-may-request), such as a mount's rider |
 
 Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 
@@ -42,7 +44,7 @@ After success, [register Actors](./Actor/actor-runtime). KRF attaches its built-
 
 ## Client initialization
 
-Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
+Give one startup LocalScript ownership of `Client.Init()` and start your client systems after it succeeds. When the server uses Action requests, pass the same module: `Client.Init({ actionRequestSchemas = schemas })`. The client accepts no other configuration fields. Consumer modules must not initialize KRF again. Initialization may yield while the framework transport replicates and the client completes protocol setup.
 
 ```lua title="Startup.client.luau"
 --!strict
@@ -68,7 +70,7 @@ A successful return means the client has installed the server's protocol catalog
 
 `Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, event size bounds, and command definitions and schemas before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. Command authorization and handlers run only for received requests. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
 
-A domain validation failure uses `system = "ReplicationDomain"`, a command catalog failure uses `system = "Command"`, and a Hint catalog failure uses `system = "Hint"`. Hint callbacks are not invoked during startup. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
+A domain validation failure uses `system = "ReplicationDomain"`, a command catalog failure uses `system = "Command"`, a Hint catalog failure uses `system = "Hint"`, and an Action request catalog failure uses `system = "ActionRequest"`. Hint callbacks are not invoked during startup. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
 
 `Server.Init` accepts one attempt per server lifetime, including a failed attempt. Fix configuration and restart after failure. An empty domain catalog still starts transport. Action registration does not start Actions; `autoGrant` only establishes their initial availability on each Actor.
 
@@ -82,4 +84,5 @@ A domain validation failure uses `system = "ReplicationDomain"`, a command catal
 - [Resource Registry](./Resource/resource-registry)
 - [Action Registry](./Action/action-registry)
 - [Action grants](./Action/action-grants)
+- [Action requests](./Action/action-requests)
 - [Replication domains](./Networking/replication-domains)

@@ -16,7 +16,11 @@ local ordered: { Types.LoadedCommandDefinition } = table.freeze({} :: { Types.Lo
 local fields: { [string]: boolean } =
 	{ id = true, target = true, request = true, result = true, authorize = true, handle = true }
 
-function CommandRegistry.Prepare(definitions: { Types.CommandDefinition }): (Types.PreparedCommandCatalog?, string?)
+-- Framework owners name their lifecycle follow-up commands; consumers cannot opt in.
+function CommandRegistry.Prepare(
+	definitions: { Types.CommandDefinition },
+	followUps: { string }?
+): (Types.PreparedCommandCatalog?, string?)
 	if loaded then
 		return nil, "CommandDefinitionsAlreadyLoaded"
 	end
@@ -29,6 +33,12 @@ function CommandRegistry.Prepare(definitions: { Types.CommandDefinition }): (Typ
 
 	if count == nil or count > Constants.MAX_COMMANDS then
 		return nil, "CommandDefinitionsMustBeBoundedArray"
+	end
+
+	local followUpIds: { [string]: boolean } = {}
+
+	for _, id: string in followUps or {} do
+		followUpIds[id] = true
 	end
 
 	local staged: { [string]: Types.LoadedCommandDefinition } = {}
@@ -101,10 +111,17 @@ function CommandRegistry.Prepare(definitions: { Types.CommandDefinition }): (Typ
 			result = schemas.result,
 			authorize = authorize,
 			handle = handle,
+			followUp = followUpIds[id] == true,
 		})
 
 		staged[id] = owned
 		table.insert(definitionsInOrder, owned)
+	end
+
+	for id: string in followUpIds do
+		if staged[id] == nil then
+			return nil, "CommandFollowUpUnknown"
+		end
 	end
 
 	table.sort(

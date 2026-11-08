@@ -6,9 +6,13 @@ local ActionRequestTypes = require(script.Parent.Parent.Parent.shared.ActionRequ
 local Constants = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionRequestConstants)
 local PayloadCodec = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionPayloadCodec)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
+local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 -- Private bound on original Starts retained for follow-up authority.
 local DEFAULT_MAX_ORIGINAL_STARTS: number = 64
+
+-- Private bound on framework observers of each I5 fact stream.
+local MAX_OBSERVERS: number = 16
 
 local INTERRUPT_REASONS: { [string]: boolean } = {}
 
@@ -26,6 +30,16 @@ type Original = {
 	settled: boolean,
 }
 
+-- One observer handoff in causal order. An admission is ready once its send call
+-- returns; an outcome that a reentrant transport delivered earlier waits behind it.
+-- At most one admission and two outcomes exist per retained request, so the queue
+-- is bounded by the original and follow-up records.
+type Fact = {
+	admission: Types.ActionRequestAdmission?,
+	outcome: Types.ActionRequestOutcome?,
+	ready: boolean,
+}
+
 type State = {
 	catalog: ActionRequestTypes.ActionRequestCatalog,
 	commands: Types.ActionRequestCommandPort,
@@ -36,8 +50,10 @@ type State = {
 	-- Stop and Interrupt requests awaiting their first outcome.
 	followUps: { [number]: Types.ActionRequestAdmission },
 	followUpCount: number,
-	admissionObservers: { (Types.ActionRequestAdmission) -> () },
-	outcomeObservers: { (Types.ActionRequestOutcome) -> () },
+	admissionObservers: Observers.Registry<(Types.ActionRequestAdmission) -> ()>,
+	outcomeObservers: Observers.Registry<(Types.ActionRequestOutcome) -> ()>,
+	facts: { Fact },
+	draining: boolean,
 	disconnect: () -> (),
 	destroyed: boolean,
 }
@@ -56,28 +72,10 @@ local COMMAND_KINDS: { [string]: Types.ActionRequestKind } = {
 table.freeze(COMMAND_KINDS)
 
 -- Framework observers are bounded and non-yielding; a fault or yield never reaches egress.
-local function notify<T>(observers: { (T) -> () }, value: T): ()
-	for _, observer: (T) -> () in table.clone(observers) do
-		if table.find(observers, observer) ~= nil then
-			local thread: thread = coroutine.create(observer)
-			coroutine.resume(thread, value)
-
-			if coroutine.status(thread) ~= "dead" then
-				pcall(task.cancel, thread)
-				pcall(coroutine.close, thread)
-			end
-		end
-	end
-end
-
-local function observe<T>(observers: { (T) -> () }, observer: (T) -> ()): () -> ()
-	table.insert(observers, observer)
-
-	return function(): ()
-		local index: number? = table.find(observers, observer)
-
-		if index ~= nil then
-			table.remove(observers, index)
+local function notify<T>(observers: Observers.Registry<(T) -> ()>, value: T): ()
+	for _, entry: Observers.Entry<(T) -> ()> in observers.Snapshot() do
+		if entry.active then
+			Observers.Run(entry.callback, value)
 		end
 	end
 end
@@ -91,6 +89,34 @@ function ClientActionRequestRuntime._removeOriginal(self: Runtime, requestId: nu
 		self.originals[requestId] = nil
 		self.originalCount -= 1
 	end
+end
+
+-- Publishes ready facts from the head. A reentrant caller only enqueues; the
+-- outermost drain delivers, so observers always see Admission before Outcome.
+function ClientActionRequestRuntime._drain(self: Runtime): ()
+	if self.draining then
+		return
+	end
+
+	self.draining = true
+
+	while not self.destroyed do
+		local head: Fact? = self.facts[1]
+
+		if head == nil or not head.ready then
+			break
+		end
+
+		table.remove(self.facts, 1)
+
+		if head.admission ~= nil then
+			notify(self.admissionObservers, head.admission)
+		elseif head.outcome ~= nil then
+			notify(self.outcomeObservers, head.outcome)
+		end
+	end
+
+	self.draining = false
 end
 
 -- Correlation is installed before any outcome observer can run.
@@ -143,7 +169,8 @@ function ClientActionRequestRuntime._receive(self: Runtime, result: NetworkingTy
 		reason = result.reason,
 	})
 
-	notify(self.outcomeObservers, outcome)
+	table.insert(self.facts, { outcome = outcome, ready = true })
+	self:_drain()
 end
 
 function ClientActionRequestRuntime._send(
@@ -155,17 +182,23 @@ function ClientActionRequestRuntime._send(
 	rollback: (requestId: number) -> ()
 ): (number?, string?)
 	local admitted: Types.ActionRequestAdmission? = nil
+	local fact: Fact? = nil
 
 	local requestId: number?, reason: string? = self.commands.SendAdmitted(
 		commandId,
 		actor,
 		request,
 		function(id: number): boolean
-			admitted = admit(id)
+			local reserved: Types.ActionRequestAdmission = admit(id)
+			local staged: Fact = { admission = reserved, ready = false }
+			admitted, fact = reserved, staged
+			table.insert(self.facts, staged)
 
 			return true
 		end
 	)
+
+	local staged: Fact? = fact
 
 	if requestId == nil then
 		local reserved: Types.ActionRequestAdmission? = admitted
@@ -174,12 +207,21 @@ function ClientActionRequestRuntime._send(
 			rollback(reserved.requestId)
 		end
 
+		local index: number? = if staged ~= nil then table.find(self.facts, staged) else nil
+
+		if index ~= nil then
+			table.remove(self.facts, index)
+		end
+
+		-- The withdrawn admission may have been holding later ready facts.
+		self:_drain()
+
 		return nil, reason or "CommandAdmissionRefused"
 	end
 
-	local staged: Types.ActionRequestAdmission? = admitted
 	assert(staged ~= nil, "ActionRequestAdmissionMissing")
-	notify(self.admissionObservers, staged)
+	staged.ready = true
+	self:_drain()
 
 	return requestId, nil
 end
@@ -351,14 +393,24 @@ function ClientActionRequestRuntime.ObserveAdmissions(
 	self: Runtime,
 	observer: (Types.ActionRequestAdmission) -> ()
 ): () -> ()
-	return observe(self.admissionObservers, observer)
+	-- A destroyed runtime publishes nothing further, so a late observer is inert.
+	if self.destroyed then
+		return function(): () end
+	end
+
+	return self.admissionObservers.Add(observer)
 end
 
 function ClientActionRequestRuntime.ObserveOutcomes(
 	self: Runtime,
 	observer: (Types.ActionRequestOutcome) -> ()
 ): () -> ()
-	return observe(self.outcomeObservers, observer)
+	-- A destroyed runtime publishes nothing further, so a late observer is inert.
+	if self.destroyed then
+		return function(): () end
+	end
+
+	return self.outcomeObservers.Add(observer)
 end
 
 function ClientActionRequestRuntime._GetRetainedCountForTests(self: Runtime): number
@@ -374,8 +426,9 @@ function ClientActionRequestRuntime.Destroy(self: Runtime): ()
 	self.disconnect()
 	table.clear(self.originals)
 	table.clear(self.followUps)
-	table.clear(self.admissionObservers)
-	table.clear(self.outcomeObservers)
+	table.clear(self.facts)
+	self.admissionObservers.Destroy()
+	self.outcomeObservers.Destroy()
 	self.originalCount = 0
 	self.followUpCount = 0
 end
@@ -406,8 +459,10 @@ local module: Types.ClientActionRequestRuntimeModule = {
 			originalCount = 0,
 			followUps = {},
 			followUpCount = 0,
-			admissionObservers = {},
-			outcomeObservers = {},
+			admissionObservers = Observers.new(MAX_OBSERVERS, "ActionRequestObserverLimitExceeded") :: Observers.Registry<(Types.ActionRequestAdmission) -> ()>,
+			outcomeObservers = Observers.new(MAX_OBSERVERS, "ActionRequestObserverLimitExceeded") :: Observers.Registry<(Types.ActionRequestOutcome) -> ()>,
+			facts = {},
+			draining = false,
 			disconnect = disconnect,
 			destroyed = false,
 		}

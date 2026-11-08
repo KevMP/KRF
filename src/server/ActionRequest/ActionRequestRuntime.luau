@@ -5,11 +5,9 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 local NetworkingTypes = require(script.Parent.Parent.Networking.types)
 local CommandContext = require(script.Parent.Parent.Networking.utils.CommandContext)
 local ActionRequestTypes = require(script.Parent.Parent.Parent.shared.ActionRequest.types)
-local SharedNetworkingTypes = require(script.Parent.Parent.Parent.shared.Networking.types)
-local Schema: SharedNetworkingTypes.Schema = require(script.Parent.Parent.Parent.shared.Networking.Schema)
 local CommandConstants = require(script.Parent.Parent.Parent.shared.Networking.utils.CommandConstants)
-local Constants = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionRequestConstants)
 local PayloadCodec = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionPayloadCodec)
+local Envelopes = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionCommandEnvelopes)
 local ReceiptLedger = require(script.Parent.ActionReceiptLedger)
 
 type InternalActionController = ActionTypes.InternalActionController
@@ -50,23 +48,7 @@ type Runtime = typeof(setmetatable({} :: State, ActionRequestRuntime))
 -- Applied to Interrupt-policy Actions whose original connection closed.
 local DISCONNECT_INTERRUPT_REASON: string = "ActionRequestDisconnected"
 
-local startRequest: SharedNetworkingTypes.SchemaDefinition = Schema.Struct({
-	actionId = Schema.String(Constants.MAX_ACTION_ID_BYTES),
-	contractTag = Schema.U32,
-	payload = Schema.String(Constants.MAX_PAYLOAD_BYTES),
-})
-
-local startResult: SharedNetworkingTypes.SchemaDefinition = Schema.Struct({ sequenceId = Schema.U32 })
-
-local stopRequest: SharedNetworkingTypes.SchemaDefinition = Schema.Struct({
-	originalStartRequestId = Schema.U32,
-	payload = Schema.String(Constants.MAX_PAYLOAD_BYTES),
-})
-
-local interruptRequest: SharedNetworkingTypes.SchemaDefinition = Schema.Struct({
-	originalStartRequestId = Schema.U32,
-	reason = Schema.Enum(table.clone(Constants.INTERRUPT_REASONS)),
-})
+local FOLLOW_UP_COMMAND_IDS: { string } = table.freeze({ Envelopes.Stop.id, Envelopes.Interrupt.id })
 
 local function rejected(reason: string): NetworkingTypes.CommandHandlerResult
 	return { accepted = false, reason = reason }
@@ -427,6 +409,10 @@ function ActionRequestRuntime.GetCommandDefinitions(self: Runtime): { Networking
 	return self.definitions
 end
 
+function ActionRequestRuntime.GetFollowUpCommandIds(_self: Runtime): { string }
+	return FOLLOW_UP_COMMAND_IDS
+end
+
 function ActionRequestRuntime._GetReceiptCountForTests(self: Runtime): number
 	return self.receipts:GetCount()
 end
@@ -474,10 +460,10 @@ local module: Types.ActionRequestRuntimeModule = {
 
 		local definitions: { NetworkingTypes.CommandDefinition } = {
 			{
-				id = Constants.START_COMMAND_ID,
-				target = "Actor",
-				request = startRequest,
-				result = startResult,
+				id = Envelopes.Start.id,
+				target = Envelopes.Start.target,
+				request = Envelopes.Start.request,
+				result = Envelopes.Start.result,
 				authorize = function(context: NetworkingTypes.CommandContext, request: any): (boolean, string?)
 					return self:_authorizeStart(context, request)
 				end,
@@ -486,18 +472,18 @@ local module: Types.ActionRequestRuntimeModule = {
 				end,
 			},
 			{
-				id = Constants.STOP_COMMAND_ID,
-				target = "None",
-				request = stopRequest,
+				id = Envelopes.Stop.id,
+				target = Envelopes.Stop.target,
+				request = Envelopes.Stop.request,
 				authorize = allowAll,
 				handle = function(context: NetworkingTypes.CommandContext, request: any)
 					return self:_stop(context, request)
 				end,
 			},
 			{
-				id = Constants.INTERRUPT_COMMAND_ID,
-				target = "None",
-				request = interruptRequest,
+				id = Envelopes.Interrupt.id,
+				target = Envelopes.Interrupt.target,
+				request = Envelopes.Interrupt.request,
 				authorize = allowAll,
 				handle = function(context: NetworkingTypes.CommandContext, request: any)
 					return self:_interrupt(context, request)

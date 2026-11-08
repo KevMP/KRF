@@ -8,6 +8,7 @@ local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.Co
 local Codec = require(script.Parent.Parent.Parent.shared.Networking.CommandCodec)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local Events = require(script.Parent.utils.CommandRuntimeState)
+local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 type Pending = {
 	command: SharedTypes.ClientCommand,
@@ -37,6 +38,10 @@ type State = {
 	egress: { Egress },
 	flushing: boolean,
 	observers: { (Types.CommandResult) -> () },
+	-- Framework-classified lifecycle follow-ups and the pending headroom kept for them.
+	followUps: { [string]: boolean },
+	followUpPending: number,
+	followUpBytes: number,
 }
 
 local ClientCommandRuntime = {}
@@ -91,9 +96,10 @@ function ClientCommandRuntime._notify(
 	})
 
 	-- Framework owners correlate synchronously before any yield-safe public delivery.
+	-- A throwing or yielding observer is contained and never suspends egress.
 	for _, observer: (Types.CommandResult) -> () in table.clone(self.observers) do
 		if table.find(self.observers, observer) ~= nil then
-			pcall(observer, message)
+			Observers.Run(observer, message)
 		end
 	end
 
@@ -176,11 +182,18 @@ function ClientCommandRuntime._prepare(
 
 	-- Retain only correlation metadata and the live view, never the original request.
 	local bytes: number = 32 + #command.id
+	local followUp: boolean = self.followUps[command.id] == true
+	local maxPending: number = self.options.maxPending or Constants.MAX_PENDING
+	local maxPendingBytes: number = self.options.maxPendingBytes or Constants.MAX_PENDING_BYTES
 
-	if
-		self.count >= (self.options.maxPending or Constants.MAX_PENDING)
-		or self.bytes + bytes > (self.options.maxPendingBytes or Constants.MAX_PENDING_BYTES)
-	then
+	-- Ordinary commands leave the follow-up headroom free; follow-ups may use the
+	-- whole bound and never exceed it.
+	if not followUp then
+		maxPending -= self.followUpPending
+		maxPendingBytes -= self.followUpBytes
+	end
+
+	if self.count >= maxPending or self.bytes + bytes > maxPendingBytes then
 		return nil, "CommandPendingFull"
 	end
 
@@ -224,11 +237,18 @@ function ClientCommandRuntime._flush(self: Runtime): ()
 		end
 
 		table.remove(self.egress, 1)
-		local sent: boolean = pcall(self.options.SendReliable, head.payload)
+
+		-- The transport must complete on this stack. A yield is cancelled and reported
+		-- uncertain, since the packet may already have left, so the queue stays live.
+		local sent: boolean, failure: string? = Observers.Run(self.options.SendReliable, head.payload)
 
 		if not sent then
 			Metrics.Count(self.diagnostics, "commandsFaulted", 1)
-			self:_uncertain(head.id, "CommandTransportFault")
+
+			self:_uncertain(
+				head.id,
+				if failure == "Yielded" then "CommandTransportYielded" else "CommandTransportFault"
+			)
 		end
 	end
 
@@ -321,6 +341,47 @@ function ClientCommandRuntime._ObserveOutcomes(self: Runtime, observer: (Types.C
 	end
 end
 
+-- Lets a framework owner classify its lifecycle follow-ups. They share every pending
+-- bound, but ordinary commands cannot consume the bounded headroom kept for them.
+function ClientCommandRuntime._ClassifyFollowUps(self: Runtime, commandIds: { string }): (boolean, string?)
+	local commands: { [string]: SharedTypes.ClientCommand } = self.protocol.commandsById or {}
+	local largest: number = 0
+
+	for _, commandId: string in commandIds do
+		if commands[commandId] == nil then
+			return false, "UnknownCommand"
+		end
+
+		largest = math.max(largest, 32 + #commandId)
+	end
+
+	local maxPending: number = self.options.maxPending or Constants.MAX_PENDING
+	local maxPendingBytes: number = self.options.maxPendingBytes or Constants.MAX_PENDING_BYTES
+
+	table.clear(self.followUps)
+
+	for _, commandId: string in commandIds do
+		self.followUps[commandId] = true
+	end
+
+	if #commandIds == 0 then
+		self.followUpPending, self.followUpBytes = 0, 0
+	else
+		-- At most half of each bound, so ordinary commands are never starved either.
+		self.followUpPending = math.min(
+			math.floor(maxPending / 2),
+			math.max(1, math.floor(maxPending / Constants.FOLLOW_UP_RESERVE_DIVISOR))
+		)
+
+		self.followUpBytes = math.min(
+			math.floor(maxPendingBytes / 2),
+			math.max(largest, math.floor(maxPendingBytes / Constants.FOLLOW_UP_RESERVE_DIVISOR))
+		)
+	end
+
+	return true, nil
+end
+
 function ClientCommandRuntime.Handle(self: Runtime, payload: any): boolean
 	if self.destroyed or not self.options.IsReady() then
 		return false
@@ -386,6 +447,9 @@ function ClientCommandRuntime.new(
 		egress = {},
 		flushing = false,
 		observers = {},
+		followUps = {},
+		followUpPending = 0,
+		followUpBytes = 0,
 	}
 
 	return setmetatable(state, ClientCommandRuntime) :: Types.ClientCommandRuntime

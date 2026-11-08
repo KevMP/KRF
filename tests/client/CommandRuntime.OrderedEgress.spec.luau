@@ -242,3 +242,82 @@ it("sends nothing when the client resets while an admission callback runs", func
 	expect(reason).toBe("ClientNotReady")
 	expect(fixture.sent).toEqual({})
 end)
+
+it("reports a yielding transport send as uncertain and keeps later packets flowing in order", function()
+	local commands: Types.ClientCommandRuntime = runtime()
+	local observed: { Types.CommandResult } = {}
+	local yielded: boolean = false
+
+	commands:_ObserveOutcomes(function(result: Types.CommandResult): ()
+		table.insert(observed, result)
+	end)
+
+	fixture.beforeSend = function(): ()
+		if not yielded then
+			yielded = true
+			task.wait()
+		end
+	end
+
+	local first: number?, reason: string? = commands:_SendAdmitted("Game.Ping", nil, nil, function(): boolean
+		return true
+	end)
+
+	-- The send returns on the caller's stack; the packet's fate is unknown, not lost.
+	expect(first).toBe(1)
+	expect(reason).toBeNil()
+	expect(#observed).toBe(1)
+	expect(observed[1].requestId).toBe(1)
+	expect(observed[1].status).toBe("Unknown")
+	expect(observed[1].reason).toBe("CommandTransportYielded")
+
+	expect((Commands.Send("Game.Ping"))).toBe(2)
+	expect(sentIds()).toEqual({ 2 })
+
+	-- The cancelled transport never resumes to send the stale packet out of order.
+	task.wait()
+	task.wait()
+	expect(sentIds()).toEqual({ 2 })
+end)
+
+it("keeps egress live when a yielding transport is reached from a nested admission", function()
+	local commands: Types.ClientCommandRuntime = runtime()
+	local yielded: boolean = false
+
+	fixture.beforeSend = function(): ()
+		if not yielded then
+			yielded = true
+			coroutine.yield()
+		end
+	end
+
+	commands:_SendAdmitted("Game.Ping", nil, nil, function(): boolean
+		Commands.Send("Game.Ping")
+
+		return true
+	end)
+
+	expect(sentIds()).toEqual({ 2 })
+	expect((Commands.Send("Game.Ping"))).toBe(3)
+	expect(sentIds()).toEqual({ 2, 3 })
+end)
+
+it("contains a yielding private outcome observer without suspending result delivery", function()
+	local commands: Types.ClientCommandRuntime = runtime()
+	local later: { number } = {}
+
+	commands:_ObserveOutcomes(function(): ()
+		task.wait()
+	end)
+
+	commands:_ObserveOutcomes(function(result: Types.CommandResult): ()
+		table.insert(later, result.requestId)
+	end)
+
+	local first: number? = Commands.Send("Game.Ping")
+	assert(first ~= nil, "Expected an admitted request")
+	TestUtils.result(fixture, first, "Accepted")
+	expect(later).toEqual({ first })
+	expect((Commands.Send("Game.Ping"))).toBe(2)
+	expect(sentIds()).toEqual({ 1, 2 })
+end)
