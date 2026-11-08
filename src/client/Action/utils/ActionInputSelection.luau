@@ -12,6 +12,7 @@ export type Options = {
 	GetRoutes: () -> Types.ActionInputRoutePort?,
 	IsPressEpochActive: (string, number, number) -> boolean,
 	Start: (RequestTypes.ActionStartSelection, any?) -> (number?, string?),
+	Retire: (number) -> (),
 	Store: {
 		Add: (Types.ActionRouteSelection, Types.CompiledActionInputPolicy) -> Activations.Record?,
 		Bind: (Activations.Record, RequestTypes.ActionRequestAdmission) -> (),
@@ -121,6 +122,8 @@ function Selection.new(options: Options): (Types.ActionRouteSelection, any?) -> 
 			else
 				options.Flush(record)
 			end
+		elseif requestId ~= nil then
+			options.Retire(requestId)
 		end
 
 		if failure ~= nil then

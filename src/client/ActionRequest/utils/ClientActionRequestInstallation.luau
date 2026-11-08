@@ -97,6 +97,9 @@ function Installation.Install(
 		ObserveCapacity = function(observer: () -> ()): () -> ()
 			return runtimeCommands:_ObserveCapacity(observer)
 		end,
+		ObserveExpirations = function(observer: (number, string) -> ()): () -> ()
+			return runtimeCommands:_ObserveExpirations(observer)
+		end,
 		AfterEgress = function(callback: () -> ()): ()
 			runtimeCommands:_AfterEgress(callback)
 		end,

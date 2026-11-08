@@ -39,6 +39,7 @@ type State = {
 	flushing: boolean,
 	observers: { (Types.CommandResult) -> () },
 	capacityObservers: Observers.Registry<() -> ()>,
+	expirationObservers: Observers.Registry<(number, string) -> ()>,
 	afterEgress: { () -> () },
 	-- Framework-classified lifecycle follow-ups and the pending headroom kept for them.
 	followUps: { [string]: boolean },
@@ -124,7 +125,19 @@ function ClientCommandRuntime._uncertain(self: Runtime, id: number, reason: stri
 
 	pending.cancel = self.options.ScheduleTimeout(self.options.graceSeconds or Constants.GRACE_SECONDS, function(): ()
 		pending.cancel = nil
-		self:_remove(id)
+
+		local removed: Pending? = self:_remove(id)
+
+		if removed ~= nil then
+			self:_AfterEgress(function(): ()
+				for _, entry in self.expirationObservers.Snapshot() do
+					if entry.active then
+						Observers.Run(entry.callback, id, removed.command.id)
+					end
+				end
+			end)
+		end
+
 		self:_capacity()
 	end)
 
@@ -289,6 +302,10 @@ end
 
 function ClientCommandRuntime._ObserveCapacity(self: Runtime, observer: () -> ()): () -> ()
 	return self.capacityObservers.Add(observer)
+end
+
+function ClientCommandRuntime._ObserveExpirations(self: Runtime, observer: (number, string) -> ()): () -> ()
+	return self.expirationObservers.Add(observer)
 end
 
 function ClientCommandRuntime.Send(
@@ -463,6 +480,7 @@ function ClientCommandRuntime.Destroy(self: Runtime): ()
 	table.clear(self.egress)
 	table.clear(self.afterEgress)
 	self.capacityObservers.Destroy()
+	self.expirationObservers.Destroy()
 
 	for id: number, pending: Pending in self.pending do
 		self:_remove(id)
@@ -493,6 +511,7 @@ function ClientCommandRuntime.new(
 		flushing = false,
 		observers = {},
 		capacityObservers = Observers.new(16, "CommandCapacityObserverLimitExceeded") :: Observers.Registry<() -> ()>,
+		expirationObservers = Observers.new(16, "CommandExpirationObserverLimitExceeded") :: Observers.Registry<(number, string) -> ()>,
 		afterEgress = {},
 		followUps = {},
 		followUpPending = 0,

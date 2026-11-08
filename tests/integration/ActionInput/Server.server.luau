@@ -19,6 +19,7 @@ type Ledger = {
 	fireballs: { number },
 	auraStarts: number,
 	auraStops: number,
+	oneShots: number,
 	contexts: { ActionTypes.ActionExecutionContext },
 	aura: ActionTypes.ActionExecutionContext?,
 }
@@ -59,6 +60,18 @@ local function factory(definition: ActionTypes.ActionDefinition): ActionTypes.Ac
 end
 
 local actions: { ActionTypes.ActionFactory } = {
+	factory({
+		id = "Combat.OneShot",
+		visibility = "ServerOnly",
+		autoGrant = true,
+		onStart = function(context: ActionTypes.ActionExecutionContext): ()
+			context:End()
+
+			if not context:IsActive() then
+				ledgers[context.actor].oneShots += 1
+			end
+		end,
+	}),
 	factory({
 		id = "Combat.Rasengan",
 		visibility = "ServerOnly",
@@ -153,6 +166,10 @@ control.OnServerEvent:Connect(function(player: Player, report: any): ()
 		finish(false, "ToggleStopMustRemainNonterminal")
 
 		return
+	elseif ledger.oneShots ~= 80 then
+		finish(false, "RepeatableOneShotCapacityExhausted")
+
+		return
 	end
 
 	for _, peer: Player in Players:GetPlayers() do
@@ -187,8 +204,16 @@ local function admit(player: Player): ()
 
 	owned[player] = actor
 
-	ledgers[actor] =
-		{ starts = {}, releases = {}, interrupts = 0, fireballs = {}, auraStarts = 0, auraStops = 0, contexts = {} }
+	ledgers[actor] = {
+		starts = {},
+		releases = {},
+		interrupts = 0,
+		fireballs = {},
+		auraStarts = 0,
+		auraStops = 0,
+		oneShots = 0,
+		contexts = {},
+	}
 
 	table.insert(actors, actor)
 	player.Character = model

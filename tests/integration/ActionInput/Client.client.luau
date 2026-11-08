@@ -239,6 +239,19 @@ local function run(): any
 	assert(settled(ungranted, "Rejected").reason == "ActionNotGranted", "ActionGrantAuthorityBypassed")
 	local foreign: number = assert(direct.RequestAction(other, "Combat.Rasengan", { aim = 1 }))
 	assert(settled(foreign, "Rejected").reason == "ActorNotOwned", "ForeignActorAuthorityBypassed")
+	equipped = "Combat.OneShot"
+
+	for _ = 1, 80 do
+		local previous: number = #admissions
+		tap("AbilitySlot1")
+		assert(#admissions == previous + 1, "OneShotStartCapacityExhausted")
+		local started: RequestTypes.ActionRequestAdmission = admissions[previous + 1]
+		assert(started.kind == "Start" and started.actionId == equipped, "OneShotSelectedWrongAction")
+		assert(requests:GetOriginalStart(started.requestId) == nil, "OneShotKeptFollowUpAuthority")
+		settled(started.requestId, "Accepted")
+		assert(requests:_GetRetainedCountForTests() == 0, "OneShotKeptCompletedCorrelation")
+	end
+
 	Client._ResetForTests()
 	assert(RequestState.Get() == nil, "TeardownRetainedRequestRuntime")
 

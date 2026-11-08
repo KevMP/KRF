@@ -107,6 +107,8 @@ Toggle ignores key release. A second trigger must match the same ActorView, effe
 
 ## Explicit requests and server lifetime
 
+An input-selected OneShot retires its Start's Stop/Interrupt authority after successful local admission, even when the wire schema supports follow-ups. Pending results still correlate to the original request. Use a direct request when game code needs to retain an original id for manual follow-ups.
+
 Direct calls bypass input policies and producers. Supply full parameters and retain the returned original id yourself:
 
 ```lua

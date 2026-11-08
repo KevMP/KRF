@@ -41,6 +41,9 @@ local function commands(classified: { { string } }?): NetworkingTypes.ClientComm
 		_ObserveCapacity = function(): () -> ()
 			return function(): () end
 		end,
+		_ObserveExpirations = function(): () -> ()
+			return function(): () end
+		end,
 		_AfterEgress = function(_self: NetworkingTypes.ClientCommandRuntime, callback: () -> ()): ()
 			callback()
 		end,

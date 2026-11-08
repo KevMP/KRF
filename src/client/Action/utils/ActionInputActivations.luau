@@ -17,6 +17,7 @@ export type IdentitySnapshot = {
 }
 
 export type Record = {
+	order: number,
 	identity: IdentitySnapshot,
 	policy: Types.CompiledActionInputPolicy,
 	admission: RequestTypes.ActionRequestAdmission?,
@@ -49,6 +50,23 @@ export type Owner = {
 
 local Activations = {}
 
+-- Admitted originals follow N9's connection-local FIFO. Unreserved provisional
+-- entries follow selection order, after the already admitted entries.
+function Activations.Sort(records: { Record }): ()
+	table.sort(records, function(left: Record, right: Record): boolean
+		local first: RequestTypes.ActionRequestAdmission? = left.admission
+		local second: RequestTypes.ActionRequestAdmission? = right.admission
+
+		if first ~= nil and second ~= nil then
+			return first.requestId < second.requestId
+		elseif (first ~= nil) ~= (second ~= nil) then
+			return first ~= nil
+		end
+
+		return left.order < right.order
+	end)
+end
+
 function Activations.new(): Owner
 	local records: Records = {}
 	local requests: { [number]: Record } = {}
@@ -57,6 +75,7 @@ function Activations.new(): Owner
 	local identities: { [ActorTypes.ActorView]: { [string]: Record } } = {}
 	local count: number = 0
 	local revision: number = 0
+	local order: number = 0
 
 	local function activationKey(
 		key: Types.RouteKey,
@@ -86,6 +105,8 @@ function Activations.new(): Owner
 		for record: Record in set or {} do
 			table.insert(result, record)
 		end
+
+		Activations.Sort(result)
 
 		return result
 	end
@@ -175,7 +196,10 @@ function Activations.new(): Owner
 				return nil
 			end
 
+			order += 1
+
 			local record: Record = {
+				order = order,
 				identity = table.freeze({
 					actor = selection.actor,
 					actionId = selection.actionId,
@@ -274,6 +298,8 @@ function Activations.new(): Owner
 					table.insert(result, record)
 				end
 			end
+
+			Activations.Sort(result)
 
 			return result
 		end,

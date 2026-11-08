@@ -50,6 +50,7 @@ beforeEach(function()
 
 			return 1, nil
 		end,
+		Retire = function() end,
 		Store = { Add = store.Add, Bind = store.Bind, Remove = store.Remove, FindToggle = store.FindToggle },
 		ToggleOff = function() end,
 		Flush = function() end,

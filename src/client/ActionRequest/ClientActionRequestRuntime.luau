@@ -21,11 +21,11 @@ end
 
 table.freeze(INTERRUPT_REASONS)
 
--- Retiring follow-up authority preserves unsettled Start result correlation.
+-- Follow-up authority and late-result correlation have independent lifetimes.
 type Original = {
 	admission: Types.ActionRequestAdmission,
 	request: ActionRequestTypes.CompiledActionRequest,
-	settled: boolean,
+	correlationClosed: boolean,
 	retired: boolean,
 	decisions: number,
 }
@@ -44,6 +44,7 @@ type State = {
 	pendingFollowUps: FollowUps.Owner,
 	disconnect: () -> (),
 	disconnectCapacity: (() -> ())?,
+	disconnectExpirations: (() -> ())?,
 	destroyed: boolean,
 }
 
@@ -72,6 +73,22 @@ function ClientActionRequestRuntime._removeOriginal(self: Runtime, requestId: nu
 	end
 end
 
+-- Losing late-result correlation does not prove denial or end a possible live
+-- activation. Its receipt remains usable only when the wire permits follow-ups.
+function ClientActionRequestRuntime._expire(self: Runtime, requestId: number, commandId: string): ()
+	local original: Original? = self.originals[requestId]
+
+	if self.destroyed or commandId ~= Constants.START_COMMAND_ID or original == nil then
+		return
+	end
+
+	original.correlationClosed = true
+
+	if original.retired or not hasFollowUps(original.request) then
+		self:_removeOriginal(requestId)
+	end
+end
+
 -- Correlation is installed before any outcome observer can run.
 function ClientActionRequestRuntime._receive(self: Runtime, result: NetworkingTypes.CommandResult): ()
 	local kind: Types.ActionRequestKind? = COMMAND_KINDS[result.commandId]
@@ -86,14 +103,14 @@ function ClientActionRequestRuntime._receive(self: Runtime, result: NetworkingTy
 	if kind == "Start" then
 		local original: Original? = self.originals[result.requestId]
 
-		if original == nil or original.settled then
+		if original == nil or original.correlationClosed then
 			return
 		end
 
 		admission = original.admission
 
 		if result.status == "Accepted" then
-			original.settled = true
+			original.correlationClosed = true
 			sequenceId = if type(result.result) == "table" then result.result.sequenceId else nil
 
 			if original.retired or not hasFollowUps(original.request) then
@@ -246,7 +263,7 @@ function ClientActionRequestRuntime.Start(
 			})
 
 			self.originals[requestId] =
-				{ admission = admission, request = compiled, settled = false, retired = false, decisions = 0 }
+				{ admission = admission, request = compiled, correlationClosed = false, retired = false, decisions = 0 }
 
 			self.originalCount += 1
 
@@ -412,7 +429,7 @@ function ClientActionRequestRuntime.Retire(self: Runtime, originalStartRequestId
 		original.retired = true
 		self.pendingFollowUps.Remove(originalStartRequestId)
 
-		if original.settled then
+		if original.correlationClosed then
 			self:_removeOriginal(originalStartRequestId)
 		end
 	end
@@ -495,6 +512,10 @@ function ClientActionRequestRuntime.Destroy(self: Runtime): ()
 		self.disconnectCapacity()
 	end
 
+	if self.disconnectExpirations ~= nil then
+		self.disconnectExpirations()
+	end
+
 	self.originalCount = 0
 	self.followUpCount = 0
 end
@@ -535,8 +556,23 @@ local module: Types.ClientActionRequestRuntimeModule = {
 
 		self = setmetatable(state, ClientActionRequestRuntime)
 
-		if options.commands.ObserveCapacity ~= nil then
-			self.disconnectCapacity = options.commands.ObserveCapacity(self.pendingFollowUps.Drain)
+		local subscribed: boolean, failure: any = pcall(function(): ()
+			if options.commands.ObserveCapacity ~= nil then
+				self.disconnectCapacity = options.commands.ObserveCapacity(self.pendingFollowUps.Drain)
+			end
+
+			if options.commands.ObserveExpirations ~= nil then
+				self.disconnectExpirations = options.commands.ObserveExpirations(
+					function(id: number, commandId: string): ()
+						self:_expire(id, commandId)
+					end
+				)
+			end
+		end)
+
+		if not subscribed then
+			self:Destroy()
+			error(failure, 0)
 		end
 
 		return self :: Types.ClientActionRequestRuntime

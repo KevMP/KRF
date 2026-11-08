@@ -185,6 +185,7 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 		queued = false
 		local batch: { Activations.Record } = retired
 		retired = {}
+		Activations.Sort(batch)
 
 		for _, record in batch do
 			local kind: Types.ActionInputDecisionKind = if record.intent == "Interrupt"
@@ -340,6 +341,9 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 			end,
 			Start = function(selection, parameters): (number?, string?)
 				return requests:Start(selection, parameters)
+			end,
+			Retire = function(original: number): ()
+				requests:Retire(original)
 			end,
 			Store = { Add = store.Add, Bind = store.Bind, Remove = store.Remove, FindToggle = store.FindToggle },
 			ToggleOff = function(record): ()

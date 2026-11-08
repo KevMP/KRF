@@ -52,6 +52,7 @@ export type ActionRequestCommandPort = {
 	) -> (number?, string?),
 	read ObserveOutcomes: (observer: (NetworkingTypes.CommandResult) -> ()) -> () -> (),
 	read ObserveCapacity: ((observer: () -> ()) -> () -> ())?,
+	read ObserveExpirations: ((observer: (number, string) -> ()) -> () -> ())?,
 	read AfterEgress: ((callback: () -> ()) -> ())?,
 }
 
@@ -87,7 +88,7 @@ export type ClientActionRequestRuntime = {
 		committed: ((ActionRequestAdmission) -> ())?
 	) -> (number?, string?),
 	GetOriginalStart: (self: ClientActionRequestRuntime, requestId: number) -> ActionRequestAdmission?,
-	-- I6 declares an original activation finished; pending command correlation is unaffected.
+	-- I6 releases input follow-up authority; pending command correlation is unaffected.
 	Retire: (self: ClientActionRequestRuntime, originalStartRequestId: number) -> (),
 	-- Bounded, non-yielding framework observers. They run after the packet is staged or
 	-- physically attempted and can never veto, delay or reorder egress.

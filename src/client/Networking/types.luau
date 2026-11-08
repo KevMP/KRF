@@ -122,6 +122,7 @@ export type ClientCommandRuntime = {
 	-- including the Unknown emitted for unresolved commands when the connection closes.
 	_ObserveOutcomes: (self: ClientCommandRuntime, observer: (CommandResult) -> ()) -> () -> (),
 	_ObserveCapacity: (self: ClientCommandRuntime, observer: () -> ()) -> () -> (),
+	_ObserveExpirations: (self: ClientCommandRuntime, observer: (number, string) -> ()) -> () -> (),
 	_AfterEgress: (self: ClientCommandRuntime, callback: () -> ()) -> (),
 	-- Framework-only: names lifecycle follow-ups that may use the protected pending headroom.
 	_ClassifyFollowUps: (self: ClientCommandRuntime, commandIds: { string }) -> (boolean, string?),
