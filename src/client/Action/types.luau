@@ -3,6 +3,51 @@ local ActorTypes = require(script.Parent.Parent.Actor.types)
 local InputTypes = require(script.Parent.Parent.Input.types)
 local RequestTypes = require(script.Parent.Parent.ActionRequest.types)
 local SharedRequestTypes = require(script.Parent.Parent.Parent.shared.ActionRequest.types)
+local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
+
+export type ActionRequestOperation = "Start" | "Stop" | "Interrupt"
+export type LocalInputTransition = "GenuineRelease" | "ToggleOff" | "InvalidatedInterrupt" | "InvalidatedKeep"
+
+export type OriginalActionIdentity = {
+	read actor: ActorTypes.ActorView,
+	read actionId: string,
+	read originalStartRequestId: number,
+	read originalStartKey: string,
+	read origin: "Input" | "Direct",
+}
+
+export type ObservationMetadata = { read eventOrdinal: number, read observedAt: number }
+
+export type ActionRequestAdmitted = OriginalActionIdentity & ObservationMetadata & {
+	read kind: "RequestAdmitted",
+	read operation: ActionRequestOperation,
+	read requestId: number,
+	read requestKey: string,
+	read inputOccurredAt: number?,
+}
+
+type OutcomeIdentity = OriginalActionIdentity & ObservationMetadata & {
+	read kind: "RequestOutcome",
+	read requestId: number,
+	read requestKey: string,
+	read reason: string?,
+}
+
+export type ActionRequestOutcome =
+	OutcomeIdentity
+	& (
+		{ read operation: "Start", read status: "Accepted", read sequenceId: number }
+		| { read operation: "Stop" | "Interrupt", read status: "Accepted", read sequenceId: nil }
+		| { read operation: ActionRequestOperation, read status: "Rejected" | "Unknown", read sequenceId: nil }
+	)
+
+export type ActionInputTransition = OriginalActionIdentity & ObservationMetadata & {
+	read kind: "InputTransition",
+	read transition: LocalInputTransition,
+	read reason: string?,
+}
+
+export type ActionRequestEvent = ActionRequestAdmitted | ActionRequestOutcome | ActionInputTransition
 
 export type RouteKey = InputTypes.RecognitionRouteKey
 export type DispatchMode = "Exclusive" | "Independent"
@@ -96,7 +141,9 @@ export type ActionDirectRequests = {
 	read RetireRequest: (number) -> (boolean, string?),
 }
 
-export type ClientActionRuntime = ClientActionRoutes & ActionDirectRequests
+export type ClientActionRuntime = ClientActionRoutes & ActionDirectRequests & {
+	read OnActionRequest: SignalTypes.Event<ActionRequestEvent>,
+}
 
 export type ActionInputDecisionKind = "GenuineRelease" | "ToggleOff" | "InvalidatedInterrupt" | "InvalidatedKeep"
 

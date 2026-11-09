@@ -20,6 +20,7 @@
     "test:integration:i5": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite i5",
     "test:integration:i6": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite i6",
     "test:integration:i7": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite i7",
+    "test:integration:i8": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n7-native.ps1 -Suite i8",
     "input:manual": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-input-gestures-manual.ps1",
     "input:routes:manual": "rojo build i4-action-routes-manual.project.json -o KRF-Action-Routes-Manual.rbxl",
     "input:controls:manual": "rojo build i7-controls-manual.project.json -o KRF-Controls-Manual.rbxl",

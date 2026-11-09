@@ -7,6 +7,7 @@ local State = require(script.Parent.utils.ClientActionRuntimeState)
 local emptySources: { Types.ProfileSourceSnapshot } = table.freeze({} :: { Types.ProfileSourceSnapshot })
 
 local facade: Types.ClientActionRuntime = {
+	OnActionRequest = State.OnActionRequest,
 	RetireRequest = function(original: number): (boolean, string?)
 		local owner: Types.ActionInputOwner? = State.GetInput()
 
