@@ -50,6 +50,7 @@ function Owner.new(
 	end
 
 	local function apply(changeSet: Types.ControlChangeSet): (boolean, string?)
+		Observers.CheckReentry()
 		local rejection: string? = status()
 
 		-- A mandatory event sets the gate before its idle callback enters here.

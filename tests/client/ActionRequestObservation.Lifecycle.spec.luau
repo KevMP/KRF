@@ -7,6 +7,7 @@ local expect: any = JestGlobals.expect
 local afterEach: any = JestGlobals.afterEach
 local Types = require(KRF.client.Action.types)
 local RequestTypes = require(KRF.client.ActionRequest.types)
+local RequestRuntime = require(KRF.client.ActionRequest.ClientActionRequestRuntime)
 local Observation = require(KRF.client.Action.utils.ActionRequestObservation)
 local Installation = require(KRF.client.Action.utils.ActionObservationInstallation)
 local RequestState = require(KRF.client.ActionRequest.utils.ClientActionRequestState)
@@ -45,14 +46,49 @@ local function options(
 	}
 end
 
+it("waits for explicit binding instead of adopting a previous connection's request owner", function()
+	local created: Utils.Fixture = Utils.new()
+	fixture = created
+	RequestState.Install(created.runtime)
+
+	local stop, bind = Installation.Install(function(): number
+		return 120
+	end)
+
+	local facts: { Types.ActionRequestEvent } = {}
+
+	local disconnect = State.ObserveActionRequest(function(fact: Types.ActionRequestEvent): ()
+		table.insert(facts, fact)
+	end)
+
+	assert(created.runtime:Start(Utils.selection(created, "Movement.Sprint")))
+	expect(facts).toEqual({})
+	created.runtime:Destroy()
+	created.port = Utils.port()
+	created.runtime = RequestRuntime.new(created.catalog, { commands = created.port.port, incarnation = 2 })
+	RequestState.Install(created.runtime)
+	bind()
+	assert(created.runtime:Start(Utils.selection(created, "Movement.Sprint")))
+	disconnect()
+	stop()
+	expect(#facts).toBe(1)
+	expect(facts[1]).toMatchObject({ kind = "RequestAdmitted", requestId = 1, eventOrdinal = 1 })
+
+	expect(facts[1].originalStartKey).toBe(
+		assert(created.runtime:GetOriginalStart(1), "Expected new connection Start").requestKey
+	)
+end)
+
 it("fences a replaced installation and prevents its late cleanup from clearing the new observer generation", function()
 	local created: Utils.Fixture = Utils.new()
 	fixture = created
 	RequestState.Install(created.runtime)
 
-	local stopPrevious = Installation.Install(function(): number
+	local stopPrevious, bindPrevious = Installation.Install(function(): number
 		return 120
 	end)
+
+	bindPrevious()
 
 	local oldCalls: number = 0
 
@@ -60,9 +96,11 @@ it("fences a replaced installation and prevents its late cleanup from clearing t
 		oldCalls += 1
 	end)
 
-	local stopCurrent = Installation.Install(function(): number
+	local stopCurrent, bindCurrent = Installation.Install(function(): number
 		return 130
 	end)
+
+	bindCurrent()
 
 	local newCalls: number = 0
 
@@ -76,7 +114,11 @@ it("fences a replaced installation and prevents its late cleanup from clearing t
 		publicCalls += 1
 	end)
 
+	bindPrevious()
 	stopPrevious()
+	bindPrevious()
+	bindCurrent()
+	Installation.ClearUninstalled()
 	assert(created.runtime:Start(Utils.selection(created, "Movement.Sprint")))
 	task.wait()
 	connection:Disconnect()
@@ -91,9 +133,11 @@ it("disposes an installation once and leaves late state subscriptions and ordina
 	fixture = created
 	RequestState.Install(created.runtime)
 
-	local stop = Installation.Install(function(): number
+	local stop, bind = Installation.Install(function(): number
 		return 120
 	end)
+
+	bind()
 
 	local calls: number = 0
 
@@ -104,6 +148,7 @@ it("disposes an installation once and leaves late state subscriptions and ordina
 	assert(created.runtime:Start(Utils.selection(created, "Movement.Sprint")))
 	stop()
 	stop()
+	bind()
 	State._SetObservationOrdinalForTests(20)
 
 	State.ObserveActionRequest(function(): ()
@@ -245,6 +290,7 @@ it("fences captured callbacks after destruction and makes repeated cleanup and l
 	observation.Destroy()
 	observation.Destroy()
 	observation.SetInput(nil)
+	observation.SetRequests(created.runtime)
 	assert(captured, "Expected captured source callback")(original)
 
 	local disconnect = observation.Observe(function(): ()

@@ -94,7 +94,7 @@ export type ClientActionRequestRuntime = {
 	-- physically attempted and can never veto, delay or reorder egress.
 	ObserveAdmissions: (self: ClientActionRequestRuntime, observer: (ActionRequestAdmission) -> ()) -> () -> (),
 	ObserveOutcomes: (self: ClientActionRequestRuntime, observer: (ActionRequestOutcome) -> ()) -> () -> (),
-	StageDecision: (self: ClientActionRequestRuntime, originalStartRequestId: number, callback: () -> ()) -> (),
+	StageDecision: (self: ClientActionRequestRuntime, original: ActionRequestAdmission, callback: () -> ()) -> (),
 	AfterObservations: (self: ClientActionRequestRuntime, callback: () -> ()) -> (),
 	_GetRetainedCountForTests: (self: ClientActionRequestRuntime) -> number,
 	Destroy: (self: ClientActionRequestRuntime) -> (),

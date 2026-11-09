@@ -27,6 +27,7 @@ export type Record = {
 	delivery: "None" | "Stop" | "Interrupt" | "Complete",
 	intent: "Stop" | "Interrupt" | "Keep"?,
 	pendingDecision: Types.ActionInputDecisionKind?,
+	decisionCount: number,
 	reason: string?,
 }
 
@@ -215,6 +216,7 @@ function Activations.new(): Owner
 				starting = true,
 				busy = false,
 				delivery = "None",
+				decisionCount = 0,
 			}
 
 			records[record] = true

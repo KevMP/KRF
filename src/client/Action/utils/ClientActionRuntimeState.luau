@@ -19,18 +19,8 @@ function State._SetObservationOrdinalForTests(ordinal: number): ()
 	end
 end
 
-function State.CheckObservationReentry(): ()
-	if observations ~= nil then
-		observations.Reentered()
-	end
-end
-
 function State.InstallObservations(owner: Types.ActionObservationOwner?): ()
 	observations = owner
-
-	if owner ~= nil then
-		owner.SetInput(input)
-	end
 end
 
 function State.GetObservations(): Types.ActionObservationOwner?

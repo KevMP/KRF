@@ -27,7 +27,6 @@ type Original = {
 	request: ActionRequestTypes.CompiledActionRequest,
 	correlationClosed: boolean,
 	retired: boolean,
-	decisions: number,
 }
 
 type State = {
@@ -241,6 +240,8 @@ function ClientActionRequestRuntime.Start(
 	selection: Types.ActionStartSelection,
 	parameters: any?
 ): (number?, string?)
+	Observers.CheckReentry()
+
 	if self.destroyed then
 		return nil, "ActionRequestRuntimeDestroyed"
 	end
@@ -288,7 +289,7 @@ function ClientActionRequestRuntime.Start(
 			})
 
 			self.originals[requestId] =
-				{ admission = admission, request = compiled, correlationClosed = false, retired = false, decisions = 0 }
+				{ admission = admission, request = compiled, correlationClosed = false, retired = false }
 
 			self.originalCount += 1
 
@@ -356,6 +357,8 @@ function ClientActionRequestRuntime.Stop(
 	automatic: boolean?,
 	committed: ((Types.ActionRequestAdmission) -> ())?
 ): (number?, string?)
+	Observers.CheckReentry()
+
 	if self.destroyed then
 		return nil, "ActionRequestRuntimeDestroyed"
 	end
@@ -406,6 +409,8 @@ function ClientActionRequestRuntime.Interrupt(
 	automatic: boolean?,
 	committed: ((Types.ActionRequestAdmission) -> ())?
 ): (number?, string?)
+	Observers.CheckReentry()
+
 	if self.destroyed then
 		return nil, "ActionRequestRuntimeDestroyed"
 	end
@@ -448,6 +453,7 @@ function ClientActionRequestRuntime.GetOriginalStart(self: Runtime, requestId: n
 end
 
 function ClientActionRequestRuntime.Retire(self: Runtime, originalStartRequestId: number): ()
+	Observers.CheckReentry()
 	local original: Original? = self.originals[originalStartRequestId]
 
 	if original ~= nil then
@@ -502,12 +508,15 @@ function ClientActionRequestRuntime.ObserveOutcomes(
 	return self.facts.ObserveOutcomes(observer)
 end
 
-function ClientActionRequestRuntime.StageDecision(self: Runtime, originalStartRequestId: number, callback: () -> ()): ()
-	local original: Original? = self.originals[originalStartRequestId]
-
-	if not self.destroyed and original ~= nil and original.decisions < 2 then
-		original.decisions += 1
-		self.facts.Stage({ original = originalStartRequestId, callback = callback, ready = true })
+function ClientActionRequestRuntime.StageDecision(
+	self: Runtime,
+	original: Types.ActionRequestAdmission,
+	callback: () -> ()
+): ()
+	-- I6 owns this captured local decision, even if a synchronous definitive
+	-- result has already retired I5's follow-up/correlation record.
+	if not self.destroyed and original.incarnation == self.incarnation and original.kind == "Start" then
+		self.facts.Stage({ original = original.requestId, callback = callback, ready = true })
 
 		if self.commands.AfterEgress ~= nil then
 			self.commands.AfterEgress(self.facts.Drain)

@@ -5,7 +5,7 @@ local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.Priva
 local Facts = require(script.Parent.ActionObservationFacts)
 
 export type Options = {
-	Requests: RequestTypes.ClientActionRequestRuntime,
+	Requests: RequestTypes.ClientActionRequestRuntime?,
 	Now: () -> number,
 	Publish: (Types.ActionRequestEvent) -> (),
 	Report: (string) -> (),
@@ -27,10 +27,10 @@ function Observation.new(options: Options): Types.ActionObservationOwner
 	local ordinal: number = 0
 	local destroyed: boolean = false
 	local exhausted: boolean = false
-	local currentDisconnect: (() -> ())? = nil
 	local stopInput: (() -> ())? = nil
 	local stopAdmission: (() -> ())? = nil
 	local stopOutcome: (() -> ())? = nil
+	local requestSource: RequestTypes.ClientActionRequestRuntime? = nil
 	local reported: { [string]: boolean } = {}
 	local disconnectByEntry: { [Observers.Entry<(Types.ActionRequestEvent) -> ()>]: () -> () } = {}
 
@@ -45,10 +45,12 @@ function Observation.new(options: Options): Types.ActionObservationOwner
 		for _, entry in observers.Snapshot() do
 			if not destroyed and entry.active then
 				local disconnect = assert(disconnectByEntry[entry], "Expected owned observation subscription")
-				currentDisconnect = disconnect
 				local started: number = measure()
-				local success: boolean, failure: string? = Observers.Run(entry.callback, fact)
-				currentDisconnect = nil
+
+				local success: boolean, failure: string? = Observers.RunGuarded(entry.callback, function(): ()
+					disconnect()
+					report("ActionObservationObserverReentered")
+				end, fact)
 
 				if not success or measure() - started > MAX_OBSERVER_SECONDS then
 					disconnect()
@@ -141,9 +143,33 @@ function Observation.new(options: Options): Types.ActionObservationOwner
 		table.clear(disconnectByEntry)
 	end
 
+	local function setRequests(requests: RequestTypes.ClientActionRequestRuntime): ()
+		if destroyed or requestSource == requests then
+			return
+		end
+
+		assert(requestSource == nil, "ActionObservationRequestsAlreadyBound")
+		local first: () -> () = requests:ObserveAdmissions(admission)
+		local second: (() -> ())? = nil
+
+		local accepted: boolean, failure: any = pcall(function(): ()
+			second = requests:ObserveOutcomes(outcome)
+		end)
+
+		if not accepted then
+			first()
+			error(failure, 0)
+		end
+
+		stopAdmission = first
+		stopOutcome = assert(second, "Expected request outcome subscription")
+		requestSource = requests
+	end
+
 	local success: boolean, failure: any = pcall(function(): ()
-		stopAdmission = options.Requests:ObserveAdmissions(admission)
-		stopOutcome = options.Requests:ObserveOutcomes(outcome)
+		if options.Requests ~= nil then
+			setRequests(options.Requests)
+		end
 	end)
 
 	if not success then
@@ -180,12 +206,7 @@ function Observation.new(options: Options): Types.ActionObservationOwner
 				stopInput = owner.ObserveDecisions(transition)
 			end
 		end,
-		Reentered = function(): ()
-			if currentDisconnect ~= nil then
-				currentDisconnect()
-				report("ActionObservationObserverReentered")
-			end
-		end,
+		SetRequests = setRequests,
 		SetOrdinalForTests = function(value): ()
 			ordinal = value
 		end,

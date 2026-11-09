@@ -183,6 +183,53 @@ it("serializes release during Start egress as Start admission, genuine release a
 	Utils.parity(capture)
 end)
 
+for _, replyFirst: boolean in { true, false } do
+	it(
+		"preserves genuine release during synchronous Start rejection with replyFirst=" .. tostring(replyFirst),
+		function()
+			ready()
+			Input.set(fixture, { Input.route("Combat.Rasengan") })
+
+			fixture.commands.beforeSend = function(): ()
+				fixture.commands.beforeSend = nil
+
+				if not replyFirst then
+					Input.emit(fixture, "Released")
+				end
+
+				Utils.result(fixture, 1, "Start", "Rejected", nil, "ActionNotGranted")
+
+				if replyFirst then
+					Input.emit(fixture, "Released")
+				end
+			end
+
+			Input.emit(fixture, "Pressed")
+
+			expect(Utils.kinds(capture.private)).toEqual(
+				if replyFirst
+					then { "RequestAdmitted:Start", "RequestOutcome:Start", "GenuineRelease" }
+					else { "RequestAdmitted:Start", "GenuineRelease", "RequestOutcome:Start" }
+			)
+
+			expect(#fixture.commands.sent).toBe(1)
+
+			for index, fact: Types.ActionRequestEvent in capture.private do
+				expect(fact).toMatchObject({
+					actor = fixture.actor,
+					actionId = "Combat.Rasengan",
+					origin = "Input",
+					originalStartRequestId = 1,
+					originalStartKey = capture.private[1].originalStartKey,
+					eventOrdinal = index,
+				})
+			end
+
+			Utils.parity(capture)
+		end
+	)
+end
+
 for _, fault: string in { "Throw", "Yield", "Reenter" } do
 	it("quarantines a private observer that attempts to " .. fault .. " after the packet has left", function()
 		ready()

@@ -52,7 +52,7 @@ export type ActionRequestEvent = ActionRequestAdmitted | ActionRequestOutcome | 
 export type ActionObservationOwner = {
 	Observe: ((ActionRequestEvent) -> ()) -> () -> (),
 	SetInput: (ActionInputOwner?) -> (),
-	Reentered: () -> (),
+	SetRequests: (RequestTypes.ClientActionRequestRuntime) -> (),
 	SetOrdinalForTests: (number) -> (),
 	Destroy: () -> (),
 }

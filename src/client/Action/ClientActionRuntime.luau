@@ -3,13 +3,14 @@ local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local SharedRequestTypes = require(script.Parent.Parent.Parent.shared.ActionRequest.types)
 local State = require(script.Parent.utils.ClientActionRuntimeState)
+local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 local emptySources: { Types.ProfileSourceSnapshot } = table.freeze({} :: { Types.ProfileSourceSnapshot })
 
 local facade: Types.ClientActionRuntime = {
 	OnActionRequest = State.OnActionRequest,
 	RetireRequest = function(original: number): (boolean, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ActionInputOwner? = State.GetInput()
 
 		if owner == nil then
@@ -19,7 +20,7 @@ local facade: Types.ClientActionRuntime = {
 		return owner.RetireRequest(original)
 	end,
 	RequestAction = function(actor: ActorTypes.ActorView, actionId: string, parameters: any?): (number?, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ActionInputOwner? = State.GetInput()
 
 		if owner == nil then
@@ -29,7 +30,7 @@ local facade: Types.ClientActionRuntime = {
 		return owner.RequestAction(actor, actionId, parameters)
 	end,
 	RequestStop = function(original: number, parameters: any?): (number?, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ActionInputOwner? = State.GetInput()
 
 		if owner == nil then
@@ -42,7 +43,7 @@ local facade: Types.ClientActionRuntime = {
 		original: number,
 		reason: SharedRequestTypes.ActionInputInterruptReason
 	): (number?, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ActionInputOwner? = State.GetInput()
 
 		if owner == nil then
@@ -56,7 +57,7 @@ local facade: Types.ClientActionRuntime = {
 		sourceId: string,
 		profile: Types.ControlProfile
 	): (boolean, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ClientActionOwner? = State.Get()
 
 		if owner == nil then
@@ -66,7 +67,7 @@ local facade: Types.ClientActionRuntime = {
 		return owner.SetProfileSource(actor, sourceId, profile)
 	end,
 	RemoveProfileSource = function(actor: ActorTypes.ActorView, sourceId: string): (boolean, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ClientActionOwner? = State.Get()
 
 		if owner == nil then
@@ -76,7 +77,7 @@ local facade: Types.ClientActionRuntime = {
 		return owner.RemoveProfileSource(actor, sourceId)
 	end,
 	SetControlledActor = function(actor: ActorTypes.ActorView?): (boolean, string?)
-		State.CheckObservationReentry()
+		Observers.CheckReentry()
 		local owner: Types.ClientActionOwner? = State.Get()
 
 		if owner == nil then

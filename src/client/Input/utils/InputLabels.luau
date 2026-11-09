@@ -1,4 +1,5 @@
 --!strict
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 export type Association = { inputId: string, action: InputAction, disconnect: RBXScriptConnection }
 
 export type Owner = {
@@ -31,6 +32,7 @@ function Labels.new(unavailable: () -> string?, actions: () -> { [string]: Input
 
 	return {
 		BindActionLabel = function(inputId: string, label: InputActionLabel): (boolean, string?)
+			Observers.CheckReentry()
 			local reason: string? = unavailable()
 
 			if reason ~= nil then
@@ -61,6 +63,7 @@ function Labels.new(unavailable: () -> string?, actions: () -> { [string]: Input
 			return true, nil
 		end,
 		UnbindActionLabel = function(label: InputActionLabel): (boolean, string?)
+			Observers.CheckReentry()
 			local reason: string? = unavailable()
 
 			if reason ~= nil then

@@ -94,6 +94,8 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 		prepare(config)
 
 	if configFailure ~= nil then
+		ObservationInstallation.ClearUninstalled()
+
 		return false, configFailure
 	end
 
@@ -112,7 +114,10 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	local cleanupActions: (() -> ())? = nil
 	local cleanupControls: (() -> ())? = nil
 	local cleanupActionRequests: (() -> ())? = nil
-	local cleanupObservations: (() -> ())? = nil
+
+	local cleanupObservations: (() -> ())?, bindObservationRequests: () -> () =
+		ObservationInstallation.Install(dependencies.Now)
+
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -332,7 +337,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					end
 
 					cleanupActionRequests = stopRequests
-					cleanupObservations = ObservationInstallation.Install(dependencies.Now)
+					bindObservationRequests()
 				end
 
 				cleanupActions = ActionInstallation.Install(function(): boolean
@@ -397,6 +402,8 @@ function Client._ResetForTests(): ()
 		shutdown()
 		shutdown = nil
 	end
+
+	ObservationInstallation.ClearUninstalled()
 
 	attempted = false
 	initialized = false
