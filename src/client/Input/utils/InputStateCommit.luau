@@ -140,6 +140,11 @@ function StateCommit.new(
 			return graph
 		end,
 		Available = availability.IsAvailable,
+		ReadState = function(inputId: string): unknown
+			local action: InputAction? = native.Actions()[inputId]
+
+			return if action ~= nil then options.Native.ReadState(action) else nil
+		end,
 		State = function(inputId: string): Epochs.State?
 			return states[inputId]
 		end,
@@ -291,6 +296,7 @@ function StateCommit.new(
 					not availability.IsAvailable(inputId)
 					or invalidationReason == "FocusLost"
 					or invalidationReason == "DeviceDisconnected"
+					or invalidationReason == "InputOwnershipChanged"
 				) and state.input.inputType ~= Enum.InputActionType.ViewportPosition
 			then
 				state.disarmed = true

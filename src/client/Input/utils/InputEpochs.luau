@@ -9,6 +9,7 @@ export type State = {
 	disarmed: boolean,
 	epochId: number?,
 	epochGeneration: number,
+	continuityRevision: number,
 }
 
 export type Transition = {
@@ -34,11 +35,14 @@ function Epochs.new(input: Types.InputSnapshot, generation: number, disarmed: bo
 		value = Value.Neutral(input.inputType),
 		disarmed = disarmed or false,
 		epochGeneration = generation,
+		continuityRevision = 0,
 	}
 end
 
 function Epochs.Cancel(state: State, reason: string, generation: number): Transition?
 	local wasActive: boolean = state.active
+
+	state.continuityRevision += 1
 
 	state.active = false
 
@@ -200,6 +204,12 @@ function Epochs.Install(
 		end
 
 		local installed: State = states[inputId]
+
+		if invalidated[inputId] ~= nil then
+			-- End the native-write interval as well as retiring its old epoch.
+			installed.continuityRevision += 1
+		end
+
 		local context: Types.ContextSnapshot = graph.contexts[input.contextId]
 		local oldContext: Types.ContextSnapshot? = previous.contexts[input.contextId]
 

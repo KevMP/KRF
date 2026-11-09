@@ -260,12 +260,57 @@ local function run(): ()
 	ability:Fire(true)
 	ability:Fire(false)
 	settle(admissions[10].requestId, "Accepted")
+
+	assert(Runtime.RemoveProfileSource(mount, "Sword"))
+	equipped = "Combat.Rasengan"
+	ability:Fire(true)
+	local beforeSink: RequestTypes.ActionRequestAdmission = admissions[11]
+	settle(beforeSink.requestId, "Accepted")
+
+	assert(Controls.Apply({
+		inputs = {
+			{
+				kind = "Set",
+				sourceId = "Menu",
+				definition = {
+					contexts = { Menu = { priority = 4000, sink = true } },
+					inputs = {
+						Confirm = {
+							context = "Menu",
+							type = Enum.InputActionType.Bool,
+							bindings = { Keyboard = { keyCode = Enum.KeyCode.Q } },
+						},
+					},
+				},
+			},
+		},
+		contexts = { { contextId = "Menu", enabled = true } },
+	}))
+
+	assert(
+		admissions[12].kind == "Interrupt"
+			and admissions[12].originalStartRequestId == beforeSink.requestId
+			and stopCalls == 1,
+		"SinkTakeoverBecameStopOrStrandedAction"
+	)
+
+	settle(admissions[12].requestId, "Accepted")
+	assert(Controls.Apply({ contexts = { { contextId = "Menu", enabled = false } } }))
+	ability:Fire(true)
+	assert(#admissions == 12, "SinkRestorationRearmedHeldInput")
+	ability:Fire(false)
+	equipped = "Combat.Fireball"
+	ability:Fire(true)
+	ability:Fire(false)
+	settle(admissions[13].requestId, "Accepted")
+	assert(Controls.Apply({ inputs = { { kind = "Remove", sourceId = "Menu" } } }))
+
 	local response: unknown = probe:InvokeServer()
 	assert(type(response) == "table", "MissingNativeLedger")
 	local ledger: { [string]: unknown } = response :: { [string]: unknown }
 
 	assert(
-		ledger.starts == 3 and ledger.stops == 1 and ledger.interrupts == 2 and ledger.fireballs == 4,
+		ledger.starts == 4 and ledger.stops == 1 and ledger.interrupts == 3 and ledger.fireballs == 5,
 		"NativeLedgerMismatch"
 	)
 

@@ -96,10 +96,10 @@ control.OnServerEvent:Connect(function(player: Player, report: unknown): ()
 	local ledger: Ledger = ledgers[player]
 
 	if
-		ledger.starts ~= 3
+		ledger.starts ~= 4
 		or ledger.stops ~= 1
-		or ledger.interrupts ~= 2
-		or ledger.fireballs ~= 4
+		or ledger.interrupts ~= 3
+		or ledger.fireballs ~= 5
 		or ledger.releaseAim ~= 8
 	then
 		finish(false, "OriginalActorLifecycleOrPrivacyMismatch")
