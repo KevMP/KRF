@@ -17,6 +17,7 @@ local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRe
 local ActionTypes = require(script.Action.types)
 local PolicyValidator = require(script.Action.ActionInputPolicyValidator)
 local ActionRequestInstallation = require(script.ActionRequest.utils.ClientActionRequestInstallation)
+local ObservationInstallation = require(script.Action.utils.ActionObservationInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -111,6 +112,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	local cleanupActions: (() -> ())? = nil
 	local cleanupControls: (() -> ())? = nil
 	local cleanupActionRequests: (() -> ())? = nil
+	local cleanupObservations: (() -> ())? = nil
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -138,6 +140,9 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 		local consumers: (() -> ())? = cleanupConsumers
 		cleanupConsumers = nil
 		dispose(consumers)
+		local stopObservations: (() -> ())? = cleanupObservations
+		cleanupObservations = nil
+		dispose(stopObservations)
 		-- After the command runtime, so its closing Unknown outcomes still correlate.
 		local stopActionRequests: (() -> ())? = cleanupActionRequests
 		cleanupActionRequests = nil
@@ -327,6 +332,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					end
 
 					cleanupActionRequests = stopRequests
+					cleanupObservations = ObservationInstallation.Install(dependencies.Now)
 				end
 
 				cleanupActions = ActionInstallation.Install(function(): boolean

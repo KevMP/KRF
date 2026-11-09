@@ -37,6 +37,7 @@ local policies: ActionTypes.ActionInputPolicies = {
 			return { aim = currentAim() }
 		end,
 	},
+	["Mode.Aura"] = { activation = "Toggle" },
 }
 return policies
 ```
@@ -105,6 +106,38 @@ Press X, Q, then hold Z. Z owns the charge; releasing X or Q does not stop it. W
 
 Toggle ignores key release. A second trigger must match the same ActorView, effective route continuity and concrete Action. It runs the original Stop producer without another Start producer. Locally admitted Stop retires toggle matching even if the server Action remains alive; the next trigger can request a new Start. Changing the selected Action does not toggle off a different one. Keep invalidation discards matching ownership and the original's client follow-up authority permanently; the server Action continues under its independent lifetime rules.
 
+For a declared `Aura` Bool input, route `Mode.Aura` after enabling its parameterless Stop in the shared schema. Its server Action must also be declared and granted:
+
+```lua
+assert(Actions.SetProfileSource(actorView, "Aura", {
+	routes = {
+		{
+			when = { kind = "Input", inputId = "Aura", gesture = "Pressed" },
+			target = { kind = "Fixed", actionId = "Mode.Aura" },
+		},
+	},
+}))
+```
+
+The first press produces an admitted Start; the matching second press produces `ToggleOff`, then a Stop admission if Stop succeeds locally. Observe both through [OnActionRequest](./action-requests#observe-local-requests).
+
+## Q to Dash
+
+For an existing `Q` Bool input bound to the Q key in an enabled context, map its press to a granted parameterless `Movement.Dash` whose shared request entry is `{}`. The omitted client policy defaults to OneShot:
+
+```lua
+assert(Actions.SetProfileSource(actorView, "Movement", {
+	routes = {
+		{
+			when = { kind = "Input", inputId = "Q", gesture = "Pressed" },
+			target = { kind = "Fixed", actionId = "Movement.Dash" },
+		},
+	},
+}))
+```
+
+The same observation subscription receives Dash's local Start admission and server outcome, or final-Z Rasengan's admission and genuine release. Ordinary OneShot release emits no local input transition. Request observations do not play effects or decide prediction policy.
+
 ## Explicit requests and server lifetime
 
 An input-selected OneShot retires its Start's Stop/Interrupt authority after successful local admission, even when the wire schema supports follow-ups. Pending results still correlate to the original request. Use a direct request when game code needs to retain an original id for manual follow-ups.
@@ -128,7 +161,7 @@ end
 
 Here `actorView`, `aim` and `releaseAim` are game-supplied values matching the shared schema. Returned ids mean local admission, not server acceptance or a running instance. Stop delivers nonterminal intent to `onStopRequested`; only the server Action decides to End. Early release before Start acknowledgement is supported, and Unknown does not prove denial. Absence of an ActionsView never proves a ServerOnly Action ended.
 
-A successful direct follow-up for an automatic activation retires that input ownership before another release can duplicate it. There is no public activation-id enumeration. A detached Keep Action needs game-authored server lifetime handling. No public input-decision or presentation event stream is exposed.
+A successful direct follow-up for an automatic activation retires that input ownership before another release can duplicate it. There is no public activation-id enumeration. A detached Keep Action needs game-authored server lifetime handling. [OnActionRequest](./action-requests#observe-local-requests) reports its original local input decision separately from any server outcome.
 
 For directly started Actions, Accepted Stop leaves follow-up authority usable because Stop is nonterminal. A definitively Accepted Interrupt releases that authority automatically. When game code deliberately gives up further control, call `Actions.RetireRequest(original)`. This is local-only: it preserves pending results and does not end the server Action. Unknown or Rejected Interrupts do not imply termination; late Accepted results during the command grace window still retire the original.
 
@@ -152,6 +185,7 @@ Different lifecycles require different concrete Action ids. A payload such as `t
 
 ## Related
 
+- [Observe local admissions, input decisions and outcomes](./action-requests#observe-local-requests)
 - [Action requests](./action-requests)
 - [Action lifecycle](./action-lifecycle)
 - [ClientActionRuntime API](/api/Action/client-action-runtime)

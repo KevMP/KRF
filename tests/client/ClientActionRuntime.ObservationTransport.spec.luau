@@ -8,6 +8,8 @@ local beforeEach: any = JestGlobals.beforeEach
 local afterEach: any = JestGlobals.afterEach
 local Types = require(KRF.client.Action.types)
 local NetworkingTypes = require(KRF.client.Networking.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+local Client = require(KRF.client)
 local Runtime: Types.ClientActionRuntime = require(KRF.client.Action.ClientActionRuntime)
 local State = require(KRF.client.Action.utils.ClientActionRuntimeState)
 local Commands = require(KRF.client.Networking.utils.CommandRuntimeState)
@@ -35,6 +37,64 @@ local function ready(policies: Types.ActionInputPolicies?): ()
 	capture = Utils.capture()
 	table.insert(disconnects, capture.disconnect)
 end
+
+for _, closing: string in { "PhysicalSend", "PublicAdmission" } do
+	it("drains admission and I5 Closing uncertainty outside reentrant " .. closing .. " before disposal", function()
+		ready()
+		local connection: SignalTypes.Connection?
+
+		if closing == "PhysicalSend" then
+			fixture.commands.beforeSend = function(): ()
+				fixture.commands.beforeSend = nil
+				Client._ResetForTests()
+			end
+		else
+			connection = Runtime.OnActionRequest:Connect(function(fact: Types.ActionRequestEvent): ()
+				if fact.kind == "RequestAdmitted" then
+					Client._ResetForTests()
+				end
+			end)
+		end
+
+		local original: number? = Runtime.RequestAction(fixture.actor, "Combat.Fireball", { aim = 1 })
+		task.wait()
+
+		if connection ~= nil then
+			connection:Disconnect()
+		end
+
+		expect(original).toBe(1)
+		expect(Utils.kinds(capture.private)).toEqual({ "RequestAdmitted:Start", "RequestOutcome:Start" })
+
+		expect(Utils.fact(capture.private, 2)).toMatchObject({
+			status = "Unknown",
+			reason = "CommandConnectionClosed",
+			requestId = 1,
+			requestKey = capture.private[1].originalStartKey,
+		})
+
+		expect(#fixture.commands.sent).toBe(1)
+	end)
+end
+
+it("withdraws provisional observation when Closing reenters before irreversible command admission", function()
+	ready()
+	local commands: NetworkingTypes.ClientCommandRuntime = assert(Commands.Get(), "Expected command runtime")
+	local send = commands._SendAdmitted
+
+	commands._SendAdmitted = function(self, id, actor, parameters, admit, committed): (number?, string?)
+		return send(self, id, actor, parameters, function(requestId: number): boolean
+			local accepted: boolean = admit(requestId)
+			Client._ResetForTests()
+
+			return accepted
+		end, committed)
+	end
+
+	expect({ Runtime.RequestAction(fixture.actor, "Combat.Fireball", { aim = 1 }) }).toEqual({ nil, "ClientNotReady" })
+	expect(capture.private).toEqual({})
+	expect(fixture.commands.sent).toEqual({})
+end)
 
 it("finishes physical egress before same-stack private work and stages an immediate reply behind admission", function()
 	local order: { string } = {}

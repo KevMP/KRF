@@ -49,6 +49,14 @@ export type ActionInputTransition = OriginalActionIdentity & ObservationMetadata
 
 export type ActionRequestEvent = ActionRequestAdmitted | ActionRequestOutcome | ActionInputTransition
 
+export type ActionObservationOwner = {
+	Observe: ((ActionRequestEvent) -> ()) -> () -> (),
+	SetInput: (ActionInputOwner?) -> (),
+	Reentered: () -> (),
+	SetOrdinalForTests: (number) -> (),
+	Destroy: () -> (),
+}
+
 export type RouteKey = InputTypes.RecognitionRouteKey
 export type DispatchMode = "Exclusive" | "Independent"
 export type ResolvedAction = { actionId: string, parameters: any? }

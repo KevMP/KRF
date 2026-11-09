@@ -196,11 +196,15 @@ function ClientActionRequestRuntime._send(
 
 			return true
 		end,
-		if committed ~= nil
-			then function(): ()
+		function(): ()
+			-- N9 has irreversibly admitted this command. Observation may now drain
+			-- after egress, including Closing reentry before SendAdmitted returns.
+			assert(fact, "Expected staged admission").ready = true
+
+			if committed ~= nil then
 				committed(assert(admitted, "Expected reserved request correlation"))
 			end
-			else nil
+		end
 	)
 
 	local staged: Facts.Fact? = fact
@@ -268,7 +272,7 @@ function ClientActionRequestRuntime.Start(
 		actor,
 		{ actionId = compiled.actionId, contractTag = compiled.contractTag, payload = payload },
 		function(requestId: number): Types.ActionRequestAdmission
-			local key: unknown = table.freeze({})
+			local key: string = string.format("%.0f:%.0f", self.incarnation, requestId)
 
 			local admission: Types.ActionRequestAdmission = table.freeze({
 				kind = "Start" :: Types.ActionRequestKind,
@@ -329,7 +333,7 @@ function ClientActionRequestRuntime._followUp(
 			actionId = start.actionId,
 			origin = start.origin,
 			inputTimestamp = nil,
-			requestKey = table.freeze({}),
+			requestKey = string.format("%.0f:%.0f", self.incarnation, requestId),
 			originalStartKey = start.requestKey,
 		})
 
@@ -517,6 +521,18 @@ function ClientActionRequestRuntime._GetRetainedCountForTests(self: Runtime): nu
 	return self.originalCount + self.followUpCount
 end
 
+function ClientActionRequestRuntime.AfterObservations(self: Runtime, callback: () -> ()): ()
+	local function finish(): ()
+		self.facts.AfterDrain(callback)
+	end
+
+	if self.commands.AfterEgress ~= nil then
+		self.commands.AfterEgress(finish)
+	else
+		finish()
+	end
+end
+
 function ClientActionRequestRuntime.Destroy(self: Runtime): ()
 	if self.destroyed then
 		return
@@ -546,6 +562,11 @@ local module: Types.ClientActionRequestRuntimeModule = {
 		catalog: ActionRequestTypes.ActionRequestCatalog,
 		options: Types.ClientActionRequestOptions
 	): Types.ClientActionRequestRuntime
+		assert(
+			options.incarnation >= 1 and options.incarnation <= 9007199254740991 and options.incarnation % 1 == 0,
+			"ActionRequestIncarnationExhausted"
+		)
+
 		local maximum: number = options.maxOriginalStarts or DEFAULT_MAX_ORIGINAL_STARTS
 		assert(maximum >= 1 and maximum % 1 == 0 and maximum < math.huge, "InvalidActionRequestLimit")
 

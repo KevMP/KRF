@@ -46,7 +46,7 @@ end
 function Utils.fact(facts: { Types.ActionRequestEvent }, index: number): Types.ActionRequestEvent
 	expect(#facts >= index).toBe(true)
 
-	return assert(facts[index], "Expected a normalized Action observation on the original call stack")
+	return (assert(facts[index], "Expected a normalized Action observation on the original call stack"))
 end
 
 function Utils.kinds(facts: { Types.ActionRequestEvent }): { string }

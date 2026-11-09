@@ -17,6 +17,7 @@ Public contract types are in `KRF.client.Action.types`. `ActorView` is the clien
 
 | Kind | Signature |
 | --- | --- |
+| Event | [`OnActionRequest: Event<ActionRequestEvent>`](#on-action-request) |
 | Method | [`SetProfileSource(actor: ActorView, sourceId: string, profile: ControlProfile) -> (boolean, string?)`](#set-profile-source) |
 | Method | [`RemoveProfileSource(actor: ActorView, sourceId: string) -> (boolean, string?)`](#remove-profile-source) |
 | Method | [`SetControlledActor(actor: ActorView?) -> (boolean, string?)`](#set-controlled-actor) |
@@ -27,6 +28,37 @@ Public contract types are in `KRF.client.Action.types`. `ActorView` is the clien
 | Method | [`RequestStop(originalStartRequestId: number, parameters: any?) -> (number?, string?)`](#request-stop) |
 | Method | [`RequestInterrupt(originalStartRequestId: number, reason: ActionInputInterruptReason) -> (number?, string?)`](#request-interrupt) |
 | Method | [`RetireRequest(originalStartRequestId: number) -> (boolean, string?)`](#retire-request) |
+
+## Events
+
+### `OnActionRequest: Event<ActionRequestEvent>` {#on-action-request}
+
+Reports an immutable local request admission, correlated request outcome, or original input transition. Exposes the standard read-only `Connect`, `Once` and `Wait` Event surface.
+
+Every variant contains:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `"RequestAdmitted"`, `"RequestOutcome"` or `"InputTransition"` | Tagged variant |
+| `actor` | `ActorView` | Exact original ActorView, including after it becomes unavailable |
+| `actionId` | `string` | Original concrete Action |
+| `originalStartRequestId` | `number` | Original locally admitted Start id |
+| `originalStartKey` | `string` | Original Start's reconnect-safe opaque local key |
+| `origin` | `"Input"` or `"Direct"` | Provenance of the original Start, including on manual follow-ups |
+| `eventOrdinal` | `number` | Increasing logical fact order within this client incarnation |
+| `observedAt` | `number` | Local monotonic time when this fact was created |
+
+Variant-specific fields:
+
+| Variant | Fields |
+| --- | --- |
+| `RequestAdmitted` | `operation: "Start" \| "Stop" \| "Interrupt"`, `requestId: number`, `requestKey: string`, optional `inputOccurredAt: number` only for input-driven Start |
+| `RequestOutcome` | `operation`, `requestId`, the admission's same `requestKey`, `status: "Accepted" \| "Rejected" \| "Unknown"`, optional bounded `reason: string`; `sequenceId: number` is required only for Accepted Start and absent otherwise |
+| `InputTransition` | `transition: "GenuineRelease" \| "ToggleOff" \| "InvalidatedInterrupt" \| "InvalidatedKeep"`, optional bounded `reason: string` |
+
+Local refusal emits no admission. Physical send failure after admission can produce admission followed by Unknown. Follow-ups have their own command ids and keys while retaining the original Start fields. Keys are local correlation data, not wire credentials.
+
+Public callbacks may execute out of order. The [observation guide](/Action/action-requests#observe-local-requests) explains ordinal handling, input versus observation clocks, late outcomes, authoritative Action identity and teardown.
 
 ## Methods
 

@@ -15,6 +15,7 @@ export type Owner = {
 	Commit: (Fact) -> (),
 	Withdraw: (Fact) -> (),
 	Drain: () -> (),
+	AfterDrain: (() -> ()) -> (),
 	ObserveAdmissions: ((Types.ActionRequestAdmission) -> ()) -> () -> (),
 	ObserveOutcomes: ((Types.ActionRequestOutcome) -> ()) -> () -> (),
 	Destroy: () -> (),
@@ -32,6 +33,7 @@ function Facts.new(maximum: number?): Owner
 	local queue: { Fact } = {}
 	local draining: boolean = false
 	local destroyed: boolean = false
+	local afterDrain: { () -> () } = {}
 
 	local function notify<T>(registry: Observers.Registry<(T) -> ()>, value: T): ()
 		for _, entry in registry.Snapshot() do
@@ -61,6 +63,15 @@ function Facts.new(maximum: number?): Owner
 		end
 
 		draining = false
+
+		if #queue == 0 then
+			local callbacks: { () -> () } = afterDrain
+			afterDrain = {}
+
+			for _, callback in callbacks do
+				Observers.Run(callback)
+			end
+		end
 	end
 
 	return {
@@ -75,6 +86,17 @@ function Facts.new(maximum: number?): Owner
 			drain()
 		end,
 		Drain = drain,
+		AfterDrain = function(callback): ()
+			if destroyed then
+				callback()
+
+				return
+			end
+
+			assert(#afterDrain < 16, "ActionRequestFinalizerLimitExceeded")
+			table.insert(afterDrain, callback)
+			drain()
+		end,
 		Withdraw = function(fact: Fact): ()
 			for index: number = #queue, 1, -1 do
 				local queued: Fact = queue[index]
@@ -98,6 +120,7 @@ function Facts.new(maximum: number?): Owner
 		Destroy = function(): ()
 			destroyed = true
 			table.clear(queue)
+			table.clear(afterDrain)
 			admissions.Destroy()
 			outcomes.Destroy()
 		end,
