@@ -96,6 +96,8 @@ Returns `true, nil` on retirement. Returns `false, reason` with `ClientNotReady`
 
 ## Related
 
+- [Coordinated client controls](/Action/client-controls)
+
 - [Action input](/Action/action-input)
 - [Action requests](/Action/action-requests)
 - [Client initialization](/api/Client/)

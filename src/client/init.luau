@@ -9,6 +9,7 @@ local ManifestCompiler = require(script.Parent.shared.Networking.ManifestCompile
 local Diagnostics = require(script.Networking.utils.NetworkingDiagnosticsState)
 local SendMetrics = require(script.Parent.shared.Networking.utils.NetworkingSendMetrics)
 local defaultDependencies: ClientTypes.Dependencies = require(script.Networking.utils.NativeClientDependencies)
+local ControlInstallation = require(script.Controls.utils.ControlInstallation)
 local InputInstallation = require(script.Input.utils.InputInstallation)
 local ActionInstallation = require(script.Action.utils.ClientActionInstallation)
 local ActionRequestTypes = require(script.Parent.shared.ActionRequest.types)
@@ -108,6 +109,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	local cleanupConsumers: (() -> ())? = nil
 	local cleanupInput: (() -> ())? = nil
 	local cleanupActions: (() -> ())? = nil
+	local cleanupControls: (() -> ())? = nil
 	local cleanupActionRequests: (() -> ())? = nil
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
@@ -119,6 +121,9 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	end
 
 	local function cleanup(): ()
+		local stopControls: (() -> ())? = cleanupControls
+		cleanupControls = nil
+		dispose(stopControls)
 		local stopActions: (() -> ())? = cleanupActions
 		cleanupActions = nil
 		dispose(stopActions)
@@ -327,6 +332,10 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 				cleanupActions = ActionInstallation.Install(function(): boolean
 					return initialized and success
 				end, inputPolicies)
+
+				cleanupControls = ControlInstallation.Install(function(): boolean
+					return initialized and success
+				end)
 
 				state = "AwaitAck"
 				local ready: buffer?, readyReason: string? = ProtocolCodec.Encode({ kind = "Ready" })

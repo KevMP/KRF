@@ -4,6 +4,7 @@ local MutationGate = require(script.Parent.utils.InputMutationGate)
 local Dispatch = require(script.Parent.utils.InputDispatch)
 local GraphObservers = require(script.Parent.utils.InputGraphObservers)
 local Configuration = require(script.Parent.utils.InputConfiguration)
+local DeviceInputs = require(script.Parent.utils.InputDeviceInputs)
 local PreparedPlans = require(script.Parent.utils.InputPreparedPlans)
 
 local InputOwner = {}
@@ -55,10 +56,24 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 	}, gate, dispatch.Recognition)
 
 	return {
-		AfterCommit = function(callback: () -> ()): (boolean, string?)
-			if gate.IsTerminal() then
-				return false, "ClientNotReady"
-			elseif gate.IsFenced() then
+		SetFocusAvailable = configuration.SetFocusAvailable,
+		SetDeviceAvailable = configuration.SetDeviceAvailable,
+		FailControlChange = function(): ()
+			configuration.Fail(nil)
+		end,
+		BeginControlChange = gate.BeginCoordination,
+		EndControlChange = function(): ()
+			configuration.DrainNative()
+			gate.DrainAfterCommit()
+			gate.EndCoordination()
+		end,
+		DrainControlFollowUps = gate.DrainAfterCommit,
+		SetSafetyPending = gate.SetSafetyPending,
+		IsControlDispatchBlocked = function(): boolean
+			return gate.IsSafetyPending() or (gate.IsCoordinating() and not configuration.IsReplaying())
+		end,
+		WhenIdle = function(callback: () -> ()): (boolean, string?)
+			if gate.IsBusy() or gate.IsValidating() or gate.IsCoordinating() then
 				return gate.Queue(callback)
 			end
 
@@ -66,14 +81,23 @@ function InputOwner.new(options: Types.InputOwnerOptions): Types.InputOwner
 
 			return true, nil
 		end,
+		GetAffectedDeviceInputs = function(device: Enum.UserInputType): { string }
+			return DeviceInputs.Affected(configuration.Graph(), device)
+		end,
+		CompileUpdate = configuration.CompileUpdate,
+		PrepareGraph = plans.PrepareGraph,
+		CommitControlUpdate = plans.CommitControlUpdate,
+		AfterCommit = gate.AfterCommit,
 		ReleasePrepared = plans.Release,
 		ValidatePrepared = plans.Validate,
 		GetCommitContext = configuration.SelectionFence,
 		GetGraphSnapshot = configuration.Graph,
-		GetMutationStatus = function(): string?
+		GetMutationStatus = function(ignoreCoordination: boolean?): string?
 			return gate.Unavailable()
 				or (
-					if gate.IsFenced() or (gate.IsBusy() and not dispatch.IsPublishing())
+					if (not ignoreCoordination and (gate.IsCoordinating() or gate.IsSafetyPending()))
+							or gate.IsFenced()
+							or (gate.IsBusy() and not dispatch.IsPublishing())
 						then "InputMutationReentrant"
 						else nil
 				)

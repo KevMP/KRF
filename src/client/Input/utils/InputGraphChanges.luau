@@ -65,6 +65,8 @@ function Changes.Diff(
 
 			if before.enabled and not after.enabled then
 				reason = "ContextDisabled"
+			elseif before.sourceId ~= after.sourceId then
+				reason = "ContextOwnerChanged"
 			elseif before.priority ~= after.priority or before.sink ~= after.sink then
 				reason = "ContextChanged"
 			else

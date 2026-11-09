@@ -10,48 +10,97 @@ export type Owner = {
 	IsBusy: () -> boolean,
 	IsFenced: () -> boolean,
 	IsValidating: () -> boolean,
-	SetFenced: (enabled: boolean) -> (),
-	SetValidating: (enabled: boolean) -> (),
+	IsCoordinating: () -> boolean,
+	IsSafetyPending: () -> boolean,
+	SetSafetyPending: (boolean) -> (),
+	BeginCoordination: () -> (boolean, string?),
+	EndCoordination: () -> (),
+	SetFenced: (boolean) -> (),
+	SetValidating: (boolean) -> (),
 	EnterDispatch: () -> (),
 	LeaveDispatch: () -> (),
 	Fault: () -> boolean,
 	Destroy: () -> boolean,
-	Queue: (mutation: () -> ()) -> (boolean, string?),
+	Queue: (() -> ()) -> (boolean, string?),
+	AfterCommit: (() -> ()) -> (boolean, string?),
+	DrainAfterCommit: () -> (),
+	Observe: (() -> ()) -> (),
 	Flush: () -> (),
 	Clear: () -> (),
 }
 
 local Gate = {}
 
--- Owns the shared exclusion state; collaborators never keep competing fences.
+-- One input-owned barrier. Mandatory follow-ups drain before source mutations.
 function Gate.new(isReady: () -> boolean, report: (string) -> ()): Owner
 	local destroyed: boolean = false
 	local faulted: boolean = false
 	local validating: boolean = false
 	local fenced: boolean = false
+	local coordinating: boolean = false
+	local safetyPending: boolean = false
 	local dispatchDepth: number = 0
 	local draining: boolean = false
 	local pending: { () -> () } = {}
+	local committed: { () -> () } = {}
+	local observations: { () -> () } = {}
+	local owner: Owner
 
-	return {
+	local function unavailable(): string?
+		if destroyed or not isReady() then
+			return "ClientNotReady"
+		end
+
+		if faulted then
+			return "InputRuntimeFaulted"
+		end
+
+		if validating then
+			return "InputMutationDuringValidation"
+		end
+
+		return nil
+	end
+
+	local function enqueue(queue: { () -> () }, callback: () -> ()): (boolean, string?)
+		if #queue >= Constants.MAX_PENDING_MUTATIONS then
+			return false, "InputMutationQueueLimitExceeded"
+		end
+
+		table.insert(queue, callback)
+
+		return true, nil
+	end
+
+	local function run(callback: () -> ()): ()
+		local success: boolean, reason: unknown = pcall(callback)
+
+		if not success then
+			report(tostring(reason))
+		end
+	end
+
+	local function drainCommitted(): ()
+		local total: number = 0
+
+		while #committed > 0 and not destroyed and not faulted do
+			total += 1
+
+			if total > Constants.MAX_PENDING_MUTATIONS then
+				table.clear(committed)
+				report("InputMutationQueueLimitExceeded")
+				break
+			end
+
+			run(assert(table.remove(committed, 1), "Expected committed callback"))
+		end
+	end
+
+	owner = {
 		Depth = function(): number
 			return dispatchDepth
 		end,
-		Unavailable = function(): string?
-			if destroyed or not isReady() then
-				return "ClientNotReady"
-			end
-
-			if faulted then
-				return "InputRuntimeFaulted"
-			end
-
-			if validating then
-				return "InputMutationDuringValidation"
-			end
-
-			return nil
-		end,
+		Unavailable = unavailable,
 		IsTerminal = function(): boolean
 			return destroyed or faulted
 		end,
@@ -70,11 +119,46 @@ function Gate.new(isReady: () -> boolean, report: (string) -> ()): Owner
 		IsValidating = function(): boolean
 			return validating
 		end,
-		SetFenced = function(enabled: boolean): ()
-			fenced = enabled
+		IsCoordinating = function(): boolean
+			return coordinating
 		end,
-		SetValidating = function(enabled: boolean): ()
-			validating = enabled
+		IsSafetyPending = function(): boolean
+			return safetyPending
+		end,
+		SetSafetyPending = function(value: boolean): ()
+			safetyPending = value
+		end,
+		BeginCoordination = function(): (boolean, string?)
+			local rejection: string? = unavailable()
+
+			if rejection ~= nil then
+				return false, rejection
+			end
+
+			if coordinating or fenced or dispatchDepth > 0 then
+				return false, "DispatchInProgress"
+			end
+
+			coordinating = true
+
+			return true, nil
+		end,
+		EndCoordination = function(): ()
+			coordinating = false
+			local batch: { () -> () } = observations
+			observations = {}
+
+			for _, callback in batch do
+				task.defer(callback)
+			end
+
+			owner.Flush()
+		end,
+		SetFenced = function(value: boolean): ()
+			fenced = value
+		end,
+		SetValidating = function(value: boolean): ()
+			validating = value
 		end,
 		EnterDispatch = function(): ()
 			dispatchDepth += 1
@@ -101,46 +185,62 @@ function Gate.new(isReady: () -> boolean, report: (string) -> ()): Owner
 
 			return true
 		end,
-		Queue = function(mutation: () -> ()): (boolean, string?)
-			if #pending >= Constants.MAX_PENDING_MUTATIONS then
-				return false, "InputMutationQueueLimitExceeded"
+		Queue = function(callback: () -> ()): (boolean, string?)
+			return enqueue(pending, callback)
+		end,
+		AfterCommit = function(callback: () -> ()): (boolean, string?)
+			if destroyed or faulted then
+				return false, "ClientNotReady"
 			end
 
-			table.insert(pending, mutation)
+			if fenced or coordinating then
+				return enqueue(committed, callback)
+			end
+
+			callback()
 
 			return true, nil
 		end,
+		DrainAfterCommit = drainCommitted,
+		Observe = function(callback: () -> ()): ()
+			if coordinating then
+				table.insert(observations, callback)
+			else
+				callback()
+			end
+		end,
 		Flush = function(): ()
-			if draining or fenced or dispatchDepth > 0 or validating then
+			if draining or fenced or dispatchDepth > 0 or validating or coordinating then
 				return
 			end
 
 			draining = true
+			drainCommitted()
 			local total: number = 0
 
 			while #pending > 0 and not destroyed and not faulted do
 				total += 1
 
 				if total > Constants.MAX_PENDING_MUTATIONS then
-					report("InputMutationQueueLimitExceeded")
 					table.clear(pending)
+					report("InputMutationQueueLimitExceeded")
 					break
 				end
 
-				local mutation: () -> () = assert(table.remove(pending, 1), "Expected queued input mutation")
-				local success: boolean, reason: any = pcall(mutation)
-
-				if not success then
-					report(tostring(reason))
-				end
+				run(assert(table.remove(pending, 1), "Expected pending callback"))
+				drainCommitted()
 			end
 
 			draining = false
 		end,
 		Clear = function(): ()
 			table.clear(pending)
+			table.clear(committed)
+			table.clear(observations)
 		end,
 	}
+
+	return owner
 end
 
 return Gate

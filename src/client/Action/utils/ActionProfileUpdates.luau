@@ -17,30 +17,43 @@ function Updates.Prepare(
 	version: number,
 	validateActor: (ActorTypes.ActorView?) -> string?
 ): (Graph.Catalog?, string?)
-	if not Validator.IsArray(updates, Limits.MAX_PREPARED_PLANS) then
+	if not Validator.IsArray(updates, Limits.MAX_ACTORS * Limits.MAX_SOURCES_PER_ACTOR * 2) then
 		return nil, "InvalidProfileUpdates"
 	end
 
 	local desired: Graph.Catalog = table.clone(current)
 	local pending: { [ActorTypes.ActorView]: { [string]: Validator.Profile } } = {}
+	local rejection: string? = nil
+
+	-- Multiple invalid contributions have one stable cause regardless of caller
+	-- array order or Actor-key iteration order. Never publish a partial catalog.
+	local function reject(reason: string): ()
+		if rejection == nil or reason < rejection then
+			rejection = reason
+		end
+	end
 
 	for _, update: Types.ProfileUpdate in updates do
 		if not Identity.Plain(update, { actor = true, sourceId = true, profile = true }) then
-			return nil, "InvalidProfileUpdates"
+			reject("InvalidProfileUpdates")
+			continue
 		end
 
 		local reason: string? = validateActor(update.actor)
 
 		if reason ~= nil then
-			return nil, reason
+			reject(reason)
+			continue
 		end
 
 		if update.actor == nil then
-			return nil, "ActorViewUnavailable"
+			reject("ActorViewUnavailable")
+			continue
 		end
 
 		if not Identity.IsId(update.sourceId) then
-			return nil, "InvalidProfileSourceId"
+			reject("InvalidProfileSourceId")
+			continue
 		end
 
 		local profile: Validator.Profile? = nil
@@ -49,7 +62,8 @@ function Updates.Prepare(
 			profile, reason = Validator.Normalize(update.profile, input)
 
 			if profile == nil then
-				return nil, reason
+				reject(assert(reason, "ProfileCompilerFailureMissingReason"))
+				continue
 			end
 		end
 
@@ -73,10 +87,15 @@ function Updates.Prepare(
 		local compiled: Graph.Graph?, reason: string? = Graph.Build(sources, current[actor], version)
 
 		if compiled == nil then
-			return nil, reason
+			reject(assert(reason, "ProfileCompilerFailureMissingReason"))
+			continue
 		end
 
 		desired[actor] = if next(sources) == nil then nil else compiled
+	end
+
+	if rejection ~= nil then
+		return nil, rejection
 	end
 
 	local count: number = 0

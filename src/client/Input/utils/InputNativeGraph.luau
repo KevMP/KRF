@@ -83,7 +83,13 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 			local undo: { () -> () } = {}
 			local irreversible: boolean = false
 
+			local function ensureActive(): ()
+				assert(active and not destroyed, "InputOwnerRetiredDuringCommit")
+			end
+
 			local success: boolean = pcall(function(): ()
+				ensureActive()
+
 				for _, contextId: string in Value.Keys(nextGraph.contexts) do
 					local desired: Types.ContextSnapshot = nextGraph.contexts[contextId]
 					local old: Types.ContextSnapshot? = previous.contexts[contextId]
@@ -94,6 +100,7 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 
 						nextContexts[contextId] = context
 						table.insert(created, context)
+						ensureActive()
 					end
 				end
 
@@ -117,6 +124,7 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 						}, nextContexts[desired.contextId])
 
 						table.insert(created, action)
+						ensureActive()
 						nextActions[inputId] = action
 
 						if actions[inputId] ~= nil then
@@ -147,6 +155,7 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 						else
 							local binding: InputBinding = native.CreateBinding(slot, config, action)
 							table.insert(created, binding)
+							ensureActive()
 							slots[slot] = binding
 
 							if not replaced and oldConfig ~= nil then
@@ -205,6 +214,7 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 					end
 				end
 
+				ensureActive()
 				irreversible = true
 
 				for inputId: string, listener in table.clone(listeners) do
@@ -222,10 +232,21 @@ function NativeGraph.new(native: Types.NativeInputAdapter, receive: (string, Typ
 
 				for _, instance: Instance in retired do
 					native.Destroy(instance)
+					ensureActive()
 				end
 			end)
 
 			if not success then
+				if not active then
+					for _, instance in created do
+						pcall(native.Destroy, instance)
+					end
+
+					pcall(native.DestroyContainer)
+
+					return false, "InputRuntimeFaulted"
+				end
+
 				if irreversible then
 					return false, "InputRuntimeFaulted"
 				end

@@ -7,7 +7,7 @@ local MutationGate = require(script.Parent.InputMutationGate)
 type CommitObserver = (Types.InputGraphChange) -> ()
 
 export type Owner = {
-	Validate: (graph: Types.InputGraphSnapshot, profiles: any?) -> string?,
+	Validate: (graph: Types.InputGraphSnapshot, profiles: unknown) -> string?,
 	Version: () -> number,
 	RegisterValidator: (callback: Types.GraphValidator) -> () -> (),
 	ObserveCommit: (callback: CommitObserver) -> () -> (),
@@ -31,7 +31,7 @@ function GraphObservers.new(gate: MutationGate.Owner): Owner
 	) :: Observers.Registry<CommitObserver>
 
 	return {
-		Validate = function(nextGraph: Types.InputGraphSnapshot, profiles: any?): string?
+		Validate = function(nextGraph: Types.InputGraphSnapshot, profiles: unknown): string?
 			gate.SetValidating(true)
 			local failure: string? = nil
 
@@ -40,7 +40,7 @@ function GraphObservers.new(gate: MutationGate.Owner): Owner
 					continue
 				end
 
-				local success: boolean, reason: string?, accepted: any, rejection: any =
+				local success: boolean, reason: string?, accepted: unknown, rejection: unknown =
 					Observers.Run(entry.callback, nextGraph, profiles)
 
 				if not success then
