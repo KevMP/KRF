@@ -196,6 +196,12 @@ it("keeps other logical inputs independent when one input is invalidated", funct
 	second.inputs.Other = second.inputs.Primary
 	second.inputs.Primary = nil :: any
 	second.inputs.Other.context = "OtherContext"
+
+	second.inputs.Other.bindings = {
+		Keyboard = { keyCode = Enum.KeyCode.E },
+		Gamepad = { keyCode = Enum.KeyCode.ButtonL2 },
+	}
+
 	expect(fixture.input.owner.SetSource("Other", second)).toBe(true)
 	expect(fixture.input.owner.SetContextEnabled("OtherContext", true)).toBe(true)
 

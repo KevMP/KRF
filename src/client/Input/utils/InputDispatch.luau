@@ -78,9 +78,17 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 			return
 		end
 
+		if gate.IsCoordinating() then
+			gate.Observe(function(): ()
+				publish(publisher, event)
+			end)
+
+			return
+		end
+
 		local previousDepth: number = publishingDepth
 		publishingDepth = gate.Depth()
-		local success: boolean, reason: any = pcall(publisher, event)
+		local success: boolean, reason: unknown = pcall(publisher, event)
 		publishingDepth = previousDepth
 
 		if not success then
@@ -205,7 +213,7 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		local previousNotifications: NotificationBatch? = notifications
 		notifications = batch
 
-		local success: boolean, reason: any = pcall(function(): ()
+		local success: boolean, reason: unknown = pcall(function(): ()
 			callback()
 			recognition.Finish(nil)
 		end)
@@ -330,7 +338,7 @@ function Dispatch.new(options: Options, gate: MutationGate.Owner, onFault: () ->
 		end
 
 		if not gate.IsTerminal() then
-			local completed: boolean, failure: any = pcall(recognition.Finish, occurrence)
+			local completed: boolean, failure: unknown = pcall(recognition.Finish, occurrence)
 
 			if not completed then
 				report(tostring(failure))

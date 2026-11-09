@@ -4,8 +4,8 @@ local Limits = require(script.Parent.ActionRouteLimits)
 export type Store<Record> = {
 	CanCreate: () -> boolean,
 	Create: (Record) -> ({ read token: unknown }?, string?),
-	Take: (any) -> (Record?, boolean),
-	Read: (any) -> Record?,
+	Take: (unknown) -> (Record?, boolean),
+	Read: (unknown) -> Record?,
 	Clear: () -> (),
 }
 
@@ -15,8 +15,8 @@ local Plans = {}
 -- bounded. The publishing owner clears them at its generation fence; consumed
 -- capabilities remain recognizable without retaining their former records.
 function Plans.new<Record>(dispose: (Record) -> ()): Store<Record>
-	local entries: { [any]: Record } = setmetatable({}, { __mode = "k" })
-	local issued: { [any]: boolean } = setmetatable({}, { __mode = "k" })
+	local entries: { [unknown]: Record } = setmetatable({}, { __mode = "k" })
+	local issued: { [unknown]: boolean } = setmetatable({}, { __mode = "k" })
 
 	local function canCreate(): boolean
 		local count: number = 0
@@ -44,10 +44,14 @@ function Plans.new<Record>(dispose: (Record) -> ()): Store<Record>
 
 			return token, nil
 		end,
-		Read = function(token: any): Record?
-			return entries[token]
+		Read = function(token: unknown): Record?
+			return if type(token) == "table" then entries[token] else nil
 		end,
-		Take = function(token: any): (Record?, boolean)
+		Take = function(token: unknown): (Record?, boolean)
+			if type(token) ~= "table" then
+				return nil, false
+			end
+
 			local record: Record? = entries[token]
 
 			entries[token] = nil

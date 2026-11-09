@@ -373,11 +373,14 @@ export type PrimitiveOccurrence = {
 }
 
 export type ObserverPhase = "Interpretation" | "Arbitration" | "Routing"
+export type InputSourceUpdate = { sourceId: string, definition: InputSourceDefinition? }
+export type InputContextUpdate = { contextId: string, enabled: boolean }
+export type InputPlan = { read generation: number, read token: unknown }
 export type PreparedInputUpdate = { read generation: number, read token: unknown }
 export type PreparedInputInvalidation = { read generation: number, read token: unknown }
 -- Rejected guarantees that commit was not attempted. Failed requires callers to
 -- treat the local commit as uncertain, even if native rollback was possible.
-export type InputCommitFailurePhase = "Rejected" | "Failed"
+export type InputCommitFailurePhase = "Rejected" | "Restored" | "Failed"
 export type NativeTransition = "Pressed" | "Released" | "StateChanged"
 
 export type NativeInputAdapter = {
@@ -403,16 +406,34 @@ export type InputOwnerOptions = {
 	ReportFault: (reason: string) -> (),
 }
 
-export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: any?) -> (boolean, string?)
+export type GraphValidator = (nextGraph: InputGraphSnapshot, proposedProfiles: unknown) -> (boolean, string?)
 
 export type InputOwner = {
+	SetFocusAvailable: (boolean) -> (),
+	SetDeviceAvailable: (Enum.UserInputType, boolean) -> (),
+	FailControlChange: () -> (),
+	BeginControlChange: () -> (boolean, string?),
+	EndControlChange: () -> (),
+	DrainControlFollowUps: () -> (),
+	SetSafetyPending: (boolean) -> (),
+	IsControlDispatchBlocked: () -> boolean,
+	WhenIdle: (() -> ()) -> (boolean, string?),
+	GetAffectedDeviceInputs: (Enum.UserInputType) -> { string },
+	CompileUpdate: ({ InputSourceUpdate }, { InputContextUpdate }) -> (InputGraphSnapshot?, string?),
+	PrepareGraph: (InputGraphSnapshot, unknown) -> (PreparedInputUpdate?, string?),
+	CommitControlUpdate: (
+		PreparedInputUpdate,
+		PreparedInputInvalidation?,
+		() -> ()
+	) -> (boolean, string?, InputCommitFailurePhase?),
+
 	AfterCommit: (() -> ()) -> (boolean, string?),
 	GetCommitContext: () -> InputCommitContext?,
 	ValidatePrepared: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
 	Disarm: (reason: string) -> (boolean, string?),
 	ReleasePrepared: (plan: { read token: unknown, read generation: number }) -> (),
 	GetGraphSnapshot: () -> InputGraphSnapshot,
-	GetMutationStatus: () -> string?,
+	GetMutationStatus: (ignoreCoordination: boolean?) -> string?,
 	GetSequence: (sequenceId: string) -> SequenceSnapshot?,
 	GetRecognizer: (recognizerId: string) -> RecognizerSnapshot?,
 	-- Candidate-only observers still receive every built frame, but do not require
@@ -438,11 +459,15 @@ export type InputOwner = {
 	PrepareSource: (
 		sourceId: string,
 		definition: InputSourceDefinition?,
-		proposedProfiles: any?
+		proposedProfiles: unknown
 	) -> (PreparedInputUpdate?, string?),
 	CommitPrepared: (plan: PreparedInputUpdate) -> (boolean, string?),
 	CommitPreparedWithPublication: (plan: PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
-	PrepareEpochInvalidation: (reason: string) -> (PreparedInputInvalidation?, string?),
+	PrepareEpochInvalidation: (
+		reason: string,
+		inputIds: { string }?,
+		skipValidation: boolean?
+	) -> (PreparedInputInvalidation?, string?),
 	CommitEpochInvalidation: (
 		plan: PreparedInputInvalidation,
 		publishSelection: () -> ()

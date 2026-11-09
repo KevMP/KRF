@@ -46,6 +46,7 @@ export type Fixture = {
 	commands: Commands.Fixture,
 	clock: typeof(Clock.new()),
 	input: InputTypes.InputOwner,
+	configureNative: ((InputTypes.NativeInputAdapter) -> ())?,
 	actor: ActorTypes.ActorView,
 	other: ActorTypes.ActorView,
 	actions: { [string]: InputAction },
@@ -158,6 +159,10 @@ function Utils.new(): Fixture
 			end
 
 			configureContext(context, definition, enabled)
+		end
+
+		if fixture.configureNative ~= nil then
+			fixture.configureNative(native)
 		end
 
 		injected.Native = native

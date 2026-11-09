@@ -1,0 +1,38 @@
+{
+  "name": "KRF-I7-Controls-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": {
+        "$className": "Folder",
+        "KRF": {
+          "$path": "src"
+        }
+      },
+      "ActionInputSchemas": {
+        "$path": "tests/integration/ActionInput/Schemas.luau"
+      },
+      "ControlSchemas": {
+        "$path": "tests/integration/Controls/Schemas.luau"
+      },
+      "ControlTestReport": {
+        "$className": "RemoteEvent"
+      },
+      "ControlTestProbe": {
+        "$className": "RemoteFunction"
+      }
+    },
+    "ServerScriptService": {
+      "ControlsServer": {
+        "$path": "tests/integration/Controls/Server.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "ControlsClient": {
+          "$path": "tests/integration/Controls/Client.client.luau"
+        }
+      }
+    }
+  }
+}

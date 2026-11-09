@@ -145,6 +145,13 @@ export type ActionInputRoutePort = {
 	ObserveRoutes: ((EffectiveRouteTransition) -> ()) -> () -> (),
 }
 
+export type ActorPublication = { actor: ActorTypes.ActorView? }
+
+export type CoordinatedActorCommit = {
+	input: InputTypes.PreparedInputUpdate,
+	profiles: PreparedProfileGraph,
+}
+
 export type PreparedActorSwitch = { read token: unknown }
 export type PreparedProfileGraph = { read token: unknown }
 export type ProfileUpdate = { actor: ActorTypes.ActorView, sourceId: string, profile: ControlProfile? }
@@ -172,10 +179,13 @@ export type ClientActionOwnerOptions = {
 }
 
 export type ClientActionOwner = ClientActionRoutes & {
+	CommitControlledActorWithInput: (PreparedActorSwitch, CoordinatedActorCommit) -> (boolean, string?),
+	ReleasePreparedProfiles: (PreparedProfileGraph) -> (),
+	ReleaseControlledActor: (PreparedActorSwitch) -> (),
 	CommitPreparedProfiles: (PreparedProfileGraph) -> (boolean, string?),
 	ObserveSelection: ((ActionRouteSelection) -> ()) -> () -> (),
 	ObserveRoutes: ((EffectiveRouteTransition) -> ()) -> () -> (),
-	PrepareControlledActor: (ActorTypes.ActorView?) -> (PreparedActorSwitch?, string?),
+	PrepareControlledActor: (ActorTypes.ActorView?, coordinated: boolean?) -> (PreparedActorSwitch?, string?),
 	CommitControlledActor: (PreparedActorSwitch) -> (boolean, string?),
 	PrepareProfiles: ({ ProfileUpdate }, InputTypes.InputGraphSnapshot?) -> (PreparedProfileGraph?, string?),
 	Destroy: () -> (),

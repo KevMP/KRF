@@ -1,7 +1,8 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Validator = require(script.Parent.Parent.InputValidator)
-local Constants = require(script.Parent.InputConstants)
+local Store = require(script.Parent.InputPreparedStore)
+local RecognitionPlans = require(script.Parent.InputRecognitionPlans)
 local Value = require(script.Parent.InputValue)
 local Changes = require(script.Parent.InputGraphChanges)
 local Configuration = require(script.Parent.InputConfiguration)
@@ -11,13 +12,24 @@ local RecognitionPipeline = require(script.Parent.InputRecognitionPipeline)
 export type GraphAccess = {
 	Current: () -> Types.InputGraphSnapshot,
 	CompileSource: (sourceId: string, definition: Types.InputSourceDefinition?) -> (Types.InputGraphSnapshot?, string?),
-	Validate: (graph: Types.InputGraphSnapshot, profiles: any?) -> string?,
+	Validate: (graph: Types.InputGraphSnapshot, profiles: unknown) -> string?,
 	Version: () -> number,
-	Commit: (graph: Types.InputGraphSnapshot, reason: string?, publishSelection: (() -> ())?) -> (boolean, string?),
+	Commit: (
+		graph: Types.InputGraphSnapshot,
+		reason: string?,
+		publishSelection: (() -> ())?,
+		invalidated: { [string]: string }?
+	) -> (boolean, string?, Types.InputCommitFailurePhase?),
 	SelectionFence: () -> Configuration.SelectionFence?,
 }
 
 export type Owner = {
+	PrepareGraph: (Types.InputGraphSnapshot, unknown) -> (Types.PreparedInputUpdate?, string?),
+	CommitControlUpdate: (
+		Types.PreparedInputUpdate,
+		Types.PreparedInputInvalidation?,
+		() -> ()
+	) -> (boolean, string?, Types.InputCommitFailurePhase?),
 	Validate: (plan: { read token: unknown, read generation: number }) -> (boolean, string?),
 	Release: (plan: { read token: unknown, read generation: number }) -> (),
 	ResetRecognition: (inputIds: { string }?, reason: string) -> (boolean, string?),
@@ -26,11 +38,15 @@ export type Owner = {
 	PrepareSource: (
 		sourceId: string,
 		definition: Types.InputSourceDefinition?,
-		profiles: any?
+		profiles: unknown
 	) -> (Types.PreparedInputUpdate?, string?),
 	CommitPrepared: (plan: Types.PreparedInputUpdate) -> (boolean, string?),
 	CommitPreparedWithPublication: (plan: Types.PreparedInputUpdate, publishSelection: () -> ()) -> (boolean, string?),
-	PrepareEpochInvalidation: (reason: string) -> (Types.PreparedInputInvalidation?, string?),
+	PrepareEpochInvalidation: (
+		reason: string,
+		inputIds: { string }?,
+		skipValidation: boolean?
+	) -> (Types.PreparedInputInvalidation?, string?),
 	CommitEpochInvalidation: (
 		plan: Types.PreparedInputInvalidation,
 		publishSelection: () -> ()
@@ -38,178 +54,23 @@ export type Owner = {
 	Clear: () -> (),
 }
 
-type PreparedRecord = {
-	generation: number,
-	validators: number,
-	kind: string,
-	graph: Types.InputGraphSnapshot?,
-	profiles: any?,
-	reason: string?,
-	consumed: boolean,
-	inputIds: { string }?,
-	recognitionRevision: number?,
-}
+type PreparedRecord = Store.Record
 
 local Plans = {}
 
 -- Owns bounded, generation-qualified capabilities, not the installed graph.
 function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: RecognitionPipeline.Owner): Owner
-	local prepared: { [any]: PreparedRecord } = setmetatable({}, { __mode = "k" })
+	local prepared: Store.Store = Store.new()
+	local resets: RecognitionPlans.Owner = RecognitionPlans.new(access, gate, recognition, prepared)
 
-	local function resetSelection(inputIds: { string }?, reason: string): ({ string }?, string?)
-		if type(reason) ~= "string" or #reason == 0 then
-			return nil, "InvalidRecognitionResetReason"
-		end
-
-		if inputIds == nil then
-			return Value.Keys(access.Current().inputs), nil
-		end
-
-		if type(inputIds) ~= "table" or getmetatable(inputIds) ~= nil then
-			return nil, "InvalidRecognitionResetInputs"
-		end
-
-		local selected: { string } = {}
-		local seen: { [string]: boolean } = {}
-
-		for index, inputId in inputIds do
-			if
-				type(index) ~= "number"
-				or index % 1 ~= 0
-				or index < 1
-				or index > #inputIds
-				or type(inputId) ~= "string"
-				or seen[inputId]
-			then
-				return nil, "InvalidRecognitionResetInputs"
-			end
-
-			if access.Current().inputs[inputId] == nil then
-				return nil, "UnknownInput"
-			end
-
-			seen[inputId] = true
-			table.insert(selected, inputId)
-		end
-
-		if #selected ~= #inputIds then
-			return nil, "InvalidRecognitionResetInputs"
-		end
-
-		return selected, nil
-	end
-
-	local function ResetRecognition(inputIds: { string }?, reason: string): (boolean, string?)
-		local rejection: string? = gate.Unavailable()
-
-		if rejection ~= nil then
-			return false, rejection
-		end
-
-		if gate.IsBusy() then
-			return false, "InputMutationReentrant"
-		end
-
-		local selected: { string }?, failure: string? = resetSelection(inputIds, reason)
-
-		if selected == nil then
-			return false, failure
-		end
-
-		gate.SetFenced(true)
-		recognition.Reset(selected)
-		gate.SetFenced(false)
-		gate.Flush()
-
-		return true, nil
-	end
-
-	local function prepare(record: PreparedRecord): (any, string?)
-		local total: number = 0
-
-		for _ in prepared do
-			total += 1
-		end
-
-		if total >= Constants.MAX_PREPARED_PLANS then
-			return nil, "InputPlanLimitExceeded"
-		end
-
-		local plan = table.freeze({ generation = access.Current().generation, token = table.freeze({}) })
-
-		prepared[plan] = record
-
-		return plan, nil
-	end
-
-	local function PrepareRecognitionReset(
-		inputIds: { string }?,
-		reason: string
-	): (Types.PreparedRecognitionReset?, string?)
-		local rejection: string? = gate.Unavailable()
-
-		if rejection ~= nil then
-			return nil, rejection
-		end
-
-		if gate.IsBusy() then
-			return nil, "InputMutationReentrant"
-		end
-
-		local selected: { string }?, failure: string? = resetSelection(inputIds, reason)
-
-		if selected == nil then
-			return nil, failure
-		end
-
-		return prepare({
-			generation = access.Current().generation,
-			validators = access.Version(),
-			kind = "Recognition",
-			inputIds = selected,
-			recognitionRevision = recognition.Revision(),
-			consumed = false,
-		})
-	end
-
-	local function CommitPreparedRecognitionReset(plan: Types.PreparedRecognitionReset): (boolean, string?)
-		local rejection: string? = gate.Unavailable()
-
-		if rejection ~= nil then
-			return false, rejection
-		end
-
-		local fence: Configuration.SelectionFence? = access.SelectionFence()
-
-		if not gate.IsFenced() or fence == nil then
-			return false, "InputCommitFenceRequired"
-		end
-
-		local record: PreparedRecord? = prepared[plan]
-
-		if record == nil or record.kind ~= "Recognition" then
-			return false, "InvalidRecognitionReset"
-		end
-
-		if
-			record.consumed
-			or record.generation ~= fence.generation
-			or record.recognitionRevision ~= fence.recognitionRevision
-			or record.validators ~= access.Version()
-		then
-			return false, "StaleRecognitionReset"
-		end
-
-		record.consumed = true
-		recognition.Reset(record.inputIds)
-
-		return true, nil
+	local function prepare(record: PreparedRecord): (Types.InputPlan?, string?)
+		return prepared.Put(record)
 	end
 
 	local function PrepareSource(
 		sourceId: string,
 		definition: Types.InputSourceDefinition?,
-		profiles: any?
+		profiles: unknown
 	): (Types.PreparedInputUpdate?, string?)
 		local reason: string? = gate.Unavailable()
 
@@ -258,7 +119,41 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 		})
 	end
 
-	local function PrepareEpochInvalidation(reason: string): (Types.PreparedInputInvalidation?, string?)
+	local function PrepareGraph(
+		graph: Types.InputGraphSnapshot,
+		profiles: unknown
+	): (Types.PreparedInputUpdate?, string?)
+		local unavailable: string? = gate.Unavailable()
+
+		if unavailable ~= nil then
+			return nil, unavailable
+		end
+
+		if gate.IsBusy() then
+			return nil, "InputMutationReentrant"
+		end
+
+		local rejection: string? = access.Validate(graph, profiles)
+
+		if rejection ~= nil then
+			return nil, rejection
+		end
+
+		return prepare({
+			generation = access.Current().generation,
+			validators = access.Version(),
+			kind = "Source",
+			graph = graph,
+			profiles = profiles,
+			consumed = false,
+		})
+	end
+
+	local function PrepareEpochInvalidation(
+		reason: string,
+		inputIds: { string }?,
+		skipValidation: boolean?
+	): (Types.PreparedInputInvalidation?, string?)
 		local unavailableReason: string? = gate.Unavailable()
 
 		if unavailableReason ~= nil then
@@ -273,7 +168,7 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			return nil, "InvalidInputInvalidationReason"
 		end
 
-		local rejected: string? = access.Validate(access.Current(), nil)
+		local rejected: string? = if skipValidation then nil else access.Validate(access.Current(), nil)
 
 		if rejected ~= nil then
 			return nil, rejected
@@ -283,12 +178,14 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			generation = access.Current().generation,
 			validators = access.Version(),
 			kind = "Epoch",
+			skipValidation = skipValidation,
 			reason = reason,
+			inputIds = inputIds,
 			consumed = false,
 		})
 	end
 
-	local function take(plan: any, kind: string): (PreparedRecord?, string?)
+	local function take(plan: unknown, kind: string): (PreparedRecord?, string?)
 		local reason: string? = gate.Unavailable()
 
 		if reason ~= nil then
@@ -299,7 +196,7 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			return nil, "InputMutationReentrant"
 		end
 
-		local record: PreparedRecord? = prepared[plan]
+		local record: PreparedRecord? = prepared.Read(plan)
 
 		if record == nil or record.kind ~= kind then
 			return nil, "InvalidInputPlan"
@@ -332,7 +229,47 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			return false, reason
 		end
 
-		return access.Commit(record.graph, nil, publishSelection)
+		local accepted: boolean, failure: string? = access.Commit(record.graph, nil, publishSelection)
+
+		return accepted, failure
+	end
+
+	local function CommitControlUpdate(
+		plan: Types.PreparedInputUpdate,
+		epoch: Types.PreparedInputInvalidation?,
+		publish: () -> ()
+	): (boolean, string?, Types.InputCommitFailurePhase?)
+		local record: PreparedRecord?, reason: string? = take(plan, "Source")
+
+		if record == nil then
+			return false, reason :: string?, "Rejected"
+		end
+
+		local invalidated: { [string]: string }? = nil
+
+		if epoch ~= nil then
+			local retirement: PreparedRecord?
+			retirement, reason = take(epoch, "Epoch")
+
+			if retirement == nil then
+				return false, reason :: string?, "Rejected"
+			end
+
+			invalidated = {}
+
+			for _, inputId in retirement.inputIds or Value.Keys(access.Current().inputs) do
+				invalidated[inputId] = retirement.reason or "InputInvalidated"
+			end
+		end
+
+		local graph: Types.InputGraphSnapshot = assert(record.graph, "Expected prepared graph")
+		reason = access.Validate(graph, record.profiles)
+
+		if reason ~= nil then
+			return false, reason :: string?, "Rejected"
+		end
+
+		return access.Commit(graph, nil, publish, invalidated)
 	end
 
 	local function CommitEpochInvalidation(
@@ -342,25 +279,36 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 		local record: PreparedRecord?, reason: string? = take(plan, "Epoch")
 
 		if record == nil then
-			return false, reason, "Rejected"
+			return false, reason :: string?, "Rejected"
 		end
 
-		reason = access.Validate(access.Current(), nil)
+		reason = if record.skipValidation then nil else access.Validate(access.Current(), nil)
 
 		if reason ~= nil then
-			return false, reason, "Rejected"
+			return false, reason :: string?, "Rejected"
 		end
 
 		local desired: Types.InputGraphSnapshot = Changes.Next(access.Current(), nil)
 
-		local committed: boolean, failure: string? = access.Commit(desired, record.reason, publishSelection)
+		local forced: { [string]: string }? = nil
+
+		if record.inputIds ~= nil then
+			forced = {}
+
+			for _, inputId in record.inputIds do
+				forced[inputId] = record.reason or "InputInvalidated"
+			end
+		end
+
+		local committed: boolean, failure: string? =
+			access.Commit(desired, if forced == nil then record.reason else nil, publishSelection, forced)
 
 		return committed, failure, if committed then nil else "Failed"
 	end
 
 	return {
 		Validate = function(plan: { read token: unknown, read generation: number }): (boolean, string?)
-			local record: PreparedRecord? = prepared[plan]
+			local record: PreparedRecord? = prepared.Read(plan)
 
 			if record == nil then
 				return false, "InvalidInputPlan"
@@ -378,12 +326,14 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 			return true, nil
 		end,
 		Release = function(plan: { read token: unknown, read generation: number }): ()
-			prepared[plan] = nil
+			prepared.Release(plan)
 		end,
-		ResetRecognition = ResetRecognition,
-		PrepareRecognitionReset = PrepareRecognitionReset,
-		CommitPreparedRecognitionReset = CommitPreparedRecognitionReset,
+		ResetRecognition = resets.Reset,
+		PrepareRecognitionReset = resets.Prepare,
+		CommitPreparedRecognitionReset = resets.Commit,
 		PrepareSource = PrepareSource,
+		PrepareGraph = PrepareGraph,
+		CommitControlUpdate = CommitControlUpdate,
 		CommitPrepared = function(plan: Types.PreparedInputUpdate): (boolean, string?)
 			return CommitPrepared(plan, nil)
 		end,
@@ -391,7 +341,7 @@ function Plans.new(access: GraphAccess, gate: MutationGate.Owner, recognition: R
 		PrepareEpochInvalidation = PrepareEpochInvalidation,
 		CommitEpochInvalidation = CommitEpochInvalidation,
 		Clear = function(): ()
-			table.clear(prepared)
+			prepared.Clear()
 		end,
 	}
 end

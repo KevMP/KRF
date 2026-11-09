@@ -5,15 +5,16 @@ local Value = require(script.Parent.InputValue)
 export type State = {
 	input: Types.InputSnapshot,
 	active: boolean,
-	value: any,
+	value: unknown,
 	disarmed: boolean,
 	epochId: number?,
 	epochGeneration: number,
+	continuityRevision: number,
 }
 
 export type Transition = {
 	kind: "Pressed" | "Released" | "StateChanged" | "Cancelled",
-	value: any,
+	value: unknown,
 	reason: string?,
 	epochId: number?,
 	generation: number,
@@ -34,11 +35,14 @@ function Epochs.new(input: Types.InputSnapshot, generation: number, disarmed: bo
 		value = Value.Neutral(input.inputType),
 		disarmed = disarmed or false,
 		epochGeneration = generation,
+		continuityRevision = 0,
 	}
 end
 
 function Epochs.Cancel(state: State, reason: string, generation: number): Transition?
 	local wasActive: boolean = state.active
+
+	state.continuityRevision += 1
 
 	state.active = false
 
@@ -64,7 +68,7 @@ end
 function Epochs.Accept(
 	state: State,
 	kind: Types.NativeTransition,
-	value: any,
+	value: unknown,
 	enabled: boolean,
 	generation: number,
 	nextEpoch: () -> number
@@ -153,11 +157,12 @@ function Epochs.Restore(
 	states: { [string]: State },
 	previous: { [string]: State },
 	native: Types.NativeInputAdapter,
-	actions: { [string]: InputAction }
+	actions: { [string]: InputAction },
+	rearm: boolean?
 ): boolean
 	for inputId: string, state: State in previous do
 		if state.active then
-			local read: boolean, value: any = pcall(native.ReadState, actions[inputId])
+			local read: boolean, value: unknown = pcall(native.ReadState, actions[inputId])
 
 			if not read or value ~= state.value then
 				return false
@@ -166,7 +171,9 @@ function Epochs.Restore(
 	end
 
 	for inputId: string, state: State in previous do
-		states[inputId] = state
+		if not rearm then
+			states[inputId] = state
+		end
 	end
 
 	return true
@@ -197,6 +204,12 @@ function Epochs.Install(
 		end
 
 		local installed: State = states[inputId]
+
+		if invalidated[inputId] ~= nil then
+			-- End the native-write interval as well as retiring its old epoch.
+			installed.continuityRevision += 1
+		end
+
 		local context: Types.ContextSnapshot = graph.contexts[input.contextId]
 		local oldContext: Types.ContextSnapshot? = previous.contexts[input.contextId]
 
@@ -211,7 +224,7 @@ function Epochs.Install(
 				or invalidated[inputId] ~= nil
 			)
 		then
-			local read: boolean, value: any = pcall(native.ReadState, actions[inputId])
+			local read: boolean, value: unknown = pcall(native.ReadState, actions[inputId])
 
 			installed.disarmed = not read
 				or not Value.IsTyped(input.inputType, value)

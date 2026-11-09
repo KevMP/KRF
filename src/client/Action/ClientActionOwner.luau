@@ -2,18 +2,16 @@
 local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local InputTypes = require(script.Parent.Parent.Input.types)
-local InputValue = require(script.Parent.Parent.Input.utils.InputValue)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
-local Validator = require(script.Parent.ActionProfileValidator)
 local Identity = require(script.Parent.utils.ActionRouteIdentity)
 local Graph = require(script.Parent.utils.ActionProfileGraph)
 local Transitions = require(script.Parent.utils.ActionRouteTransitions)
 local Dispatch = require(script.Parent.utils.ActionRouteDispatch)
 local Switching = require(script.Parent.utils.ActionActorSwitch)
-local Plans = require(script.Parent.utils.ActionPreparedPlans)
-local Updates = require(script.Parent.utils.ActionProfileUpdates)
-local Retirement = require(script.Parent.utils.ActionActivationRetirement)
+local Publication = require(script.Parent.utils.ActionProfilePublication)
+local ActorRetirement = require(script.Parent.utils.ActionActorRetirement)
+local Validity = require(script.Parent.utils.ActionInputValidity)
 
 local Owner = {}
 
@@ -27,7 +25,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 	local busy: number = 0
 	local destroyed: boolean = false
 	local switching: boolean = false
-	local publishedInputGeneration: number? = nil
+	local validity: Validity.Owner? = nil
 	local disconnects: { () -> () } = {}
 
 	local selections: Observers.Registry<(Types.ActionRouteSelection) -> ()> = Observers.new(
@@ -44,7 +42,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		(Types.EffectiveRouteTransition) -> ()
 	>
 
-	local profiles: Plans.Store<Graph.Catalog> = Plans.new(function() end)
+	local profiles: Publication.Owner
 	local switches: Switching.Owner
 
 	local function report(reason: string): ()
@@ -55,7 +53,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		return Registry.IsCurrent(actor) and not Registry.IsInvalidating(actor) and actor:IsAvailable()
 	end
 
-	local function unavailable(): string?
+	local function unavailable(internal: boolean?): string?
 		if destroyed then
 			return "ClientNotReady"
 		end
@@ -64,7 +62,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			return "DispatchInProgress"
 		end
 
-		local status: string? = input.GetMutationStatus()
+		local status: string? = input.GetMutationStatus(internal)
 
 		if status == "InputMutationReentrant" or status == "InputMutationDuringValidation" then
 			return "DispatchInProgress"
@@ -91,7 +89,6 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		end
 
 		destroyed = true
-		publishedInputGeneration = nil
 		controlled = nil
 		catalog = {}
 		advance()
@@ -109,8 +106,8 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		end
 	end
 
-	local function validateActor(actor: ActorTypes.ActorView?): string?
-		local reason: string? = unavailable()
+	local function validateActor(actor: ActorTypes.ActorView?, internal: boolean?): string?
+		local reason: string? = unavailable(internal)
 
 		if reason ~= nil then
 			return reason
@@ -118,6 +115,38 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 
 		return if actor ~= nil and not available(actor) then "ActorViewUnavailable" else nil
 	end
+
+	local function validatePreparedActor(actor: ActorTypes.ActorView?): string?
+		return validateActor(actor, true)
+	end
+
+	profiles = Publication.new(input, {
+		Current = function(): Graph.Catalog
+			return catalog
+		end,
+		Selected = function(): ActorTypes.ActorView?
+			return controlled
+		end,
+		Version = function(): number
+			return generation
+		end,
+		ValidateActor = validatePreparedActor,
+		Available = available,
+		Install = function(desired: Graph.Catalog, selection: Types.ActorPublication?): ()
+			catalog = desired
+
+			if selection ~= nil then
+				controlled = selection.actor
+			end
+
+			advance()
+		end,
+		Notify = function(changes: { Types.EffectiveRouteTransition }): ()
+			busy += 1
+			notify(changes)
+			busy -= 1
+		end,
+	})
 
 	local function mutate(
 		actor: ActorTypes.ActorView,
@@ -130,50 +159,14 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			return false, reason
 		end
 
-		local graph: InputTypes.InputGraphSnapshot = input.GetGraphSnapshot()
-		local nextCatalog: Graph.Catalog?
-
-		nextCatalog, reason = Updates.Prepare(
-			catalog,
-			{ { actor = actor, sourceId = sourceId, profile = value } },
-			graph,
-			generation + 1,
-			validateActor
-		)
-
-		if nextCatalog == nil then
-			return false, reason
-		end
-
-		local previousSource: Validator.Profile? = if catalog[actor] ~= nil
-			then catalog[actor].sources[sourceId]
-			else nil
-
-		local nextSource: Validator.Profile? = if nextCatalog[actor] ~= nil
-			then nextCatalog[actor].sources[sourceId]
-			else nil
-
-		if InputValue.Equal(previousSource, nextSource) then
-			return true, nil
-		end
-
-		local changes: { Types.EffectiveRouteTransition } =
-			Transitions.Diff(actor, catalog[actor], nextCatalog[actor], graph, graph, "ProfileChanged")
-
-		busy += 1
-		catalog = nextCatalog
-		advance()
-		notify(changes)
-		busy -= 1
-
-		return true, nil
+		return profiles.Replace(actor, sourceId, value)
 	end
 
 	switches = Switching.new(input, options.ActivationGuard, {
 		Current = function(): ActorTypes.ActorView?
 			return controlled
 		end,
-		Validate = validateActor,
+		Validate = validatePreparedActor,
 		CanPublish = function(actor: ActorTypes.ActorView?): boolean
 			return not destroyed and options.IsReady() and (actor == nil or available(actor))
 		end,
@@ -181,18 +174,16 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			busy += if enter then 1 else -1
 			switching = enter
 		end,
-		Publish = function(actor: ActorTypes.ActorView?): ()
-			local old: ActorTypes.ActorView? = controlled
-			controlled = actor
-			advance()
-			local graph: InputTypes.InputGraphSnapshot = input.GetGraphSnapshot()
+		Publish = function(actor: ActorTypes.ActorView?, plan: Types.PreparedProfileGraph?): ()
+			if plan ~= nil then
+				local committed: boolean, reason: string? = profiles.Commit(plan, { actor = actor })
+				assert(committed, reason)
 
-			if old ~= nil then
-				notify(Transitions.Diff(old, catalog[old], nil, graph, graph, "ActorChanged"))
-			end
-
-			if actor ~= nil then
-				notify(Transitions.Diff(actor, nil, catalog[actor], graph, graph, "ActorChanged"))
+				assert(validity, "Expected installed input validity observer").MarkPublished(
+					input.GetGraphSnapshot().generation
+				)
+			else
+				profiles.Select(actor)
 			end
 		end,
 		Fail = function(): ()
@@ -217,91 +208,51 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		Report = report,
 	})
 
-	local installed: boolean, failure: any = pcall(function(): ()
-		table.insert(
-			disconnects,
-			input.RegisterGraphValidator(
-				function(graph: InputTypes.InputGraphSnapshot, proposed: any?): (boolean, string?)
-					local desired: Graph.Catalog = catalog
-
-					if proposed ~= nil then
-						local prepared: Graph.Catalog? = profiles.Read(proposed)
-
-						if prepared == nil then
-							return false, "InvalidProfileGraph"
-						end
-
-						desired = prepared
-					end
-
-					local valid: boolean = Graph.Validate(desired, graph)
-
-					return valid, if valid then nil else "ProfileDependencyMissing"
-				end
-			)
-		)
-
-		table.insert(
-			disconnects,
-			input.ObserveConfigurationCommit(function(change: InputTypes.InputGraphChange): ()
-				if destroyed or switching then
-					return
-				end
-
-				if input.GetMutationStatus() == "InputRuntimeFaulted" or not Graph.Validate(catalog, change.next) then
-					local retirementReason: string = if table.find(change.reasons, "InputRuntimeFaulted") ~= nil
-						then "InputRuntimeFaulted"
-						else "ProfilePublicationMissing"
-
-					busy += 1
-					local previous: Graph.Catalog = catalog
-					catalog = {}
-					controlled = nil
-					advance()
-					notify(Transitions.DiffCatalogs(previous, {}, change.previous, change.next, "InputInvalidated"))
-					busy -= 1
-					destroy()
-					report(retirementReason)
-
-					return
-				end
-
-				local alreadyPublished: boolean = publishedInputGeneration == change.next.generation
-				publishedInputGeneration = nil
-
-				if alreadyPublished then
-					return
-				end
-
+	local installed: boolean, failure: unknown = pcall(function(): ()
+		validity = Validity.new(input, {
+			Catalog = function(): Graph.Catalog
+				return catalog
+			end,
+			Prepared = profiles.Read,
+			IsDestroyed = function(): boolean
+				return destroyed
+			end,
+			IsSwitching = function(): boolean
+				return switching
+			end,
+			Publish = function(changes: { Types.EffectiveRouteTransition }): ()
 				busy += 1
-				local invalidated: { [string]: boolean } = {}
-
-				for _, id: string in change.affectedInputIds do
-					invalidated[id] = true
-				end
-
-				local changes: { Types.EffectiveRouteTransition } = Transitions.DiffCatalogs(
-					catalog,
-					catalog,
-					change.previous,
-					change.next,
-					if #change.reasons > 0 then table.concat(change.reasons, ",") else "RecognitionChanged",
-					invalidated
-				)
-
 				profiles.Clear()
 				switches.Clear()
 				notify(changes)
 				busy -= 1
-			end)
-		)
+			end,
+			Fail = function(changes: { Types.EffectiveRouteTransition }, reason: string): ()
+				busy += 1
+				catalog = {}
+				controlled = nil
+				advance()
+				notify(changes)
+				busy -= 1
+				destroy()
+				report(reason)
+			end,
+		})
+
+		table.insert(disconnects, validity.Destroy)
 
 		table.insert(
 			disconnects,
 			input.ObserveCandidateEnvelope(function(envelope: InputTypes.InputCandidateEnvelope): ()
 				local actor: ActorTypes.ActorView? = controlled
 
-				if destroyed or busy > 0 or actor == nil or catalog[actor] == nil then
+				if
+					destroyed
+					or busy > 0
+					or input.IsControlDispatchBlocked()
+					or actor == nil
+					or catalog[actor] == nil
+				then
 					return
 				end
 
@@ -318,55 +269,33 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 
 		table.insert(
 			disconnects,
-			Registry.ObserveInvalidation(function(actor: ActorTypes.ActorView, reason: string): ()
-				if destroyed then
-					return
-				end
+			Registry.ObserveInvalidation(ActorRetirement.new(input, options.ActivationGuard, {
+				Current = function(): ActorTypes.ActorView?
+					return controlled
+				end,
+				IsDestroyed = function(): boolean
+					return destroyed
+				end,
+				IsRetiring = switches.IsRetiring,
+				Busy = function(enter: boolean): ()
+					busy += if enter then 1 else -1
+				end,
+				Remove = function(actor: ActorTypes.ActorView): Graph.Graph?
+					local previous: Graph.Graph? = catalog[actor]
 
-				busy += 1
+					catalog[actor] = nil
 
-				local retirement: Types.ActorSwitchRetirement? = nil
-
-				-- The switch owns this original retirement through its post-commit
-				-- handoff. Identity/catalog retirement still happens in this barrier.
-				if not switches.IsRetiring(actor) then
-					local preparedRetirement: Types.ActorSwitchRetirement?, retirementReason: string? =
-						Retirement.Prepare(
-							options.ActivationGuard,
-							actor,
-							if controlled == actor then nil else controlled
-						)
-
-					retirement = preparedRetirement
-
-					if retirementReason ~= nil then
-						report(retirementReason)
+					if controlled == actor then
+						controlled = nil
 					end
-				end
 
-				local previous: Graph.Graph? = catalog[actor]
+					advance()
 
-				catalog[actor] = nil
-
-				if controlled == actor then
-					controlled = nil
-				end
-
-				if retirement ~= nil and not Observers.Run(retirement.Commit) then
-					report("ActorRetirementCommitFailed")
-					retirement = nil
-				end
-
-				advance()
-				local graph: InputTypes.InputGraphSnapshot = input.GetGraphSnapshot()
-				notify(Transitions.Diff(actor, previous, nil, graph, graph, reason))
-
-				if retirement ~= nil and not Observers.Run(retirement.AfterCommit) then
-					report("ActorRetirementAfterCommitFailed")
-				end
-
-				busy -= 1
-			end)
+					return previous
+				end,
+				Notify = notify,
+				Report = report,
+			}))
 		)
 	end)
 
@@ -398,6 +327,12 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				else controlled
 		end,
 		SetControlledActor = function(actor: ActorTypes.ActorView?): (boolean, string?)
+			local rejection: string? = unavailable()
+
+			if rejection ~= nil then
+				return false, rejection
+			end
+
 			local plan: Types.PreparedActorSwitch?, reason: string? = switches.Prepare(actor)
 
 			if plan == nil then
@@ -407,7 +342,12 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			return switches.Commit(plan)
 		end,
 		PrepareControlledActor = switches.Prepare,
-		CommitControlledActor = switches.Commit,
+		CommitControlledActor = function(plan: Types.PreparedActorSwitch): (boolean, string?)
+			return switches.Commit(plan)
+		end,
+		CommitControlledActorWithInput = switches.Commit,
+		ReleasePreparedProfiles = profiles.Release,
+		ReleaseControlledActor = switches.Release,
 		CommitPreparedProfiles = function(plan: Types.PreparedProfileGraph): (boolean, string?)
 			if destroyed or not options.IsReady() then
 				return false, "ClientNotReady"
@@ -417,41 +357,17 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				return false, "DispatchInProgress"
 			end
 
-			local commit: InputTypes.InputCommitContext? = input.GetCommitContext()
-
-			if commit == nil then
-				return false, "InputCommitFenceRequired"
-			end
-
-			local desired: Graph.Catalog? = profiles.Read(plan)
-
-			if desired == nil then
-				return false, "InvalidProfileGraph"
-			end
-
-			local graph: InputTypes.InputGraphSnapshot = input.GetGraphSnapshot()
-
-			if not Graph.Validate(desired, graph) then
-				return false, "ProfileDependencyMissing"
-			end
-
-			local changes: { Types.EffectiveRouteTransition } = Transitions.DiffCatalogs(
-				catalog,
-				desired,
-				commit.previous,
-				graph,
-				"ProfileChanged",
-				commit.invalidatedInputIds
-			)
-
 			busy += 1
-			catalog = desired
-			publishedInputGeneration = graph.generation
-			advance()
-			notify(changes)
+			local accepted: boolean, reason: string? = profiles.Commit(plan)
 			busy -= 1
 
-			return true, nil
+			if accepted then
+				assert(validity, "Expected installed input validity observer").MarkPublished(
+					input.GetGraphSnapshot().generation
+				)
+			end
+
+			return accepted, reason
 		end,
 		GetEffectiveRoute = function(actor: ActorTypes.ActorView, key: Types.RouteKey): Types.RouteQuerySnapshot?
 			if destroyed or not options.IsReady() or not available(actor) then
@@ -475,26 +391,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 		end,
 		ObserveSelection = selections.Add,
 		ObserveRoutes = routes.Add,
-		PrepareProfiles = function(
-			updates: { Types.ProfileUpdate },
-			desiredInput: InputTypes.InputGraphSnapshot?
-		): (Types.PreparedProfileGraph?, string?)
-			local reason: string? = unavailable()
-
-			if reason ~= nil then
-				return nil, reason
-			end
-
-			local graph: InputTypes.InputGraphSnapshot = desiredInput or input.GetGraphSnapshot()
-			local desired: Graph.Catalog?
-			desired, reason = Updates.Prepare(catalog, updates, graph, generation + 1, validateActor)
-
-			if desired == nil then
-				return nil, reason
-			end
-
-			return profiles.Create(desired)
-		end,
+		PrepareProfiles = profiles.Prepare,
 		Destroy = destroy,
 	}
 end

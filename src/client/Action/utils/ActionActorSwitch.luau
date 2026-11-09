@@ -11,14 +11,15 @@ export type Access = {
 	Validate: (ActorTypes.ActorView?) -> string?,
 	CanPublish: (ActorTypes.ActorView?) -> boolean,
 	Fence: (boolean) -> (),
-	Publish: (ActorTypes.ActorView?) -> (),
+	Publish: (ActorTypes.ActorView?, Types.PreparedProfileGraph?) -> (),
 	Fail: () -> (),
 	Report: (string) -> (),
 }
 
 export type Owner = {
-	Prepare: (ActorTypes.ActorView?) -> (Types.PreparedActorSwitch?, string?),
-	Commit: (Types.PreparedActorSwitch) -> (boolean, string?),
+	Prepare: (ActorTypes.ActorView?, boolean?) -> (Types.PreparedActorSwitch?, string?),
+	Commit: (Types.PreparedActorSwitch, Types.CoordinatedActorCommit?) -> (boolean, string?),
+	Release: (Types.PreparedActorSwitch) -> (),
 	Clear: () -> (),
 	IsRetiring: (ActorTypes.ActorView) -> boolean,
 }
@@ -49,7 +50,7 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 	local plans: Plans.Store<Switch> = Plans.new(dispose)
 
-	local function prepare(target: ActorTypes.ActorView?): (Types.PreparedActorSwitch?, string?)
+	local function prepare(target: ActorTypes.ActorView?, coordinated: boolean?): (Types.PreparedActorSwitch?, string?)
 		local reason: string? = access.Validate(target)
 
 		if reason ~= nil then
@@ -68,10 +69,10 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 		access.Fence(true)
 
-		local success: boolean, fault: string?, prepared: any, rejection: any = Observers.Run(
+		local success: boolean, fault: string?, prepared: unknown, rejection: unknown = Observers.Run(
 			function(): (boolean, string?)
 				local epoch: InputTypes.PreparedInputInvalidation?, epochReason: string? =
-					input.PrepareEpochInvalidation("ActorChanged")
+					input.PrepareEpochInvalidation("ActorChanged", nil, coordinated)
 
 				if epoch == nil then
 					return false, epochReason
@@ -109,14 +110,17 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 
 			return nil,
 				if success
-					then rejection
+					then (if type(rejection) == "string" then rejection else "ActorSwitchGuardFailed")
 					else (if fault == "Yielded" then "ActorSwitchGuardYielded" else "ActorSwitchGuardFailed")
 		end
 
 		return plans.Create(record)
 	end
 
-	local function commit(token: Types.PreparedActorSwitch): (boolean, string?)
+	local function commit(
+		token: Types.PreparedActorSwitch,
+		coordinated: Types.CoordinatedActorCommit?
+	): (boolean, string?)
 		local reason: string? = access.Validate(nil)
 
 		if reason ~= nil then
@@ -140,7 +144,19 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 		if record.target == access.Current() then
 			dispose(record)
 
-			return true, nil
+			if coordinated == nil then
+				return true, nil
+			end
+
+			local accepted: boolean, commitReason: string? = input.CommitControlUpdate(
+				coordinated.input,
+				nil,
+				function(): ()
+					access.Publish(record.target, coordinated.profiles)
+				end
+			)
+
+			return accepted, commitReason
 		end
 
 		if record.previous ~= access.Current() then
@@ -171,58 +187,71 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 		access.Fence(true)
 
 		local rejection: string? = nil
+		local nativeFailure: string? = nil
 		local claimedActor: ActorTypes.ActorView? = nil
 		local previousClaim: boolean? = nil
 
-		local success: boolean, _, committed: any = Observers.Run(function(): boolean
+		local success: boolean, _, committed: unknown = Observers.Run(function(): boolean
 			local epoch: InputTypes.PreparedInputInvalidation = assert(record.epoch, "Expected epoch plan")
 			local published: boolean = false
 
-			local accepted: boolean, failure: string?, phase: InputTypes.InputCommitFailurePhase? = input.CommitEpochInvalidation(
-				epoch,
-				function(): ()
-					local completed: boolean, _, reset: any = Observers.Run(
-						input.CommitPreparedRecognitionReset,
-						assert(record.recognition, "Expected recognition plan")
-					)
+			local publish: () -> () = function(): ()
+				local completed: boolean, _, reset: unknown = Observers.Run(
+					input.CommitPreparedRecognitionReset,
+					assert(record.recognition, "Expected recognition plan")
+				)
 
-					if not completed or reset ~= true then
-						return
-					end
-
-					-- Reset runs recognizer callbacks. Input is already committed, so a
-					-- change here fails closed rather than rejecting.
-					if Retirement.Validate(guard, record.activationRevision) ~= nil then
-						return
-					end
-
-					if record.retirement ~= nil then
-						if access.Current() ~= record.previous or not access.CanPublish(record.previous) then
-							return
-						end
-
-						claimedActor = record.previous
-
-						if claimedActor ~= nil then
-							previousClaim = retiring[claimedActor]
-							retiring[claimedActor] = true
-						end
-
-						if not Observers.Run(record.retirement.Commit) then
-							return
-						end
-					end
-
-					if not access.CanPublish(record.target) then
-						return
-					end
-
-					local installed: boolean = Observers.Run(access.Publish, record.target)
-					published = installed
+				if not completed or reset ~= true then
+					return
 				end
-			)
 
-			if not accepted and phase == "Rejected" then
+				-- Reset runs recognizer callbacks. Input is already committed, so a
+				-- change here fails closed rather than rejecting.
+				if Retirement.Validate(guard, record.activationRevision) ~= nil then
+					return
+				end
+
+				if record.retirement ~= nil then
+					if access.Current() ~= record.previous or not access.CanPublish(record.previous) then
+						return
+					end
+
+					claimedActor = record.previous
+
+					if claimedActor ~= nil then
+						previousClaim = retiring[claimedActor]
+						retiring[claimedActor] = true
+					end
+
+					if not Observers.Run(record.retirement.Commit) then
+						return
+					end
+				end
+
+				if not access.CanPublish(record.target) then
+					return
+				end
+
+				local installed: boolean = Observers.Run(
+					access.Publish,
+					record.target,
+					if coordinated ~= nil then coordinated.profiles else nil
+				)
+
+				published = installed
+			end
+
+			local accepted: boolean, failure: string?, phase: InputTypes.InputCommitFailurePhase?
+
+			if coordinated ~= nil then
+				accepted, failure, phase = input.CommitControlUpdate(coordinated.input, epoch, publish)
+			else
+				accepted, failure, phase = input.CommitEpochInvalidation(epoch, publish)
+			end
+
+			nativeFailure = failure
+
+			if not accepted and (phase == "Rejected" or (coordinated ~= nil and phase == "Restored")) then
 				rejection = failure
 			end
 
@@ -255,7 +284,11 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 		end
 
 		if failed then
-			return false, if rejected then rejection else "ActorSwitchCommitFailed"
+			return false,
+				if rejected
+					then rejection
+					elseif coordinated ~= nil and nativeFailure == "InputRuntimeFaulted" then nativeFailure
+					else "ActorSwitchCommitFailed"
 		end
 
 		return true, nil
@@ -265,6 +298,13 @@ function Switching.new(input: InputTypes.InputOwner, guard: Types.ActorSwitchGua
 		Prepare = prepare,
 		Commit = commit,
 		Clear = plans.Clear,
+		Release = function(token: Types.PreparedActorSwitch): ()
+			local record: Switch? = plans.Take(token)
+
+			if record ~= nil then
+				dispose(record)
+			end
+		end,
 		IsRetiring = function(actor: ActorTypes.ActorView): boolean
 			return retiring[actor] == true
 		end,

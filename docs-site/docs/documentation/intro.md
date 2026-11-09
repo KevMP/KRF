@@ -16,6 +16,7 @@ KRF is a server-authoritative gameplay framework for anime-inspired Roblox games
 | --- | --- |
 | Register a player character, NPC, or boss | [Actor Runtime](./Actor/actor-runtime) |
 | Define an ability's requirements, costs, and lifetime | [Actions](./Action/actions-overview) |
+| Coordinate inputs, Action profiles, and controlled Actor changes | [Client controls](./Action/client-controls) |
 | Apply statuses, buffs, or debuffs | [Tags](./Tags/tag-runtime) |
 | Read numeric values after modifiers | [Properties](./Property/property-runtime) |
 | Define Stamina, Mana, or another meter | [Resources](./Resource/resource-registry) |

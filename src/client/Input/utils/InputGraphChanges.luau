@@ -1,6 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Value = require(script.Parent.InputValue)
+local Ownership = require(script.Parent.InputNativeOwnership)
 
 export type Plan = {
 	inputIds: { [string]: boolean },
@@ -32,6 +33,8 @@ function Changes.Diff(
 	local contextIds: { [string]: boolean } = {}
 	local invalidated: { [string]: string } = {}
 	local reasons: { [string]: boolean } = {}
+	local beforeOwnership: Ownership.Blocked = Ownership.Blocked(previous)
+	local afterOwnership: Ownership.Blocked = Ownership.Blocked(nextGraph)
 
 	for contextId: string, context: Types.ContextSnapshot in previous.contexts do
 		if not Value.Equal(context, nextGraph.contexts[contextId]) then
@@ -65,6 +68,8 @@ function Changes.Diff(
 
 			if before.enabled and not after.enabled then
 				reason = "ContextDisabled"
+			elseif before.sourceId ~= after.sourceId then
+				reason = "ContextOwnerChanged"
 			elseif before.priority ~= after.priority or before.sink ~= after.sink then
 				reason = "ContextChanged"
 			else
@@ -84,6 +89,10 @@ function Changes.Diff(
 					end
 				end
 			end
+		end
+
+		if reason == nil and not Value.Equal(beforeOwnership[inputId], afterOwnership[inputId]) then
+			reason = "InputOwnershipChanged"
 		end
 
 		if reason ~= nil then
