@@ -7,6 +7,8 @@ local Constants = require(script.Parent.Parent.Parent.shared.ActionRequest.utils
 local PayloadCodec = require(script.Parent.Parent.Parent.shared.ActionRequest.utils.ActionPayloadCodec)
 local Registry = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local Facts = require(script.Parent.utils.ActionRequestFacts)
+local Correlation = require(script.Parent.utils.ActionRequestCorrelation)
+local Dispatch = require(script.Parent.utils.ActionRequestDispatch)
 local FollowUps = require(script.Parent.utils.ActionFollowUpQueue)
 local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
@@ -21,24 +23,11 @@ end
 
 table.freeze(INTERRUPT_REASONS)
 
--- Follow-up authority and late-result correlation have independent lifetimes.
-type Original = {
-	admission: Types.ActionRequestAdmission,
-	request: ActionRequestTypes.CompiledActionRequest,
-	correlationClosed: boolean,
-	retired: boolean,
-}
-
 type State = {
 	catalog: ActionRequestTypes.ActionRequestCatalog,
-	commands: Types.ActionRequestCommandPort,
 	incarnation: number,
-	maxOriginalStarts: number,
-	originals: { [number]: Original },
-	originalCount: number,
-	-- Interrupt correlation survives Unknown until a definitive result or N9 expiry.
-	followUps: { [number]: Types.ActionRequestAdmission },
-	followUpCount: number,
+	correlation: Correlation.Owner,
+	dispatch: Dispatch.Owner,
 	facts: Facts.Owner,
 	pendingFollowUps: FollowUps.Owner,
 	disconnect: () -> (),
@@ -51,189 +40,6 @@ local ClientActionRequestRuntime = {}
 ClientActionRequestRuntime.__index = ClientActionRequestRuntime
 
 type Runtime = typeof(setmetatable({} :: State, ClientActionRequestRuntime))
-
-local COMMAND_KINDS: { [string]: Types.ActionRequestKind } = {
-	[Constants.START_COMMAND_ID] = "Start",
-	[Constants.STOP_COMMAND_ID] = "Stop",
-	[Constants.INTERRUPT_COMMAND_ID] = "Interrupt",
-}
-
-table.freeze(COMMAND_KINDS)
-
-local function hasFollowUps(request: ActionRequestTypes.CompiledActionRequest): boolean
-	return request.stop ~= nil or request.allowInputInterrupt
-end
-
-function ClientActionRequestRuntime._removeOriginal(self: Runtime, requestId: number): ()
-	if self.originals[requestId] ~= nil then
-		self.originals[requestId] = nil
-		self.originalCount -= 1
-		self.pendingFollowUps.Remove(requestId)
-	end
-end
-
--- Losing late-result correlation does not prove denial or end a possible live
--- activation. Its receipt remains usable only when the wire permits follow-ups.
-function ClientActionRequestRuntime._expire(self: Runtime, requestId: number, commandId: string): ()
-	if self.destroyed then
-		return
-	elseif commandId == Constants.INTERRUPT_COMMAND_ID then
-		local followUp: Types.ActionRequestAdmission? = self.followUps[requestId]
-
-		if followUp ~= nil and followUp.kind == "Interrupt" then
-			self.followUps[requestId] = nil
-			self.followUpCount -= 1
-		end
-
-		return
-	end
-
-	local original: Original? = self.originals[requestId]
-
-	if commandId ~= Constants.START_COMMAND_ID or original == nil then
-		return
-	end
-
-	original.correlationClosed = true
-
-	if original.retired or not hasFollowUps(original.request) then
-		self:_removeOriginal(requestId)
-	end
-end
-
--- Correlation is installed before any outcome observer can run.
-function ClientActionRequestRuntime._receive(self: Runtime, result: NetworkingTypes.CommandResult): ()
-	local kind: Types.ActionRequestKind? = COMMAND_KINDS[result.commandId]
-
-	if self.destroyed or kind == nil then
-		return
-	end
-
-	local admission: Types.ActionRequestAdmission
-	local sequenceId: number? = nil
-
-	if kind == "Start" then
-		local original: Original? = self.originals[result.requestId]
-
-		if original == nil or original.correlationClosed then
-			return
-		end
-
-		admission = original.admission
-
-		if result.status == "Accepted" then
-			original.correlationClosed = true
-			sequenceId = if type(result.result) == "table" then result.result.sequenceId else nil
-
-			if original.retired or not hasFollowUps(original.request) then
-				self:_removeOriginal(result.requestId)
-			end
-		elseif result.status == "Rejected" then
-			self:_removeOriginal(result.requestId)
-		end
-	else
-		local followUp: Types.ActionRequestAdmission? = self.followUps[result.requestId]
-
-		if followUp == nil or followUp.kind ~= kind then
-			return
-		end
-
-		admission = followUp
-
-		-- Never replay Unknown. Retain Interrupt metadata during grace so a late
-		-- Accepted result can release authority for its definitively ended original.
-		if kind ~= "Interrupt" or result.status ~= "Unknown" then
-			self.followUps[result.requestId] = nil
-			self.followUpCount -= 1
-		end
-
-		if kind == "Interrupt" and result.status == "Accepted" then
-			self:Retire(admission.originalStartRequestId)
-		end
-	end
-
-	local outcome: Types.ActionRequestOutcome = table.freeze({
-		admission = admission,
-		status = result.status,
-		sequenceId = sequenceId,
-		reason = result.reason,
-	})
-
-	self.facts.Stage({ outcome = outcome, original = admission.originalStartRequestId, ready = true })
-
-	if self.commands.AfterEgress ~= nil then
-		self.commands.AfterEgress(self.facts.Drain)
-	else
-		self.facts.Drain()
-	end
-end
-
-function ClientActionRequestRuntime._send(
-	self: Runtime,
-	commandId: string,
-	actor: ActorTypes.ActorView?,
-	request: any,
-	admit: (requestId: number) -> Types.ActionRequestAdmission,
-	rollback: (requestId: number) -> (),
-	committed: ((Types.ActionRequestAdmission) -> ())?
-): (number?, string?)
-	local admitted: Types.ActionRequestAdmission? = nil
-	local fact: Facts.Fact? = nil
-
-	local requestId: number?, reason: string? = self.commands.SendAdmitted(
-		commandId,
-		actor,
-		request,
-		function(id: number): boolean
-			local reserved: Types.ActionRequestAdmission = admit(id)
-
-			local staged: Facts.Fact =
-				{ admission = reserved, original = reserved.originalStartRequestId, ready = false }
-
-			admitted, fact = reserved, staged
-			self.facts.Stage(staged)
-
-			return true
-		end,
-		function(): ()
-			-- N9 has irreversibly admitted this command. Observation may now drain
-			-- after egress, including Closing reentry before SendAdmitted returns.
-			assert(fact, "Expected staged admission").ready = true
-
-			if committed ~= nil then
-				committed(assert(admitted, "Expected reserved request correlation"))
-			end
-		end
-	)
-
-	local staged: Facts.Fact? = fact
-
-	if requestId == nil then
-		local reserved: Types.ActionRequestAdmission? = admitted
-
-		if reserved ~= nil then
-			rollback(reserved.requestId)
-		end
-
-		if staged ~= nil then
-			self.facts.Withdraw(staged)
-		end
-
-		return nil, reason or "CommandAdmissionRefused"
-	end
-
-	assert(staged ~= nil, "ActionRequestAdmissionMissing")
-
-	if self.commands.AfterEgress ~= nil then
-		self.commands.AfterEgress(function(): ()
-			self.facts.Commit(staged)
-		end)
-	else
-		self.facts.Commit(staged)
-	end
-
-	return requestId, nil
-end
 
 function ClientActionRequestRuntime.Start(
 	self: Runtime,
@@ -262,42 +68,25 @@ function ClientActionRequestRuntime.Start(
 
 	if not Registry.IsCurrent(actor) or not actor:IsAvailable() then
 		return nil, "ActorViewUnavailable"
-	elseif self.originalCount >= self.maxOriginalStarts then
+	elseif not self.correlation.CanStart() then
 		return nil, "ActionRequestCapacityReached"
 	end
 
 	local compiled: ActionRequestTypes.CompiledActionRequest = request
 
-	return self:_send(
+	return self.dispatch.Send(
 		Constants.START_COMMAND_ID,
 		actor,
 		{ actionId = compiled.actionId, contractTag = compiled.contractTag, payload = payload },
 		function(requestId: number): Types.ActionRequestAdmission
-			local key: string = string.format("%.0f:%.0f", self.incarnation, requestId)
-
-			local admission: Types.ActionRequestAdmission = table.freeze({
-				kind = "Start" :: Types.ActionRequestKind,
-				incarnation = self.incarnation,
-				requestId = requestId,
-				originalStartRequestId = requestId,
-				actor = actor,
-				actionId = compiled.actionId,
-				origin = selection.origin,
-				inputTimestamp = selection.inputTimestamp,
-				requestKey = key,
-				originalStartKey = key,
-			})
-
-			self.originals[requestId] =
-				{ admission = admission, request = compiled, correlationClosed = false, retired = false }
-
-			self.originalCount += 1
+			local admission: Types.ActionRequestAdmission =
+				self.correlation.ReserveStart(requestId, actor, selection, compiled)
 
 			if selection.Reserve ~= nil then
 				local reserved: boolean = Observers.Run(selection.Reserve, admission)
 
 				if not reserved then
-					self:_removeOriginal(requestId)
+					self.correlation.RemoveStart(requestId)
 					error("ActionRequestCorrelationFailed", 0)
 				end
 			end
@@ -305,49 +94,9 @@ function ClientActionRequestRuntime.Start(
 			return admission
 		end,
 		function(requestId: number): ()
-			self:_removeOriginal(requestId)
+			self.correlation.RemoveStart(requestId)
 		end
 	)
-end
-
-function ClientActionRequestRuntime._followUp(
-	self: Runtime,
-	kind: Types.ActionRequestKind,
-	original: Original,
-	commandId: string,
-	request: any,
-	committed: ((Types.ActionRequestAdmission) -> ())?
-): (number?, string?)
-	local start: Types.ActionRequestAdmission = original.admission
-
-	if self.followUpCount >= self.maxOriginalStarts * 2 then
-		return nil, "ActionRequestCapacityReached"
-	end
-
-	return self:_send(commandId, nil, request, function(requestId: number): Types.ActionRequestAdmission
-		local admission: Types.ActionRequestAdmission = table.freeze({
-			kind = kind,
-			incarnation = self.incarnation,
-			requestId = requestId,
-			originalStartRequestId = start.requestId,
-			actor = start.actor,
-			actionId = start.actionId,
-			origin = start.origin,
-			inputTimestamp = nil,
-			requestKey = string.format("%.0f:%.0f", self.incarnation, requestId),
-			originalStartKey = start.requestKey,
-		})
-
-		self.followUps[requestId] = admission
-		self.followUpCount += 1
-
-		return admission
-	end, function(requestId: number): ()
-		if self.followUps[requestId] ~= nil then
-			self.followUps[requestId] = nil
-			self.followUpCount -= 1
-		end
-	end, committed)
 end
 
 function ClientActionRequestRuntime.Stop(
@@ -363,9 +112,9 @@ function ClientActionRequestRuntime.Stop(
 		return nil, "ActionRequestRuntimeDestroyed"
 	end
 
-	local original: Original? = self.originals[originalStartRequestId]
+	local original: Correlation.Start? = self.correlation.GetStart(originalStartRequestId)
 
-	if original == nil or original.retired then
+	if original == nil then
 		return nil, "ActionStartUnknown"
 	end
 
@@ -394,7 +143,7 @@ function ClientActionRequestRuntime.Stop(
 		automatic
 		and requestId == nil
 		and FollowUps.IsPressure(reason)
-		and self.originals[originalStartRequestId] == original
+		and self.correlation.ContainsStart(originalStartRequestId, original)
 	then
 		self.pendingFollowUps.Remember(intent)
 	end
@@ -415,9 +164,9 @@ function ClientActionRequestRuntime.Interrupt(
 		return nil, "ActionRequestRuntimeDestroyed"
 	end
 
-	local original: Original? = self.originals[originalStartRequestId]
+	local original: Correlation.Start? = self.correlation.GetStart(originalStartRequestId)
 
-	if original == nil or original.retired then
+	if original == nil then
 		return nil, "ActionStartUnknown"
 	elseif not original.request.allowInputInterrupt then
 		return nil, "ActionInterruptNotAllowed"
@@ -438,7 +187,7 @@ function ClientActionRequestRuntime.Interrupt(
 		automatic
 		and requestId == nil
 		and FollowUps.IsPressure(failure)
-		and self.originals[originalStartRequestId] == original
+		and self.correlation.ContainsStart(originalStartRequestId, original)
 	then
 		self.pendingFollowUps.Remember(intent)
 	end
@@ -447,43 +196,38 @@ function ClientActionRequestRuntime.Interrupt(
 end
 
 function ClientActionRequestRuntime.GetOriginalStart(self: Runtime, requestId: number): Types.ActionRequestAdmission?
-	local original: Original? = self.originals[requestId]
+	local original: Correlation.Start? = self.correlation.GetStart(requestId)
 
-	return if original ~= nil and not original.retired then original.admission else nil
+	return if original ~= nil then original.admission else nil
 end
 
 function ClientActionRequestRuntime.Retire(self: Runtime, originalStartRequestId: number): ()
-	Observers.CheckReentry()
-	local original: Original? = self.originals[originalStartRequestId]
-
-	if original ~= nil then
-		original.retired = true
-		self.pendingFollowUps.Remove(originalStartRequestId)
-
-		if original.correlationClosed then
-			self:_removeOriginal(originalStartRequestId)
-		end
-	end
+	self.correlation.Retire(originalStartRequestId)
 end
 
 function ClientActionRequestRuntime._sendIntent(self: Runtime, intent: Types.ActionFollowUpIntent): (number?, string?)
-	local original: Original? = self.originals[intent.originalStartRequestId]
+	local original: Correlation.Start? = self.correlation.GetStart(intent.originalStartRequestId)
 
-	if self.destroyed or original == nil or original.retired then
+	if self.destroyed or original == nil then
 		return nil, "ActionStartUnknown"
+	elseif not self.correlation.CanFollowUp() then
+		return nil, "ActionRequestCapacityReached"
 	end
 
 	local prior: Types.ActionFollowUpIntent? = self.pendingFollowUps.Get(intent.originalStartRequestId)
 
-	local requestId: number?, reason: string? = self:_followUp(
-		intent.kind,
-		original,
+	local requestId: number?, reason: string? = self.dispatch.Send(
 		if intent.kind == "Stop" then Constants.STOP_COMMAND_ID else Constants.INTERRUPT_COMMAND_ID,
+		nil,
 		{
 			originalStartRequestId = intent.originalStartRequestId,
 			payload = intent.payload,
 			reason = intent.reason,
 		},
+		function(id: number): Types.ActionRequestAdmission
+			return self.correlation.ReserveFollowUp(id, intent.kind, original.admission)
+		end,
+		self.correlation.RemoveFollowUp,
 		intent.OnAdmitted
 	)
 
@@ -516,30 +260,16 @@ function ClientActionRequestRuntime.StageDecision(
 	-- I6 owns this captured local decision, even if a synchronous definitive
 	-- result has already retired I5's follow-up/correlation record.
 	if not self.destroyed and original.incarnation == self.incarnation and original.kind == "Start" then
-		self.facts.Stage({ original = original.requestId, callback = callback, ready = true })
-
-		if self.commands.AfterEgress ~= nil then
-			self.commands.AfterEgress(self.facts.Drain)
-		else
-			self.facts.Drain()
-		end
+		self.dispatch.Stage({ original = original.requestId, callback = callback, ready = true })
 	end
 end
 
 function ClientActionRequestRuntime._GetRetainedCountForTests(self: Runtime): number
-	return self.originalCount + self.followUpCount
+	return self.correlation.Count()
 end
 
 function ClientActionRequestRuntime.AfterObservations(self: Runtime, callback: () -> ()): ()
-	local function finish(): ()
-		self.facts.AfterDrain(callback)
-	end
-
-	if self.commands.AfterEgress ~= nil then
-		self.commands.AfterEgress(finish)
-	else
-		finish()
-	end
+	self.dispatch.AfterObservations(callback)
 end
 
 function ClientActionRequestRuntime.Destroy(self: Runtime): ()
@@ -549,8 +279,7 @@ function ClientActionRequestRuntime.Destroy(self: Runtime): ()
 
 	self.destroyed = true
 	self.disconnect()
-	table.clear(self.originals)
-	table.clear(self.followUps)
+	self.correlation.Destroy()
 	self.facts.Destroy()
 	self.pendingFollowUps.Destroy()
 
@@ -561,9 +290,6 @@ function ClientActionRequestRuntime.Destroy(self: Runtime): ()
 	if self.disconnectExpirations ~= nil then
 		self.disconnectExpirations()
 	end
-
-	self.originalCount = 0
-	self.followUpCount = 0
 end
 
 local module: Types.ClientActionRequestRuntimeModule = {
@@ -584,23 +310,33 @@ local module: Types.ClientActionRequestRuntimeModule = {
 		-- N9 only delivers outcomes for requests this runtime later sends, never during subscription.
 		local disconnect: () -> () = options.commands.ObserveOutcomes(
 			function(result: NetworkingTypes.CommandResult): ()
-				self:_receive(result)
+				if not self.destroyed then
+					local outcome: Types.ActionRequestOutcome? = self.correlation.Receive(result)
+
+					if outcome ~= nil then
+						self.dispatch.Stage({
+							outcome = outcome,
+							original = outcome.admission.originalStartRequestId,
+							ready = true,
+						})
+					end
+				end
 			end
 		)
 
+		local facts: Facts.Owner = Facts.new(maximum * 12)
+
+		local pendingFollowUps: FollowUps.Owner = FollowUps.new(function(intent): (number?, string?)
+			return self:_sendIntent(intent)
+		end)
+
 		local state: State = {
 			catalog = catalog,
-			commands = options.commands,
 			incarnation = options.incarnation,
-			maxOriginalStarts = maximum,
-			originals = {},
-			originalCount = 0,
-			followUps = {},
-			followUpCount = 0,
-			facts = Facts.new(maximum * 12),
-			pendingFollowUps = FollowUps.new(function(intent): (number?, string?)
-				return self:_sendIntent(intent)
-			end),
+			correlation = Correlation.new(options.incarnation, maximum, pendingFollowUps.Remove),
+			dispatch = Dispatch.new(options.commands, facts),
+			facts = facts,
+			pendingFollowUps = pendingFollowUps,
 			disconnect = disconnect,
 			destroyed = false,
 		}
@@ -615,7 +351,9 @@ local module: Types.ClientActionRequestRuntimeModule = {
 			if options.commands.ObserveExpirations ~= nil then
 				self.disconnectExpirations = options.commands.ObserveExpirations(
 					function(id: number, commandId: string): ()
-						self:_expire(id, commandId)
+						if not self.destroyed then
+							self.correlation.Expire(id, commandId)
+						end
 					end
 				)
 			end
