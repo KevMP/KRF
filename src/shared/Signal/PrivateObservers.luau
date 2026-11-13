@@ -8,6 +8,7 @@ export type Registry<Callback> = {
 }
 
 local Observers = {}
+local reentryGuards: { [thread]: () -> () } = {}
 
 function Observers.new<Callback>(maximum: number, reason: string): Registry<Callback>
 	local entries: { Entry<Callback> } = {}
@@ -46,9 +47,18 @@ function Observers.new<Callback>(maximum: number, reason: string): Registry<Call
 	}
 end
 
-function Observers.Run(callback: (...any) -> ...any, ...: any): (boolean, string?, any, any)
+local function run(callback: (...any) -> ...any, guard: (() -> ())?, ...: any): (boolean, string?, any, any)
 	local worker: thread = coroutine.create(callback)
+
+	if guard ~= nil then
+		reentryGuards[worker] = guard
+	end
+
 	local success: boolean, result: any, reason: any = coroutine.resume(worker, ...)
+
+	if guard ~= nil then
+		reentryGuards[worker] = nil
+	end
 
 	if coroutine.status(worker) ~= "dead" then
 		pcall(task.cancel, worker)
@@ -61,6 +71,24 @@ function Observers.Run(callback: (...any) -> ...any, ...: any): (boolean, string
 		if success then nil else if type(result) == "string" then result else "NonStringError",
 		result,
 		reason
+end
+
+-- Synchronous framework child workers inherit the calling scope. Separately
+-- scheduled task.spawn/GoodSignal work runs in its own, unguarded coroutine.
+function Observers.Run(callback: (...any) -> ...any, ...: any): (boolean, string?, any, any)
+	return run(callback, reentryGuards[coroutine.running()], ...)
+end
+
+function Observers.RunGuarded(callback: (...any) -> ...any, onReentry: () -> (), ...: any): (boolean, string?, any, any)
+	return run(callback, onReentry, ...)
+end
+
+function Observers.CheckReentry(): ()
+	local guard: (() -> ())? = reentryGuards[coroutine.running()]
+
+	if guard ~= nil then
+		guard()
+	end
 end
 
 return Observers

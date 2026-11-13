@@ -44,6 +44,8 @@ local function admission(id: number, actionId: string?): RequestTypes.ActionRequ
 		actor = selected.actor,
 		actionId = actionId or selected.actionId,
 		origin = "Input",
+		requestKey = "fixture:" .. id,
+		originalStartKey = "fixture:" .. id,
 	}
 
 	return table.freeze(value)

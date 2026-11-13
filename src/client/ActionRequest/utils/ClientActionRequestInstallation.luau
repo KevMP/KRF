@@ -85,6 +85,12 @@ function Installation.Install(
 		return nil, "ActionRequestCommandsUnavailable"
 	end
 
+	if incarnations >= 9007199254740991 then
+		runtimeCommands:_ClassifyFollowUps({})
+
+		return nil, "ActionRequestIncarnationExhausted"
+	end
+
 	incarnations += 1
 
 	local port: Types.ActionRequestCommandPort = table.freeze({
@@ -122,8 +128,10 @@ function Installation.Install(
 			State.Install(nil)
 		end
 
-		installed:Destroy()
-		runtimeCommands:_ClassifyFollowUps({})
+		installed:AfterObservations(function(): ()
+			installed:Destroy()
+			runtimeCommands:_ClassifyFollowUps({})
+		end)
 	end,
 		nil
 end

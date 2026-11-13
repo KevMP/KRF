@@ -21,6 +21,9 @@ local fixture: Utils.Fixture
 local policies: Types.ActionInputCatalog
 local originalOwnerNew = Owner.new
 local originalLifecycleNew = Lifecycle.new
+-- The connection-owned request observation bridge retains one subscription
+-- after route/lifecycle teardown so pending outcomes can still be delivered.
+local remainingRequestObservers: number = 15
 
 beforeEach(function()
 	fixture = Utils.new()
@@ -50,7 +53,7 @@ it("cleans new lifecycle subscriptions when route-owner construction fails", fun
 	expect(State.GetInput()).toBeNil()
 	local requests: RequestTypes.ClientActionRequestRuntime = assert(Requests.Get())
 
-	for _ = 1, 16 do
+	for _ = 1, remainingRequestObservers do
 		requests:ObserveAdmissions(function() end)
 	end
 end)
@@ -81,7 +84,7 @@ it("destroys the constructed owner and lifecycle when input attachment fails", f
 	expect({ destroyed.RequestAction(fixture.actor, "Mode.Aura") }).toEqual({ nil, "ClientNotReady" })
 	local requests: RequestTypes.ClientActionRequestRuntime = assert(Requests.Get())
 
-	for _ = 1, 16 do
+	for _ = 1, remainingRequestObservers do
 		requests:ObserveAdmissions(function() end)
 	end
 end)
@@ -90,7 +93,7 @@ it("rolls back the first subscription when the second stream has exhausted its o
 	assert(State.Get(), "Expected installed route owner").Destroy()
 	local requests: RequestTypes.ClientActionRequestRuntime = assert(Requests.Get())
 
-	for _ = 1, 16 do
+	for _ = 1, remainingRequestObservers do
 		requests:ObserveOutcomes(function() end)
 	end
 
@@ -103,7 +106,7 @@ it("rolls back the first subscription when the second stream has exhausted its o
 	expect(State.Get()).toBeNil()
 	expect(State.GetInput()).toBeNil()
 
-	for _ = 1, 16 do
+	for _ = 1, remainingRequestObservers do
 		requests:ObserveAdmissions(function() end)
 	end
 end)

@@ -17,6 +17,7 @@ local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRe
 local ActionTypes = require(script.Action.types)
 local PolicyValidator = require(script.Action.ActionInputPolicyValidator)
 local ActionRequestInstallation = require(script.ActionRequest.utils.ClientActionRequestInstallation)
+local ObservationInstallation = require(script.Action.utils.ActionObservationInstallation)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -93,6 +94,8 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 		prepare(config)
 
 	if configFailure ~= nil then
+		ObservationInstallation.ClearUninstalled()
+
 		return false, configFailure
 	end
 
@@ -111,6 +114,10 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	local cleanupActions: (() -> ())? = nil
 	local cleanupControls: (() -> ())? = nil
 	local cleanupActionRequests: (() -> ())? = nil
+
+	local cleanupObservations: (() -> ())?, bindObservationRequests: () -> () =
+		ObservationInstallation.Install(dependencies.Now)
+
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
 
@@ -138,6 +145,9 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 		local consumers: (() -> ())? = cleanupConsumers
 		cleanupConsumers = nil
 		dispose(consumers)
+		local stopObservations: (() -> ())? = cleanupObservations
+		cleanupObservations = nil
+		dispose(stopObservations)
 		-- After the command runtime, so its closing Unknown outcomes still correlate.
 		local stopActionRequests: (() -> ())? = cleanupActionRequests
 		cleanupActionRequests = nil
@@ -327,6 +337,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					end
 
 					cleanupActionRequests = stopRequests
+					bindObservationRequests()
 				end
 
 				cleanupActions = ActionInstallation.Install(function(): boolean
@@ -391,6 +402,8 @@ function Client._ResetForTests(): ()
 		shutdown()
 		shutdown = nil
 	end
+
+	ObservationInstallation.ClearUninstalled()
 
 	attempted = false
 	initialized = false

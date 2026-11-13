@@ -1,6 +1,7 @@
 --!strict
 local Types = require(script.Parent.types)
 local State = require(script.Parent.utils.InputRuntimeState)
+local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 local facade: Types.InputRuntime = {
 	OnSequenceMatched = State.OnSequenceMatched,
@@ -23,6 +24,7 @@ local facade: Types.InputRuntime = {
 	end,
 	OnInput = State.OnInput,
 	SetSource = function(sourceId: string, definition: Types.InputSourceDefinition): (boolean, string?)
+		Observers.CheckReentry()
 		local owner: Types.InputOwner? = State.Get()
 
 		if owner == nil then
@@ -32,6 +34,7 @@ local facade: Types.InputRuntime = {
 		return owner.SetSource(sourceId, definition)
 	end,
 	RemoveSource = function(sourceId: string): (boolean, string?)
+		Observers.CheckReentry()
 		local owner: Types.InputOwner? = State.Get()
 
 		if owner == nil then
@@ -41,6 +44,7 @@ local facade: Types.InputRuntime = {
 		return owner.RemoveSource(sourceId)
 	end,
 	SetContextEnabled = function(contextId: string, enabled: boolean): (boolean, string?)
+		Observers.CheckReentry()
 		local owner: Types.InputOwner? = State.Get()
 
 		if owner == nil then
@@ -77,6 +81,7 @@ local facade: Types.InputRuntime = {
 		return owner.GetEffectiveBindings(inputId)
 	end,
 	BindActionLabel = function(inputId: string, label: InputActionLabel): (boolean, string?)
+		Observers.CheckReentry()
 		local owner: Types.InputOwner? = State.Get()
 
 		if owner == nil then
@@ -86,6 +91,7 @@ local facade: Types.InputRuntime = {
 		return owner.BindActionLabel(inputId, label)
 	end,
 	UnbindActionLabel = function(label: InputActionLabel): (boolean, string?)
+		Observers.CheckReentry()
 		local owner: Types.InputOwner? = State.Get()
 
 		if owner == nil then

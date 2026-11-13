@@ -7,6 +7,7 @@ local StateCommit = require(script.Parent.InputStateCommit)
 local MutationGate = require(script.Parent.InputMutationGate)
 local Dispatch = require(script.Parent.InputDispatch)
 local GraphObservers = require(script.Parent.InputGraphObservers)
+local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 export type SelectionFence = StateCommit.SelectionFence
 export type Options = StateCommit.Options
@@ -54,6 +55,7 @@ function Configuration.new(
 	end
 
 	local function SetSource(sourceId: string, definition: Types.InputSourceDefinition): (boolean, string?)
+		Observers.CheckReentry()
 		local reason: string? = if gate.IsCoordinating() then "DispatchInProgress" else gate.Unavailable()
 
 		if reason ~= nil then
@@ -80,6 +82,7 @@ function Configuration.new(
 	end
 
 	local function RemoveSource(sourceId: string): (boolean, string?)
+		Observers.CheckReentry()
 		local reason: string? = if gate.IsCoordinating() then "DispatchInProgress" else gate.Unavailable()
 
 		if reason ~= nil then
@@ -104,6 +107,7 @@ function Configuration.new(
 	end
 
 	local function SetContextEnabled(contextId: string, enabled: boolean): (boolean, string?)
+		Observers.CheckReentry()
 		local reason: string? = if gate.IsCoordinating() then "DispatchInProgress" else gate.Unavailable()
 
 		if reason ~= nil then

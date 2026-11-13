@@ -70,6 +70,12 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 	end
 
 	local function decision(record: Activations.Record, kind: Types.ActionInputDecisionKind, reason: string): ()
+		if record.decisionCount >= 2 then
+			return
+		end
+
+		record.decisionCount += 1
+
 		local original: RequestTypes.ActionRequestAdmission = assert(record.admission, "Expected original admission")
 
 		local fact: Types.ActionInputDecision = table.freeze({
@@ -79,7 +85,7 @@ function Lifecycle.new(options: Options): Types.ActionInputOwner
 			reason = string.sub(reason, 1, 96),
 		})
 
-		requests:StageDecision(original.requestId, function(): ()
+		requests:StageDecision(original, function(): ()
 			if not destroyed then
 				for _, entry in decisions.Snapshot() do
 					if entry.active then

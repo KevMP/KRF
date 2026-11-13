@@ -310,6 +310,8 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			sourceId: string,
 			profile: Types.ControlProfile
 		): (boolean, string?)
+			Observers.CheckReentry()
+
 			if profile == nil then
 				return false, validateActor(actor) or "InvalidControlProfile"
 			end
@@ -317,6 +319,8 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 			return mutate(actor, sourceId, profile)
 		end,
 		RemoveProfileSource = function(actor: ActorTypes.ActorView, sourceId: string): (boolean, string?)
+			Observers.CheckReentry()
+
 			return mutate(actor, sourceId, nil)
 		end,
 		GetControlledActor = function(): ActorTypes.ActorView?
@@ -327,6 +331,7 @@ function Owner.new(options: Types.ClientActionOwnerOptions): Types.ClientActionO
 				else controlled
 		end,
 		SetControlledActor = function(actor: ActorTypes.ActorView?): (boolean, string?)
+			Observers.CheckReentry()
 			local rejection: string? = unavailable()
 
 			if rejection ~= nil then
