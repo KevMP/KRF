@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "description": "Kevin's Roblox Framework: a server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions, and schema-defined replication.",
   "scripts": {
+    "demo:fire-actions": "rojo build fire-actions-manual.project.json -o KRF-Fire-Actions-Manual.rbxl",
     "bench:networking:compare": "node ./scripts/compare-networking.cjs",
     "prepare": "husky",
     "typecheck": "node ./scripts/typecheck.cjs",
-    "test:lint": "stylua --check src tests && breathers --check src tests && selene src tests",
+    "typecheck:fire-actions": "node ./scripts/typecheck.cjs fire-actions-manual.project.json examples/FireActions",
+    "test:lint": "stylua --check src tests examples && breathers --check src tests examples && selene src tests examples",
     "test:unit": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1 && npm run coverage",
     "test:integration:n5": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n5-native.ps1",
     "test:integration:n6": "powershell -ExecutionPolicy Bypass -File ./scripts/test-n6-native.ps1",
@@ -37,7 +39,7 @@
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
     "test:bench-tools": "node --test scripts/compare-networking.spec.cjs",
-    "test": "npm run test:bench-tools && npm run test:lint && npm run typecheck && npm run test:unit"
+    "test": "npm run test:bench-tools && npm run test:lint && npm run typecheck && npm run typecheck:fire-actions && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": [

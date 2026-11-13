@@ -1,0 +1,18 @@
+{
+  "name": "KRF-Fire-Actions-Manual",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "src" } },
+      "FireDemoShared": { "$path": "examples/FireActions/shared" }
+    },
+    "ServerScriptService": {
+      "FireDemo": { "$path": "examples/FireActions/server" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "FireDemo": { "$path": "examples/FireActions/client" }
+      }
+    }
+  }
+}

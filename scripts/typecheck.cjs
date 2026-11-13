@@ -24,6 +24,7 @@ function runTool(command, args) {
 
 async function main() {
 	let exitCode = 1;
+	const [projectFile = "test.project.json", ...analysisPaths] = process.argv.slice(2);
 
 	try {
 		await downloadRobloxDefinitions();
@@ -31,7 +32,7 @@ async function main() {
 		exitCode = runTool("rojo", [
 			"sourcemap",
 			"--include-non-scripts",
-			"test.project.json",
+			projectFile,
 			"--output",
 			"sourcemap.json",
 		]);
@@ -52,8 +53,7 @@ async function main() {
 				"DevPackages/**",
 				"--ignore",
 				"**/_Index/**",
-				"src",
-				"tests",
+				...(analysisPaths.length > 0 ? analysisPaths : ["src", "tests"]),
 			]);
 		}
 	} finally {

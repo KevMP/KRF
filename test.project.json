@@ -9,6 +9,8 @@
       }
     },
     "ReplicatedStorage": {
+      "FireDemoInputConfig": { "$path": "examples/FireActions/client/InputConfig.luau" },
+      "FireDemoShared": { "$path": "examples/FireActions/shared" },
       "ActionRouteExamples": { "$path": "tests/examples/ActionRoutes.luau" },
       "ActionRequestSchemas": { "$path": "tests/examples/ActionRequestSchemas.luau" },
       "ActionInputSchemas": { "$path": "tests/integration/ActionInput/Schemas.luau" },
