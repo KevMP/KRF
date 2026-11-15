@@ -33,20 +33,6 @@ wally package --list
 Consumers import KRF through the package root, `require(ReplicatedStorage.Packages.KRF)`, which
 `src/init.luau` defines. `dev.project.json` mounts `src` into a development place.
 
-## One-time setup
-
-Repository administrators configure these settings; they are not stored in the repository.
-
-1. Create a tag ruleset for `v*` that restricts creation, update and deletion to maintainers.
-2. Create a `wally-release` environment with required reviewers and a deployment rule allowing
-   only `v*` tags.
-3. Add the environment secret `WALLY_PUBLISH_TOKEN`: a GitHub token for an owner of the `kevmp`
-   Wally scope. The registry uses it only to identify the GitHub account, so grant it no
-   repository or organization permissions. `wally login --token` stores it on the runner for
-   the publish job, which deletes it afterwards.
-4. Keep the `ROBLOX_API_KEY`, `ROBLOX_TEST_UNIVERSE_ID` and `ROBLOX_TEST_PLACE_ID` secrets used by
-   CI; the release workflow uses them to start the installed package in Roblox.
-
 ## Publish a release
 
 1. Change `version` in `wally.toml` on a branch and merge it into `main`.
