@@ -60,6 +60,8 @@ Run these commands from the repository root:
 | `npm run test:integration:n5` | Native two-client ActorView lifecycle and recovery coverage |
 | `npm run test:integration:n6` | Native two-client Tags replication and TagsView coverage |
 | `npm run test:integration:n7` | Native two-client Resources replication, interpolation, recovery, and teardown coverage |
+| `npm run test:packages` | Unit tests for the `create-krf` and `krf-tools` npm packages in `packages/` |
+| `npm run test:packages:integration` | Create a project from packed `create-krf` and `krf-tools` tarballs |
 
 Run Studio jobs serially. See [test workflows](./tests/README.md) for standalone
 integration fixtures, [benchmarks](./tests/benchmarks/README.md) for load and

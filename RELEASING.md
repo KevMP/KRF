@@ -88,6 +88,21 @@ CI runs the same smoke task against the packaged archive on every push, without 
 Wally cannot remove a published version. To withdraw a broken release, publish a fixed patch
 version and note the problem in the earlier GitHub Release.
 
+## npm packages
+
+[`create-krf`](./packages/create-krf) and [`krf-tools`](./packages/krf-tools) version
+independently of the runtime and of each other. Generated projects pin an exact `krf-tools`
+version, so publish order matters:
+
+1. Publish `krf-tools`, then confirm it installs from the public registry in a clean directory.
+2. Publish `create-krf`, whose `dependencies` and generated projects pin that exact version.
+
+`create-krf` records the KRF runtime version its templates target in
+[`src/compatibility.js`](./packages/create-krf/src/compatibility.js); it must name a verified
+Wally release. Public npm publication is gated on the full generated-project test matrix and is not
+automated yet. Before publication, `npm run test:packages:integration` proves the packed tarballs
+create a working project without workspace links.
+
 ## Release status
 
 [`release-status.yml`](./.github/workflows/release-status.yml) runs weekly, after release runs,

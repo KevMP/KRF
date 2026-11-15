@@ -1,0 +1,40 @@
+{
+  "name": "krf-tools",
+  "version": "0.1.0",
+  "description": "Project-local tooling behind the npm scripts of KRF games created by create-krf.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KevMP/KRF.git",
+    "directory": "packages/krf-tools"
+  },
+  "homepage": "https://kevmp.github.io/KRF/",
+  "bugs": {
+    "url": "https://github.com/KevMP/KRF/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "krf-tools": "bin/krf-tools.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "mem-fs": "6.0.0",
+    "mem-fs-editor": "12.1.0",
+    "zod": "4.6.7"
+  }
+}

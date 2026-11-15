@@ -52,6 +52,10 @@ jobs:
           rokit install --no-trust-check
           echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Install packages
         run: |
           wally install

@@ -36,6 +36,10 @@ jobs:
       - name: Install packages (Wally)
         run: wally install
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Install Node deps
         run: npm ci
 
@@ -47,6 +51,12 @@ jobs:
 
       - name: Test release tooling
         run: npm run test:release-tools
+
+      - name: Test create-krf and krf-tools
+        run: npm run test:packages
+
+      - name: Create a project from packed npm tarballs
+        run: npm run test:packages:integration
 
       - name: Typecheck
         run: npm run typecheck
