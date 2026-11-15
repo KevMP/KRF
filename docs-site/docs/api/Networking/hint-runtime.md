@@ -4,9 +4,10 @@ HintRuntime sends disposable presentation samples in either direction and expose
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ClientHints = require(ReplicatedStorage.Packages.KRF.client.Networking.HintRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local ClientHints = KRF.ClientHintRuntime
 -- On the server:
-local ServerHints = require(ReplicatedStorage.Packages.KRF.server.Networking.HintRuntime)
+local ServerHints = KRF.ServerHintRuntime
 ```
 
 ## Members

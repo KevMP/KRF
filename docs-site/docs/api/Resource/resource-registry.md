@@ -10,9 +10,9 @@ sidebar_position: 1
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local ResourceRegistry = require(KRF.server.Resource.ResourceRegistry)
+local ResourceRegistry = KRF.ResourceRegistry
 ```
 
 ## Members

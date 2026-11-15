@@ -4,7 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Authorization = require(ReplicatedStorage.Packages.KRF.server.Networking.CommandAuthorization)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Authorization = KRF.CommandAuthorization
 ```
 
 ## Members

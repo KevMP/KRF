@@ -7,10 +7,10 @@ sidebar_position: 2
 `ActionController` owns one Actor's grants and active Action instances. Get it after the Actor is registered.
 
 ```lua
-local actions = actor:GetController("ActionController") :: ActionTypes.ActionController
+local actions = actor:GetController("ActionController") :: KRF.ActionController
 ```
 
-Import `ActionTypes` from `KRF.server.Action.types`. Public result and event shapes are in the [Action types reference](./action-types).
+Types such as `KRF.ActionController` come from the package module. Public result and event shapes are in the [Action types reference](./action-types).
 
 ## Members
 

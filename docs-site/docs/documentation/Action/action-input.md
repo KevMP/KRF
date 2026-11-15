@@ -13,7 +13,7 @@ Put policies in a client-only catalog supplied through [initialization](../initi
 ```lua title="ClientActionInputPolicies.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ActionTypes = require(ReplicatedStorage.Packages.KRF.client.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
 local function currentAim(): { x: number, y: number, z: number }
 	local camera = assert(workspace.CurrentCamera, "Camera unavailable")
@@ -21,7 +21,7 @@ local function currentAim(): { x: number, y: number, z: number }
 	return { x = direction.X, y = direction.Y, z = direction.Z }
 end
 
-local policies: ActionTypes.ActionInputPolicies = {
+local policies: KRF.ActionInputPolicies = {
 	["Combat.Rasengan"] = {
 		activation = "WhileDown",
 		startParameters = function()
@@ -58,7 +58,7 @@ An errored, yielding, or invalid Start producer aborts that selected request. A 
 After input setup and ActorView acquisition, a game-owned equipment module can supply `getEquippedActionId`. The resolver only chooses the concrete Action:
 
 ```lua
-local Actions = require(ReplicatedStorage.Packages.KRF.client.Action.ClientActionRuntime)
+local Actions = require(ReplicatedStorage.Packages.KRF).ClientActionRuntime
 
 local ok, reason = Actions.SetProfileSource(actorView, "Equipment", {
 	routes = {
@@ -86,7 +86,7 @@ Actual route replacement/removal, context loss, rebind, focus loss, Actor switch
 The same policy applies to compatible semantic triggers. With live Bool inputs `X`, `Q`, and `Z` in an enabled context, install an immediate sequence and route it:
 
 ```lua
-local Input = require(ReplicatedStorage.Packages.KRF.client.Input.InputRuntime)
+local Input = require(ReplicatedStorage.Packages.KRF).InputRuntime
 assert(Input.SetSource("Signs", {
 	sequences = {
 		Cast = { steps = { "X", "Q", "Z" }, maxGapSeconds = 0.5, maxTotalSeconds = 2 },

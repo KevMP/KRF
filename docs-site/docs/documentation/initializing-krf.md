@@ -31,7 +31,8 @@ This minimal Script starts KRF with no game definitions. Add your catalogs to th
 ```lua title="Startup.server.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Server = require(ReplicatedStorage.Packages.KRF.server)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Server = KRF.Server
 
 local started, failure = Server.Init({})
 if not started then
@@ -52,10 +53,10 @@ For Action requests, pass the shared wire schemas and optional client-only [inpu
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local packages = ReplicatedStorage:WaitForChild("Packages")
-packages:WaitForChild("KRF"):WaitForChild("client")
-local Client = require(ReplicatedStorage.Packages.KRF.client)
+local KRF = require(packages:WaitForChild("KRF"))
+local Client = KRF.Client
 
-local started: boolean, failure: Client.StartupFailure? = Client.Init()
+local started: boolean, failure: KRF.ClientStartupFailure? = Client.Init()
 if not started then
 	local detail: string = if failure then failure.system .. ": " .. failure.reason else "Unknown startup failure"
 	error("KRF client startup failed: " .. detail)

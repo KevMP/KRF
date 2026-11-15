@@ -14,8 +14,8 @@ The example assumes an existing semantic input `X` and a registered, granted `Co
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Controls = require(KRF.client.Controls.ClientControls)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Controls = KRF.ClientControls
 
 local installed, reason = Controls.Apply({
 	inputs = {

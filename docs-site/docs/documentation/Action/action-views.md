@@ -13,18 +13,17 @@ For an initialized client, acquire the ActorView through the registry:
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-local Types = require(KRF.client.Actor.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.ActorViewRegistry
 
 -- Called with an Actor's locally available Model.
 local function inspect(model: Model): ()
-	local actor: Types.ActorView? = Registry.GetActorViewByModel(model)
+	local actor: KRF.ActorView? = Registry.GetActorViewByModel(model)
 	if actor == nil then
 		return
 	end
-	local actions: Types.ActionsView = actor:GetActions()
-	for _, action: Types.ActionSnapshot in actions:GetActiveActions() do
+	local actions: KRF.ActionsView = actor:GetActions()
+	for _, action: KRF.ActionSnapshot in actions:GetActiveActions() do
 		print(action.actionId, action.sequenceId)
 	end
 	print("Blocking:", actions:IsActionActive("Action.Block"))
@@ -45,16 +44,16 @@ The projection excludes request parameters, server interruption reasons, grants,
 
 ## Current truth and lifecycle history {#history}
 
-For an already acquired `actions: Types.ActionsView`, observe exact activations:
+For an already acquired `actions: KRF.ActionsView`, observe exact activations:
 
 ```lua
-actions.OnActionStarted:Connect(function(action: Types.ActionSnapshot)
+actions.OnActionStarted:Connect(function(action: KRF.ActionSnapshot)
 	print("Started", action.actionId, action.sequenceId)
 end)
-actions.OnActionEnded:Connect(function(action: Types.ActionSnapshot)
+actions.OnActionEnded:Connect(function(action: KRF.ActionSnapshot)
 	print("Ended", action.actionId, action.sequenceId)
 end)
-actions.OnActionInterrupted:Connect(function(action: Types.ActionSnapshot)
+actions.OnActionInterrupted:Connect(function(action: KRF.ActionSnapshot)
 	print("Interrupted", action.actionId, action.sequenceId)
 end)
 ```

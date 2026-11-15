@@ -4,7 +4,7 @@
 
 ```lua
 local actions = actorView:GetActions()
--- Public contracts: KRF.client.Actor.types.ActionsView and ActionSnapshot.
+-- Public contracts: KRF.ActionsView and KRF.ActionSnapshot.
 ```
 
 ## Members

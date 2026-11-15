@@ -13,20 +13,19 @@ This Hold records elapsed time privately and releases on a Stop request. Each ac
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActionTypes = require(KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function createHold(): ActionTypes.ActionDefinition
+local function createHold(): KRF.ActionDefinition
 	local heldSeconds: number = 0
 	return {
 		id = "Action.Hold",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		locks = { "Hands" },
-		onUpdate = function(_ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
+		onUpdate = function(_ctx: KRF.ActionExecutionContext, deltaTime: number): ()
 			heldSeconds += deltaTime
 		end,
-		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStopRequested = function(ctx: KRF.ActionExecutionContext): ()
 			-- Game code can use heldSeconds to choose the release outcome.
 			print(`Held for {heldSeconds} seconds`)
 			ctx:End()

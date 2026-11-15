@@ -8,7 +8,8 @@ After [client initialization](../initializing-krf), obtain an [ActorView](../Net
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Registry = require(ReplicatedStorage.Packages.KRF.client.Actor.ActorViewRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.ActorViewRegistry
 
 local view = Registry.GetActorViewByModel(character)
 if view == nil then

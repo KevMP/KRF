@@ -6,13 +6,12 @@
 --!strict
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-local ViewTypes = require(KRF.client.Actor.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.ActorViewRegistry
 
 local model: Model? = Players.LocalPlayer.Character
-local view: ViewTypes.ActorView? = if model ~= nil then Registry.GetActorViewByModel(model) else nil
-local domain: ViewTypes.DomainView? = if view ~= nil then view:GetDomain("Game.Titles") else nil
+local view: KRF.ActorView? = if model ~= nil then Registry.GetActorViewByModel(model) else nil
+local domain: KRF.DomainView? = if view ~= nil then view:GetDomain("Game.Titles") else nil
 if domain == nil then
 	return -- The view or this game's domain is not currently available.
 end

@@ -30,7 +30,8 @@ If binding, controller attachment, publication setup, or identity installation f
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ActorRuntime = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local ActorRuntime = KRF.ActorRuntime
 
 local function registerCharacter(character: Model): ()
 	local actor, reason = ActorRuntime.RegisterActor(character)

@@ -4,12 +4,13 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Schema = require(ReplicatedStorage.Packages.KRF.shared.Networking.Schema)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Schema = KRF.Schema
 ```
 
 The module and all returned definitions are frozen, including nested schema data. Constructors copy supplied tables without freezing or retaining mutable caller-owned collections. Runtime values are validated against these definitions without coercion or mutation.
 
-`SchemaDefinition` is exported by this module and by `KRF.shared.Networking.types`. Constructors return a definition, not a validator or an encoded buffer.
+`SchemaDefinition` is exported by this module and as `KRF.SchemaDefinition`. Constructors return a definition, not a validator or an encoded buffer.
 
 ## Members
 

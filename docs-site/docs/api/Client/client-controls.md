@@ -8,10 +8,11 @@ sidebar_position: 2
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Controls = require(ReplicatedStorage.Packages.KRF.client.Controls.ClientControls)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Controls = KRF.ClientControls
 ```
 
-Public contract types are in `KRF.client.Controls.types`. The facade is installed by ordinary client initialization; no additional config option or public lifecycle handle is required.
+Public contract types, such as `KRF.ClientControls`, are exported by the package module. The facade is installed by ordinary client initialization; no additional config option or public lifecycle handle is required.
 
 ## Members
 

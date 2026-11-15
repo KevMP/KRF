@@ -4,7 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Client = require(ReplicatedStorage.Packages.KRF.client)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Client = KRF.Client
 ```
 
 ## Members

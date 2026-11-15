@@ -8,7 +8,7 @@ sidebar_position: 4
 
 ```lua
 -- Received as a callback argument, for example:
-onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
+onStart = function(ctx: KRF.ActionExecutionContext): ()
 ```
 
 ## Members

@@ -8,7 +8,8 @@ Use `Schema` to describe the values your replication domain exposes: fixed recor
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Schema = require(ReplicatedStorage.Packages.KRF.shared.Networking.Schema)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Schema = KRF.Schema
 ```
 
 ## Choose a schema

@@ -4,14 +4,14 @@ sidebar_position: 3
 
 # Action Types
 
-Public Action types describe authored definitions, callback contexts, request results, and lifecycle payloads. Import them from the server Action types module.
+Public Action types describe authored definitions, callback contexts, request results, and lifecycle payloads. Reference them as types on the package module, such as `KRF.ActionDefinition`.
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ActionTypes = require(ReplicatedStorage.Packages.KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 ```
 
-`Actor` below denotes `KRF.server.Actor.types.Actor`. Context method contracts are in the [execution context reference](./action-execution-context); controller methods and rejection strings are in the [controller reference](./action-controller).
+`Actor` below denotes `KRF.Actor`. Context method contracts are in the [execution context reference](./action-execution-context); controller methods and rejection strings are in the [controller reference](./action-controller).
 
 ## Members
 

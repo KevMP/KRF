@@ -15,7 +15,8 @@ Put one ModuleScript where both server and client can require it, such as `Repli
 ```lua title="ActionRequestSchemas.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Schema = require(ReplicatedStorage.Packages.KRF.shared.Networking.Schema)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Schema = KRF.Schema
 
 local aim = Schema.Struct({ x = Schema.F32, y = Schema.F32, z = Schema.F32 })
 
@@ -118,11 +119,10 @@ Subscribe to `ClientActionRuntime.OnActionRequest` for the same facts from route
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Types = require(KRF.client.Action.types)
-local Actions: Types.ClientActionRuntime = require(KRF.client.Action.ClientActionRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Actions: KRF.ClientActionRuntime = KRF.ClientActionRuntime
 
-local connection = Actions.OnActionRequest:Connect(function(fact: Types.ActionRequestEvent)
+local connection = Actions.OnActionRequest:Connect(function(fact: KRF.ActionRequestEvent)
 	if fact.kind == "RequestAdmitted" then
 		print("Locally admitted", fact.actionId, fact.operation, fact.requestKey)
 	elseif fact.kind == "InputTransition" then
