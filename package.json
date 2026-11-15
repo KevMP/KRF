@@ -1,6 +1,7 @@
 {
   "name": "krf",
   "version": "1.0.0",
+  "private": true,
   "description": "Kevin's Roblox Framework: a server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions, and schema-defined replication.",
   "scripts": {
     "bench:networking:compare": "node ./scripts/compare-networking.cjs",
@@ -49,7 +50,7 @@
     "type": "git",
     "url": "git+https://github.com/KevMP/KRF.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/KevMP/KRF/issues"

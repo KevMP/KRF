@@ -25,10 +25,11 @@ Rokit installs the pinned Roblox tools in `rokit.toml`; Wally installs the test
 dependencies. To sync the framework into a Studio place with the Rojo plugin:
 
 ```powershell
-rojo serve default.project.json
+rojo serve dev.project.json
 ```
 
-The default project mounts KRF under `ReplicatedStorage.Packages.KRF`. Follow
+The dev project mounts KRF under `ReplicatedStorage.Packages.KRF`.
+`default.project.json` is the Wally package project and maps only `src`. Follow
 [Initializing KRF](https://kevmp.github.io/KRF/initializing-krf) to integrate it
 with game startup.
 

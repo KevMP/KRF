@@ -1,17 +1,6 @@
 {
-  "name": "KRF",
+  "name": "krf",
   "tree": {
-    "$className": "DataModel",
-    "ReplicatedStorage": {
-      "Packages": {
-        "$className": "Folder",
-        "KRF": {
-          "$path": "src"
-        }
-      },
-      "DevPackages": {
-        "$path": "DevPackages"
-      }
-    }
+    "$path": "src"
   }
 }
