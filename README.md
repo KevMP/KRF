@@ -9,6 +9,20 @@ Games supply definitions, gameplay behavior, and presentation.
 public contracts. The [charter](./CHARTER.md) records architectural direction and
 planned systems; it is not a list of shipped features.
 
+## Install
+
+Add KRF to a game's `wally.toml` and run `wally install`:
+
+```toml
+[dependencies]
+KRF = "kevmp/krf@0.1.0"
+```
+
+Mount Wally's `Packages` folder at `ReplicatedStorage.Packages`, then import KRF through its
+package module: `require(ReplicatedStorage.Packages.KRF)`. See
+[Initializing KRF](https://kevmp.github.io/KRF/initializing-krf). Maintainers publish releases
+as described in [RELEASING.md](./RELEASING.md).
+
 ## Setup
 
 Local framework tests require Windows, Roblox Studio, Node.js with npm, and

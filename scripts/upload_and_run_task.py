@@ -69,7 +69,7 @@ def upload_place(binary_path, universe_id, place_id, do_publish=False):
             print(f"Upload attempt {attempt}/5 failed ({error}). Retrying in {wait}s...")
             time.sleep(wait)
 
-def run_luau_task(universe_id, place_id, place_version, script_file):
+def run_luau_task(universe_id, place_id, place_version, script_file, expect_coverage=True):
     print("Executing Luau task")
     script_contents = read_file(script_file).decode("utf-8")
 
@@ -86,13 +86,17 @@ def run_luau_task(universe_id, place_id, place_version, script_file):
         print(f"Luau task failed: {json.dumps(task.get('error', {}))}", file=sys.stderr)
         return 1
 
-    write_coverage_report(task)
+    if expect_coverage:
+        write_coverage_report(task)
     return 0
 
 if __name__ == "__main__":
     binary_file = sys.argv[1]
     script_file = sys.argv[2]
+    # Smoke tasks pass --no-coverage: success is the task completing without a Luau error.
+    expect_coverage = "--no-coverage" not in sys.argv[3:]
 
-    COVERAGE_OUTPUT.unlink(missing_ok=True)
+    if expect_coverage:
+        COVERAGE_OUTPUT.unlink(missing_ok=True)
     place_version = upload_place(binary_file, ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID)
-    sys.exit(run_luau_task(ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID, place_version, script_file))
+    sys.exit(run_luau_task(ROBLOX_UNIVERSE_ID, ROBLOX_PLACE_ID, place_version, script_file, expect_coverage))

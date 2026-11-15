@@ -38,7 +38,8 @@
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
     "test:bench-tools": "node --test scripts/compare-networking.spec.cjs",
-    "test": "npm run test:bench-tools && npm run test:lint && npm run typecheck && npm run test:unit"
+    "test:release-tools": "node --test scripts/release/release.spec.cjs",
+    "test": "npm run test:bench-tools && npm run test:release-tools && npm run test:lint && npm run typecheck && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": [

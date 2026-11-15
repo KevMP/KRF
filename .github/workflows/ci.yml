@@ -44,7 +44,10 @@ jobs:
 
       - name: Test benchmark comparison tooling
         run: npm run test:bench-tools
-      
+
+      - name: Test release tooling
+        run: npm run test:release-tools
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -61,3 +64,11 @@ jobs:
       - name: Generate and check coverage
         if: always() && steps.tests.outcome == 'success'
         run: npm run coverage
+
+      # Preflight for releases: install the packaged archive the way Wally does and start KRF from it.
+      - name: Build package consumer (Wally archive)
+        id: consumer
+        run: node scripts/release-wally.cjs consumer --source archive --out build/consumer/archive
+
+      - name: Start KRF from the packaged archive
+        run: python3 -u scripts/upload_and_run_task.py "${{ steps.consumer.outputs.place }}" tests/consumer/Smoke.luau --no-coverage

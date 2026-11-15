@@ -1,0 +1,178 @@
+name: Release (Wally)
+
+# Publishes the KRF runtime for a protected vMAJOR.MINOR.PATCH tag, then proves the registry
+# serves the tagged source and that a fresh consumer can install and start it.
+# A manual run re-verifies an existing tag; it never republishes a version the registry has.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag to verify or resume
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-wally-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      package: ${{ steps.preflight.outputs.package }}
+      version: ${{ steps.preflight.outputs.version }}
+      commit: ${{ steps.preflight.outputs.commit }}
+      already_published: ${{ steps.preflight.outputs.already_published }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-${{ runner.os }}-${{ hashFiles('rokit.toml') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Install packages
+        run: |
+          wally install
+          npm ci
+
+      - name: Require a successful CI run for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          passed="$(gh run list --workflow ci.yml --commit "$commit" --status success --json databaseId --jq 'length')"
+          if [ "$passed" = "0" ]; then
+            echo "::error::CI has not passed for $commit. Wait for it, then rerun this workflow for $RELEASE_TAG."
+            exit 1
+          fi
+
+      - name: Validate tagged source
+        run: |
+          npm run test:release-tools
+          npm run typecheck
+          npm run test:lint
+
+      - name: Check tag, manifest, archive and registry
+        id: preflight
+        run: node scripts/release-wally.cjs preflight --tag "$RELEASE_TAG"
+
+  publish:
+    needs: preflight
+    if: needs.preflight.outputs.already_published == 'false'
+    runs-on: ubuntu-latest
+    # Protected environment: required reviewers and a v* tag deployment rule hold the publish token.
+    environment: wally-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-${{ runner.os }}-${{ hashFiles('rokit.toml') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Confirm the tag still names the preflighted commit
+        run: test "$(git rev-parse HEAD)" = "${{ needs.preflight.outputs.commit }}"
+
+      - name: Publish
+        env:
+          WALLY_TOKEN: ${{ secrets.WALLY_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$WALLY_TOKEN" ]; then
+            echo "::error::WALLY_PUBLISH_TOKEN is not configured for the wally-release environment."
+            exit 1
+          fi
+          wally login --token "$WALLY_TOKEN" > /dev/null
+          node scripts/release-wally.cjs publish
+
+      - name: Remove registry credentials
+        if: always()
+        run: rm -f ~/.wally/auth.toml
+
+  verify:
+    needs: [preflight, publish]
+    if: always() && needs.preflight.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: oc-tests-release
+      cancel-in-progress: false
+    env:
+      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+      ROBLOX_UNIVERSE_ID: ${{ secrets.ROBLOX_TEST_UNIVERSE_ID }}
+      ROBLOX_PLACE_ID: ${{ secrets.ROBLOX_TEST_PLACE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-${{ runner.os }}-${{ hashFiles('rokit.toml') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Read back the registry archive
+        run: node scripts/release-wally.cjs verify-registry --version "${{ needs.preflight.outputs.version }}"
+
+      - name: Install the published version in a fresh consumer
+        id: consumer
+        run: node scripts/release-wally.cjs consumer --source registry --version "${{ needs.preflight.outputs.version }}" --out build/consumer/registry
+
+      - name: Start KRF from the installed package
+        run: python3 -u scripts/upload_and_run_task.py "${{ steps.consumer.outputs.place }}" tests/consumer/Smoke.luau --no-coverage
+
+      - name: Finalize GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists."
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "KRF $RELEASE_TAG" \
+              --notes "Wally: \`${{ needs.preflight.outputs.package }}@${{ needs.preflight.outputs.version }}\`. Registry contents match the tagged source; a clean consumer installed and started it."
+          fi
+          echo "- Release $RELEASE_TAG verified and finalized" >> "$GITHUB_STEP_SUMMARY"

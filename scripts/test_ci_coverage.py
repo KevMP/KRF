@@ -64,6 +64,17 @@ class CoverageResultTests(unittest.TestCase):
         write_report.assert_not_called()
         self.assertIn("Jest failed", errors.getvalue())
 
+    def test_smoke_task_without_coverage_succeeds_without_writing_a_report(self):
+        with patch.object(upload_and_run_task, "read_file", return_value=b"return nil"), \
+             patch.object(upload_and_run_task, "createTask", return_value={"path": "task"}), \
+             patch.object(upload_and_run_task, "pollForTaskCompletion", return_value={"path": "task", "state": "COMPLETE"}), \
+             patch.object(upload_and_run_task, "getTaskLogs", return_value=""), \
+             patch.object(upload_and_run_task, "write_coverage_report") as write_report, \
+             contextlib.redirect_stdout(io.StringIO()):
+            result = upload_and_run_task.run_luau_task("universe", "place", 1, "script", expect_coverage=False)
+        self.assertEqual(result, 0)
+        write_report.assert_not_called()
+
 
 class TaskLogTests(unittest.TestCase):
     def test_collects_every_chunk_and_page_with_encoded_page_token(self):

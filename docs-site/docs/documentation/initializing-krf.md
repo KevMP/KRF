@@ -8,6 +8,17 @@ Initialize KRF once on the server and once on each client. Ordinary gameplay mod
 
 A starter template with initialization already wired is not available yet. Use this page for manual integration. The system guides assume initialization is handled by your game's startup code.
 
+## Install the package
+
+Declare KRF in your game's `wally.toml` and run `wally install`:
+
+```toml
+[dependencies]
+KRF = "kevmp/krf@0.1.0"
+```
+
+Map Wally's `Packages` folder to `ReplicatedStorage.Packages` in your Rojo project. Game code imports KRF through the package module, `require(ReplicatedStorage.Packages.KRF)`, and reaches startup, runtimes, registries and public types as its members, such as `KRF.Server`, `KRF.ActorRuntime` and `KRF.ActionDefinition`. Members load on first use, so a client does not load server modules it never reads. Paths inside the package, such as `Packages.KRF.server`, are not available to Wally consumers.
+
 ## Game configuration
 
 | Field | Supply |
