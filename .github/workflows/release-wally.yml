@@ -1,11 +1,16 @@
 name: Release (Wally)
 
-# Publishes the KRF runtime for a protected vMAJOR.MINOR.PATCH tag, then proves the registry
-# serves the tagged source and that a fresh consumer can install and start it.
-# A manual run re-verifies an existing tag; it never republishes a version the registry has.
+# Releases the KRF runtime version that main declares. When CI passes on a main commit whose
+# wally.toml version has no tag yet, this workflow validates the commit, tags it vMAJOR.MINOR.PATCH,
+# publishes it, then proves the registry serves the tagged source and that a fresh consumer can
+# install and start it. Release PRs (release-pr.yml) change that version.
+# A manual run resumes or re-verifies an existing tag; it never republishes a version the
+# registry has.
 on:
-  push:
-    tags: ["v*"]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,19 +20,57 @@ on:
 permissions:
   contents: read
 
+# One release at a time, never cancelled midway.
 concurrency:
-  group: release-wally-${{ inputs.tag || github.ref_name }}
+  group: release-wally
   cancel-in-progress: false
 
-env:
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-
 jobs:
+  resolve:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.resolve.outputs.release }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      create_tag: ${{ steps.resolve.outputs.create_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Choose the release
+        id: resolve
+        env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -n "$TAG" ]; then
+            node scripts/release-wally.cjs resolve --tag "$TAG"
+          else
+            node scripts/release-wally.cjs resolve --commit "$COMMIT"
+          fi
+
   preflight:
+    needs: resolve
+    if: needs.resolve.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     outputs:
       package: ${{ steps.preflight.outputs.package }}
       version: ${{ steps.preflight.outputs.version }}
@@ -36,7 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
 
       - uses: CompeyDev/setup-rokit@v0.1.2
@@ -61,14 +104,14 @@ jobs:
           wally install
           npm ci
 
-      - name: Require a successful CI run for the tagged commit
+      - name: Require a successful CI run for the release commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           commit="$(git rev-parse HEAD)"
           passed="$(gh run list --workflow ci.yml --commit "$commit" --status success --json databaseId --jq 'length')"
           if [ "$passed" = "0" ]; then
-            echo "::error::CI has not passed for $commit. Wait for it, then rerun this workflow for $RELEASE_TAG."
+            echo "::error::CI has not passed for $commit. Wait for it, then rerun this workflow."
             exit 1
           fi
 
@@ -82,14 +125,34 @@ jobs:
         id: preflight
         run: node scripts/release-wally.cjs preflight --tag "$RELEASE_TAG"
 
+  tag:
+    needs: [resolve, preflight]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the release commit
+        if: needs.resolve.outputs.create_tag == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" > /dev/null; then
+            echo "::error::Could not create $TAG. The v* tag ruleset must let GitHub Actions bypass tag creation."
+            exit 1
+          fi
+          echo "- Tagged \`$COMMIT\` as $TAG" >> "$GITHUB_STEP_SUMMARY"
+
   publish:
-    needs: preflight
+    needs: [resolve, preflight, tag]
     if: needs.preflight.outputs.already_published == 'false'
     runs-on: ubuntu-latest
-    # Protected environment: required reviewers and a v* tag deployment rule hold the publish token.
     environment: wally-release
     permissions:
       contents: read
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,7 +180,7 @@ jobs:
           WALLY_TOKEN: ${{ secrets.WALLY_PUBLISH_TOKEN }}
         run: |
           if [ -z "$WALLY_TOKEN" ]; then
-            echo "::error::WALLY_PUBLISH_TOKEN is not configured for the wally-release environment."
+            echo "::error::WALLY_PUBLISH_TOKEN is not configured."
             exit 1
           fi
           wally login --token "$WALLY_TOKEN" > /dev/null
@@ -128,8 +191,10 @@ jobs:
         run: rm -f ~/.wally/auth.toml
 
   verify:
-    needs: [preflight, publish]
-    if: always() && needs.preflight.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    needs: [resolve, preflight, tag, publish]
+    if: >-
+      always() && needs.preflight.result == 'success' && needs.tag.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -137,6 +202,7 @@ jobs:
       group: oc-tests-release
       cancel-in-progress: false
     env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
       ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
       ROBLOX_UNIVERSE_ID: ${{ secrets.ROBLOX_TEST_UNIVERSE_ID }}
       ROBLOX_PLACE_ID: ${{ secrets.ROBLOX_TEST_PLACE_ID }}
@@ -176,7 +242,7 @@ jobs:
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             echo "GitHub Release $RELEASE_TAG already exists."
           else
-            gh release create "$RELEASE_TAG" --verify-tag --title "KRF $RELEASE_TAG" \
+            gh release create "$RELEASE_TAG" --verify-tag --title "KRF $RELEASE_TAG" --generate-notes \
               --notes "Wally: \`${{ needs.preflight.outputs.package }}@${{ needs.preflight.outputs.version }}\`. Registry contents match the tagged source; a clean consumer installed and started it."
           fi
           echo "- Release $RELEASE_TAG verified and finalized" >> "$GITHUB_STEP_SUMMARY"

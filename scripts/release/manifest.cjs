@@ -96,4 +96,19 @@ function compareVersions(left, right) {
 	return 0;
 }
 
-module.exports = { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, compareVersions };
+/**
+ * Decides whether a commit on main releases the version its manifest declares. The version's tag
+ * is created when it does not exist yet; an existing tag on the same commit resumes that release.
+ * @param {{ version: string, commit: string, taggedCommit: string | null }} candidate
+ * @returns {{ release: true, tag: string, createTag: boolean } | { release: false, tag: string, reason: string }}
+ */
+function decideRelease({ version, commit, taggedCommit }) {
+	const tag = `v${version}`;
+
+	if (taggedCommit === null) return { release: true, tag, createTag: true };
+	if (taggedCommit === commit) return { release: true, tag, createTag: false };
+
+	return { release: false, tag, reason: `${tag} is already tagged on ${taggedCommit}; ${commit} declares no new version` };
+}
+
+module.exports = { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, compareVersions, decideRelease };
