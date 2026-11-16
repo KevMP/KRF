@@ -3,10 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { readProjectMetadata } from "krf-tools";
 
 import { runCreator } from "../src/cli.js";
-import { CREATOR_VERSION, KRF_RUNTIME, KRF_TOOLING } from "../src/compatibility.js";
+import { CREATOR_VERSION, KRF_RUNTIME } from "../src/compatibility.js";
 
 const CANCEL = Symbol("cancel");
 
@@ -16,17 +15,15 @@ function workspace(t) {
 	return cwd;
 }
 
-/** Records process invocations; `results` maps "command arg0" to a result. */
 function recordingRunner(results = {}) {
 	const calls = [];
 	const run = (command, args, options) => {
 		calls.push({ command, args, cwd: options.cwd });
-		return results[`${command} ${args[0]}`] ?? { status: 0, stdout: command === "git" ? "false\n" : "", stderr: "" };
+		return results[`${command} ${args[0]}`] ?? { status: 0, stdout: "false\n", stderr: "" };
 	};
 	return { run, calls };
 }
 
-/** A @clack/prompts stand-in answering by message; it records every question asked. */
 function scriptedPrompts(answers) {
 	const asked = [];
 	const answer = (options) => {
@@ -76,66 +73,71 @@ const BOOLEAN_FLAG = (name, value) => (value ? `--${name}` : `--no-${name}`);
 const WIZARD_ANSWERS = (config) => ({
 	"Project name": "my-game",
 	"Project mode": config.mode,
-	"Developer tooling": config.tooling,
-	"Add a GitHub Actions workflow?": config.ci,
-	"Add instructions for AI coding agents?": config.agents,
-	"Initialize a Git repository?": false,
-	"Install npm dependencies?": false,
+	"Add a GitHub Actions workflow that checks and builds on every push and pull request?": config.ci,
 });
 
 const MATRIX = [];
-for (const mode of ["full", "hybrid"])
-	for (const tooling of ["standard", "minimal"])
-		for (const ci of [true, false]) for (const agents of [true, false]) MATRIX.push({ mode, tooling, ci, agents });
+for (const mode of ["full", "hybrid"]) for (const ci of [true, false]) MATRIX.push({ mode, ci });
+
+const flagsFor = (config) => [
+	"--mode",
+	config.mode,
+	BOOLEAN_FLAG("ci", config.ci),
+	"--no-git",
+];
 
 test("--yes creates the default project without prompting", async (t) => {
-	const result = await create(t, ["my-game", "--yes", "--skip-install", "--no-git"]);
+	const result = await create(t, ["my-game", "--yes", "--no-git"]);
 	assert.equal(result.code, 0, result.stderr);
 
-	const project = path.join(result.cwd, "my-game");
-	assert.deepEqual(Object.keys(readTree(project)).sort(), [
+	assert.deepEqual(Object.keys(readTree(path.join(result.cwd, "my-game"))).sort(), [
 		".github/workflows/ci.yml",
 		".gitignore",
-		"AGENTS.md",
+		".vscode/extensions.json",
+		".vscode/settings.json",
 		"README.md",
-		"krf.project.json",
+		"default.project.json",
 		"package.json",
+		"rokit.toml",
+		"scripts/setup.mjs",
+		"selene.toml",
+		"src/client/ActionInputPolicies.luau",
+		"src/client/Controls.luau",
+		"src/client/EnergyDisplay.luau",
+		"src/client/LocalActor.luau",
+		"src/client/Startup.client.luau",
+		"src/server/Actions/Focus.luau",
+		"src/server/Actions/init.luau",
+		"src/server/PlayerActors.luau",
+		"src/server/RequireDescendants.luau",
+		"src/server/Resources/Energy.luau",
+		"src/server/Resources/init.luau",
+		"src/server/Startup.server.luau",
+		"src/server/Tags/Focused.luau",
+		"src/server/Tags/init.luau",
+		"src/shared/ActionRequests.luau",
+		"stylua.toml",
+		"wally.lock",
+		"wally.toml",
 	]);
-	assert.deepEqual(readProjectMetadata(project), {
-		metadataVersion: 1,
-		name: "my-game",
-		options: { mode: "full", tooling: "standard", ci: true, agents: true },
-		creator: { name: "create-krf", version: CREATOR_VERSION },
-		template: { version: CREATOR_VERSION },
-		runtime: KRF_RUNTIME,
-		tooling: KRF_TOOLING,
-	});
 	assert.match(result.stdout, /Created my-game/);
-	assert.match(result.stdout, /npm run project:info/);
+	assert.match(result.stdout, /Next:\n {2}cd my-game\n {2}npm install\n {2}npm run build\n/);
 	assert.deepEqual(result.calls, []);
 });
 
-test("declares the pinned tooling and only scripts it implements", async (t) => {
-	const result = await create(t, ["my-game", "--yes", "--skip-install", "--no-git"]);
+test("the project has no npm dependencies; its scripts call the pinned Roblox tools", async (t) => {
+	const result = await create(t, ["my-game", "--yes", "--no-git"]);
 	const manifest = JSON.parse(fs.readFileSync(path.join(result.cwd, "my-game", "package.json"), "utf8"));
-	assert.deepEqual(manifest.devDependencies, { "krf-tools": KRF_TOOLING.version });
-	assert.deepEqual(manifest.scripts, { "project:info": "krf-tools info" });
 	assert.equal(manifest.private, true);
+	assert.equal(manifest.dependencies, undefined);
+	assert.equal(manifest.devDependencies, undefined);
+	assert.deepEqual(Object.keys(manifest.scripts), ["postinstall", "build", "format", "check", "typecheck"]);
+	assert.doesNotMatch(JSON.stringify(manifest.scripts), /krf-tools|npx/);
 });
 
 test("the wizard and explicit flags create identical projects for every option combination", async (t) => {
 	for (const config of MATRIX) {
-		const flags = await create(t, [
-			"my-game",
-			"--mode",
-			config.mode,
-			"--tooling",
-			config.tooling,
-			BOOLEAN_FLAG("ci", config.ci),
-			BOOLEAN_FLAG("agents", config.agents),
-			"--no-git",
-			"--skip-install",
-		]);
+		const flags = await create(t, ["my-game", ...flagsFor(config)]);
 		const wizard = await create(t, [], { prompts: scriptedPrompts(WIZARD_ANSWERS(config)).prompts });
 
 		assert.equal(flags.code, 0, flags.stderr);
@@ -144,22 +146,19 @@ test("the wizard and explicit flags create identical projects for every option c
 		const flagTree = readTree(path.join(flags.cwd, "my-game"));
 		assert.deepEqual(readTree(path.join(wizard.cwd, "my-game")), flagTree, JSON.stringify(config));
 		assert.equal(".github/workflows/ci.yml" in flagTree, config.ci);
-		assert.equal("AGENTS.md" in flagTree, config.agents);
-		assert.deepEqual(JSON.parse(flagTree["krf.project.json"]).options, config);
+		assert.equal("start-place.project.json" in flagTree, config.mode === "hybrid");
 	}
 });
 
 test("the wizard asks only for values the command line did not supply", async (t) => {
-	const { prompts, asked } = scriptedPrompts({ "Project mode": "hybrid", "Install npm dependencies?": false });
-	const result = await create(t, ["arena", "--tooling", "minimal", "--no-ci", "--agents", "--no-git"], { prompts });
+	const { prompts, asked } = scriptedPrompts({ "Project mode": "hybrid" });
+	const result = await create(t, ["arena", "--no-ci", "--no-git"], { prompts });
 	assert.equal(result.code, 0, result.stderr);
-	assert.deepEqual(asked, ["Project mode", "Install npm dependencies?"]);
-	assert.deepEqual(readProjectMetadata(path.join(result.cwd, "arena")).options, {
-		mode: "hybrid",
-		tooling: "minimal",
-		ci: false,
-		agents: true,
-	});
+	assert.deepEqual(asked, ["Project mode"]);
+
+	const tree = readTree(path.join(result.cwd, "arena"));
+	assert.ok("start-place.project.json" in tree);
+	assert.ok(!(".github/workflows/ci.yml" in tree));
 });
 
 test("cancelling the wizard writes nothing", async (t) => {
@@ -182,19 +181,21 @@ test("refuses an existing non-empty directory and leaves its contents alone", as
 	fs.mkdirSync(path.join(cwd, "my-game"));
 	fs.writeFileSync(path.join(cwd, "my-game", "notes.txt"), "mine");
 
-	const result = await create(t, ["my-game", "--yes", "--skip-install", "--no-git"], { cwd });
+	const result = await create(t, ["my-game", "--yes", "--no-git"], { cwd });
 	assert.equal(result.code, 1);
 	assert.match(result.stderr, /already exists and is not empty/);
 	assert.deepEqual(fs.readdirSync(path.join(cwd, "my-game")), ["notes.txt"]);
 	assert.equal(fs.readFileSync(path.join(cwd, "my-game", "notes.txt"), "utf8"), "mine");
 });
 
-test("rejects invalid names, unsafe paths, bad values and conflicting flags before writing", async (t) => {
+test("rejects invalid names, unsafe paths and bad values before writing", async (t) => {
 	for (const argv of [
 		["My Game", "--yes"],
 		["../escape", "--yes"],
 		["my-game", "--yes", "--mode", "studio"],
-		["my-game", "--yes", "--install", "--skip-install"],
+		["my-game", "--yes", "--skip-install"],
+		["my-game", "--yes", "--tooling", "minimal"],
+		["my-game", "--yes", "--agents"],
 		["my-game", "--yes", "--unknown"],
 	]) {
 		const result = await create(t, argv);
@@ -204,22 +205,19 @@ test("rejects invalid names, unsafe paths, bad values and conflicting flags befo
 	}
 });
 
-test("initializes Git and installs dependencies inside the new project", async (t) => {
+test("initializes Git inside the new project", async (t) => {
 	const result = await create(t, ["my-game", "--yes"]);
-	const project = path.join(result.cwd, "my-game");
 	assert.equal(result.code, 0, result.stderr);
 	assert.deepEqual(result.calls, [
 		{ command: "git", args: ["rev-parse", "--is-inside-work-tree"], cwd: result.cwd },
-		{ command: "git", args: ["init", "--quiet"], cwd: project },
-		{ command: "npm", args: ["install", "--no-audit", "--no-fund"], cwd: project },
+		{ command: "git", args: ["init", "--quiet"], cwd: path.join(result.cwd, "my-game") },
 	]);
 	assert.match(result.stdout, /git: done/);
-	assert.match(result.stdout, /install: done/);
 });
 
 test("does not create a nested repository inside an existing Git work tree", async (t) => {
 	const runner = recordingRunner({ "git rev-parse": { status: 0, stdout: "true\n", stderr: "" } });
-	const result = await create(t, ["my-game", "--yes", "--skip-install"], { runner });
+	const result = await create(t, ["my-game", "--yes"], { runner });
 	assert.equal(result.code, 0, result.stderr);
 	assert.deepEqual(
 		result.calls.map((call) => call.args[0]),
@@ -228,35 +226,49 @@ test("does not create a nested repository inside an existing Git work tree", asy
 	assert.match(result.stdout, /git: skipped \(already inside a Git repository\)/);
 });
 
-test("keeps the complete project and fails visibly when a setup step fails", async (t) => {
-	const runner = recordingRunner({ "npm install": { status: 1, stdout: "", stderr: "ERR! network down" } });
-	const result = await create(t, ["my-game", "--yes", "--no-git"], { runner });
+test("keeps the complete project and fails visibly when git init fails", async (t) => {
+	const runner = recordingRunner({ "git init": { status: 1, stdout: "", stderr: "fatal: no space" } });
+	const result = await create(t, ["my-game", "--yes"], { runner });
 	assert.equal(result.code, 1);
-	assert.match(result.stderr, /Created .*my-game, but install failed: ERR! network down/);
+	assert.match(result.stderr, /Created .*my-game, but git failed: fatal: no space/);
 	assert.match(result.stderr, /The project files are complete/);
-	assert.equal(fs.existsSync(path.join(result.cwd, "my-game", "krf.project.json")), true);
+	assert.equal(fs.existsSync(path.join(result.cwd, "my-game", "default.project.json")), true);
 });
 
 test("produces identical bytes for the same configuration", async (t) => {
-	const first = await create(t, ["my-game", "--yes", "--mode", "hybrid", "--skip-install", "--no-git"]);
-	const second = await create(t, ["my-game", "--yes", "--mode", "hybrid", "--skip-install", "--no-git"]);
+	const first = await create(t, ["my-game", "--yes", "--mode", "hybrid", "--no-git"]);
+	const second = await create(t, ["my-game", "--yes", "--mode", "hybrid", "--no-git"]);
 	assert.deepEqual(readTree(path.join(first.cwd, "my-game")), readTree(path.join(second.cwd, "my-game")));
 });
 
-test("describes the generated shell honestly", async (t) => {
-	const result = await create(t, ["my-game", "--yes", "--skip-install", "--no-git"]);
-	const readme = fs.readFileSync(path.join(result.cwd, "my-game", "README.md"), "utf8");
-	assert.match(readme, /does not yet include a Rojo project, Wally dependencies or game code/);
-	assert.match(readme, new RegExp(`${KRF_RUNTIME.package}@${KRF_RUNTIME.version}`));
-	assert.doesNotMatch(readme, /npm run (dev|build|test)\b/);
+test("documents and workflows mention only npm scripts the project has", async (t) => {
+	for (const config of MATRIX) {
+		const result = await create(t, ["my-game", ...flagsFor(config)]);
+		const tree = readTree(path.join(result.cwd, "my-game"));
+		const scripts = Object.keys(JSON.parse(tree["package.json"]).scripts);
+		const documents = ["README.md", ...(config.ci ? [".github/workflows/ci.yml"] : [])];
+
+		for (const document of documents) {
+			const mentioned = [...tree[document].matchAll(/npm run ([a-z:]+)/g)].map((match) => match[1]);
+			assert.deepEqual(
+				mentioned.filter((script) => !scripts.includes(script)),
+				[],
+				`${document} ${JSON.stringify(config)}`,
+			);
+			assert.doesNotMatch(tree[document], /npm (test|ci)\b|npm run packages:install|krf-tools|krf\.project\.json/, `${document} ${JSON.stringify(config)}`);
+		}
+
+		assert.match(tree["README.md"], new RegExp(`${KRF_RUNTIME.package}@${KRF_RUNTIME.version}`));
+	}
 });
 
 test("--help documents the flags and --version prints the creator version", async (t) => {
 	const help = await create(t, ["--help"]);
 	assert.equal(help.code, 0);
-	for (const flag of ["--mode", "--tooling", "--no-ci", "--no-agents", "--skip-install", "--no-git", "--yes"]) {
+	for (const flag of ["--mode", "--no-ci", "--no-git", "--yes"]) {
 		assert.match(help.stdout, new RegExp(flag));
 	}
+	assert.doesNotMatch(help.stdout, /install/);
 
 	const version = await create(t, ["--version"]);
 	assert.equal(version.code, 0);

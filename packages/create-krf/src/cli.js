@@ -24,15 +24,9 @@ function buildProgram(io) {
 		.description(`Create a KRF Roblox game project (KRF ${KRF_RUNTIME.package}@${KRF_RUNTIME.version}).`)
 		.argument("[project-name]", "directory to create; its name becomes the project name")
 		.addOption(new Option("--mode <mode>", "Rojo ownership: full or hybrid (default: full)"))
-		.addOption(new Option("--tooling <tooling>", "developer tooling: standard or minimal (default: standard)"))
-		.option("--ci", "add a GitHub Actions workflow (default)")
+		.option("--ci", "add a GitHub Actions workflow that checks and builds (default)")
 		.option("--no-ci", "do not add a GitHub Actions workflow")
-		.option("--agents", "add instructions for AI coding agents (default)")
-		.option("--no-agents", "do not add agent instructions")
-		.option("--git", "initialize a Git repository (default)")
 		.option("--no-git", "do not initialize a Git repository")
-		.option("--install", "install npm dependencies (default)")
-		.option("--skip-install", "do not install npm dependencies")
 		.option("-y, --yes", "use defaults for every value not given; never prompt")
 		.version(CREATOR_VERSION, "-v, --version")
 		.helpOption("-h, --help")
@@ -41,26 +35,18 @@ function buildProgram(io) {
 		.configureOutput({ writeOut: io.stdout, writeErr: io.stderr })
 		.addHelpText(
 			"after",
-			"\nExamples:\n  npm create krf@latest\n  npm create krf@latest my-game -- --yes\n  npx create-krf@latest my-game --mode hybrid --no-ci --skip-install\n",
+			"\nExamples:\n  npm create krf@latest\n  npm create krf@latest my-game -- --yes\n  npx create-krf@latest my-game --mode hybrid --no-ci\n",
 		);
 }
 
-/** Converts parsed flags into creator input, leaving values the user did not give undefined. */
 function inputFromFlags(projectPath, flags, program) {
-	if (flags.install && flags.skipInstall) {
-		throw new KrfToolError("ConflictingOptions", "--install and --skip-install cannot be combined.", { exitCode: ExitCode.usage });
-	}
-
 	const given = (name) => program.getOptionValueSource(name) === "cli";
 
 	return {
 		projectPath,
 		mode: flags.mode,
-		tooling: flags.tooling,
 		ci: given("ci") ? flags.ci : undefined,
-		agents: given("agents") ? flags.agents : undefined,
 		git: given("git") ? flags.git : undefined,
-		install: flags.skipInstall ? false : flags.install ? true : undefined,
 	};
 }
 
@@ -68,9 +54,7 @@ function report(io, config, result) {
 	const lines = [`Created ${config.name} in ${config.target}`, `  ${result.files.length} files`];
 	for (const step of result.steps) lines.push(`  ${step.name}: ${step.status}${step.detail ? ` (${step.detail})` : ""}`);
 
-	lines.push("", "Next:", `  cd ${path.relative(io.cwd, config.target) || "."}`);
-	if (!result.steps.some((step) => step.name === "install" && step.status === "done")) lines.push("  npm install");
-	lines.push("  npm run project:info", "");
+	lines.push("", "Next:", `  cd ${path.relative(io.cwd, config.target) || "."}`, "  npm install", "  npm run build", "");
 
 	io.stdout(`${lines.join("\n")}\n`);
 }

@@ -1,0 +1,72 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const ROKIT_VERSION = "<%= rokitVersion %>";
+const ROKIT_TARGETS = {
+	"win32-x64": "windows-x86_64",
+	"win32-arm64": "windows-aarch64",
+	"darwin-x64": "macos-x86_64",
+	"darwin-arm64": "macos-aarch64",
+	"linux-x64": "linux-x86_64",
+	"linux-arm64": "linux-aarch64",
+};
+
+const rokitBin = path.join(os.homedir(), ".rokit", "bin");
+const env = { ...process.env, PATH: `${rokitBin}${path.delimiter}${process.env.PATH ?? ""}` };
+
+function run(command, args) {
+	const result = spawnSync(command, args, { stdio: "inherit", env });
+	if (result.error) throw new Error(`Could not run ${command}: ${result.error.message}`);
+	if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
+}
+
+function hasRokit() {
+	return spawnSync("rokit", ["--version"], { stdio: "ignore", env }).status === 0;
+}
+
+async function installRokit() {
+	const target = ROKIT_TARGETS[`${process.platform}-${process.arch}`];
+	if (target === undefined) {
+		throw new Error(`Rokit has no build for ${process.platform}-${process.arch}. Install it from https://github.com/rojo-rbx/rokit`);
+	}
+
+	const url = `https://github.com/rojo-rbx/rokit/releases/download/v${ROKIT_VERSION}/rokit-${ROKIT_VERSION}-${target}.zip`;
+	console.log(`Installing Rokit ${ROKIT_VERSION} from ${url}`);
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Downloading Rokit failed with HTTP ${response.status}`);
+
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "rokit-"));
+	try {
+		const archive = path.join(directory, "rokit.zip");
+		fs.writeFileSync(archive, Buffer.from(await response.arrayBuffer()));
+
+		if (process.platform === "win32") {
+			run(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"), ["-xf", archive, "-C", directory]);
+		} else if (process.platform === "darwin") {
+			run("tar", ["-xf", archive, "-C", directory]);
+		} else {
+			run("unzip", ["-q", archive, "-d", directory]);
+		}
+
+		run(path.join(directory, process.platform === "win32" ? "rokit.exe" : "rokit"), ["self-install"]);
+	} finally {
+		fs.rmSync(directory, { recursive: true, force: true });
+	}
+}
+
+try {
+	const installedRokit = !hasRokit();
+	if (installedRokit) await installRokit();
+
+	run("rokit", ["install", "--no-trust-check"]);
+	run("wally", ["install"]);
+	run("rojo", ["sourcemap", "<%= rojoProjectFile %>", "--output", "sourcemap.json"]);
+	run("wally-package-types", ["--sourcemap", "sourcemap.json", "Packages/"]);
+
+	if (installedRokit) console.log("\nRokit is installed. Open a new terminal so npm scripts can find the Roblox tools.");
+} catch (error) {
+	console.error(`\nSetup failed: ${error.message}`);
+	process.exitCode = 1;
+}

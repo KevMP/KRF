@@ -1,0 +1,10 @@
+{
+  "luau-lsp.platform.type": "roblox",
+  "luau-lsp.sourcemap.rojoProjectFile": "default.project.json",
+  "luau-lsp.fflags.enableNewSolver": true,
+  "luau-lsp.ignoreGlobs": ["Packages/**"],
+  "[luau]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  }
+}

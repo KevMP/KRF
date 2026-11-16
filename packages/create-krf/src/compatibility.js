@@ -1,12 +1,20 @@
-// Versions a project created by this create-krf release targets. Templates are bundled with the
-// creator, so the template version is the creator version.
 import packageJson from "../package.json" with { type: "json" };
 
 export const CREATOR_VERSION = packageJson.version;
-export const TEMPLATE_VERSION = packageJson.version;
 
-/** The released KRF Wally package these templates are written against. */
 export const KRF_RUNTIME = Object.freeze({ package: "kevmp/krf", version: "0.1.0" });
 
-/** The project-local tooling generated projects pin; it is published before this creator. */
-export const KRF_TOOLING = Object.freeze({ package: "krf-tools", version: packageJson.dependencies["krf-tools"] });
+export const WALLY_REGISTRY = "https://github.com/UpliftGames/wally-index";
+
+export const ROBLOX_DEFINITIONS_URL = "https://luau-lsp.pages.dev/type-definitions/globalTypes.None.d.luau";
+
+export const ROKIT_VERSION = "1.2.0";
+
+export const TOOLCHAIN = Object.freeze({
+	rojo: "rojo-rbx/rojo@7.6.1",
+	wally: "UpliftGames/wally@0.3.2",
+	"wally-package-types": "JohnnyMorganz/wally-package-types@1.6.2",
+	stylua: "JohnnyMorganz/StyLua@2.3.1",
+	selene: "Kampfkarren/selene@0.30.0",
+	"luau-lsp": "JohnnyMorganz/luau-lsp@1.70.1",
+});
