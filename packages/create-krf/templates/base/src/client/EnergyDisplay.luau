@@ -4,11 +4,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local LocalActor = require(script.Parent.LocalActor)
 
 local EnergyDisplay = {}
 
 function EnergyDisplay.Start(): ()
+	local player: Player = Players.LocalPlayer
+
 	local gui: ScreenGui = Instance.new("ScreenGui")
 	gui.Name = "EnergyDisplay"
 	gui.ResetOnSpawn = false
@@ -24,19 +25,25 @@ function EnergyDisplay.Start(): ()
 	label.Text = "Energy"
 	label.Parent = gui
 
-	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-
-	local resources: KRF.ResourcesView? = nil
-
-	LocalActor.Observe(function(view: KRF.ActorView)
-		resources = view:GetResources()
-	end)
+	gui.Parent = player:WaitForChild("PlayerGui")
 
 	RunService.RenderStepped:Connect(function()
-		if resources ~= nil then
-			local current: number = resources:GetCurrent("Energy") or 0
-			local max: number = resources:GetMax("Energy") or 0
-			label.Text = `Energy {math.floor(current)}/{max}`
+		local character: Model? = player.Character
+		local view: KRF.ActorView? = if character ~= nil
+			then KRF.ActorViewRegistry.GetActorViewByModel(character)
+			else nil
+
+		if view == nil then
+			return
+		end
+
+		local resources: KRF.ResourcesView = view:GetResources()
+		local current: number = resources:GetCurrent("Energy") or 0
+		local max: number = resources:GetMax("Energy") or 0
+		local text: string = `Energy {math.floor(current)}/{max}`
+
+		if label.Text ~= text then
+			label.Text = text
 		end
 	end)
 end

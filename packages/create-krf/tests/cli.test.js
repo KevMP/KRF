@@ -104,7 +104,6 @@ test("--yes creates the default project without prompting", async (t) => {
 		"src/client/ActionInputPolicies.luau",
 		"src/client/Controls.luau",
 		"src/client/EnergyDisplay.luau",
-		"src/client/LocalActor.luau",
 		"src/client/Startup.client.luau",
 		"src/server/Actions/Focus.luau",
 		"src/server/Actions/init.luau",
@@ -117,7 +116,6 @@ test("--yes creates the default project without prompting", async (t) => {
 		"src/server/Tags/init.luau",
 		"src/shared/ActionRequests.luau",
 		"stylua.toml",
-		"wally.lock",
 		"wally.toml",
 	]);
 	assert.match(result.stdout, /Created my-game/);

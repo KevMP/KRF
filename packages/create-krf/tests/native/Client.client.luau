@@ -217,8 +217,24 @@ local function respawned(payload: { actorIds: { string } }): ()
 	previousIds = payload.actorIds
 end
 
+local function published(payload: { actorId: string }): ()
+	local view: KRF.ActorView = viewsFor({ payload.actorId })[1]
+	assert(view:GetModel() == nil, "The character has not replicated yet")
+	assert(actions.GetControlledActor() == nil, "Nothing is controlled before Controls starts")
+
+	local controls =
+		require(localPlayer:WaitForChild("PlayerScripts"):WaitForChild("Game"):WaitForChild("Controls")) :: any
+	controls.Start()
+end
+
+local function bound(): ()
+	assertControlsOwnView()
+end
+
 local PHASES: { [string]: (any) -> () } = {
 	Watch = watch,
+	Published = published,
+	Bound = bound,
 	Observe = observe,
 	Respawned = respawned,
 }

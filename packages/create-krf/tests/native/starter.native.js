@@ -34,7 +34,7 @@ const SCENARIOS = {
 		for (const file of ["server/Actions/Focus.luau", "server/Tags/Focused.luau", "server/Resources/Energy.luau"]) {
 			fs.rmSync(path.join(project, "src", file));
 		}
-		for (const file of ["ActionInputPolicies.luau", "Controls.luau", "EnergyDisplay.luau", "LocalActor.luau"]) fs.rmSync(path.join(project, "src", "client", file));
+		for (const file of ["ActionInputPolicies.luau", "Controls.luau", "EnergyDisplay.luau"]) fs.rmSync(path.join(project, "src", "client", file));
 		edit(project, "src/shared/ActionRequests.luau", /\tFocus = \{[\s\S]*?\n\t\},\n/, "");
 		edit(
 			project,
@@ -44,6 +44,9 @@ const SCENARIOS = {
 		);
 		edit(project, "src/client/Startup.client.luau", "\tactionInputPolicies = ActionInputPolicies,\n", "");
 		edit(project, "src/client/Startup.client.luau", "\nControls.Start()\nEnergyDisplay.Start()\n", "");
+	},
+	"late-model": (project) => {
+		edit(project, "src/client/Startup.client.luau", "\nControls.Start()\n", "\n");
 	},
 	"invalid-definitions": (project) => {
 		edit(project, "src/server/Actions/Focus.luau", 'blockedTags = { "Focused" }', 'blockedTags = { "MissingTag" }');

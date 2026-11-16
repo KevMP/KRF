@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { KRF_RUNTIME } from "../../src/compatibility.js";
 import { createProject, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
 
 const VARIANTS = [
@@ -101,7 +102,8 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.equal(fs.existsSync(path.join(project, "node_modules")), false);
 
 			run("npm", ["install"], project);
-			assert.equal(fs.readFileSync(path.join(project, "wally.lock"), "utf8"), generated["wally.lock"], "the bundled wally.lock is what Wally resolves");
+			assert.equal(generated["wally.lock"], undefined, "Wally writes the lockfile, not the creator");
+			assert.match(fs.readFileSync(path.join(project, "wally.lock"), "utf8"), new RegExp(`^name = "${KRF_RUNTIME.package}"\nversion = "${KRF_RUNTIME.version}"$`, "m"));
 			assert.match(fs.readFileSync(path.join(project, "Packages", "KRF.lua"), "utf8"), /export type ServerStartConfig = REQUIRED_MODULE\.ServerStartConfig/);
 
 			run("npm", ["run", "check"], project);
@@ -136,7 +138,6 @@ test("packed create-krf projects install the published KRF, check and build in e
 				ActionInputPolicies: "ModuleScript",
 				Controls: "ModuleScript",
 				EnergyDisplay: "ModuleScript",
-				LocalActor: "ModuleScript",
 				Startup: "LocalScript",
 			});
 			assert.deepEqual(shape(child(place, "Workspace")), { Baseplate: "Part", SpawnLocation: "SpawnLocation" });

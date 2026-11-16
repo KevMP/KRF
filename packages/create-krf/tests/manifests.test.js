@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { KRF_RUNTIME, ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
 import { buildProjectFiles } from "../src/create.js";
-import { wallyLock, wallyPackageName } from "../src/manifests.js";
+import { wallyPackageName } from "../src/manifests.js";
 
 const MATRIX = [];
 for (const mode of ["full", "hybrid"])
@@ -124,13 +124,6 @@ test("Wally package names use only characters Wally accepts", () => {
 	assert.equal(wallyPackageName("my-game"), "my-game/my-game");
 	assert.equal(wallyPackageName("my_game.v2"), "my-game-v2/my-game-v2");
 });
-
-test("wally.lock sorts packages by name as Wally does", () => {
-	const order = (name) => [...wallyLock(config({}, name)).matchAll(/^name = "([^"]+)"$/gm)].map((match) => match[1]);
-	assert.deepEqual(order("arena"), ["arena/arena", "kevmp/krf"]);
-	assert.deepEqual(order("my-game"), ["kevmp/krf", "my-game/my-game"]);
-});
-
 
 test("only the server and client startup files are executable scripts", () => {
 	const generated = [...files({}).keys()];

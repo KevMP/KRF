@@ -3,14 +3,17 @@ local HttpService = game:GetService("HttpService")
 local LogService = game:GetService("LogService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+local ServerStorage = game:GetService("ServerStorage")
 local StudioTestService = game:GetService("StudioTestService")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local PlayerActors = require(ServerScriptService:WaitForChild("Game"):WaitForChild("PlayerActors"))
 
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("StarterTestControl") :: RemoteEvent
 local scenario: string = control:GetAttribute("Scenario") :: string
+
+if scenario == "late-model" then
+	Players.CharacterAutoLoads = false
+end
 
 local CLIENTS = 2
 local HOLD_SECONDS = 1.5
@@ -95,8 +98,14 @@ local function players(): { Player }
 	return current
 end
 
+local function liveActor(player: Player): KRF.Actor?
+	local character: Model? = player.Character
+
+	return if character ~= nil then KRF.ActorRegistry.GetActorByModel(character) else nil
+end
+
 local function actorOf(player: Player): KRF.Actor
-	local actor: KRF.Actor? = PlayerActors.GetActor(player)
+	local actor: KRF.Actor? = liveActor(player)
 	assert(actor ~= nil, `{player.Name} has no Actor`)
 
 	return actor
@@ -112,7 +121,7 @@ end
 local function waitForActors(expected: { Player }): ()
 	waitFor("player characters registered as Actors", function()
 		for _, player: Player in expected do
-			if player.Character == nil or PlayerActors.GetActor(player) == nil then
+			if player.Character == nil or liveActor(player) == nil then
 				return false
 			end
 		end
@@ -135,7 +144,7 @@ local function liveActorCount(): number
 	local count: number = 0
 
 	for _, player: Player in Players:GetPlayers() do
-		if PlayerActors.GetActor(player) ~= nil then
+		if liveActor(player) ~= nil then
 			count += 1
 		end
 	end
@@ -266,7 +275,7 @@ local function runStarter(): ()
 
 		player:LoadCharacter()
 		waitFor("the respawned character's Actor", function()
-			local current: KRF.Actor? = PlayerActors.GetActor(player)
+			local current: KRF.Actor? = liveActor(player)
 			return current ~= nil and current ~= before
 		end)
 
@@ -294,7 +303,7 @@ local function runStarter(): ()
 
 		character:Destroy()
 		waitFor("KRF to unregister a destroyed character", function()
-			return not actor.enabled and PlayerActors.GetActor(player) == nil
+			return not actor.enabled and liveActor(player) == nil
 		end)
 
 		player:LoadCharacter()
@@ -310,7 +319,7 @@ local function runStarter(): ()
 		waitFor("the departed player's Actor to unregister", function()
 			return not actor.enabled
 		end)
-		assert(PlayerActors.GetActor(everyone[1]) ~= nil, "Other players keep their Actors")
+		assert(liveActor(everyone[1]) ~= nil, "Other players keep their Actors")
 	end)
 end
 
@@ -355,12 +364,47 @@ local function runInvalidDefinitions(): ()
 			)
 		end
 
-		assert(liveActorCount() == 0, "PlayerActors never started")
+		assert(liveActorCount() == 0, "No player Actors after a failed startup")
+	end)
+end
+
+local function runLateModel(): ()
+	local player: Player
+	local character: Model
+
+	step("Join", function()
+		waitFor("two players", function()
+			return #Players:GetPlayers() == CLIENTS
+		end)
+		player = players()[1]
+
+		character =
+			Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+		character.Name = player.Name
+		character.Parent = ServerStorage
+		player.Character = character
+		waitFor("the unreplicated character's Actor", function()
+			return liveActor(player) ~= nil
+		end)
+	end)
+
+	askClients("Published", { actorId = actorOf(player):GetId() }, { player })
+
+	step("Replicate", function()
+		character:PivotTo(CFrame.new(0, 5, 0))
+		character.Parent = workspace
+	end)
+
+	askClients("Bound", {}, { player })
+
+	step("Input", function()
+		pressFocus(player)
 	end)
 end
 
 local SCENARIOS: { [string]: () -> () } = {
 	starter = runStarter,
+	["late-model"] = runLateModel,
 	["example-removed"] = runExampleRemoved,
 	["invalid-definitions"] = runInvalidDefinitions,
 }
