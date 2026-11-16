@@ -43,8 +43,8 @@ Consumers import KRF through the package root, `require(ReplicatedStorage.Packag
    `chore(release): vX.Y.Z` pull request and runs CI on it.
 2. Review and merge the pull request.
 
-Nothing else is manual. The bump refuses to start while `main`'s current version is still
-unreleased, so versions are never skipped. If `main` moves before the merge, update the branch from
+Nothing else is manual. The bump refuses to start until `main`'s current version has a verified
+GitHub Release, so versions are never skipped. If `main` moves before the merge, update the branch from
 the pull request; that push runs CI again.
 
 After CI passes on the merge commit, the release workflow runs these jobs:
@@ -65,8 +65,8 @@ CI runs the same smoke task against the packaged archive on every push, without 
 | --- | --- |
 | Release PR cannot open its pull request | Allow GitHub Actions to create pull requests in the repository's Actions settings, then run it again. |
 | Preflight fails | Nothing was tagged or published. Fix the cause in a pull request; CI on its merge commit retries the release. |
-| Tag creation refused | The `v*` tag ruleset must let GitHub Actions bypass it. Then re-run the failed jobs. |
-| Publish rejected (`401`/`403`) | Fix `WALLY_PUBLISH_TOKEN` or scope ownership, then run the workflow manually with the tag. |
+| Tag creation refused | The `v*` tag ruleset must not restrict creations. Then re-run the failed jobs. |
+| Publish rejected (`401`/`403`/`422`) | `WALLY_PUBLISH_TOKEN` must be the token `wally login` stores in `~/.wally/auth.toml`; the registry rejects other GitHub tokens. Fix it or the scope ownership, then re-run the failed jobs. |
 | Publish failed with a server error | Run the workflow manually with the tag. Preflight checks the registry first and verifies instead of publishing if the upload landed. |
 | Verify failed after upload | Run the workflow manually with the tag. It skips publishing and repeats verification. |
 | Registry contents differ from the tag | Do not republish. Investigate, then release a new patch version. |

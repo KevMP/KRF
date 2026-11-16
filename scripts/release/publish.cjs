@@ -31,8 +31,15 @@ function classifyPublishResult(result) {
 	return { state: "published" };
 }
 
-/** Explains a rejected publish for the release summary. */
-function describeRejection(status) {
+/**
+ * Explains a rejected publish for the release summary.
+ * @param {number | null} status
+ * @param {string} [detail] The registry's response, which names GitHub auth failures under any status
+ */
+function describeRejection(status, detail = "") {
+	if (/Github auth/i.test(detail)) {
+		return "The registry rejected WALLY_PUBLISH_TOKEN; it must be the token `wally login` stores in ~/.wally/auth.toml";
+	}
 	if (status === 401 || status === 403) return "The registry rejected the credentials or scope ownership";
 	if (status === 409) return "The registry already has this version";
 	if (status === 400 || status === 422) return "The registry rejected the package contents or manifest";
