@@ -136,8 +136,7 @@ test("names the release branch and pull request after the new version", () => {
 
 	assert.equal(pullRequest.branch, "release/v0.2.0");
 	assert.equal(pullRequest.title, "chore(release): v0.2.0");
-	assert.match(pullRequest.body, /`kevmp\/krf` from 0\.1\.0 to 0\.2\.0/);
-	assert.match(pullRequest.body, /Merging publishes v0\.2\.0/);
+	assert.equal(pullRequest.body, "Bumps `kevmp/krf` from 0.1.0 to 0.2.0; merging publishes v0.2.0 to Wally.");
 });
 
 test("refuses a bump when a file no longer names the current version", () => {

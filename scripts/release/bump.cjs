@@ -113,11 +113,7 @@ function releasePullRequest({ name, from, to }) {
 	return {
 		branch: `release/${tag}`,
 		title: `chore(release): ${tag}`,
-		body: [
-			`Bumps \`${name}\` from ${from} to ${to} in \`wally.toml\`, \`wally.lock\` and the install snippets.`,
-			`Merging publishes ${tag} to Wally after CI passes on \`main\`.`,
-			"The GitHub Release notes list the pull requests merged since the previous release.",
-		].join(" "),
+		body: `Bumps \`${name}\` from ${from} to ${to}; merging publishes ${tag} to Wally.`,
 	};
 }
 
