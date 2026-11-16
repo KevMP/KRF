@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, compareVersions, decideRelease } = require("./manifest.cjs");
-const { nextVersion, applyVersionBump } = require("./bump.cjs");
+const { nextVersion, applyVersionBump, releasePullRequest } = require("./bump.cjs");
 const { validatePackageListing, checkArchiveSize, hashTree, compareTrees, MAX_ARCHIVE_BYTES } = require("./archive.cjs");
 const { createRegistry } = require("./registry.cjs");
 const { classifyPublishResult, describeRejection } = require("./publish.cjs");
@@ -129,6 +129,15 @@ test("bumps the package version in the manifest, lockfile and install snippets o
 	assert.match(bumped.manifest, /someone\/else@0\.1\.0/);
 	assert.equal(bumped.lockfile, LOCKFILE.replace('krf"\nversion = "0.1.0"', 'krf"\nversion = "0.2.0"'));
 	assert.equal(bumped.installDocs["README.md"], 'KRF = "kevmp/krf@0.2.0"\nOther = "kevmp/krf-extras@0.1.0"\n');
+});
+
+test("names the release branch and pull request after the new version", () => {
+	const pullRequest = releasePullRequest({ name: "kevmp/krf", from: "0.1.0", to: "0.2.0" });
+
+	assert.equal(pullRequest.branch, "release/v0.2.0");
+	assert.equal(pullRequest.title, "chore(release): v0.2.0");
+	assert.match(pullRequest.body, /`kevmp\/krf` from 0\.1\.0 to 0\.2\.0/);
+	assert.match(pullRequest.body, /Merging publishes v0\.2\.0/);
 });
 
 test("refuses a bump when a file no longer names the current version", () => {

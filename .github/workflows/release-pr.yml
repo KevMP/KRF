@@ -1,7 +1,5 @@
 name: Release PR
 
-# Opens a pull request that bumps the KRF runtime version. Merging it releases that version:
-# once CI passes on main, release-wally.yml tags the merge commit and publishes it.
 on:
   workflow_dispatch:
     inputs:
@@ -38,40 +36,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Bump the version
-        id: bump
+      - name: Open the release pull request
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET: ${{ inputs.version || inputs.bump }}
-        run: node scripts/release-wally.cjs bump --to "$TARGET"
-
-      - name: Push the release branch
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "release/$TAG"
-          git commit -am "chore(release): $TAG"
-          git push --force origin "release/$TAG"
-
-      - name: Open the pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.bump.outputs.tag }}
-          PREVIOUS: ${{ steps.bump.outputs.previous }}
-          VERSION: ${{ steps.bump.outputs.version }}
-        run: |
-          if [ -n "$(gh pr list --head "release/$TAG" --state open --json number --jq '.[].number')" ]; then
-            echo "The pull request for release/$TAG is already open; its branch was updated."
-          else
-            gh pr create --base main --head "release/$TAG" --title "chore(release): $TAG" --body \
-              "Bumps \`kevmp/krf\` from $PREVIOUS to $VERSION in \`wally.toml\`, \`wally.lock\` and the install snippets. Merging publishes $TAG to Wally after CI passes on \`main\`. The GitHub Release notes list the pull requests merged since the previous release."
-          fi
-
-      # Events from the workflow token do not start other workflows, so request CI for the branch
-      # explicitly; its checks attach to the release commit and satisfy branch protection.
-      - name: Run CI on the release branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: gh workflow run ci.yml --ref "release/$TAG"
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: node scripts/release-wally.cjs release-pr --to "$TARGET"

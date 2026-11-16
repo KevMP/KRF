@@ -2,7 +2,7 @@
 // KRF Wally release tasks used by .github/workflows/release-pr.yml, release-wally.yml and
 // release-status.yml.
 //
-//   node scripts/release-wally.cjs bump --to patch|minor|major|X.Y.Z
+//   node scripts/release-wally.cjs release-pr --to patch|minor|major|X.Y.Z
 //   node scripts/release-wally.cjs resolve --commit <sha> | --tag vX.Y.Z
 //   node scripts/release-wally.cjs preflight --tag vX.Y.Z
 //   node scripts/release-wally.cjs publish
@@ -16,7 +16,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, decideRelease } = require("./release/manifest.cjs");
-const { nextVersion, applyVersionBump } = require("./release/bump.cjs");
+const { nextVersion, applyVersionBump, releasePullRequest } = require("./release/bump.cjs");
 const { validatePackageListing, checkArchiveSize, hashTree, compareTrees } = require("./release/archive.cjs");
 const { createRegistry } = require("./release/registry.cjs");
 const { classifyPublishResult, describeRejection } = require("./release/publish.cjs");
@@ -111,8 +111,7 @@ function extract(archivePath, destination) {
 }
 
 /** Writes the next version into wally.toml, wally.lock and the install snippets. */
-function bump(options) {
-	if (!options.to) throw new ReleaseError("bump requires --to patch|minor|major|X.Y.Z");
+function bump(target) {
 
 	const manifest = readManifest();
 	if (tagCommit(`v${manifest.version}`) === null) {
@@ -121,7 +120,7 @@ function bump(options) {
 		);
 	}
 
-	const next = nextVersion(manifest.version, options.to);
+	const next = nextVersion(manifest.version, target);
 	if (!next.ok) throw new ReleaseError(next.reason);
 	if (tagCommit(`v${next.version}`) !== null) throw new ReleaseError(`v${next.version} is already tagged`);
 
@@ -140,9 +139,43 @@ function bump(options) {
 	fs.writeFileSync(path.join(REPO_ROOT, "wally.lock"), bumped.lockfile);
 	for (const [file, text] of Object.entries(bumped.installDocs)) fs.writeFileSync(path.join(REPO_ROOT, file), text);
 
-	setOutput("previous", manifest.version);
-	setOutput("version", next.version);
-	setOutput("tag", `v${next.version}`);
+	return { name: manifest.name, from: manifest.version, to: next.version };
+}
+
+/**
+ * Bumps the version on a release branch, opens or updates its pull request and runs CI on it.
+ * Events from a workflow token start no workflows, so CI is requested explicitly; its checks attach
+ * to the release commit and satisfy branch protection.
+ */
+function openReleasePullRequest(options) {
+	if (!options.to) throw new ReleaseError("release-pr requires --to patch|minor|major|X.Y.Z");
+
+	const version = bump(options.to);
+	const pullRequest = releasePullRequest(version);
+
+	runChecked("git", ["switch", "-c", pullRequest.branch]);
+	runChecked("git", ["commit", "-am", pullRequest.title]);
+	runChecked("git", ["push", "--force", "origin", pullRequest.branch]);
+
+	const open = runChecked("gh", ["pr", "list", "--head", pullRequest.branch, "--state", "open", "--json", "url", "--jq", ".[].url"]);
+	const url =
+		open.trim() ||
+		runChecked("gh", [
+			"pr",
+			"create",
+			"--base",
+			"main",
+			"--head",
+			pullRequest.branch,
+			"--title",
+			pullRequest.title,
+			"--body",
+			pullRequest.body,
+		]).trim();
+
+	runChecked("gh", ["workflow", "run", "ci.yml", "--ref", pullRequest.branch]);
+
+	writeSummary(`- Release pull request for v${version.to} (from ${version.from}): ${url}\n`);
 }
 
 /**
@@ -392,8 +425,8 @@ async function main(argv) {
 	const options = parseOptions(rest);
 
 	switch (command) {
-		case "bump":
-			return bump(options);
+		case "release-pr":
+			return openReleasePullRequest(options);
 		case "resolve":
 			return resolve(options);
 		case "preflight":
@@ -407,7 +440,7 @@ async function main(argv) {
 		case "status":
 			return status();
 		default:
-			throw new ReleaseError(`Unknown command '${command ?? ""}'. Use bump, resolve, preflight, publish, verify-registry, consumer or status.`);
+			throw new ReleaseError(`Unknown command '${command ?? ""}'. Use release-pr, resolve, preflight, publish, verify-registry, consumer or status.`);
 	}
 }
 

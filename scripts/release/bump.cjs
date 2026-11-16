@@ -102,4 +102,23 @@ function applyVersionBump(files, { name, from, to }) {
 	return { ok: true, manifest: manifest.text, lockfile: lockfile.text, installDocs };
 }
 
-module.exports = { BUMPS, nextVersion, applyVersionBump };
+/**
+ * Describes the pull request that proposes a version bump.
+ * @param {{ name: string, from: string, to: string }} bump
+ * @returns {{ branch: string, title: string, body: string }}
+ */
+function releasePullRequest({ name, from, to }) {
+	const tag = `v${to}`;
+
+	return {
+		branch: `release/${tag}`,
+		title: `chore(release): ${tag}`,
+		body: [
+			`Bumps \`${name}\` from ${from} to ${to} in \`wally.toml\`, \`wally.lock\` and the install snippets.`,
+			`Merging publishes ${tag} to Wally after CI passes on \`main\`.`,
+			"The GitHub Release notes list the pull requests merged since the previous release.",
+		].join(" "),
+	};
+}
+
+module.exports = { BUMPS, nextVersion, applyVersionBump, releasePullRequest };
