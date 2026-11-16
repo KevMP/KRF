@@ -112,11 +112,10 @@ function extract(archivePath, destination) {
 
 /** Writes the next version into wally.toml, wally.lock and the install snippets. */
 function bump(target) {
-
 	const manifest = readManifest();
-	if (tagCommit(`v${manifest.version}`) === null) {
+	if (run("gh", ["release", "view", `v${manifest.version}`]).exitCode !== 0) {
 		throw new ReleaseError(
-			`main declares ${manifest.version}, which is not released yet. Let its release finish before preparing another.`,
+			`main declares ${manifest.version}, which has no verified GitHub Release yet. Finish its release before preparing another.`,
 		);
 	}
 
@@ -260,7 +259,7 @@ function publish() {
 	const outcome = classifyPublishResult(result);
 
 	if (outcome.state === "rejected") {
-		throw new ReleaseError(`${describeRejection(outcome.status)} (HTTP ${outcome.status}).\n${outcome.detail}`);
+		throw new ReleaseError(`${describeRejection(outcome.status, outcome.detail)} (HTTP ${outcome.status}).\n${outcome.detail}`);
 	}
 	if (outcome.state === "failed") throw new ReleaseError(outcome.detail);
 

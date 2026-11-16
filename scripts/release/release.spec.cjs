@@ -243,6 +243,12 @@ test("explains rejected publishes by status", () => {
 	assert.match(describeRejection(418), /rejected the publish/);
 });
 
+test("names the publish token when the registry reports a GitHub auth failure", () => {
+	const detail = 'Error: 422 Unprocessable Entity\n{"message":"Github auth failed because: 404 Not Found"}';
+	assert.match(describeRejection(422, detail), /WALLY_PUBLISH_TOKEN.*wally login/);
+	assert.match(describeRejection(422, "Error: 422 Unprocessable Entity"), /contents or manifest/);
+});
+
 test("lists registry versions from the Git index", async () => {
 	const { fetch, calls } = stubFetch([response(200, `${indexLine("0.1.0")}\n${indexLine("0.2.0")}\n`)]);
 	assert.deepEqual(await createRegistry({ fetch }).listVersions("kevmp/krf"), { state: "present", versions: ["0.1.0", "0.2.0"] });
