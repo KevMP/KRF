@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// KRF Wally release tasks used by .github/workflows/release-wally.yml and release-status.yml.
+// KRF Wally release tasks used by .github/workflows/release-pr.yml, release-wally.yml and
+// release-status.yml.
 //
+//   node scripts/release-wally.cjs release-pr --to patch|minor|major|X.Y.Z
+//   node scripts/release-wally.cjs resolve --commit <sha> | --tag vX.Y.Z
 //   node scripts/release-wally.cjs preflight --tag vX.Y.Z
 //   node scripts/release-wally.cjs publish
 //   node scripts/release-wally.cjs verify-registry --version X.Y.Z
@@ -12,7 +15,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest } = require("./release/manifest.cjs");
+const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, decideRelease } = require("./release/manifest.cjs");
+const { nextVersion, applyVersionBump, releasePullRequest } = require("./release/bump.cjs");
 const { validatePackageListing, checkArchiveSize, hashTree, compareTrees } = require("./release/archive.cjs");
 const { createRegistry } = require("./release/registry.cjs");
 const { classifyPublishResult, describeRejection } = require("./release/publish.cjs");
@@ -22,6 +26,8 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const WORK_DIR = path.join(REPO_ROOT, "build", "release");
 const ARCHIVE_PATH = path.join(WORK_DIR, "krf.zip");
 const SMOKE_TASK = path.join(REPO_ROOT, "tests", "consumer", "Smoke.luau");
+// Pages whose install snippet names the current runtime version; release PRs update them.
+const INSTALL_DOCS = ["README.md", "docs-site/docs/documentation/initializing-krf.md"];
 
 class ReleaseError extends Error {}
 
@@ -62,6 +68,12 @@ function writeSummary(markdown) {
 	console.log(markdown);
 }
 
+/** Returns the commit a tag names, or null when the tag does not exist. */
+function tagCommit(tag) {
+	const result = run("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}^{commit}`]);
+	return result.exitCode === 0 ? result.stdout.trim() : null;
+}
+
 function readManifest(text = fs.readFileSync(path.join(REPO_ROOT, "wally.toml"), "utf8")) {
 	return readPackageManifest(text);
 }
@@ -98,18 +110,126 @@ function extract(archivePath, destination) {
 	runChecked("unzip", ["-q", archivePath, "-d", destination]);
 }
 
+/** Writes the next version into wally.toml, wally.lock and the install snippets. */
+function bump(target) {
+
+	const manifest = readManifest();
+	if (tagCommit(`v${manifest.version}`) === null) {
+		throw new ReleaseError(
+			`main declares ${manifest.version}, which is not released yet. Let its release finish before preparing another.`,
+		);
+	}
+
+	const next = nextVersion(manifest.version, target);
+	if (!next.ok) throw new ReleaseError(next.reason);
+	if (tagCommit(`v${next.version}`) !== null) throw new ReleaseError(`v${next.version} is already tagged`);
+
+	const read = (file) => fs.readFileSync(path.join(REPO_ROOT, file), "utf8");
+	const bumped = applyVersionBump(
+		{
+			manifest: read("wally.toml"),
+			lockfile: read("wally.lock"),
+			installDocs: Object.fromEntries(INSTALL_DOCS.map((file) => [file, read(file)])),
+		},
+		{ name: manifest.name, from: manifest.version, to: next.version },
+	);
+	if (!bumped.ok) throw new ReleaseError(bumped.reason);
+
+	fs.writeFileSync(path.join(REPO_ROOT, "wally.toml"), bumped.manifest);
+	fs.writeFileSync(path.join(REPO_ROOT, "wally.lock"), bumped.lockfile);
+	for (const [file, text] of Object.entries(bumped.installDocs)) fs.writeFileSync(path.join(REPO_ROOT, file), text);
+
+	return { name: manifest.name, from: manifest.version, to: next.version };
+}
+
+/**
+ * Bumps the version on a release branch, opens or updates its pull request and runs CI on it.
+ * Events from a workflow token start no workflows, so CI is requested explicitly; its checks attach
+ * to the release commit and satisfy branch protection.
+ */
+function openReleasePullRequest(options) {
+	if (!options.to) throw new ReleaseError("release-pr requires --to patch|minor|major|X.Y.Z");
+
+	const version = bump(options.to);
+	const pullRequest = releasePullRequest(version);
+
+	runChecked("git", ["switch", "-c", pullRequest.branch]);
+	runChecked("git", ["commit", "-am", pullRequest.title]);
+	runChecked("git", ["push", "--force", "origin", pullRequest.branch]);
+
+	const open = runChecked("gh", ["pr", "list", "--head", pullRequest.branch, "--state", "open", "--json", "url", "--jq", ".[].url"]);
+	const url =
+		open.trim() ||
+		runChecked("gh", [
+			"pr",
+			"create",
+			"--base",
+			"main",
+			"--head",
+			pullRequest.branch,
+			"--title",
+			pullRequest.title,
+			"--body",
+			pullRequest.body,
+		]).trim();
+
+	runChecked("gh", ["workflow", "run", "ci.yml", "--ref", pullRequest.branch]);
+
+	writeSummary(`- Release pull request for v${version.to} (from ${version.from}): ${url}\n`);
+}
+
+/**
+ * Chooses what a release run publishes: the version a main commit declares, or an existing tag
+ * named for a manual rerun.
+ */
+function resolve(options) {
+	if (options.tag) {
+		const parsed = parseReleaseTag(options.tag);
+		if (!parsed.ok) throw new ReleaseError(parsed.reason);
+
+		const commit = tagCommit(options.tag);
+		if (commit === null) throw new ReleaseError(`Tag ${options.tag} does not exist`);
+
+		setOutput("release", "true");
+		setOutput("tag", options.tag);
+		setOutput("commit", commit);
+		setOutput("create_tag", "false");
+		return;
+	}
+
+	const commit = runChecked("git", ["rev-parse", options.commit ?? "HEAD"]).trim();
+	const manifest = readPackageManifest(runChecked("git", ["show", `${commit}:wally.toml`]));
+	if (manifest.private) throw new ReleaseError("wally.toml marks the package private");
+
+	const decision = decideRelease({ version: manifest.version, commit, taggedCommit: tagCommit(`v${manifest.version}`) });
+	setOutput("release", String(decision.release));
+	setOutput("tag", decision.tag);
+	setOutput("commit", commit);
+	setOutput("create_tag", String(decision.release && decision.createTag));
+
+	if (!decision.release) {
+		writeSummary(`- Nothing to release: ${decision.reason}\n`);
+	} else {
+		const resumed = decision.createTag ? "" : " (resuming its existing tag)";
+		writeSummary(`- Releasing \`${manifest.name}@${manifest.version}\` from \`${commit}\`${resumed}\n`);
+	}
+}
+
+/** Validates the checked-out commit for its release tag, which is created only after preflight. */
 async function preflight(options) {
-	const tag = options.tag ?? process.env.GITHUB_REF_NAME;
+	const tag = options.tag;
 	const manifest = readManifest();
 	const identity = checkTagMatchesManifest(tag, manifest);
 	if (!identity.ok) throw new ReleaseError(identity.reason);
 
 	const head = runChecked("git", ["rev-parse", "HEAD"]).trim();
-	const tagged = runChecked("git", ["rev-parse", `refs/tags/${tag}^{commit}`]).trim();
-	if (head !== tagged) throw new ReleaseError(`Checked-out commit ${head} is not the commit tagged ${tag} (${tagged})`);
+	const tagged = tagCommit(tag);
+	if (tagged !== null && head !== tagged) {
+		throw new ReleaseError(`Checked-out commit ${head} is not the commit tagged ${tag} (${tagged})`);
+	}
 
-	const onMain = run("git", ["merge-base", "--is-ancestor", tagged, "origin/main"]);
-	if (onMain.exitCode !== 0) throw new ReleaseError(`${tag} (${tagged}) is not reachable from origin/main`);
+	const onMain = run("git", ["merge-base", "--is-ancestor", head, "origin/main"]);
+	if (onMain.exitCode !== 0) throw new ReleaseError(`${head} is not reachable from origin/main`);
 
 	const files = buildArchive();
 	const listing = await createRegistry().listVersions(manifest.name);
@@ -118,7 +238,7 @@ async function preflight(options) {
 
 	setOutput("package", manifest.name);
 	setOutput("version", identity.version);
-	setOutput("commit", tagged);
+	setOutput("commit", head);
 	setOutput("already_published", String(alreadyPublished));
 
 	writeSummary(
@@ -126,7 +246,7 @@ async function preflight(options) {
 			`## Preflight ${tag}`,
 			"",
 			`- Package: \`${manifest.name}@${identity.version}\``,
-			`- Commit: \`${tagged}\` (reachable from main)`,
+			`- Commit: \`${head}\` (reachable from main${tagged === null ? "; tagged after preflight" : ""})`,
 			`- Archive: ${files.length} files, ${fs.statSync(ARCHIVE_PATH).size} bytes`,
 			`- Registry: ${alreadyPublished ? "version already published; verifying instead of publishing" : "version not yet published"}`,
 			"",
@@ -305,6 +425,10 @@ async function main(argv) {
 	const options = parseOptions(rest);
 
 	switch (command) {
+		case "release-pr":
+			return openReleasePullRequest(options);
+		case "resolve":
+			return resolve(options);
 		case "preflight":
 			return preflight(options);
 		case "publish":
@@ -316,7 +440,7 @@ async function main(argv) {
 		case "status":
 			return status();
 		default:
-			throw new ReleaseError(`Unknown command '${command ?? ""}'. Use preflight, publish, verify-registry, consumer or status.`);
+			throw new ReleaseError(`Unknown command '${command ?? ""}'. Use release-pr, resolve, preflight, publish, verify-registry, consumer or status.`);
 	}
 }
 

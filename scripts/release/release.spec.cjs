@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, compareVersions } = require("./manifest.cjs");
+const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, compareVersions, decideRelease } = require("./manifest.cjs");
+const { nextVersion, applyVersionBump, releasePullRequest } = require("./bump.cjs");
 const { validatePackageListing, checkArchiveSize, hashTree, compareTrees, MAX_ARCHIVE_BYTES } = require("./archive.cjs");
 const { createRegistry } = require("./registry.cjs");
 const { classifyPublishResult, describeRejection } = require("./publish.cjs");
@@ -67,6 +68,84 @@ test("requires the tag to name the manifest version at the tagged commit", () =>
 
 test("orders versions numerically rather than lexically", () => {
 	assert.deepEqual(["0.10.0", "0.2.0", "1.0.0", "0.2.1"].sort(compareVersions), ["0.2.0", "0.2.1", "0.10.0", "1.0.0"]);
+});
+
+test("releases an untagged main version, resumes its own tag and skips a version tagged elsewhere", () => {
+	assert.deepEqual(decideRelease({ version: "0.2.0", commit: "b", taggedCommit: null }), {
+		release: true,
+		tag: "v0.2.0",
+		createTag: true,
+	});
+	assert.deepEqual(decideRelease({ version: "0.2.0", commit: "b", taggedCommit: "b" }), {
+		release: true,
+		tag: "v0.2.0",
+		createTag: false,
+	});
+
+	const skipped = decideRelease({ version: "0.2.0", commit: "c", taggedCommit: "b" });
+	assert.equal(skipped.release, false);
+	assert.match(skipped.reason, /already tagged on b/);
+});
+
+test("chooses the next version from a bump level or a newer explicit version", () => {
+	assert.deepEqual(nextVersion("0.9.3", "patch"), { ok: true, version: "0.9.4" });
+	assert.deepEqual(nextVersion("0.9.3", "minor"), { ok: true, version: "0.10.0" });
+	assert.deepEqual(nextVersion("0.9.3", "major"), { ok: true, version: "1.0.0" });
+	assert.deepEqual(nextVersion("0.9.3", "0.12.0"), { ok: true, version: "0.12.0" });
+
+	assert.match(nextVersion("0.9.3", "0.9.3").reason, /not newer/);
+	assert.match(nextVersion("0.9.3", "0.8.0").reason, /not newer/);
+	for (const target of ["1.0", "v1.0.0", "1.0.0-rc.1", "huge", ""]) {
+		assert.match(nextVersion("0.9.3", target).reason, /major, minor, patch/, target);
+	}
+});
+
+const LOCKFILE = `[[package]]
+name = "jsdotlua/jest"
+version = "0.1.0"
+dependencies = []
+
+[[package]]
+name = "kevmp/krf"
+version = "0.1.0"
+dependencies = [["Jest", "jsdotlua/jest@0.1.0"]]
+`;
+
+test("bumps the package version in the manifest, lockfile and install snippets only", () => {
+	const manifest = `${MANIFEST}Other = "someone/else@0.1.0"\n`;
+	const bumped = applyVersionBump(
+		{
+			manifest,
+			lockfile: LOCKFILE,
+			installDocs: { "README.md": 'KRF = "kevmp/krf@0.1.0"\nOther = "kevmp/krf-extras@0.1.0"\n' },
+		},
+		{ name: "kevmp/krf", from: "0.1.0", to: "0.2.0" },
+	);
+
+	assert.equal(bumped.ok, true);
+	assert.equal(bumped.manifest, manifest.replace('version = "0.1.0"', 'version = "0.2.0"'));
+	assert.equal(readPackageManifest(bumped.manifest).version, "0.2.0");
+	assert.match(bumped.manifest, /jsdotlua\/jest@3\.10\.0/);
+	assert.match(bumped.manifest, /someone\/else@0\.1\.0/);
+	assert.equal(bumped.lockfile, LOCKFILE.replace('krf"\nversion = "0.1.0"', 'krf"\nversion = "0.2.0"'));
+	assert.equal(bumped.installDocs["README.md"], 'KRF = "kevmp/krf@0.2.0"\nOther = "kevmp/krf-extras@0.1.0"\n');
+});
+
+test("names the release branch and pull request after the new version", () => {
+	const pullRequest = releasePullRequest({ name: "kevmp/krf", from: "0.1.0", to: "0.2.0" });
+
+	assert.equal(pullRequest.branch, "release/v0.2.0");
+	assert.equal(pullRequest.title, "chore(release): v0.2.0");
+	assert.equal(pullRequest.body, "Bumps `kevmp/krf` from 0.1.0 to 0.2.0; merging publishes v0.2.0 to Wally.");
+});
+
+test("refuses a bump when a file no longer names the current version", () => {
+	const bump = { name: "kevmp/krf", from: "0.1.0", to: "0.2.0" };
+	const files = { manifest: MANIFEST, lockfile: LOCKFILE, installDocs: { "README.md": 'KRF = "kevmp/krf@0.1.0"' } };
+
+	assert.match(applyVersionBump({ ...files, manifest: MANIFEST.replace("0.1.0", "0.0.9") }, bump).reason, /wally\.toml/);
+	assert.match(applyVersionBump({ ...files, lockfile: LOCKFILE.replace(/krf"\nversion = "0.1.0"/, 'krf"\nversion = "0.0.9"') }, bump).reason, /wally\.lock/);
+	assert.match(applyVersionBump({ ...files, installDocs: { "docs.md": "no snippet" } }, bump).reason, /docs\.md/);
 });
 
 test("accepts a package listing of root files and Luau source only", () => {
