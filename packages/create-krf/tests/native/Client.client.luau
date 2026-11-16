@@ -13,7 +13,8 @@ local localPlayer: Player = Players.LocalPlayer
 
 local TIMEOUT = 20
 local SERVER_ONLY_TAG = "TestSecret"
-local FOCUS_ROUTE: KRF.RouteKey = { kind = "Input", inputId = "Focus", gesture = "Pressed" }
+local SLOT = "AbilitySlot1"
+local SLOT_ROUTE: KRF.RouteKey = { kind = "Input", inputId = SLOT, gesture = "Pressed" }
 
 local previousIds: { string } = {}
 local focusStarted: { [string]: boolean } = {}
@@ -124,8 +125,11 @@ local function assertControlsOwnView(): ()
 		return actions.GetControlledActor() == view
 	end)
 
-	local route = actions.GetEffectiveRoute(view, FOCUS_ROUTE) :: any
-	assert(route ~= nil and route.status == "Mapped" and route.actionId == "Focus", "F is routed to Focus")
+	local route = actions.GetEffectiveRoute(view, SLOT_ROUTE) :: any
+	assert(
+		route ~= nil and route.status == "Mapped" and route.sourceId == "Loadout" and route.targetKind == "Dynamic",
+		"The Loadout routes the ability slot"
+	)
 end
 
 local function watch(payload: { actorIds: { string } }): ()
@@ -146,7 +150,7 @@ local function press(payload: { hold: number }): ()
 
 	local container: Instance = localPlayer:WaitForChild("PlayerScripts"):WaitForChild("KRFInputs", TIMEOUT) :: Instance
 	local action: Instance = (container:WaitForChild("Gameplay", TIMEOUT) :: Instance):WaitForChild(
-			"Focus",
+			SLOT,
 			TIMEOUT
 		) :: Instance
 	local driver: InputBinding = Instance.new("InputBinding")
@@ -159,6 +163,17 @@ local function press(payload: { hold: number }): ()
 		driver:Fire(false)
 		driver:Destroy()
 	end)
+end
+
+local function unequip(payload: { hold: number }): ()
+	local loadout = require(
+		localPlayer:WaitForChild("PlayerScripts"):WaitForChild("Game"):WaitForChild("Controls"):WaitForChild("Loadout")
+	) :: any
+
+	loadout.Equip(SLOT, nil)
+	press(payload)
+	task.wait(payload.hold + 1)
+	loadout.Equip(SLOT, "Focus")
 end
 
 local function observe(payload: { actorIds: { string }, exampleRemoved: boolean? }): ()
@@ -240,7 +255,13 @@ local PHASES: { [string]: (any) -> () } = {
 }
 
 control.OnClientEvent:Connect(function(phase: string, encoded: string)
-	local handler = PHASES[phase] or (if string.sub(phase, 1, 5) == "Press" then press else nil)
+	local handler = PHASES[phase]
+		or (
+			if string.sub(phase, 1, 5) == "Press"
+				then press
+				elseif string.sub(phase, 1, 7) == "Unequip" then unequip
+				else nil
+		)
 
 	if handler == nil then
 		return

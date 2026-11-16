@@ -32,5 +32,13 @@ Save the built place somewhere else, keep building the world there, and sync cod
 Add a ModuleScript anywhere under `src/server/Actions`, `Tags` or `Resources`; each folder's
 `init.luau` loads every module beneath it. Actions return a factory function; Tags and Resources
 return a definition table. Actions players request from the client also need an entry in
-`src/shared/ActionRequests.luau` and a route in `src/client/Controls.luau`; held Actions also
-need a `WhileDown` policy in `src/client/ActionInputPolicies.luau`.
+`src/shared/ActionRequests.luau`; held Actions also need a `WhileDown` policy in
+`src/client/ActionInputPolicies.luau`.
+
+## Controls
+
+Keys bind to ability slots, not to Actions. `src/client/Controls/Keybinds.luau` binds F and
+ButtonX to `AbilitySlot1`; `src/client/Controls/Loadout.luau` decides which Action each slot
+triggers. Call `Loadout.Equip("AbilitySlot1", actionId)` to swap the Action in a slot: the next
+press uses it, without rebinding keys. `src/client/LocalCharacter.luau` finds the local
+character's ActorView, which Controls selects as the Actor your input drives.

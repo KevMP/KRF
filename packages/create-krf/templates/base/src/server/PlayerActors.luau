@@ -6,7 +6,7 @@ local KRF = require(ReplicatedStorage.Packages.KRF)
 
 local PlayerActors = {}
 
-local function register(player: Player, character: Model): ()
+function register(player: Player, character: Model): ()
 	local actor: KRF.Actor?, reason: string? = KRF.ActorRuntime.RegisterActor(character)
 
 	if actor == nil then
@@ -14,7 +14,7 @@ local function register(player: Player, character: Model): ()
 	end
 end
 
-local function unregister(character: Model): ()
+function unregister(character: Model): ()
 	local actor: KRF.Actor? = KRF.ActorRegistry.GetActorByModel(character)
 
 	if actor ~= nil then
@@ -22,7 +22,7 @@ local function unregister(character: Model): ()
 	end
 end
 
-local function track(player: Player): ()
+function track(player: Player): ()
 	player.CharacterAdded:Connect(function(character: Model)
 		register(player, character)
 	end)

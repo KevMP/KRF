@@ -138,6 +138,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 				ActionInputPolicies: "ModuleScript",
 				Controls: "ModuleScript",
 				EnergyDisplay: "ModuleScript",
+				LocalCharacter: "ModuleScript",
 				Startup: "LocalScript",
 			});
 			assert.deepEqual(shape(child(place, "Workspace")), { Baseplate: "Part", SpawnLocation: "SpawnLocation" });

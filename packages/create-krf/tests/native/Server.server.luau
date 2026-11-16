@@ -219,6 +219,19 @@ local function pressFocus(player: Player): ()
 	assert(resources:GetCurrent("Energy") == settled, "Energy has no regeneration outside Focus")
 end
 
+local function pressEmptySlot(player: Player): ()
+	local actions: KRF.ActionController = controller(actorOf(player), "ActionController")
+	local started: boolean = false
+
+	local connection = actions.OnActionStarted:Connect(function()
+		started = true
+	end)
+
+	askClients(`Unequip{player.UserId}`, { hold = 0.5 }, { player })
+	connection:Disconnect()
+	assert(not started, "An empty ability slot starts no Action")
+end
+
 local function runStarter(): ()
 	local everyone: { Player } = {}
 
@@ -264,6 +277,10 @@ local function runStarter(): ()
 		for _, player: Player in everyone do
 			pressFocus(player)
 		end
+	end)
+
+	step("EmptySlot", function()
+		pressEmptySlot(everyone[1])
 	end)
 
 	askClients("Observe", { actorIds = actorIds(everyone) }, everyone)

@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
+local LocalCharacter = require(script.Parent.LocalCharacter)
 
 local EnergyDisplay = {}
 
@@ -28,10 +29,7 @@ function EnergyDisplay.Start(): ()
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	RunService.RenderStepped:Connect(function()
-		local character: Model? = player.Character
-		local view: KRF.ActorView? = if character ~= nil
-			then KRF.ActorViewRegistry.GetActorViewByModel(character)
-			else nil
+		local view: KRF.ActorView? = LocalCharacter.Get()
 
 		if view == nil then
 			return

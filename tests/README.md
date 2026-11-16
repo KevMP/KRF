@@ -59,7 +59,7 @@ changed beyond each scenario's edit; the runner only adds its fixtures from
 
 | Scenario | Coverage |
 | --- | --- |
-| `starter` | Player character Actors, built-in controllers, one `Server.Init` and `Client.Init`, Focus held through its real key binding, `Focused` regenerating Energy while held and release ending it, the Energy display, ActorViews on both clients, a test-only ServerOnly Tag never reaching clients, respawn, destroyed characters and player departure |
+| `starter` | Player character Actors, built-in controllers, one `Server.Init` and `Client.Init`, Focus held through its real ability-slot binding, an emptied slot starting nothing, `Focused` regenerating Energy while held and release ending it, the Energy display, ActorViews on both clients, a test-only ServerOnly Tag never reaching clients, respawn, destroyed characters and player departure |
 | `late-model` | Controls starts after the local character's ActorView is published but before its Model replicates, then takes control when the Model arrives |
 | `example-removed` | Startup and player Actors with the example definitions, Controls and Energy display deleted |
 | `invalid-definitions` | A rejected startup reports its failure and registers no Actors |

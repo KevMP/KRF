@@ -34,7 +34,9 @@ const SCENARIOS = {
 		for (const file of ["server/Actions/Focus.luau", "server/Tags/Focused.luau", "server/Resources/Energy.luau"]) {
 			fs.rmSync(path.join(project, "src", file));
 		}
-		for (const file of ["ActionInputPolicies.luau", "Controls.luau", "EnergyDisplay.luau"]) fs.rmSync(path.join(project, "src", "client", file));
+		for (const file of ["ActionInputPolicies.luau", "Controls", "EnergyDisplay.luau", "LocalCharacter.luau"]) {
+			fs.rmSync(path.join(project, "src", "client", file), { recursive: true });
+		}
 		edit(project, "src/shared/ActionRequests.luau", /\tFocus = \{[\s\S]*?\n\t\},\n/, "");
 		edit(
 			project,

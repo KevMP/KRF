@@ -188,16 +188,21 @@ test("every definition folder loads its descendants and startup passes it to Ser
 	}
 });
 
-test("the Focus input routes to an Action that is registered and client-requestable", () => {
+test("every loadout slot is a bound input and every equipped Action is registered and client-requestable", () => {
 	const generated = files({});
 	const actionIds = [...generated]
 		.filter(([file]) => file.startsWith("src/server/Actions/"))
 		.flatMap(([, source]) => [...source.matchAll(/^\s*id = "([^"]+)"/gm)].map((match) => match[1]));
 	const requestable = [...generated.get("src/shared/ActionRequests.luau").matchAll(/^\s*\[?"?([\w.]+)"?\]? = \{/gm)].map((match) => match[1]);
-	const routed = [...generated.get("src/client/Controls.luau").matchAll(/actionId = "([^"]+)"/g)].map((match) => match[1]);
+	const loadout = generated.get("src/client/Controls/Loadout.luau");
+	const slots = [...loadout.match(/^local SLOTS: \{ string \} = \{ (.+) \}$/m)[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
+	const equipped = Object.fromEntries([...loadout.match(/^local equipped[^\n]*\n([\s\S]*?)^\}$/m)[1].matchAll(/^\t(\w+) = "([^"]+)",$/gm)].map((match) => [match[1], match[2]]));
+	const keybinds = generated.get("src/client/Controls/Keybinds.luau");
 
-	assert.deepEqual(routed, ["Focus"]);
-	for (const actionId of routed) {
+	assert.deepEqual(slots, ["AbilitySlot1"]);
+	assert.deepEqual(equipped, { AbilitySlot1: "Focus" });
+	for (const slot of slots) assert.match(keybinds, new RegExp(`^\\t+${slot} = \\{$`, "m"), `${slot} has no keybind`);
+	for (const actionId of Object.values(equipped)) {
 		assert.ok(actionIds.includes(actionId), `${actionId} is not a registered Action`);
 		assert.ok(requestable.includes(actionId), `${actionId} is not in ActionRequests`);
 	}
