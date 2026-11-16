@@ -59,8 +59,8 @@ Given an already registered Actor named `actor`:
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TagTypes = require(ReplicatedStorage.Packages.KRF.server.Tags.types)
-local tags = actor:GetController("TagController") :: TagTypes.TagController
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local tags = actor:GetController("TagController") :: KRF.TagController
 
 local added, reason = tags:AddTag("Status.Stunned", {
 	duration = 6,

@@ -14,9 +14,9 @@ Use `ActorRuntime` to create and destroy Actors. Use this registry when a server
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local ActorRegistry = require(KRF.server.Actor.ActorRegistry)
+local ActorRegistry = KRF.ActorRegistry
 ```
 
 ## Members

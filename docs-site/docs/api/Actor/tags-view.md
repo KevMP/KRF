@@ -4,7 +4,7 @@
 
 ```lua
 local tags = actorView:GetTags()
--- Public contracts: KRF.client.Actor.types.TagsView and ActiveTagSnapshot.
+-- Public contracts: KRF.TagsView and KRF.ActiveTagSnapshot.
 ```
 
 ## Members

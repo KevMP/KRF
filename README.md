@@ -9,6 +9,20 @@ Games supply definitions, gameplay behavior, and presentation.
 public contracts. The [charter](./CHARTER.md) records architectural direction and
 planned systems; it is not a list of shipped features.
 
+## Install
+
+Add KRF to a game's `wally.toml` and run `wally install`:
+
+```toml
+[dependencies]
+KRF = "kevmp/krf@0.1.0"
+```
+
+Mount Wally's `Packages` folder at `ReplicatedStorage.Packages`, then import KRF through its
+package module: `require(ReplicatedStorage.Packages.KRF)`. See
+[Initializing KRF](https://kevmp.github.io/KRF/initializing-krf). Maintainers publish releases
+as described in [RELEASING.md](./RELEASING.md).
+
 ## Setup
 
 Local framework tests require Windows, Roblox Studio, Node.js with npm, and
@@ -25,10 +39,11 @@ Rokit installs the pinned Roblox tools in `rokit.toml`; Wally installs the test
 dependencies. To sync the framework into a Studio place with the Rojo plugin:
 
 ```powershell
-rojo serve default.project.json
+rojo serve dev.project.json
 ```
 
-The default project mounts KRF under `ReplicatedStorage.Packages.KRF`. Follow
+The dev project mounts KRF under `ReplicatedStorage.Packages.KRF`.
+`default.project.json` is the Wally package project and maps only `src`. Follow
 [Initializing KRF](https://kevmp.github.io/KRF/initializing-krf) to integrate it
 with game startup.
 
@@ -45,6 +60,8 @@ Run these commands from the repository root:
 | `npm run test:integration:n5` | Native two-client ActorView lifecycle and recovery coverage |
 | `npm run test:integration:n6` | Native two-client Tags replication and TagsView coverage |
 | `npm run test:integration:n7` | Native two-client Resources replication, interpolation, recovery, and teardown coverage |
+| `npm run test:packages` | Unit tests for the `create-krf` and `krf-tools` npm packages in `packages/` |
+| `npm run test:packages:integration` | Create a project from packed `create-krf` and `krf-tools` tarballs |
 
 Run Studio jobs serially. See [test workflows](./tests/README.md) for standalone
 integration fixtures, [benchmarks](./tests/benchmarks/README.md) for load and

@@ -10,11 +10,12 @@ Client initialization installs the view runtime automatically; consumer modules 
 
 ## Find and retain a view
 
-Import `KRF.client.Actor.ActorViewRegistry`:
+Use `KRF.ActorViewRegistry`:
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Registry = require(ReplicatedStorage.Packages.KRF.client.Actor.ActorViewRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.ActorViewRegistry
 ```
 
 Lookup by public actorId or by its currently bound Roblox Model returns the same ActorView. Unknown, not-yet-published, or removed identities return `nil`; terminally halted views remain registered until removal. The registry and its lookup methods are immutable; `GetAllActorViews()` returns an independent collection.

@@ -4,7 +4,8 @@ These server helpers authorize ClientToServer Hint contexts while their callback
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Authorization = require(ReplicatedStorage.Packages.KRF.server.Networking.HintAuthorization)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Authorization = KRF.HintAuthorization
 ```
 
 ## Members

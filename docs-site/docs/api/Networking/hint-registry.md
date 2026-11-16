@@ -4,7 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Registry = require(ReplicatedStorage.Packages.KRF.server.Networking.HintRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.HintRegistry
 ```
 
 ## Members
@@ -18,7 +19,7 @@ local Registry = require(ReplicatedStorage.Packages.KRF.server.Networking.HintRe
 
 ### `HintDefinition` {#hint-definition}
 
-Author definitions using `server.Networking.types.HintDefinition`. Register the array through `Server.Init({ hints = ... })`; do not call registry preparation/publication methods from game code. All [definition fields and callback signatures](/Networking/hints#definition-fields) are documented in the guide. The enum fields have no defaults; `payload` is required. Unknown fields, sparse/unbounded catalogs and duplicate ids reject startup.
+Author definitions using `KRF.HintDefinition`. Register the array through `Server.Init({ hints = ... })`; do not call registry preparation/publication methods from game code. All [definition fields and callback signatures](/Networking/hints#definition-fields) are documented in the guide. The enum fields have no defaults; `payload` is required. Unknown fields, sparse/unbounded catalogs and duplicate ids reject startup.
 
 `authorize(context: HintContext, payload: any) -> (boolean, string?)` and `receive(context: HintContext, payload: any) -> ()` are required for ClientToServer definitions. Context contains read-only `player: Player`, `actor: Actor?` and `hintId: string`; payload is schema-owned and immutable. Authorization must return true explicitly. A false return denies without acknowledgement; throwing/yielding authorizers deny, and receive faults are isolated. Reasons remain server-local, not command results. These callbacks are non-yielding and non-authoritative.
 

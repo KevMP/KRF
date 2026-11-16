@@ -44,10 +44,9 @@ This ModuleScript returns definitions for the `resources` field of your [game co
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ResourceTypes = require(KRF.server.Resource.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local definitions: { ResourceTypes.ResourceDefinition } = {
+local definitions: { KRF.ResourceDefinition } = {
 	{
 		id = "Resource.Stamina",
 		max = {

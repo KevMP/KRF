@@ -1,0 +1,13 @@
+# npm
+node_modules/
+
+# Build output and local places
+build/
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+
+# Local secrets
+.env
+.env.*

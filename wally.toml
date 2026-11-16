@@ -1,8 +1,15 @@
 [package]
-name = "kevin/krf"
+name = "kevmp/krf"
+description = "Server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions and schema-defined replication."
 version = "0.1.0"
+license = "MIT"
+authors = ["KevMP"]
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
+homepage = "https://kevmp.github.io/KRF/"
+repository = "https://github.com/KevMP/KRF"
+include = ["default.project.json", "wally.toml", "LICENSE", "src", "src/**"]
+exclude = ["*"]
 
 [dev-dependencies]
 Jest = "jsdotlua/jest@3.10.0"

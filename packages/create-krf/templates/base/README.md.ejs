@@ -1,0 +1,30 @@
+# <%= name %>
+
+A Roblox game project created by `create-krf` <%= creatorVersion %>. It targets KRF
+`<%= runtime.package %>@<%= runtime.version %>`.
+
+## Current status
+
+This release of `create-krf` creates the project shell: its npm tooling and its recorded
+configuration. It does not yet include a Rojo project, Wally dependencies or game code, so there
+is no place to build or play yet.
+
+| Setting | Value |
+| --- | --- |
+| Project mode | <%= options.mode === "full" ? "Full: Git and Rojo will own the whole place" : "Hybrid: Rojo will own code; Studio keeps world content" %> |
+| Developer tooling | <%= options.tooling %> |
+| GitHub Actions workflow | <%= options.ci ? "included" : "not included" %> |
+| Agent instructions | <%= options.agents ? "included" : "not included" %> |
+
+`krf.project.json` records these settings and the versions this project targets. Keep it in Git.
+
+## Commands
+
+Project tasks run through npm scripts. No global tools are required.
+
+| Command | Purpose |
+| --- | --- |
+| `npm install` | Install the pinned project tooling (`<%= tooling.package %>@<%= tooling.version %>`). |
+| `npm run project:info` | Validate `krf.project.json` and show the project's settings and versions. |
+
+Commit `package-lock.json` after `npm install`.

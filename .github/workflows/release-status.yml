@@ -1,0 +1,37 @@
+name: Release status
+
+# Reports Git release tags, tagged manifest versions, Wally registry versions and verified
+# GitHub Releases. State is derived on each run; nothing is recorded by hand.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [wally.toml]
+  workflow_run:
+    workflows: ["Release (Wally)"]
+    types: [completed]
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Report release status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force --tags origin
+          node scripts/release-wally.cjs status

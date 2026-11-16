@@ -8,10 +8,11 @@ sidebar_position: 6
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Actions = require(ReplicatedStorage.Packages.KRF.client.Action.ClientActionRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Actions = KRF.ClientActionRuntime
 ```
 
-Public contract types are in `KRF.client.Action.types`. `ActorView` is the client Actor identity, not a server Actor or an Actor id string.
+Public contract types, such as `KRF.ClientActionRuntime`, are exported by the package module. `ActorView` is the client Actor identity, not a server Actor or an Actor id string.
 
 ## Members
 

@@ -61,10 +61,9 @@ This ModuleScript returns definitions for the `tags` field of your [game configu
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local TagTypes = require(KRF.server.Tags.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local definitions: { TagTypes.TagDefinition } = {
+local definitions: { KRF.TagDefinition } = {
 	{
 		id = "Status.Stunned",
 		defaultDuration = 1.5,

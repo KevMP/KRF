@@ -12,9 +12,9 @@ For full KRF startup, pass game controller definitions to [`Server.Init`](/initi
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local ControllerRegistry = require(KRF.server.Controller.ControllerRegistry)
+local ControllerRegistry = KRF.ControllerRegistry
 ```
 
 ## Members

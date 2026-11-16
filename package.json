@@ -1,6 +1,10 @@
 {
   "name": "krf",
   "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "Kevin's Roblox Framework: a server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions, and schema-defined replication.",
   "scripts": {
     "bench:networking:compare": "node ./scripts/compare-networking.cjs",
@@ -37,7 +41,10 @@
     "coverage:check": "npx nyc check-coverage",
     "coverage": "npm run coverage:prepare && npm run coverage:report && npm run coverage:check",
     "test:bench-tools": "node --test scripts/compare-networking.spec.cjs",
-    "test": "npm run test:bench-tools && npm run test:lint && npm run typecheck && npm run test:unit"
+    "test:release-tools": "node --test scripts/release/release.spec.cjs",
+    "test:packages": "npm test --workspaces",
+    "test:packages:integration": "npm run test:integration --workspace create-krf",
+    "test": "npm run test:bench-tools && npm run test:release-tools && npm run test:packages && npm run test:lint && npm run typecheck && npm run test:unit"
   },
   "lint-staged": {
     "*.{lua,luau}": [
@@ -49,7 +56,7 @@
     "type": "git",
     "url": "git+https://github.com/KevMP/KRF.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/KevMP/KRF/issues"

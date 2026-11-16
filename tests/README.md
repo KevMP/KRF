@@ -48,6 +48,27 @@ was verified. To select Studio, invoke the corresponding
 See [benchmark workflows](./benchmarks/README.md) for load projects, CPU
 measurements, analyzers, and interpretation limits.
 
+## Package consumer smoke
+
+[`consumer/Smoke.luau`](./consumer/Smoke.luau) starts KRF from an installed
+package through `require(ReplicatedStorage.Packages.KRF)` only: `Server.Init`,
+Actor registration, an Action request, its Resource cost, and owned and applied
+Tags. Build a consumer place from the packaged archive, mounted exactly as
+`wally install` mounts it, and run the task in Studio:
+
+```powershell
+node scripts/release-wally.cjs consumer --source archive --out build/consumer/archive
+```
+
+```powershell
+run-in-roblox --place build/consumer/archive/consumer.rbxl --script build/consumer/archive/Smoke.luau
+```
+
+CI runs the same task against the archive through Open Cloud. The release
+workflow runs it against the published version installed from the registry
+(`--source registry --version X.Y.Z`). `npm run test:release-tools` covers the
+release helpers in `scripts/release/`; see [RELEASING.md](../RELEASING.md).
+
 ## Standalone Edit-mode fixtures
 
 Keep these focused checks alongside the broader native suites:

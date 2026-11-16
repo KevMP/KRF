@@ -11,9 +11,9 @@ This catalog module defines Stamina with Property-backed maximum and regeneratio
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ResourceTypes = require(ReplicatedStorage.Packages.KRF.server.Resource.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local definitions: { ResourceTypes.ResourceDefinition } = {
+local definitions: { KRF.ResourceDefinition } = {
 	{
 		id = "Resource.Stamina",
 		visibility = "ClientVisible",
@@ -45,12 +45,11 @@ This example assumes `character` is the Model followed by your UI and `fill` is 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ViewTypes = require(KRF.client.Actor.types)
-local Registry: ViewTypes.ActorViewRegistry = require(KRF.client.Actor.ActorViewRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry: KRF.ActorViewRegistry = KRF.ActorViewRegistry
 
-local function drawStamina(resources: ViewTypes.ResourcesView, fill: Frame): ()
-	local stamina: ViewTypes.ResourceSnapshot? = resources:GetResource("Resource.Stamina")
+local function drawStamina(resources: KRF.ResourcesView, fill: Frame): ()
+	local stamina: KRF.ResourceSnapshot? = resources:GetResource("Resource.Stamina")
 	local fraction: number = 0
 	if stamina ~= nil and stamina.max > stamina.min then
 		fraction = (stamina.current - stamina.min) / (stamina.max - stamina.min)
@@ -58,7 +57,7 @@ local function drawStamina(resources: ViewTypes.ResourcesView, fill: Frame): ()
 	fill.Size = UDim2.fromScale(fraction, 1)
 end
 
-local view: ViewTypes.ActorView? = Registry.GetActorViewByModel(character)
+local view: KRF.ActorView? = Registry.GetActorViewByModel(character)
 if view ~= nil then
 	drawStamina(view:GetResources(), fill)
 end

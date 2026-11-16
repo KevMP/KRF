@@ -4,8 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ReplicationDomainRegistry = require(KRF.server.Replication.ReplicationDomainRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local ReplicationDomainRegistry = KRF.ReplicationDomainRegistry
 ```
 
 Before publication, `Get` returns `nil` and collection reads return empty frozen tables. Registration is owned by startup; this read API has no runtime registration method. Author domains using the [domain definition contract](/Networking/replication-domains#domain-definition).

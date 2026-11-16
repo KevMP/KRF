@@ -14,11 +14,9 @@ Most gameplay decisions should read the resolved value. Write the base value whe
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.server.Actor.types)
-local PropertyTypes = require(KRF.server.Property.types)
-type Actor = ActorTypes.Actor
-type PropertyController = PropertyTypes.PropertyController
+local KRF = require(ReplicatedStorage.Packages.KRF)
+type Actor = KRF.Actor
+type PropertyController = KRF.PropertyController
 
 local function increaseWalkSpeed(actor: Actor): number
 	local properties = actor:GetController("PropertyController") :: PropertyController

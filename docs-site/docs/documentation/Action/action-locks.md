@@ -25,8 +25,8 @@ Every distinct conflicting owner must permit preemption. Its loaded allowlist mu
 -- Fragment inside an owner's factory; committedPhase is a factory-local boolean.
 interruptibleBy = { "Action.Dodge" },
 canBeInterruptedBy = function(
-	_ctx: ActionTypes.ActionExecutionContext,
-	_incoming: ActionTypes.ActionInterruptionContext
+	_ctx: KRF.ActionExecutionContext,
+	_incoming: KRF.ActionInterruptionContext
 ): boolean
 	return not committedPhase
 end,
@@ -43,7 +43,7 @@ Explicit `ctx:Interrupt` and `InterruptAction` bypass lock interruption policy: 
 Use `ClaimLocks` when exclusivity is needed for only part of an already-active Action. It returns a claim after acquiring every requested lock, or a reason without acquiring any. A failed claim does not automatically terminate the claimant.
 
 ```lua
--- Inside onStart; ActionTypes comes from KRF.server.Action.types.
+-- Inside onStart.
 local claim, reason = ctx:ClaimLocks({ "Hands" })
 if claim == nil then
 	warn(`Hands unavailable: {reason}`)

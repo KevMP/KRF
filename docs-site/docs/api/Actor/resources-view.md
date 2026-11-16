@@ -4,7 +4,7 @@
 
 ```lua
 local resources = actorView:GetResources()
--- Public contracts: KRF.client.Actor.types.ResourcesView and ResourceSnapshot.
+-- Public contracts: KRF.ResourcesView and KRF.ResourceSnapshot.
 ```
 
 ## Members

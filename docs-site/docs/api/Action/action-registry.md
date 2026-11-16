@@ -8,7 +8,8 @@ sidebar_position: 1
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ActionRegistry = require(ReplicatedStorage.Packages.KRF.server.Action.ActionRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local ActionRegistry = KRF.ActionRegistry
 ```
 
 ## Members

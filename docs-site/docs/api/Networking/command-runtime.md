@@ -4,7 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Commands = require(ReplicatedStorage.Packages.KRF.client.Networking.CommandRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Commands = KRF.CommandRuntime
 ```
 
 ## Members
@@ -54,7 +55,7 @@ Both events use KRF's read-only `Connect`, `Once`, and `Wait` surface. Their imm
 | `result` | Validated immutable result for Accepted, when a result schema exists |
 | `reason` | Nonempty bounded reason for Rejected or Unknown |
 
-The type is `client.Networking.types.CommandResult`. No raw buffers, private handles, or RemoteEvents are exposed.
+The type is `KRF.CommandResult`. No raw buffers, private handles, or RemoteEvents are exposed.
 
 ## Related
 

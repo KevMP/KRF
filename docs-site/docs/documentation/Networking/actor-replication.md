@@ -41,9 +41,9 @@ For example, a game catalog can define this visible Tag (pass the returned catal
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TagTypes = require(ReplicatedStorage.Packages.KRF.server.Tags.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local tags: { TagTypes.TagDefinition } = {
+local tags: { KRF.TagDefinition } = {
 	{ id = "Status.Charged", visibility = "ClientVisible", duplicateBehavior = "Refresh", defaultDuration = 30 },
 }
 return tags
@@ -54,12 +54,10 @@ This server helper illustrates a burst on an already registered Actor. It is a s
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.server.Actor.types)
-local TagTypes = require(KRF.server.Tags.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function publishBurst(actor: ActorTypes.Actor, count: number): ()
-	local tags = actor:GetController("TagController") :: TagTypes.TagController?
+local function publishBurst(actor: KRF.Actor, count: number): ()
+	local tags = actor:GetController("TagController") :: KRF.TagController?
 	assert(tags ~= nil, "TagController required")
 	for _ = 1, count do
 		local accepted, reason = tags:AddTag("Status.Charged")
@@ -75,14 +73,14 @@ On the client, persistent presentation reads current state. Semantic events driv
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Types = require(ReplicatedStorage.Packages.KRF.client.Actor.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function attach(view: Types.ActorView, draw: (boolean) -> (), playRefresh: () -> ()): () -> ()
+local function attach(view: KRF.ActorView, draw: (boolean) -> (), playRefresh: () -> ()): () -> ()
 	local domain = view:GetDomain("KRF.Tags")
 	assert(domain ~= nil, "Visible Tags domain required")
 	local tags = view:GetTags()
 	draw(tags:HasTag("Status.Charged"))
-	local changed = domain.OnChanged:Connect(function(change: Types.DomainChange): ()
+	local changed = domain.OnChanged:Connect(function(change: KRF.DomainChange): ()
 		local current: any = change.current
 		draw(current["Status.Charged"] ~= nil)
 		if change.source == "Baseline" then

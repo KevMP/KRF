@@ -15,10 +15,9 @@ This Dodge spends Stamina, holds `Movement`, and exposes `Status.Dodging` until 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActionTypes = require(KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function createDodge(): ActionTypes.ActionDefinition
+local function createDodge(): KRF.ActionDefinition
 	return {
 		id = "Action.Dodge",
 		visibility = "ServerOnly",
@@ -26,7 +25,7 @@ local function createDodge(): ActionTypes.ActionDefinition
 		costs = { ["Resource.Stamina"] = 15 },
 		locks = { "Movement" },
 		activeTags = { "Status.Dodging" },
-		onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStart = function(ctx: KRF.ActionExecutionContext): ()
 			task.wait(0.25)
 			ctx:End()
 		end,

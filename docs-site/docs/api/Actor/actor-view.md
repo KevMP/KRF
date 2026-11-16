@@ -6,12 +6,11 @@
 --!strict
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-local ViewTypes = require(KRF.client.Actor.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.ActorViewRegistry
 
 local model: Model? = Players.LocalPlayer.Character
-local view: ViewTypes.ActorView? = if model ~= nil then Registry.GetActorViewByModel(model) else nil
+local view: KRF.ActorView? = if model ~= nil then Registry.GetActorViewByModel(model) else nil
 if view == nil then
 	return -- No complete view for this Model yet; observe the registry for later arrivals.
 end

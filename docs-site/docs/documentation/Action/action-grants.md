@@ -21,12 +21,10 @@ Use `SetGrants` for ownership supplied by equipment, progression, or a moveset. 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActionTypes = require(KRF.server.Action.types)
-local ActorTypes = require(KRF.server.Actor.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function equipMoveset(actor: ActorTypes.Actor, actionIds: { string }): boolean
-	local actions = actor:GetController("ActionController") :: ActionTypes.ActionController
+local function equipMoveset(actor: KRF.Actor, actionIds: { string }): boolean
+	local actions = actor:GetController("ActionController") :: KRF.ActionController
 	local success, reason = actions:SetGrants("CurrentMoveset", actionIds)
 	if not success then
 		warn(`Moveset grant failed: {reason}`)

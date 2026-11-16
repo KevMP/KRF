@@ -11,8 +11,7 @@ Use these imports for the factory snippets below:
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActionTypes = require(KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 ```
 
 Comments mark where game combat, movement, or presentation code belongs. They are not additional KRF APIs. Each recipe is independent.
@@ -22,12 +21,12 @@ Comments mark where game combat, movement, or presentation code belongs. They ar
 An instant Action explicitly Ends after its accepted work. The request remains accepted even though no activation remains active when it returns.
 
 ```lua
-local function createInteract(): ActionTypes.ActionDefinition
+local function createInteract(): KRF.ActionDefinition
 	return {
 		id = "Action.Interact",
 		visibility = "ServerOnly",
 		autoGrant = true,
-		onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStart = function(ctx: KRF.ActionExecutionContext): ()
 			-- Perform the validated interaction here.
 			ctx:End()
 		end,
@@ -42,17 +41,17 @@ Use `onCanStart` for a non-yielding game-specific target decision when needed. R
 Keep charge progress local to the factory. Stop means release intent; this Action chooses normal completion on release.
 
 ```lua
-local function createCharge(): ActionTypes.ActionDefinition
+local function createCharge(): KRF.ActionDefinition
 	local chargeSeconds: number = 0
 	return {
 		id = "Action.Charge",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		locks = { "Hands" },
-		onUpdate = function(_ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
+		onUpdate = function(_ctx: KRF.ActionExecutionContext, deltaTime: number): ()
 			chargeSeconds = math.min(chargeSeconds + deltaTime, 2)
 		end,
-		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStopRequested = function(ctx: KRF.ActionExecutionContext): ()
 			-- Use chargeSeconds to determine the release outcome.
 			print(`Released at charge {chargeSeconds / 2}`)
 			ctx:End()
@@ -68,21 +67,21 @@ end
 A channel does ongoing work and completes when its local timer reaches an outcome. Declare acceptance-time payment in `costs`; it is charged once, not each update.
 
 ```lua
-local function createChannel(): ActionTypes.ActionDefinition
+local function createChannel(): KRF.ActionDefinition
 	local remainingSeconds: number = 3
 	return {
 		id = "Action.Channel",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		locks = { "Hands" },
-		onUpdate = function(ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
+		onUpdate = function(ctx: KRF.ActionExecutionContext, deltaTime: number): ()
 			remainingSeconds -= deltaTime
 			-- Apply this update's channel work here while still active.
 			if remainingSeconds <= 0 then
 				ctx:End()
 			end
 		end,
-		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStopRequested = function(ctx: KRF.ActionExecutionContext): ()
 			ctx:Interrupt("ChannelCancelled")
 		end,
 	}
@@ -96,14 +95,14 @@ Put completion-only outcomes in `onEnd` and cancellation cleanup in `onInterrupt
 A mode is a long-lived Action with active modifiers and an explicit exit. It can remain active without `onStart` or recurring updates.
 
 ```lua
-local function createPowerMode(): ActionTypes.ActionDefinition
+local function createPowerMode(): KRF.ActionDefinition
 	return {
 		id = "Action.PowerMode",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		locks = { "Mode" },
 		activeTags = { "Mode.Power" },
-		onStopRequested = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStopRequested = function(ctx: KRF.ActionExecutionContext): ()
 			ctx:End()
 		end,
 	}
@@ -123,14 +122,14 @@ Represent readiness with a Resource whose full capacity is consumed on acceptanc
 ```
 
 ```lua
-local function createBurst(): ActionTypes.ActionDefinition
+local function createBurst(): KRF.ActionDefinition
 	return {
 		id = "Action.Burst",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		resourceRequirements = { ["Cooldown.Burst"] = { minPercent = 1 } },
 		costs = { ["Cooldown.Burst"] = { percent = 1 } },
-		onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStart = function(ctx: KRF.ActionExecutionContext): ()
 			-- Perform the accepted burst here.
 			ctx:End()
 		end,
@@ -151,13 +150,13 @@ A charge Resource can use capacity `3` and regeneration of one charge per ten se
 ```
 
 ```lua
-local function createBlink(): ActionTypes.ActionDefinition
+local function createBlink(): KRF.ActionDefinition
 	return {
 		id = "Action.Blink",
 		visibility = "ServerOnly",
 		autoGrant = true,
 		costs = { ["Charges.Blink"] = 1 },
-		onStart = function(ctx: ActionTypes.ActionExecutionContext): ()
+		onStart = function(ctx: KRF.ActionExecutionContext): ()
 			-- Perform the validated blink here.
 			ctx:End()
 		end,

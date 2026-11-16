@@ -13,24 +13,22 @@ A catalog module returns an array of definitions. Every definition needs a uniqu
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Types = require(KRF.server.Networking.types)
-local ActionTypes = require(KRF.server.Action.types)
-local Schema = require(KRF.shared.Networking.Schema)
-local Authorization = require(KRF.server.Networking.CommandAuthorization)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Schema = KRF.Schema
+local Authorization = KRF.CommandAuthorization
 
-local commands: { Types.CommandDefinition } = {
+local commands: { KRF.CommandDefinition } = {
 	{
 		id = "Game.Interact",
 		target = "Actor",
 		request = Schema.Struct({ interactionId = Schema.Enum({ "Door", "Chest" }) }),
 		result = Schema.Struct({ sequenceId = Schema.U32 }),
 		authorize = Authorization.OwnerActor,
-		handle = function(context: Types.CommandContext, request: any): Types.CommandHandlerResult
+		handle = function(context: KRF.CommandContext, request: any): KRF.CommandHandlerResult
 			local actor = context.actor
 			assert(actor ~= nil, "Actor-targeted command")
-			local actions: ActionTypes.ActionController? =
-				actor:GetController("ActionController") :: ActionTypes.ActionController?
+			local actions: KRF.ActionController? =
+				actor:GetController("ActionController") :: KRF.ActionController?
 			if actions == nil then
 				return { accepted = false, reason = "InteractionUnavailable" }
 			end
@@ -63,7 +61,7 @@ A command that does not address an Actor uses `target = "None"`. This catalog en
 	id = "Game.Ping",
 	target = "None",
 	authorize = Authorization.AnyReadyClient,
-	handle = function(): Types.CommandHandlerResult
+	handle = function(): KRF.CommandHandlerResult
 		return { accepted = true }
 	end,
 }
@@ -74,7 +72,7 @@ Send it with `Commands.Send("Game.Ping")`. Passing an ActorView or a request val
 For a custom interaction policy, replace the first example's `authorize` field. This fragment combines Character ownership with a server-authored game permission attribute:
 
 ```lua
-authorize = function(context: Types.CommandContext): (boolean, string?)
+authorize = function(context: KRF.CommandContext): (boolean, string?)
 	local owns, reason = Authorization.OwnerActor(context, nil)
 	if not owns then return false, reason end
 	if context.player:GetAttribute("InteractionsDisabled") == true then
@@ -91,12 +89,11 @@ The permission check reads server state and makes no mutation. An NPC interactio
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Commands = require(KRF.client.Networking.CommandRuntime)
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-local Types = require(KRF.client.Networking.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Commands = KRF.CommandRuntime
+local Registry = KRF.ActorViewRegistry
 
-Commands.OnCommandResult:Connect(function(outcome: Types.CommandResult)
+Commands.OnCommandResult:Connect(function(outcome: KRF.CommandResult)
 	if outcome.status == "Accepted" then
 		print(outcome.requestId, outcome.result)
 	else
@@ -104,7 +101,7 @@ Commands.OnCommandResult:Connect(function(outcome: Types.CommandResult)
 	end
 end)
 
-Commands.OnCommandUncertain:Connect(function(outcome: Types.CommandResult)
+Commands.OnCommandUncertain:Connect(function(outcome: KRF.CommandResult)
 	warn("Execution is uncertain", outcome.requestId, outcome.reason)
 end)
 
@@ -140,7 +137,7 @@ For example, a game can register this diagnostic follow-up definition alongside 
 	request = Schema.Struct({ earlierRequestId = Schema.U32 }),
 	result = Schema.Struct({ sequenceId = Schema.U32 }),
 	authorize = Authorization.OwnerActor,
-	handle = function(context: Types.CommandContext, request: any): Types.CommandHandlerResult
+	handle = function(context: KRF.CommandContext, request: any): KRF.CommandHandlerResult
 		local prior = context:GetPriorOutcome(request.earlierRequestId)
 		if prior == nil or prior.status ~= "Accepted"
 			or prior.commandId ~= "Game.Interact" or prior.targetActor ~= context.actor then

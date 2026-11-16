@@ -20,7 +20,7 @@ ClientToServer hints support local sending and explicitly authorized server call
 | `authorize` | Required function for ClientToServer definitions: `(context: HintContext, payload: any) -> (boolean, string?)` |
 | `receive` | Required function for ClientToServer definitions: `(context: HintContext, payload: any) -> ()` |
 
-`HintDefinition` and `HintContext` are exported from `server.Networking.types`. Context fields are `player: Player`, `actor: Actor?` and `hintId: string`; Actor is nil for None targets. Callback declarations remain server-local. Both callbacks must be non-yielding; authorization must be side-effect free and explicitly return true to allow a sample. They are reserved for cosmetic handling, never authoritative gameplay mutation. Supplied callback fields must be functions, including on ServerToClient definitions; those callbacks do not handle S2C receipts.
+`KRF.HintDefinition` and `KRF.HintContext` are exported by the package module. Context fields are `player: Player`, `actor: Actor?` and `hintId: string`; Actor is nil for None targets. Callback declarations remain server-local. Both callbacks must be non-yielding; authorization must be side-effect free and explicitly return true to allow a sample. They are reserved for cosmetic handling, never authoritative gameplay mutation. Supplied callback fields must be functions, including on ServerToClient definitions; those callbacks do not handle S2C receipts.
 
 An Actor target identifies the subject of presentation data; awareness alone does not authorize a client to supply it. A ClientToServer authorizer must explicitly decide permission. `Latest` declares sampled latest-value information; `Pulse` declares an independent disposable occurrence. Neither mode is suitable for damage, Resource spending, Tags, Action activation, inventory or progression. Use [Commands](./commands) when correctness depends on a validated request reaching the server.
 
@@ -31,12 +31,11 @@ This catalog accepts owner-authorized look samples and defines separate outgoing
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Types = require(KRF.server.Networking.types)
-local Schema = require(KRF.shared.Networking.Schema)
-local Authorization = require(KRF.server.Networking.HintAuthorization)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Schema = KRF.Schema
+local Authorization = KRF.HintAuthorization
 
-local hints: { Types.HintDefinition } = {
+local hints: { KRF.HintDefinition } = {
 	{
 		id = "Game.CosmeticLook",
 		direction = "ClientToServer",
@@ -44,7 +43,7 @@ local hints: { Types.HintDefinition } = {
 		mode = "Latest",
 		payload = Schema.Struct({ yaw = Schema.U16 }),
 		authorize = Authorization.OwnerActor,
-		receive = function(context: Types.HintContext, payload: any): ()
+		receive = function(context: KRF.HintContext, payload: any): ()
 			-- Consume payload.yaw for server-local cosmetic presentation only.
 		end,
 	},
@@ -79,18 +78,17 @@ Each definition's conservative schema maximum must fit one private unreliable pa
 
 ## Send a cosmetic sample
 
-Require `client.Networking.HintRuntime` and call `Send("Game.CosmeticLook", actorView, { yaw = 120 })` with a current, available ActorView. Pass nil for definitions targeting `None`. See [HintRuntime](/api/Networking/hint-runtime) for local failure returns.
+Use `KRF.ClientHintRuntime` and call `Send("Game.CosmeticLook", actorView, { yaw = 120 })` with a current, available ActorView. Pass nil for definitions targeting `None`. See [HintRuntime](/api/Networking/hint-runtime) for local failure returns.
 
 An initialized client can call this helper with the selected view and a valid U16 yaw. It does not start a sampling loop or retry refused samples:
 
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.client.Actor.types)
-local Hints = require(KRF.client.Networking.HintRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Hints = KRF.ClientHintRuntime
 
-local function sampleLook(view: ActorTypes.ActorView, yaw: number): boolean
+local function sampleLook(view: KRF.ActorView, yaw: number): boolean
 	local admitted = Hints.Send("Game.CosmeticLook", view, { yaw = yaw })
 	return admitted
 end
@@ -123,11 +121,10 @@ This server helper takes an explicitly selected Player and a registered Actor. C
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.server.Actor.types)
-local Hints = require(KRF.server.Networking.HintRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Hints = KRF.ServerHintRuntime
 
-local function present(player: Player, actor: ActorTypes.Actor, yaw: number): ()
+local function present(player: Player, actor: KRF.Actor, yaw: number): ()
 	Hints.SendTo(player, "Game.CosmeticFacing", actor, { yaw = yaw })
 	Hints.SendTo(player, "Game.OptionalBurst", actor, { variant = "Spark" })
 end
@@ -140,16 +137,14 @@ On the client, keep effect ownership in the presentation system. The supplied ca
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Networking.types)
-local Hints = require(KRF.client.Networking.HintRuntime)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Hints = KRF.ClientHintRuntime
 
 local function attach(
-	face: (ActorTypes.ActorView, number) -> (),
-	burst: (ActorTypes.ActorView, string) -> ()
+	face: (KRF.ActorView, number) -> (),
+	burst: (KRF.ActorView, string) -> ()
 ): () -> ()
-	local connection = Hints.OnHintReceived:Connect(function(receipt: Types.HintReceived): ()
+	local connection = Hints.OnHintReceived:Connect(function(receipt: KRF.HintReceived): ()
 		local view = receipt.actorView
 		if view == nil or not view:IsAvailable() then return end
 		-- Payloads are schema-erased; narrow by the known definition id.
@@ -177,14 +172,12 @@ Do **not** install this as a Hint receiver. Even with a valid schema and OwnerAc
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local Types = require(KRF.server.Networking.types)
-local ActionTypes = require(KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function forbidden(context: Types.HintContext, payload: any): ()
+local function forbidden(context: KRF.HintContext, payload: any): ()
 	local actor = context.actor
 	if actor == nil then return end
-	local actions = actor:GetController("ActionController") :: ActionTypes.ActionController?
+	local actions = actor:GetController("ActionController") :: KRF.ActionController?
 	if actions ~= nil then
 		-- PROHIBITED: assumes a game-defined Combat.Fireball Action.
 		actions:RequestAction("Combat.Fireball", { target = payload.target })

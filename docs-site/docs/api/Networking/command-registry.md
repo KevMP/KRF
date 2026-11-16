@@ -4,7 +4,8 @@
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Registry = require(ReplicatedStorage.Packages.KRF.server.Networking.CommandRegistry)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Registry = KRF.CommandRegistry
 ```
 
 ## Members

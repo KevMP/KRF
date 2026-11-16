@@ -15,16 +15,15 @@ Use the supplied delta for charge progress or channel timing. It may exceed `0.0
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActionTypes = require(KRF.server.Action.types)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local function createChannel(): ActionTypes.ActionDefinition
+local function createChannel(): KRF.ActionDefinition
 	local elapsedSeconds: number = 0
 	return {
 		id = "Action.Channel",
 		visibility = "ServerOnly",
 		autoGrant = true,
-		onUpdate = function(ctx: ActionTypes.ActionExecutionContext, deltaTime: number): ()
+		onUpdate = function(ctx: KRF.ActionExecutionContext, deltaTime: number): ()
 			elapsedSeconds += deltaTime
 			if elapsedSeconds >= 2 then
 				ctx:End()
