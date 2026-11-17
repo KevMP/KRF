@@ -390,35 +390,35 @@ test("the Action wizard names each field, lets lists be typed, and writes what t
 		{
 			"name (module and file name, such as Fireball)": "Fireball",
 			"id (blank: Fireball; a namespace such as Combat.Fireball is allowed)": "Combat.Fireball",
-			"recipe (which lifecycle hook ends it)": "channel",
-			"duration (seconds the channel runs)": "2",
-			"autoGrant (every Actor can use it without being granted it)": false,
-			"requiredTags (Tags the Actor must have to start it; comma separated, blank for none; this project has Focused)": "",
-			"blockedTags (Tags that stop it from starting; comma separated, blank for none; this project has Focused)": "Focused, Stunned",
-			"activeTags (Tags it applies while it runs, removed when it ends; comma separated, blank for none; this project has Focused)": "Focused",
-			"activeTags.Focused.duration (seconds; blank: until it ends)": "2",
-			"appliedTags (Tags it applies when it starts; comma separated, blank for none; this project has Focused)": "Burning",
+			"recipe (which lifecycle hook ends the Action)": "channel",
+			"duration (seconds the Action runs)": "2",
+			"autoGrant (every Actor can use the Action without a grant)": false,
+			"requiredTags (Tags the Actor must have for the Action to start; comma separated, blank for none; this project has Focused)": "",
+			"blockedTags (Tags that stop the Action from starting; comma separated, blank for none; this project has Focused)": "Focused, Stunned",
+			"activeTags (Tags applied while the Action runs, removed when the Action ends; comma separated, blank for none; this project has Focused)": "Focused",
+			"activeTags.Focused.duration (seconds; blank: until the Action ends)": "2",
+			"appliedTags (Tags applied when the Action starts; comma separated, blank for none; this project has Focused)": "Burning",
 			"appliedTags.Burning.duration (seconds; blank: the Tag's default duration)": "",
-			"resourceRequirements (Resources that must be at a certain level before it can start; comma separated, blank for none; this project has Energy)": "Energy",
+			"resourceRequirements (Resources that must be at a certain level for the Action to start; comma separated, blank for none; this project has Energy)": "Energy",
 			"resourceRequirements.Energy.min (lowest amount allowed; blank to skip)": "10",
 			"resourceRequirements.Energy.max (highest amount allowed; blank to skip)": "",
-			"resourceRequirements.Energy.minPercent (lowest percent of its maximum, 0-100; blank to skip)": "",
-			"resourceRequirements.Energy.maxPercent (highest percent of its maximum, 0-100; blank to skip)": "90",
-			"costs (Resources it spends when it starts; comma separated, blank for none; this project has Energy)": "Energy",
-			"costs.Energy (an amount such as 10, or a percent of its range such as 25%)": "25%",
+			"resourceRequirements.Energy.minPercent (lowest percent of the Resource's maximum, 0-100; blank to skip)": "",
+			"resourceRequirements.Energy.maxPercent (highest percent of the Resource's maximum, 0-100; blank to skip)": "90",
+			"costs (Resources spent when the Action starts; comma separated, blank for none; this project has Energy)": "Energy",
+			"costs.Energy (an amount such as 10, or a percent of the Resource's range such as 25%)": "25%",
 			"costs.Energy.multiplierProperty (a property whose value multiplies the cost, such as CostMultiplier; blank for none)": "",
-			"locks (lock names it holds while running; Actions that share a lock never run at the same time; comma separated, blank for none)": "Hands",
-			"interruptibleBy (Actions allowed to end it and take over its locks; comma separated, blank for none; this project has Focus)": "Focus",
+			"locks (lock names held while the Action runs; Actions that share a lock never run at the same time; comma separated, blank for none)": "Hands",
+			"interruptibleBy (Actions allowed to end this Action and take over its locks; comma separated, blank for none; this project has Focus)": "Focus",
 			"hooks (extra lifecycle hook stubs; space to select, enter to confirm)": [["onEnd", "canBeInterruptedBy"]],
-			"requestable (players can request it from the client)": true,
-			"visibility (who can see it while it runs)": "ServerOnly",
-			"start field name (parameters the client sends when it requests it; blank to finish)": ["Target", ""],
+			"requestable (players can request the Action from the client)": true,
+			"visibility (who can see the Action)": "ServerOnly",
+			"start field name (parameters the client sends when requesting the Action; blank to finish)": ["Target", ""],
 			"start.Target type": "U32",
-			"start.Target optional (it can be left out)": true,
-			"stop (the client can request a Stop; it does not end the Action by itself, onStopRequested decides what Stop does)": true,
+			"start.Target optional (the field can be left out)": true,
+			"stop (the client can request a Stop; a Stop does not end the Action by itself, onStopRequested decides what happens)": true,
 			"stop.parameters field name (parameters the client sends with a Stop; blank to finish)": [""],
-			"allowInputInterrupt (the client's input can interrupt its own activation)": false,
-			"onDisconnect (what happens when the requesting player leaves)": "Interrupt",
+			"allowInputInterrupt (client input can interrupt the Action)": false,
+			"onDisconnect (what happens to the Action when the requesting player leaves)": "Interrupt",
 		},
 		[
 			"--name",
@@ -474,18 +474,18 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 		{
 			"name (module and file name, such as Fireball)": "Burning",
 			"id (blank: Burning; a namespace such as Combat.Burning is allowed)": "",
-			"visibility (who can see it)": "ServerOnly",
-			"duplicateBehavior (what adding it again does)": "Stack",
-			"maxStacks (most stacks allowed; blank for no limit)": "3",
-			"defaultDuration (seconds it lasts; blank: until removed)": "",
+			"visibility (who can see the Tag)": "ServerOnly",
+			"duplicateBehavior (what adding the Tag again does)": "Stack",
+			"maxStacks (most stacks of the Tag allowed; blank for no limit)": "3",
+			"defaultDuration (seconds the Tag lasts; blank: until removed)": "",
 			"tickInterval (seconds between onTick calls; blank for no onTick)": "0.5",
-			"properties (properties it modifies while active; comma separated, blank for none; this project has EnergyRegen)": "WalkSpeed, EnergyRegen",
-			"properties.WalkSpeed.set (replace it with this value; blank to adjust it instead)": "",
+			"properties (properties the Tag modifies while active; comma separated, blank for none; this project has EnergyRegen)": "WalkSpeed, EnergyRegen",
+			"properties.WalkSpeed.set (replace the property with this value; blank to adjust the property instead)": "",
 			"properties.WalkSpeed.add (amount added; blank to skip)": "",
 			"properties.WalkSpeed.multiply (multiplier; blank to skip)": "0.5",
 			"properties.WalkSpeed.min (lowest value allowed; blank to skip)": "4",
 			"properties.WalkSpeed.max (highest value allowed; blank to skip)": "",
-			"properties.EnergyRegen.set (replace it with this value; blank to adjust it instead)": "0",
+			"properties.EnergyRegen.set (replace the property with this value; blank to adjust the property instead)": "0",
 		},
 		["--name", "Burning", "--duplicate-behavior", "Stack", "--max-stacks", "3", "--tick-interval", "0.5", "--property", "WalkSpeed:multiply=0.5,min=4", "--property", "EnergyRegen:set=0"],
 	);
@@ -496,15 +496,15 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 		{
 			"name (module and file name, such as Fireball)": "Mana",
 			"id (blank: Mana; a namespace such as Combat.Mana is allowed)": "",
-			"max (its maximum)": "property",
+			"max (the Resource's maximum)": "property",
 			"max.propertyName (the property to read)": "MaxMana",
 			"max.defaultBaseValue (MaxMana's value before Tag modifiers)": "50",
-			"min (its minimum; none means 0)": "none",
-			"initialValue (blank: its maximum)": "0",
-			"regen.rate (how much it regenerates per second)": "value",
+			"min (the Resource's minimum; none means 0)": "none",
+			"initialValue (the Resource's starting value; blank: the maximum)": "0",
+			"regen.rate (how much the Resource regenerates per second)": "value",
 			"regen.rate.value": "2",
-			"visibility (who can see it)": "ClientVisible",
-			"autoAssign (every Actor gets it automatically)": true,
+			"visibility (who can see the Resource)": "ClientVisible",
+			"autoAssign (every Actor gets the Resource automatically)": true,
 		},
 		["--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
 	);
@@ -515,17 +515,17 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 		{
 			"name (module and file name, such as Fireball)": "ComboState",
 			"id (blank: ComboState; a namespace such as Combat.ComboState is allowed)": "",
-			"audience (which players receive it)": "All",
+			"audience (which players receive the domain)": "All",
 			"state field name (replicated state; blank to finish)": ["Count", ""],
 			"state.Count type": "Array",
 			"state.Count item type": "Enum",
-			"state.Count item values (names it can be, comma separated)": "Fire, Ice",
+			"state.Count item values (allowed names, comma separated)": "Fire, Ice",
 			"state.Count maxLength (most items allowed)": "4",
-			"state.Count optional (it can be left out)": false,
+			"state.Count optional (the field can be left out)": false,
 			"events ID (a replicated event such as Finisher; blank to finish)": ["Finisher", ""],
 			"events.Finisher.payload field name (data the event carries; blank to finish)": ["Damage", ""],
 			"events.Finisher.payload.Damage type": "U16",
-			"events.Finisher.payload.Damage optional (it can be left out)": false,
+			"events.Finisher.payload.Damage optional (the field can be left out)": false,
 		},
 		["--name", "ComboState", "--audience", "All", "--state-field", "Count:Array(Enum(Fire|Ice),4)", "--event", "Finisher(Damage:U16)"],
 	);
@@ -534,11 +534,11 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 test("the wizard rejects an out-of-range percent at the question itself", async (t) => {
 	const root = newProject(t);
 	const { prompts } = scriptedPrompts({
-		"resourceRequirements (Resources that must be at a certain level before it can start; comma separated, blank for none; this project has Energy)": "Energy",
+		"resourceRequirements (Resources that must be at a certain level for the Action to start; comma separated, blank for none; this project has Energy)": "Energy",
 		"resourceRequirements.Energy.min (lowest amount allowed; blank to skip)": "",
 		"resourceRequirements.Energy.max (highest amount allowed; blank to skip)": "",
-		"resourceRequirements.Energy.minPercent (lowest percent of its maximum, 0-100; blank to skip)": "",
-		"resourceRequirements.Energy.maxPercent (highest percent of its maximum, 0-100; blank to skip)": "150",
+		"resourceRequirements.Energy.minPercent (lowest percent of the Resource's maximum, 0-100; blank to skip)": "",
+		"resourceRequirements.Energy.maxPercent (highest percent of the Resource's maximum, 0-100; blank to skip)": "150",
 	});
 	const before = readTree(root);
 	const result = await generate(
@@ -554,23 +554,23 @@ test("the wizard rejects an out-of-range percent at the question itself", async 
 test("the wizard skips what flags already answered and never asks with --yes", async (t) => {
 	const root = newProject(t);
 	const partial = scriptedPrompts({
-		"direction (who sends it)": "ClientToServer",
-		"mode (which sends are delivered)": "Latest",
-		"payload field name (data it carries; blank to finish)": ["Sent", ""],
+		"direction (who sends the Hint)": "ClientToServer",
+		"mode (which sends of the Hint are delivered)": "Latest",
+		"payload field name (data the Hint carries; blank to finish)": ["Sent", ""],
 		"payload.Sent type": "F64",
-		"payload.Sent optional (it can be left out)": false,
-		"authorize (which players may send it)": "AnyReadyClient",
+		"payload.Sent optional (the field can be left out)": false,
+		"authorize (which players may send the Hint)": "AnyReadyClient",
 	});
 	const result = await generate(root, ["hint", "--name", "Ping", "--id", "Net.Ping", "--target", "None"], { prompts: partial.prompts });
 	assert.equal(result.code, 0, result.stderr);
 	assert.deepEqual(partial.asked, [
-		"direction (who sends it)",
-		"mode (which sends are delivered)",
-		"payload field name (data it carries; blank to finish)",
+		"direction (who sends the Hint)",
+		"mode (which sends of the Hint are delivered)",
+		"payload field name (data the Hint carries; blank to finish)",
 		"payload.Sent type",
-		"payload.Sent optional (it can be left out)",
-		"payload field name (data it carries; blank to finish)",
-		"authorize (which players may send it)",
+		"payload.Sent optional (the field can be left out)",
+		"payload field name (data the Hint carries; blank to finish)",
+		"authorize (which players may send the Hint)",
 	]);
 	assert.match(readTree(root)["src/server/Hints/Net/Ping.luau"], /Sent = KRF\.Schema\.F64,[\s\S]*authorize = KRF\.HintAuthorization\.AnyReadyClient,/);
 
@@ -617,7 +617,7 @@ test("cancelling the wizard or omitting the name without a terminal writes nothi
 	const root = newProject(t);
 	const before = readTree(root);
 
-	const cancelled = await generate(root, ["resource"], { prompts: scriptedPrompts({ "name (module and file name, such as Fireball)": "Stamina", "id (blank: Stamina; a namespace such as Combat.Stamina is allowed)": "", "max (its maximum)": CANCEL }).prompts });
+	const cancelled = await generate(root, ["resource"], { prompts: scriptedPrompts({ "name (module and file name, such as Fireball)": "Stamina", "id (blank: Stamina; a namespace such as Combat.Stamina is allowed)": "", "max (the Resource's maximum)": CANCEL }).prompts });
 	assert.equal(cancelled.code, 130);
 	assert.match(cancelled.stderr, /Cancelled\. No files were written/);
 

@@ -9,17 +9,17 @@ const RECIPE_HOOKS = { instant: "onStart", channel: "onUpdate", held: "onStopReq
 const KNOWN_SHOWN = 12;
 
 const HOOKS = [
-	{ value: "onCanStart", label: "onCanStart", hint: "can refuse the start" },
-	{ value: "onStart", label: "onStart", hint: "runs when it starts" },
+	{ value: "onCanStart", label: "onCanStart", hint: "can refuse to start the Action" },
+	{ value: "onStart", label: "onStart", hint: "runs when the Action starts" },
 	{ value: "onStopRequested", label: "onStopRequested", hint: "runs when a Stop is requested" },
-	{ value: "onUpdate", label: "onUpdate", hint: "runs every frame while active" },
-	{ value: "onEnd", label: "onEnd", hint: "runs when it ends" },
-	{ value: "onInterrupt", label: "onInterrupt", hint: "runs when it is interrupted" },
+	{ value: "onUpdate", label: "onUpdate", hint: "runs every frame while the Action is active" },
+	{ value: "onEnd", label: "onEnd", hint: "runs when the Action ends" },
+	{ value: "onInterrupt", label: "onInterrupt", hint: "runs when the Action is interrupted" },
 	{ value: "canBeInterruptedBy", label: "canBeInterruptedBy", hint: "decides case by case whether interruptibleBy applies" },
 ];
 
 const VISIBILITY = [
-	{ value: "ServerOnly", label: "ServerOnly", hint: "clients never see it" },
+	{ value: "ServerOnly", label: "ServerOnly", hint: "hidden from clients" },
 	{ value: "ClientVisible", label: "ClientVisible", hint: "replicated to clients" },
 ];
 
@@ -29,7 +29,7 @@ const NETWORK_TARGET = [
 ];
 
 const AUTHORIZATION = [
-	{ value: "deny", label: "deny", hint: "a stub that rejects everything until you write it" },
+	{ value: "deny", label: "deny", hint: "an authorize stub that rejects every send until you write the check" },
 	{ value: "OwnerActor", label: "OwnerActor", hint: "only the player who owns the target Actor" },
 	{ value: "AnyReadyClient", label: "AnyReadyClient", hint: "any connected player" },
 ];
@@ -79,7 +79,7 @@ function idListProblem(value) {
 
 function costProblem(value) {
 	const match = /^\s*([0-9.]+)\s*(%?)\s*$/.exec(value ?? "");
-	return match && Number(match[1]) > 0 ? undefined : "Enter an amount such as 10, or a percent of its range such as 25%.";
+	return match && Number(match[1]) > 0 ? undefined : "Enter an amount such as 10, or a percent of the Resource's range such as 25%.";
 }
 
 function knownText(known) {
@@ -116,7 +116,7 @@ function createAsker(prompts) {
 				case "String":
 					return `String(${await asker.number(`${path} maxBytes (longest text allowed, in bytes)`, { above: 0, integer: true }, "32")})`;
 				case "Enum": {
-					const names = await asker.text(`${path} values (names it can be, comma separated)`, {
+					const names = await asker.text(`${path} values (allowed names, comma separated)`, {
 						placeholder: "Fire, Ice",
 						validate: (value) => ENTRY_PROBLEMS.field(`Value:Enum(${(value ?? "").split(",").map((name) => name.trim()).join("|")})`),
 					});
@@ -147,7 +147,7 @@ function createAsker(prompts) {
 				});
 				if (name === "") return fields;
 				const type = await asker.type(`${path}.${name}`);
-				fields.push((await asker.confirm(`${path}.${name} optional (it can be left out)`)) ? `${name}:Optional(${type})` : `${name}:${type}`);
+				fields.push((await asker.confirm(`${path}.${name} optional (the field can be left out)`)) ? `${name}:Optional(${type})` : `${name}:${type}`);
 			}
 		},
 
@@ -175,7 +175,7 @@ async function askTagApplications(asker, known, field, description, durationNote
 }
 
 async function askRequirements(asker, known) {
-	const resources = await asker.ids("resourceRequirements", "Resources that must be at a certain level before it can start", known.resource);
+	const resources = await asker.ids("resourceRequirements", "Resources that must be at a certain level for the Action to start", known.resource);
 	const entries = [];
 	for (const resource of resources) {
 		const path = `resourceRequirements.${resource}`;
@@ -184,9 +184,9 @@ async function askRequirements(asker, known) {
 		if (min !== "") parts.push(`min=${min}`);
 		const max = await asker.optionalNumber(`${path}.max (highest amount allowed; blank to skip)`, min === "" ? {} : { min: Number(min) });
 		if (max !== "") parts.push(`max=${max}`);
-		const minPercent = await asker.optionalNumber(`${path}.minPercent (lowest percent of its maximum, 0-100; blank to skip)`, { min: 0, max: 100 });
+		const minPercent = await asker.optionalNumber(`${path}.minPercent (lowest percent of the Resource's maximum, 0-100; blank to skip)`, { min: 0, max: 100 });
 		if (minPercent !== "") parts.push(`minPercent=${percent(minPercent)}`);
-		const maxPercent = await asker.optionalNumber(`${path}.maxPercent (highest percent of its maximum, 0-100; blank to skip)`, {
+		const maxPercent = await asker.optionalNumber(`${path}.maxPercent (highest percent of the Resource's maximum, 0-100; blank to skip)`, {
 			min: minPercent === "" ? 0 : Number(minPercent),
 			max: 100,
 		});
@@ -197,10 +197,10 @@ async function askRequirements(asker, known) {
 }
 
 async function askCosts(asker, known) {
-	const resources = await asker.ids("costs", "Resources it spends when it starts", known.resource);
+	const resources = await asker.ids("costs", "Resources spent when the Action starts", known.resource);
 	const entries = [];
 	for (const resource of resources) {
-		const cost = await asker.text(`costs.${resource} (an amount such as 10, or a percent of its range such as 25%)`, { validate: costProblem });
+		const cost = await asker.text(`costs.${resource} (an amount such as 10, or a percent of the Resource's range such as 25%)`, { validate: costProblem });
 		const isPercent = cost.endsWith("%");
 		const value = isPercent ? percent(cost.slice(0, -1).trim()) : cost;
 		const property = await asker.text(`costs.${resource}.multiplierProperty (a property whose value multiplies the cost, such as CostMultiplier; blank for none)`, {
@@ -213,11 +213,11 @@ async function askCosts(asker, known) {
 }
 
 async function askPropertyModifiers(asker, known) {
-	const properties = await asker.ids("properties", "properties it modifies while active", known.property);
+	const properties = await asker.ids("properties", "properties the Tag modifies while active", known.property);
 	const entries = [];
 	for (const property of properties) {
 		const path = `properties.${property}`;
-		const set = await asker.optionalNumber(`${path}.set (replace it with this value; blank to adjust it instead)`, {});
+		const set = await asker.optionalNumber(`${path}.set (replace the property with this value; blank to adjust the property instead)`, {});
 		if (set !== "") {
 			entries.push(`${property}:set=${set}`);
 			continue;
@@ -242,53 +242,53 @@ const FLOWS = {
 		if (need("recipe")) {
 			set(
 				"recipe",
-				await asker.select("recipe (which lifecycle hook ends it)", [
-					{ value: "instant", label: "instant", hint: "onStart ends it right away" },
-					{ value: "channel", label: "channel", hint: "onUpdate ends it after a duration" },
-					{ value: "held", label: "held", hint: "onStopRequested ends it when a Stop is requested" },
+				await asker.select("recipe (which lifecycle hook ends the Action)", [
+					{ value: "instant", label: "instant", hint: "onStart ends the Action right away" },
+					{ value: "channel", label: "channel", hint: "onUpdate ends the Action after a duration" },
+					{ value: "held", label: "held", hint: "onStopRequested ends the Action when a Stop is requested" },
 				]),
 			);
 		}
-		if (need("duration") && options.recipe === "channel") set("duration", await asker.number("duration (seconds the channel runs)", { above: 0 }, "1"));
-		if (need("autoGrant")) set("autoGrant", await asker.confirm("autoGrant (every Actor can use it without being granted it)"));
-		if (need("requiredTags")) set("requiredTags", await asker.ids("requiredTags", "Tags the Actor must have to start it", known.tag));
-		if (need("blockedTags")) set("blockedTags", await asker.ids("blockedTags", "Tags that stop it from starting", known.tag));
-		if (need("activeTags")) set("activeTags", await askTagApplications(asker, known, "activeTags", "Tags it applies while it runs, removed when it ends", "until it ends"));
-		if (need("appliedTags")) set("appliedTags", await askTagApplications(asker, known, "appliedTags", "Tags it applies when it starts", "the Tag's default duration"));
+		if (need("duration") && options.recipe === "channel") set("duration", await asker.number("duration (seconds the Action runs)", { above: 0 }, "1"));
+		if (need("autoGrant")) set("autoGrant", await asker.confirm("autoGrant (every Actor can use the Action without a grant)"));
+		if (need("requiredTags")) set("requiredTags", await asker.ids("requiredTags", "Tags the Actor must have for the Action to start", known.tag));
+		if (need("blockedTags")) set("blockedTags", await asker.ids("blockedTags", "Tags that stop the Action from starting", known.tag));
+		if (need("activeTags")) set("activeTags", await askTagApplications(asker, known, "activeTags", "Tags applied while the Action runs, removed when the Action ends", "until the Action ends"));
+		if (need("appliedTags")) set("appliedTags", await askTagApplications(asker, known, "appliedTags", "Tags applied when the Action starts", "the Tag's default duration"));
 		if (need("requirements")) set("requirements", await askRequirements(asker, known));
 		if (need("costs")) set("costs", await askCosts(asker, known));
-		if (need("locks")) set("locks", await asker.ids("locks", "lock names it holds while running; Actions that share a lock never run at the same time", known.lock));
+		if (need("locks")) set("locks", await asker.ids("locks", "lock names held while the Action runs; Actions that share a lock never run at the same time", known.lock));
 		if (need("interruptibleBy") && options.locks.length > 0) {
-			set("interruptibleBy", await asker.ids("interruptibleBy", "Actions allowed to end it and take over its locks", known.action));
+			set("interruptibleBy", await asker.ids("interruptibleBy", "Actions allowed to end this Action and take over its locks", known.action));
 		}
 		if (need("hooks")) {
 			const available = HOOKS.filter((hook) => hook.value !== RECIPE_HOOKS[options.recipe] && (hook.value !== "canBeInterruptedBy" || options.interruptibleBy.length > 0));
 			set("hooks", await asker.multiselect("hooks (extra lifecycle hook stubs; space to select, enter to confirm)", available));
 		}
-		if (need("requestable")) set("requestable", await asker.confirm("requestable (players can request it from the client)"));
+		if (need("requestable")) set("requestable", await asker.confirm("requestable (players can request the Action from the client)"));
 		if (need("visibility")) {
-			set("visibility", await asker.select("visibility (who can see it while it runs)", VISIBILITY, options.requestable ? "ClientVisible" : "ServerOnly"));
+			set("visibility", await asker.select("visibility (who can see the Action)", VISIBILITY, options.requestable ? "ClientVisible" : "ServerOnly"));
 		}
 		if (!options.requestable) return;
 
-		if (need("startFields")) set("startFields", await asker.fields("start", "parameters the client sends when it requests it"));
+		if (need("startFields")) set("startFields", await asker.fields("start", "parameters the client sends when requesting the Action"));
 		if (need("clientStop") && options.recipe !== "held") {
-			set("clientStop", await asker.confirm("stop (the client can request a Stop; it does not end the Action by itself, onStopRequested decides what Stop does)"));
+			set("clientStop", await asker.confirm("stop (the client can request a Stop; a Stop does not end the Action by itself, onStopRequested decides what happens)"));
 		}
 		if (need("stopFields") && (options.recipe === "held" || options.clientStop)) {
 			set("stopFields", await asker.fields("stop.parameters", "parameters the client sends with a Stop"));
 		}
 		if (need("allowInputInterrupt") && options.recipe !== "held") {
-			set("allowInputInterrupt", await asker.confirm("allowInputInterrupt (the client's input can interrupt its own activation)"));
+			set("allowInputInterrupt", await asker.confirm("allowInputInterrupt (client input can interrupt the Action)"));
 		}
 		if (need("onDisconnect") && options.recipe !== "held") {
 			set(
 				"onDisconnect",
 				await asker.select(
-					"onDisconnect (what happens when the requesting player leaves)",
+					"onDisconnect (what happens to the Action when the requesting player leaves)",
 					[
-						{ value: "Keep", label: "Keep", hint: "it keeps running" },
-						{ value: "Interrupt", label: "Interrupt", hint: "it is interrupted" },
+						{ value: "Keep", label: "Keep", hint: "the Action keeps running" },
+						{ value: "Interrupt", label: "Interrupt", hint: "the Action is interrupted" },
 					],
 					"Keep",
 				),
@@ -297,15 +297,15 @@ const FLOWS = {
 	},
 
 	async tag(asker, need, set, known, options) {
-		if (need("visibility")) set("visibility", await asker.select("visibility (who can see it)", VISIBILITY, OPTION_DEFAULTS.tag.visibility));
+		if (need("visibility")) set("visibility", await asker.select("visibility (who can see the Tag)", VISIBILITY, OPTION_DEFAULTS.tag.visibility));
 		if (need("duplicateBehavior")) {
 			set(
 				"duplicateBehavior",
 				await asker.select(
-					"duplicateBehavior (what adding it again does)",
+					"duplicateBehavior (what adding the Tag again does)",
 					[
 						{ value: "Ignore", label: "Ignore", hint: "nothing" },
-						{ value: "Refresh", label: "Refresh", hint: "restarts its duration" },
+						{ value: "Refresh", label: "Refresh", hint: "restarts the Tag's duration" },
 						{ value: "Stack", label: "Stack", hint: "adds another stack" },
 					],
 					OPTION_DEFAULTS.tag.duplicateBehavior,
@@ -313,11 +313,11 @@ const FLOWS = {
 			);
 		}
 		if (need("maxStacks") && options.duplicateBehavior === "Stack") {
-			const max = await asker.optionalNumber("maxStacks (most stacks allowed; blank for no limit)", { above: 0, integer: true });
+			const max = await asker.optionalNumber("maxStacks (most stacks of the Tag allowed; blank for no limit)", { above: 0, integer: true });
 			if (max !== "") set("maxStacks", max);
 		}
 		if (need("duration")) {
-			const seconds = await asker.optionalNumber("defaultDuration (seconds it lasts; blank: until removed)", { above: 0 });
+			const seconds = await asker.optionalNumber("defaultDuration (seconds the Tag lasts; blank: until removed)", { above: 0 });
 			if (seconds !== "") set("duration", seconds);
 		}
 		if (need("tickInterval")) {
@@ -328,34 +328,34 @@ const FLOWS = {
 	},
 
 	async resource(asker, need, set) {
-		if (need("max")) set("max", await asker.numericSource("max", "its maximum", { initialValue: "100" }));
+		if (need("max")) set("max", await asker.numericSource("max", "the Resource's maximum", { initialValue: "100" }));
 		if (need("min")) {
-			const min = await asker.numericSource("min", "its minimum; none means 0", { initialValue: "0", allowNegative: true, allowNone: true });
+			const min = await asker.numericSource("min", "the Resource's minimum; none means 0", { initialValue: "0", allowNegative: true, allowNone: true });
 			if (min !== undefined) set("min", min);
 		}
 		if (need("initial")) {
-			const initial = await asker.text("initialValue (blank: its maximum)", { validate: optional((value) => numberProblem(value)) });
+			const initial = await asker.text("initialValue (the Resource's starting value; blank: the maximum)", { validate: optional((value) => numberProblem(value)) });
 			if (initial !== "") set("initial", initial);
 		}
 		if (need("regen")) {
-			const regen = await asker.numericSource("regen.rate", "how much it regenerates per second", { initialValue: "1", allowNone: true });
+			const regen = await asker.numericSource("regen.rate", "how much the Resource regenerates per second", { initialValue: "1", allowNone: true });
 			if (regen !== undefined) set("regen", regen);
 		}
-		if (need("visibility")) set("visibility", await asker.select("visibility (who can see it)", VISIBILITY, OPTION_DEFAULTS.resource.visibility));
-		if (need("autoAssign")) set("autoAssign", await asker.confirm("autoAssign (every Actor gets it automatically)", true));
+		if (need("visibility")) set("visibility", await asker.select("visibility (who can see the Resource)", VISIBILITY, OPTION_DEFAULTS.resource.visibility));
+		if (need("autoAssign")) set("autoAssign", await asker.confirm("autoAssign (every Actor gets the Resource automatically)", true));
 	},
 
 	async controller(asker, need, set, known) {
-		if (need("dependsOn")) set("dependsOn", await asker.ids("dependsOn", "controller keys that must attach before it", known.controller));
-		if (need("autoAttach")) set("autoAttach", await asker.confirm("autoAttach (attach it to every Actor automatically)", true));
+		if (need("dependsOn")) set("dependsOn", await asker.ids("dependsOn", "controller keys that must attach before this controller", known.controller));
+		if (need("autoAttach")) set("autoAttach", await asker.confirm("autoAttach (attach the controller to every Actor automatically)", true));
 	},
 
 	async command(asker, need, set, known, options) {
-		if (need("target")) set("target", await asker.select("target (what the command is about)", NETWORK_TARGET, OPTION_DEFAULTS.command.target));
+		if (need("target")) set("target", await asker.select("target (what the Command is about)", NETWORK_TARGET, OPTION_DEFAULTS.command.target));
 		if (need("requestFields")) set("requestFields", await asker.fields("request", "data the client sends"));
 		if (need("resultFields")) set("resultFields", await asker.fields("result", "data the server sends back"));
 		if (need("authorize")) {
-			set("authorize", await asker.select("authorize (which players may send it)", AUTHORIZATION.filter((policy) => policy.value !== "OwnerActor" || options.target === "Actor"), "deny"));
+			set("authorize", await asker.select("authorize (which players may send the Command)", AUTHORIZATION.filter((policy) => policy.value !== "OwnerActor" || options.target === "Actor"), "deny"));
 		}
 	},
 
@@ -363,25 +363,25 @@ const FLOWS = {
 		if (need("direction")) {
 			set(
 				"direction",
-				await asker.select("direction (who sends it)", [
-					{ value: "ServerToClient", label: "ServerToClient", hint: "the server sends it to clients" },
-					{ value: "ClientToServer", label: "ClientToServer", hint: "clients send it to the server" },
+				await asker.select("direction (who sends the Hint)", [
+					{ value: "ServerToClient", label: "ServerToClient", hint: "the server sends the Hint to clients" },
+					{ value: "ClientToServer", label: "ClientToServer", hint: "clients send the Hint to the server" },
 				]),
 			);
 		}
-		if (need("target")) set("target", await asker.select("target (what the hint is about)", NETWORK_TARGET, OPTION_DEFAULTS.hint.target));
+		if (need("target")) set("target", await asker.select("target (what the Hint is about)", NETWORK_TARGET, OPTION_DEFAULTS.hint.target));
 		if (need("mode")) {
 			set(
 				"mode",
-				await asker.select("mode (which sends are delivered)", [
+				await asker.select("mode (which sends of the Hint are delivered)", [
 					{ value: "Pulse", label: "Pulse", hint: "every send" },
 					{ value: "Latest", label: "Latest", hint: "only the newest value" },
 				]),
 			);
 		}
-		if (need("payloadFields")) set("payloadFields", await asker.fields("payload", "data it carries"));
+		if (need("payloadFields")) set("payloadFields", await asker.fields("payload", "data the Hint carries"));
 		if (need("authorize") && options.direction === "ClientToServer") {
-			set("authorize", await asker.select("authorize (which players may send it)", AUTHORIZATION.filter((policy) => policy.value !== "OwnerActor" || options.target === "Actor"), "deny"));
+			set("authorize", await asker.select("authorize (which players may send the Hint)", AUTHORIZATION.filter((policy) => policy.value !== "OwnerActor" || options.target === "Actor"), "deny"));
 		}
 	},
 
@@ -390,7 +390,7 @@ const FLOWS = {
 			set(
 				"audience",
 				await asker.select(
-					"audience (which players receive it)",
+					"audience (which players receive the domain)",
 					[
 						{ value: "Owner", label: "Owner", hint: "only the player who owns the Actor" },
 						{ value: "All", label: "All", hint: "every player" },
