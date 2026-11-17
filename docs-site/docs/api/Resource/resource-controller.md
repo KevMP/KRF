@@ -33,7 +33,7 @@ local resources = actor:GetController("ResourceController")
 
 ### `AddResource(resourceId: string, initialValueOverride: number?) -> (boolean, string?)` {#add-resource}
 
-Assigns one registered resource to the Actor. With an attached `PropertyController`, property-backed sources seed missing base properties, preserve existing base values, and resolve through current property modifiers. Without one, KRF uses each source's `defaultBaseValue` and the source does not update live.
+Assigns one registered resource to the Actor. With an attached `PropertyController`, property-backed sources seed missing base properties, preserve existing base values, and resolve through current property modifiers. Without one, KRF uses each referenced Property's registered default and the source does not update live.
 
 When the override is omitted, KRF uses the definition's `initialValue`, then the resolved maximum when the definition also omits it.
 

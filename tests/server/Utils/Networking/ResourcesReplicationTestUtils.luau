@@ -24,6 +24,8 @@ export type Fixture = {
 	disconnects: { () -> () },
 }
 
+local PropertyCatalog = require(KRF.server.Property.PropertyRegistry)
+
 local TestUtils = {}
 
 function TestUtils.catalog(): { ResourceTypes.ResourceDefinition }
@@ -33,9 +35,9 @@ function TestUtils.catalog(): { ResourceTypes.ResourceDefinition }
 			visibility = "ClientVisible",
 			autoAssign = true,
 			initialValue = 40,
-			min = { propertyName = "ManaMin", defaultBaseValue = 0 },
-			max = { propertyName = "ManaMax", defaultBaseValue = 100 },
-			regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 10 } },
+			min = { propertyName = "ManaMin" },
+			max = { propertyName = "ManaMax" },
+			regen = { rate = { propertyName = "ManaRegen" } },
 		},
 		{
 			id = "Resource.Stamina",
@@ -52,13 +54,24 @@ function TestUtils.catalog(): { ResourceTypes.ResourceDefinition }
 			visibility = "ServerOnly",
 			autoAssign = true,
 			initialValue = 30,
-			max = { propertyName = "PrivateMax", defaultBaseValue = 50 },
-			regen = { rate = { propertyName = "PrivateRegen", defaultBaseValue = 4 } },
+			max = { propertyName = "PrivateMax" },
+			regen = { rate = { propertyName = "PrivateRegen" } },
 		},
 	}
 end
 
 function TestUtils.new(catalog: { ResourceTypes.ResourceDefinition }?): Fixture
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "ManaMax", defaultBaseValue = 100 },
+		{ id = "ManaMin", defaultBaseValue = 0 },
+		{ id = "ManaRegen", defaultBaseValue = 10 },
+		{ id = "PrivateMax", defaultBaseValue = 50 },
+		{ id = "PrivateRegen", defaultBaseValue = 4 },
+		{ id = "Unrelated", defaultBaseValue = 0 },
+	}))
+
 	Controller._setAutomaticSteppingEnabledForTests(false)
 	ResourceUtils.resetAndLoadDefinitions(catalog or TestUtils.catalog())
 
@@ -145,6 +158,7 @@ function TestUtils.destroy(fixture: Fixture): ()
 
 	fixture.resources:Destroy()
 	fixture.properties:Destroy()
+	PropertyCatalog._resetForTests()
 	Registry._resetForTests()
 	Controller._setAutomaticSteppingEnabledForTests(true)
 end

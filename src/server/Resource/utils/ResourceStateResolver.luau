@@ -2,6 +2,7 @@
 local serverFolder = script.Parent.Parent.Parent
 
 local ResourceTypes = require(serverFolder.Resource.types)
+local PropertyRegistry = require(serverFolder.Property.PropertyRegistry)
 local PropertyTypes = require(serverFolder.Property.types)
 
 type LoadedResourceDefinition = ResourceTypes.LoadedResourceDefinition
@@ -19,7 +20,13 @@ local function ResolveNumericSource(
 	end
 
 	local propertyName: string = source.propertyName :: string
-	local defaultBaseValue: number = source.defaultBaseValue :: number
+	local definition: PropertyTypes.PropertyDefinition? = PropertyRegistry.Get(propertyName)
+
+	if definition == nil then
+		return nil, "UnknownPropertyId"
+	end
+
+	local defaultBaseValue: number = definition.defaultBaseValue
 
 	if propertyController == nil then
 		return defaultBaseValue, nil

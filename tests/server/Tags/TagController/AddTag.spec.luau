@@ -64,6 +64,24 @@ local UncappedStackCatalog: { TagDefinition } = {
 	},
 }
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "DamageDealt", defaultBaseValue = 0 },
+		{ id = "DamageTaken", defaultBaseValue = 0 },
+		{ id = "DashCostMultiplier", defaultBaseValue = 0 },
+		{ id = "HealingReceived", defaultBaseValue = 0 },
+		{ id = "Stamina", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 local function createControllerWithCatalog(catalog: { TagDefinition }): (TagControllerType, any)
 	TagRegistry._resetForTests()
 

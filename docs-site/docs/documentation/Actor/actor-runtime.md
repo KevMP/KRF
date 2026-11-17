@@ -16,6 +16,8 @@ An Actor is not limited to player characters. NPCs and other modeled gameplay pa
 
 Complete [server initialization](../initializing-krf) before registering any Actor. Until `Server.Init` succeeds, `RegisterActor` returns `ControllerDefinitionsNotLoaded` without binding the model or firing registration events. A successful initialization fixes the controller definitions for every later Actor.
 
+`ActorRuntime.RegisterActor(model, { properties = { Defense = 20 } })` optionally supplies initial base overrides for registered Properties. Invalid option shapes, unknown IDs and nonfinite values fail before binding or events. Overrides are ready before dependent factories, including ResourceController, initialize.
+
 `ActorRuntime.RegisterActor(model)` performs one transaction:
 
 1. Create a disabled Actor.

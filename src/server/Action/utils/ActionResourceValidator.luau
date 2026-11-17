@@ -1,4 +1,6 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Parent.Property.types)
+local PropertyRegistry = require(script.Parent.Parent.Parent.Property.PropertyRegistry)
 local ActionResourceValidator = {}
 
 local function resourceIds(value: any, prefix: string): ({ string }?, string?)
@@ -116,7 +118,14 @@ function ActionResourceValidator.ValidateRequirements(
 	return true, nil
 end
 
-function ActionResourceValidator.ValidateCosts(costs: any, preparedIds: { [string]: boolean }): (boolean, string?)
+function ActionResourceValidator.ValidateCosts(
+	costs: any,
+	preparedIds: { [string]: boolean },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
+	local properties = preparedProperties
+		or (if PropertyRegistry.IsLoaded() then PropertyRegistry.GetAllById() else nil)
+
 	if costs == nil then
 		return true, nil
 	end
@@ -150,6 +159,16 @@ function ActionResourceValidator.ValidateCosts(costs: any, preparedIds: { [strin
 				and (type(cost.multiplierProperty) ~= "string" or cost.multiplierProperty == "")
 			then
 				return false, "ActionCostMultiplierPropertyInvalid:" .. id
+			end
+
+			if cost.multiplierProperty ~= nil then
+				if properties == nil then
+					return false, "PropertyDefinitionsNotLoaded"
+				end
+
+				if properties[cost.multiplierProperty] == nil then
+					return false, "ActionCostMultiplierPropertyUnknown:" .. cost.multiplierProperty
+				end
 			end
 		end
 

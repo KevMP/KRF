@@ -27,7 +27,7 @@ local mana: ResourceTypes.ResourceDefinition = {
 	id = "Mana",
 	visibility = "ServerOnly",
 	autoAssign = true,
-	max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+	max = { propertyName = "MaxMana" },
 }
 
 for _, terminal: string in { "End", "Interrupt", "Destroy" } do
@@ -60,7 +60,7 @@ for _, terminal: string in { "End", "Interrupt", "Destroy" } do
 					duplicateBehavior = "Ignore",
 					properties = { MaxMana = { set = 90 } },
 				},
-			})
+			}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 			local _actor: Actor, actions: ActionController, resources: ResourceController =
 				ResourceTestUtils.registerActor()
@@ -143,7 +143,7 @@ it(
 					table.insert(order, "Hook")
 				end,
 			},
-		}, { mana })
+		}, { mana }, nil, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController =
 			ResourceTestUtils.registerActor()
@@ -208,7 +208,7 @@ for _, trigger: string in { "Started", "TagAdded", "Property" } do
 				duplicateBehavior = "Stack",
 				properties = { MaxMana = { set = 90 } },
 			},
-		})
+		}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController, tags: TagController =
 			ResourceTestUtils.registerActor()
@@ -287,7 +287,7 @@ for _, method: string in { "Spend", "Restore", "Drain", "SetCurrent" } do
 	it("keeps public " .. method .. " synchronous during a pending Action transaction notification", function()
 		ResourceTestUtils.initialize({
 			{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20 } },
-		}, { mana })
+		}, { mana }, nil, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController =
 			ResourceTestUtils.registerActor()
@@ -328,7 +328,7 @@ end
 it("issues every Resource transition once under recursive mutation and keeps historical payloads", function()
 	ResourceTestUtils.initialize({
 		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20 } },
-	}, { mana })
+	}, { mana }, nil, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local order: { string } = {}
@@ -360,9 +360,14 @@ it("issues every Resource transition once under recursive mutation and keeps his
 end)
 
 it("drains every older Resource cost before a nested mutation whose Resource id sorts earlier", function()
-	ResourceTestUtils.initialize({
-		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
-	}, { mana, { id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 100 } } })
+	ResourceTestUtils.initialize(
+		{
+			{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
+		},
+		{ mana, { id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 100 } } },
+		nil,
+		{ { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } }
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local order: { string } = {}
@@ -408,7 +413,7 @@ it("issues outer-before-inner costs when a Resource listener synchronously reque
 				table.insert(order, "inner hook")
 			end,
 		},
-	}, { mana })
+	}, { mana }, nil, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local nested: ActionTypes.ActionRequestResult? = nil
@@ -473,7 +478,7 @@ it("commits cleanup Resource bounds before scoped preemption callbacks and does 
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { add = 50 } },
 		},
-	})
+	}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController, _properties: PropertyController, tags: TagController =
 		ResourceTestUtils.registerActor()
@@ -512,7 +517,7 @@ end)
 it("discards pending Resource notifications when Started destroys the ResourceController", function()
 	ResourceTestUtils.initialize({
 		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20 } },
-	}, { mana })
+	}, { mana }, nil, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local changes: number = 0
@@ -536,9 +541,14 @@ it("discards pending Resource notifications when Started destroys the ResourceCo
 end)
 
 it("allows destruction during Resource dispatch without duplicate or later invalid notifications", function()
-	ResourceTestUtils.initialize({
-		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
-	}, { mana, { id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 100 } } })
+	ResourceTestUtils.initialize(
+		{
+			{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
+		},
+		{ mana, { id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 100 } } },
+		nil,
+		{ { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } }
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local changes: { string } = {}
@@ -562,7 +572,12 @@ it("allows destruction during Resource dispatch without duplicate or later inval
 end)
 
 it("updates Property-backed Resource state before base, resolved and umbrella Property listeners", function()
-	ResourceTestUtils.initialize({}, { mana })
+	ResourceTestUtils.initialize(
+		{},
+		{ mana },
+		nil,
+		{ { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } }
+	)
 
 	local _actor: Actor, _actions: ActionController, resources: ResourceController, properties: PropertyController =
 		ResourceTestUtils.registerActor()
@@ -598,7 +613,7 @@ it("commits the final Property-backed regeneration rate before Started can step 
 			visibility = "ServerOnly",
 			autoAssign = true,
 			max = { value = 100 },
-			regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 2 } },
+			regen = { rate = { propertyName = "ManaRegen" } },
 		},
 	}, {
 		{
@@ -607,7 +622,7 @@ it("commits the final Property-backed regeneration rate before Started can step 
 			duplicateBehavior = "Stack",
 			properties = { ManaRegen = { set = 5 } },
 		},
-	})
+	}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local transitions: { { number } } = {}
@@ -643,7 +658,7 @@ it("keeps Resource getters as cached reads in a lifecycle callback", function()
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { set = 90 } },
 		},
-	})
+	}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 		ResourceTestUtils.registerActor()
@@ -692,7 +707,7 @@ it("keeps pending activation and destruction Resource transitions ordered when S
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { add = 50 } },
 		},
-	})
+	}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local changes: { ResourceChange } = {}
@@ -783,7 +798,7 @@ it("preserves both prepared spends when Started synchronously preempts its own A
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { set = 60 } },
 		},
-	})
+	}, { { id = "ManaRegen", defaultBaseValue = 2 }, { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local actor: Actor, actions: ActionController, resources: ResourceController, _properties: PropertyController, tags: TagController =
 		ResourceTestUtils.registerActor()

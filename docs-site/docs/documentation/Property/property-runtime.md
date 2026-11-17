@@ -27,14 +27,16 @@ local function increaseWalkSpeed(actor: Actor): number
 end
 ```
 
-New controllers start with:
+New controllers require a loaded [Property catalog](./property-registry). By default, they auto-assign:
 
 | Property | Base value |
 | --- | --- |
 | `WalkSpeed` | `16` |
 | `JumpPower` | `50` |
 
-Setting a new property name creates custom numeric state. A tag modifier alone never creates that entry.
+Only registered IDs can be written. `SetBaseProperty` creates an Actor-local record on the first write to a registered ID. Unknown IDs return `UnknownPropertyId`; malformed IDs return `InvalidPropertyId`, before mutation or events. Registration alone does not make `HasProperty` true. A Tag modifier alone never assigns a Property.
+
+Use `autoAssign` or `RegisterActor(model, { properties = { Defense = 20 } })` for silent initial values. Overrides are installed before dependent controller factories, including ResourceController. Both paths resolve already-active Tags.
 
 ## Tag resolution
 
@@ -66,7 +68,7 @@ Property notifications report net changes and are journaled in commit order. If 
 
 - Do not store current resource meters as properties. Resources own their own current values.
 - Do not read base values for calculations that should include buffs and debuffs.
-- Create custom properties explicitly with `SetBaseProperty` before expecting tag modifiers to affect them.
+- Register custom Properties before assigning them with `SetBaseProperty` before expecting tag modifiers to affect them.
 - Keep non-numeric Actor state in its owning system.
 
 ## API reference

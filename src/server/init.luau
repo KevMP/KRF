@@ -18,6 +18,7 @@ local BuiltInReplicationDomains = require(script.Replication.BuiltInReplicationD
 local SchemaCollectionUtils = require(script.Parent.shared.Networking.utils.SchemaCollectionUtils)
 local ResourceValidator = require(script.Resource.utils.ResourceValidator)
 local ResourceDefinitionNormalizer = require(script.Resource.utils.ResourceDefinitionNormalizer)
+local PropertyRegistry = require(script.Property.PropertyRegistry)
 local PropertyController = require(script.Property.PropertyController)
 local TagController = require(script.Tags.TagController)
 local ResourceController = require(script.Resource.ResourceController)
@@ -59,6 +60,7 @@ local function rollbackStartup(): ()
 	CommandRegistry._RollbackStartup()
 	HintRegistry._RollbackStartup()
 	ControllerRegistry._RollbackStartup()
+	PropertyRegistry._RollbackStartup()
 	TagRegistry._RollbackStartup()
 	ResourceRegistry._RollbackStartup()
 	ActionRegistry._RollbackStartup()
@@ -94,6 +96,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	if
 		ControllerRegistry.IsLoaded()
+		or PropertyRegistry.IsLoaded()
 		or TagRegistry.IsLoaded()
 		or ResourceRegistry.IsLoaded()
 		or ActionRegistry.IsLoaded()
@@ -102,6 +105,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 		or HintRegistry.IsLoaded()
 	then
 		return false, { system = "Server", reason = "CatalogAlreadyLoaded" }
+	end
+
+	local preparedProperties, propertyReason =
+		PropertyRegistry.Prepare(if config.properties ~= nil then config.properties else {})
+
+	if preparedProperties == nil then
+		return false, { system = "Property", reason = propertyReason :: string }
 	end
 
 	local controllers: { ControllerDef } = {
@@ -200,7 +210,8 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local preparedTags: { TagDefinition } = {}
 
 	for _, definition: TagDefinition in tags do
-		local valid: boolean, reason: string? = TagValidator.ValidateTagDefinition(definition, stagedTags)
+		local valid: boolean, reason: string? =
+			TagValidator.ValidateTagDefinition(definition, stagedTags, preparedProperties.definitionsById)
 
 		if not valid then
 			return false, { system = "Tag", reason = reason :: string }
@@ -216,8 +227,11 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	local preparedResources: { ResourceTypes.LoadedResourceDefinition } = {}
 
 	for _, definition: ResourceDefinition in resources do
-		local valid: boolean, reason: string? =
-			ResourceValidator.ValidateResourceDefinition(definition, stagedResources)
+		local valid: boolean, reason: string? = ResourceValidator.ValidateResourceDefinition(
+			definition,
+			stagedResources,
+			preparedProperties.definitionsById
+		)
 
 		if not valid then
 			return false, { system = "Resource", reason = reason :: string }
@@ -229,7 +243,7 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 	end
 
 	local preparedActions: PreparedActionCatalog?, actionReason: string? =
-		ActionRegistry.Prepare(actions, preparedTagIds, preparedResourceIds)
+		ActionRegistry.Prepare(actions, preparedTagIds, preparedResourceIds, preparedProperties.definitionsById)
 
 	if preparedActions == nil then
 		return false, { system = "Action", reason = actionReason :: string }
@@ -335,6 +349,13 @@ function Server.Init(config: ServerStartConfig): (boolean, StartupFailure?)
 
 	local published: boolean, loaded: boolean, reason: string? = pcall(function(): (boolean, string?)
 		local success: boolean, failure: string? = ControllerRegistry.Load(controllers)
+
+		if not success then
+			return false, failure
+		end
+
+		publicationSystem = "Property"
+		success, failure = PropertyRegistry.Publish(preparedProperties)
 
 		if not success then
 			return false, failure

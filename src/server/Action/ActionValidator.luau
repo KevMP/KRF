@@ -1,4 +1,5 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Property.types)
 local ActionTypes = require(script.Parent.types)
 local ActionResourceValidator = require(script.Parent.utils.ActionResourceValidator)
 
@@ -219,7 +220,8 @@ function ActionValidator.ValidateActionDefinition(
 	definition: unknown,
 	preparedActionIds: { [string]: boolean },
 	preparedTagIds: { [string]: boolean },
-	preparedResourceIds: { [string]: boolean }
+	preparedResourceIds: { [string]: boolean },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (boolean, string?)
 	local valid: boolean, reason: string? = ValidateIdentity(definition)
 
@@ -322,7 +324,7 @@ function ActionValidator.ValidateActionDefinition(
 		return false, reason
 	end
 
-	valid, reason = ActionResourceValidator.ValidateCosts(fields.costs, preparedResourceIds)
+	valid, reason = ActionResourceValidator.ValidateCosts(fields.costs, preparedResourceIds, preparedProperties)
 
 	if not valid then
 		return false, reason
@@ -346,7 +348,8 @@ end
 function ActionValidator.ValidateCatalog(
 	definitions: { ActionDefinition },
 	preparedTagIds: { [string]: boolean },
-	preparedResourceIds: { [string]: boolean }
+	preparedResourceIds: { [string]: boolean },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (boolean, string?)
 	local valid: boolean, reason: string? = ValidateArray(definitions, "ActionDefinitions")
 
@@ -371,8 +374,13 @@ function ActionValidator.ValidateCatalog(
 	end
 
 	for _, definition: ActionDefinition in definitions do
-		valid, reason =
-			ActionValidator.ValidateActionDefinition(definition, preparedActionIds, preparedTagIds, preparedResourceIds)
+		valid, reason = ActionValidator.ValidateActionDefinition(
+			definition,
+			preparedActionIds,
+			preparedTagIds,
+			preparedResourceIds,
+			preparedProperties
+		)
 
 		if not valid then
 			return false, reason

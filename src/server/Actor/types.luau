@@ -43,12 +43,14 @@ export type ActorRegistry = {
 	SetModelGoneHandler: (handler: ((actor: Actor, reason: string) -> ())?) -> (),
 }
 
-export type RegisterActorOpts = {}
+export type RegisterActorOpts = {
+	properties: { [string]: number }?,
+}
 
 export type ActorRuntime = {
 	RegisterActor: (model: Model, opts: RegisterActorOpts?) -> (Actor?, string?),
 	UnregisterActor: (actor: Actor, reason: string?) -> (boolean, string?),
-	AttachControllers: (actor: Actor) -> (boolean, string?),
+	AttachControllers: (actor: Actor, options: RegisterActorOpts?) -> (boolean, string?),
 	DetachAllControllers: (actor: Actor) -> (),
 
 	--events

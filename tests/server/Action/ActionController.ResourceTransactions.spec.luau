@@ -28,10 +28,10 @@ local mana: ResourceTypes.ResourceDefinition = {
 	id = "Mana",
 	visibility = "ServerOnly",
 	autoAssign = true,
-	min = { propertyName = "MinMana", defaultBaseValue = 0 },
-	max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+	min = { propertyName = "MinMana" },
+	max = { propertyName = "MaxMana" },
 	initialValue = 100,
-	regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 2 } },
+	regen = { rate = { propertyName = "ManaRegen" } },
 }
 
 for _, mutation: string in { "current", "requirement", "bounds", "multiplier" } do
@@ -109,6 +109,12 @@ for _, mutation: string in { "current", "requirement", "bounds", "multiplier" } 
 			{ id = "Movement", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 			{ id = "Incoming", visibility = "ServerOnly", duplicateBehavior = "Stack" },
 			{ id = "Applied", visibility = "ServerOnly", duplicateBehavior = "Stack" },
+		}, {
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 2 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
 		})
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController, tags: TagController =
@@ -149,12 +155,23 @@ for _, mutation: string in { "current", "requirement", "bounds", "multiplier" } 
 end
 
 it("validates every declared cost before spending even when another Resource is affordable", function()
-	ResourceTestUtils.initialize({
-		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
-	}, {
-		mana,
-		{ id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 10 }, initialValue = 5 },
-	})
+	ResourceTestUtils.initialize(
+		{
+			{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20, Chakra = 10 } },
+		},
+		{
+			mana,
+			{ id = "Chakra", visibility = "ServerOnly", autoAssign = true, max = { value = 10 }, initialValue = 5 },
+		},
+		nil,
+		{
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 2 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+		}
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	local changes: { ResourceChange } = {}
@@ -239,6 +256,13 @@ it("commits all owners, incoming locks, Tags, Properties and Resources before th
 				duplicateBehavior = "Stack",
 				properties = { MinMana = { set = 10 }, MaxMana = { set = 60 }, ManaRegen = { set = 3 } },
 			},
+		},
+		{
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 2 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
 		}
 	)
 
@@ -365,6 +389,12 @@ for _, bound: string in { "MinMana", "MaxMana" } do
 				duplicateBehavior = "Stack",
 				properties = { [bound] = { set = 50 } },
 			},
+		}, {
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 2 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
 		})
 
 		local actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
@@ -425,6 +455,12 @@ it("preserves last valid bounds and regen after invalid final range while keepin
 			duplicateBehavior = "Stack",
 			properties = { MinMana = { set = 150 }, ManaRegen = { set = 5 } },
 		},
+	}, {
+		{ id = "Mana", defaultBaseValue = 0 },
+		{ id = "ManaRegen", defaultBaseValue = 2 },
+		{ id = "MaxMana", defaultBaseValue = 100 },
+		{ id = "MinMana", defaultBaseValue = 0 },
+		{ id = "Multiplier", defaultBaseValue = 0 },
 	})
 
 	local actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
@@ -503,6 +539,12 @@ for _, source: string in { "incoming", "preempted" } do
 				duplicateBehavior = "Stack",
 				properties = { Multiplier = { multiply = 0.5 } },
 			},
+		}, {
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 2 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
 		})
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
@@ -548,6 +590,12 @@ it("does not reprice a percentage cost when preemption removes a Resource capaci
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { add = 100 } },
 		},
+	}, {
+		{ id = "Mana", defaultBaseValue = 0 },
+		{ id = "ManaRegen", defaultBaseValue = 2 },
+		{ id = "MaxMana", defaultBaseValue = 100 },
+		{ id = "MinMana", defaultBaseValue = 0 },
+		{ id = "Multiplier", defaultBaseValue = 0 },
 	})
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
@@ -588,6 +636,12 @@ it("replaces equivalent Resource-bound modifiers without intermediate clamp or f
 			duplicateBehavior = "Stack",
 			properties = { MaxMana = { add = 50 } },
 		},
+	}, {
+		{ id = "Mana", defaultBaseValue = 0 },
+		{ id = "ManaRegen", defaultBaseValue = 2 },
+		{ id = "MaxMana", defaultBaseValue = 100 },
+		{ id = "MinMana", defaultBaseValue = 0 },
+		{ id = "Multiplier", defaultBaseValue = 0 },
 	})
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()

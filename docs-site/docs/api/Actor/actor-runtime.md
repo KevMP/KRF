@@ -21,7 +21,7 @@ local ActorRuntime = KRF.ActorRuntime
 | --- | --- |
 | Method | [`RegisterActor(model: Model, opts: RegisterActorOpts?) -> (Actor?, string?)`](#register-actor) |
 | Method | [`UnregisterActor(actor: Actor, reason: string?) -> (boolean, string?)`](#unregister-actor) |
-| Method | [`AttachControllers(actor: Actor) -> (boolean, string?)`](#attach-controllers) |
+| Method | [`AttachControllers(actor: Actor, options: RegisterActorOpts?) -> (boolean, string?)`](#attach-controllers) |
 | Method | [`DetachAllControllers(actor: Actor) -> ()`](#detach-all-controllers) |
 | Event | [`OnActorRegistered: Event<Actor>`](#on-actor-registered) |
 | Event | [`OnActorUnregistering: Event<Actor, string?>`](#on-actor-unregistering) |
@@ -41,6 +41,8 @@ Creates an Actor for `model`, binds it, attaches every auto-attach controller, t
 - `nil, "ActorModelMarkerConflict"`: the model already contains conflicting framework identity metadata.
 - `nil, reason`: binding, controller setup, or publication setup failed.
 
+`opts` accepts only an optional `properties` map of registered IDs to finite numeric base overrides. KRF validates the entire map before binding. Failures return `InvalidActorRegistrationOptions`, `InvalidActorProperties`, `InvalidPropertyId`, `UnknownPropertyId`, or `InvalidInitialPropertyValue`. Overrides install silently after PropertyController attachment, before later dependent factories run.
+
 Registration is atomic from the caller's perspective. A controller failure destroys controllers attached during the attempt and clears the model binding before returning.
 
 ### `UnregisterActor(actor: Actor, reason: string?) -> (boolean, string?)` {#unregister-actor}
@@ -54,7 +56,9 @@ Disables a live Actor, fires the teardown events, destroys all controllers, and 
 
 A bound model being destroyed or parented to `nil` invokes this method with reason `"ModelGone"`.
 
-### `AttachControllers(actor: Actor) -> (boolean, string?)` {#attach-controllers}
+### `AttachControllers(actor: Actor, options: RegisterActorOpts?) -> (boolean, string?)` {#attach-controllers}
+
+Optional `options.properties` uses the same validation and silent initialization as `RegisterActor`.
 
 Resolves all auto-attach controller definitions through `ControllerRegistry`, creates them in dependency order, and attaches them to `actor`.
 

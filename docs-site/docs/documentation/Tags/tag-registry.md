@@ -52,7 +52,7 @@ Each property modifier uses one of two modes.
 
 `set` cannot be combined with normal fields in the same modifier. Active stacks repeat additive and multiplicative effects.
 
-Tags may name built-in or custom properties. They modify only properties already owned by `PropertyController`; they do not create custom property entries.
+Tags may name only registered built-in or custom Properties. Startup and direct TagRegistry loads reject unknown references; direct loading requires the Property catalog first when modifiers are present. They modify only properties already owned by `PropertyController`; they do not create custom property entries.
 
 ## Catalog example
 

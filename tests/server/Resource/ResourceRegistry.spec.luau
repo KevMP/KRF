@@ -15,6 +15,23 @@ type LoadedResourceDefinition = ResourceTypes.LoadedResourceDefinition
 
 local Registry: ResourceRegistry = ResourceRegistry
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "ManaRegen", defaultBaseValue = 5 },
+		{ id = "MaxFocus", defaultBaseValue = 40 },
+		{ id = "MaxMana", defaultBaseValue = 75 },
+		{ id = "MinMana", defaultBaseValue = -10 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 local function createMinimalResourceDefinition(): ResourceDefinition
 	return {
 		id = "Resource.Stamina",
@@ -55,11 +72,9 @@ it("ResourceRegistry.Load preserves explicit values and property-backed sources 
 			id = "Resource.Mana",
 			min = {
 				propertyName = "MinMana",
-				defaultBaseValue = -10,
 			},
 			max = {
 				propertyName = "MaxMana",
-				defaultBaseValue = 75,
 			},
 			initialValue = 25,
 			visibility = "ClientVisible",
@@ -67,7 +82,6 @@ it("ResourceRegistry.Load preserves explicit values and property-backed sources 
 			regen = {
 				rate = {
 					propertyName = "ManaRegen",
-					defaultBaseValue = 5,
 				},
 			},
 		},
@@ -75,7 +89,6 @@ it("ResourceRegistry.Load preserves explicit values and property-backed sources 
 			id = "Resource.Focus",
 			max = {
 				propertyName = "MaxFocus",
-				defaultBaseValue = 40,
 			},
 			visibility = "ServerOnly",
 		},
@@ -87,14 +100,14 @@ it("ResourceRegistry.Load preserves explicit values and property-backed sources 
 
 	local loadedDefinition: LoadedResourceDefinition = Registry.Get("Resource.Mana") :: LoadedResourceDefinition
 	expect(loadedDefinition.min.propertyName).toBe("MinMana")
-	expect(loadedDefinition.min.defaultBaseValue).toBe(-10)
+	expect((loadedDefinition.min :: any).defaultBaseValue).toBeNil()
 	expect(loadedDefinition.max.propertyName).toBe("MaxMana")
-	expect(loadedDefinition.max.defaultBaseValue).toBe(75)
+	expect((loadedDefinition.max :: any).defaultBaseValue).toBeNil()
 	expect(loadedDefinition.initialValue).toBe(25)
 	expect(loadedDefinition.visibility).toBe("ClientVisible")
 	expect(loadedDefinition.autoAssign).toBe(true)
 	expect((loadedDefinition.regen :: any).rate.propertyName).toBe("ManaRegen")
-	expect((loadedDefinition.regen :: any).rate.defaultBaseValue).toBe(5)
+	expect((loadedDefinition.regen :: any).rate.defaultBaseValue).toBeNil()
 
 	local focusDefinition: LoadedResourceDefinition = Registry.Get("Resource.Focus") :: LoadedResourceDefinition
 	expect(focusDefinition.initialValue).toBeNil()

@@ -6,6 +6,17 @@ local ActorTypes = require(serverFolder.Actor.types)
 
 local types = {}
 
+export type PropertyDefinition = {
+	id: string,
+	defaultBaseValue: number,
+	autoAssign: boolean?,
+}
+
+export type PreparedPropertyCatalog = {
+	definitionsById: { [string]: PropertyDefinition },
+	orderedDefinitions: { PropertyDefinition },
+}
+
 export type PropertyChange = {
 	actor: ActorTypes.Actor,
 	propertyName: string,
@@ -39,6 +50,7 @@ export type PropertyMutationObserver = {
 }
 
 export type InternalPropertyController = PropertyController & {
+	_initializeBaseProperties: (self: InternalPropertyController, properties: { [string]: number }) -> (),
 	_observeResolvedMutations: (self: InternalPropertyController, observer: PropertyMutationObserver) -> () -> (),
 }
 

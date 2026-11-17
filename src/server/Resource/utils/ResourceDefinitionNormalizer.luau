@@ -16,7 +16,6 @@ local function CloneNumericSource(source: ResourceNumericSource): ResourceNumeri
 	return table.freeze({
 		value = source.value,
 		propertyName = source.propertyName,
-		defaultBaseValue = source.defaultBaseValue,
 	}) :: ResourceNumericSource
 end
 

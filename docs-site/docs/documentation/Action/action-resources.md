@@ -47,7 +47,7 @@ effective cost = base cost * resolved multiplier Property  (when supplied)
 
 A `0.25` cost against min `20` and max `120` is `25`, regardless of current value. Affordability measures available value above the resolved minimum. Percentage costs allow a zero range and produce a zero base cost.
 
-`multiplierProperty` reads the Actor's resolved Property, including existing Tag modifiers. It must exist and be finite and non-negative; `0` makes the effective cost free. Create a custom multiplier with `PropertyController:SetBaseProperty` before requesting the Action. The effective cost must be finite and non-negative.
+`multiplierProperty` must name a registered Property; startup and direct Action catalog validation reject unknown references. It reads the Actor's resolved Property, including existing Tag modifiers. It must exist and be finite and non-negative; `0` makes the effective cost free. Declare a custom multiplier in the [Property catalog](../Property/property-registry), then assign it with `PropertyController:SetBaseProperty` before requesting the Action. The effective cost must be finite and non-negative.
 
 See [ActionResourceRequirement](/api/Action/action-types#action-resource-requirement) and [ActionResourceCost](/api/Action/action-types#action-resource-cost) for exact field constraints.
 

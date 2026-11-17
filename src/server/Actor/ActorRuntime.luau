@@ -1,6 +1,8 @@
 --!strict
 local SignalFolder = script.Parent.Parent.Parent.shared.Signal
 
+local PropertyTypes = require(script.Parent.Parent.Property.types)
+local ActorRegistrationOptions = require(script.Parent.utils.ActorRegistrationOptions)
 local ActorTypes = require(script.Parent.types)
 local SignalTypes = require(SignalFolder.types)
 local ControllerTypes = require(script.Parent.Parent.Controller.types)
@@ -46,16 +48,23 @@ local function DestroyController(controllerKey: string, controller: Controller):
 	end
 end
 
-function ActorRuntime.RegisterActor(model: Model, _opts: RegisterActorOpts?): (Actor?, string?)
+function ActorRuntime.RegisterActor(model: Model, opts: RegisterActorOpts?): (Actor?, string?)
 	if not Server._IsInitialized() then
 		return nil, "ControllerDefinitionsNotLoaded"
+	end
+
+	local properties: { [string]: number }?, optionsReason: string? = ActorRegistrationOptions.Prepare(opts)
+
+	if properties == nil then
+		return nil, optionsReason
 	end
 
 	local actor: Actor = ActorEntity.new()
 	local ok: boolean, reason: string? = ActorRegistry.BindModel(actor, model)
 
 	if ok then
-		local attachSuccess: boolean, attachFailReason: string? = ActorRuntime.AttachControllers(actor)
+		local attachSuccess: boolean, attachFailReason: string? =
+			ActorRuntime.AttachControllers(actor, { properties = properties })
 
 		if not attachSuccess then
 			ActorRuntime.DetachAllControllers(actor)
@@ -117,7 +126,13 @@ function ActorRuntime.UnregisterActor(actor: Actor, reason: string?): (boolean, 
 	return true, nil
 end
 
-function ActorRuntime.AttachControllers(actor: Actor): (boolean, string?)
+function ActorRuntime.AttachControllers(actor: Actor, options: RegisterActorOpts?): (boolean, string?)
+	local properties, optionsReason = ActorRegistrationOptions.Prepare(options)
+
+	if properties == nil then
+		return false, optionsReason
+	end
+
 	local autoAttachKeys: { string } = ControllerRegistry.GetAutoAttachKeys()
 	local orderedKeys: { string }?, reason: string? = ControllerRegistry.ResolveOrder(autoAttachKeys)
 	local attachedKeysThisCall: { string } = {}
@@ -164,6 +179,18 @@ function ActorRuntime.AttachControllers(actor: Actor): (boolean, string?)
 		end
 
 		table.insert(attachedKeysThisCall, controllerKey)
+
+		if controllerKey == "PropertyController" and next(properties) ~= nil then
+			local propertyController = controller :: PropertyTypes.InternalPropertyController
+
+			local initialized: boolean =
+				pcall(propertyController._initializeBaseProperties, propertyController, properties)
+
+			if not initialized then
+				returnErrorMessage = "InitialPropertyInstallationFailed"
+				break
+			end
+		end
 	end
 
 	if returnErrorMessage then

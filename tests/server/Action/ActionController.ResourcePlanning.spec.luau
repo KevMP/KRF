@@ -101,15 +101,27 @@ local requirementCases: { RequirementCase } = {
 
 for _, case: RequirementCase in requirementCases do
 	it("enforces " .. case.name .. " without consuming requirement-only Resources", function()
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				resourceRequirements = { Mana = case.requirement },
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					resourceRequirements = { Mana = case.requirement },
+				},
+				{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
 			},
-			{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
-		}, { mana })
+			{ mana },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController =
 			ResourceTestUtils.registerActor()
@@ -140,15 +152,27 @@ for _, case: RequirementCase in requirementCases do
 end
 
 it("checks all Resources and evaluates a shared requirement and cost against pre-spend state", function()
-	ResourceTestUtils.initialize({
+	ResourceTestUtils.initialize(
 		{
-			id = "Cast",
-			visibility = "ServerOnly",
-			autoGrant = true,
-			resourceRequirements = { Mana = { min = 60 }, Chakra = { min = 100 } },
-			costs = { Mana = 30 },
+			{
+				id = "Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				resourceRequirements = { Mana = { min = 60 }, Chakra = { min = 100 } },
+				costs = { Mana = 30 },
+			},
 		},
-	}, { mana, chakra })
+		{ mana, chakra },
+		nil,
+		{
+			{ id = "Chakra", defaultBaseValue = 0 },
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "Missing", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+			{ id = "requirement", defaultBaseValue = 0 },
+		}
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	expect((resources:SetCurrent("Chakra", 99))).toBe(true)
@@ -184,7 +208,15 @@ for _, field: string in { "resourceRequirements", "costs" } do
 
 		local unassigned: ResourceTypes.ResourceDefinition = table.clone(mana)
 		unassigned.autoAssign = false
-		ResourceTestUtils.initialize({ definition }, { unassigned })
+
+		ResourceTestUtils.initialize({ definition }, { unassigned }, nil, {
+			{ id = "Chakra", defaultBaseValue = 0 },
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "Missing", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+			{ id = "requirement", defaultBaseValue = 0 },
+		})
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController =
 			ResourceTestUtils.registerActor()
@@ -220,15 +252,27 @@ for _, usePercentRequirement: boolean in { true, false } do
 				definition.costs = { Mana = { percent = 0.25 } }
 			end
 
-			ResourceTestUtils.initialize({ definition }, {
+			ResourceTestUtils.initialize(
+				{ definition },
 				{
-					id = "Mana",
-					visibility = "ServerOnly",
-					autoAssign = true,
-					min = { value = 20 },
-					max = { value = 20 },
+					{
+						id = "Mana",
+						visibility = "ServerOnly",
+						autoAssign = true,
+						min = { value = 20 },
+						max = { value = 20 },
+					},
 				},
-			})
+				nil,
+				{
+					{ id = "Chakra", defaultBaseValue = 0 },
+					{ id = "Mana", defaultBaseValue = 0 },
+					{ id = "MaxMana", defaultBaseValue = 100 },
+					{ id = "Missing", defaultBaseValue = 0 },
+					{ id = "Multiplier", defaultBaseValue = 0 },
+					{ id = "requirement", defaultBaseValue = 0 },
+				}
+			)
 
 			local _actor: Actor, actions: ActionController, resources: ResourceController =
 				ResourceTestUtils.registerActor()
@@ -295,20 +339,32 @@ for _, case: CostCase in costCases do
 	it("spends the exact resolved " .. case.name .. " before Started and onStart", function()
 		local observed: { number? } = {}
 
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = { Mana = case.cost },
-				onStart = function(context: ActionTypes.ActionExecutionContext)
-					local resources: ResourceController =
-						context.actor:GetController("ResourceController") :: ResourceController
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { Mana = case.cost },
+					onStart = function(context: ActionTypes.ActionExecutionContext)
+						local resources: ResourceController =
+							context.actor:GetController("ResourceController") :: ResourceController
 
-					table.insert(observed, resources:GetCurrent("Mana"))
-				end,
+						table.insert(observed, resources:GetCurrent("Mana"))
+					end,
+				},
 			},
-		}, { mana })
+			{ mana },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 			ResourceTestUtils.registerActor()
@@ -344,14 +400,26 @@ for _, case in
 	}
 do
 	it("rejects " .. case.name .. " atomically", function()
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = { Mana = { amount = 20, multiplierProperty = "Multiplier" }, Chakra = 10 },
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { Mana = { amount = 20, multiplierProperty = "Multiplier" }, Chakra = 10 },
+				},
 			},
-		}, { mana, chakra })
+			{ mana, chakra },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 			ResourceTestUtils.registerActor()
@@ -369,6 +437,14 @@ it("rejects an obvious affordability failure before constructing a request execu
 	local decisionCalls: number = 0
 
 	local started: boolean, failure = Server.Init({
+		properties = {
+			{ id = "Chakra", defaultBaseValue = 0 },
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "Missing", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+			{ id = "requirement", defaultBaseValue = 0 },
+		},
 		resources = { mana },
 		actions = {
 			function(): ActionDefinition
@@ -404,14 +480,26 @@ it("still requires assignment when a zero multiplier would make a declared cost 
 	local unassigned: ResourceTypes.ResourceDefinition = table.clone(mana)
 	unassigned.autoAssign = false
 
-	ResourceTestUtils.initialize({
+	ResourceTestUtils.initialize(
 		{
-			id = "Cast",
-			visibility = "ServerOnly",
-			autoGrant = true,
-			costs = { Mana = { amount = 20, multiplierProperty = "Multiplier" } },
+			{
+				id = "Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				costs = { Mana = { amount = 20, multiplierProperty = "Multiplier" } },
+			},
 		},
-	}, { unassigned })
+		{ unassigned },
+		nil,
+		{
+			{ id = "Chakra", defaultBaseValue = 0 },
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "Missing", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+			{ id = "requirement", defaultBaseValue = 0 },
+		}
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 		ResourceTestUtils.registerActor()
@@ -423,14 +511,26 @@ it("still requires assignment when a zero multiplier would make a declared cost 
 end)
 
 it("rejects a missing multiplier Property without seeding it or spending another Resource", function()
-	ResourceTestUtils.initialize({
+	ResourceTestUtils.initialize(
 		{
-			id = "Cast",
-			visibility = "ServerOnly",
-			autoGrant = true,
-			costs = { Mana = { amount = 20, multiplierProperty = "Missing" }, Chakra = 10 },
+			{
+				id = "Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				costs = { Mana = { amount = 20, multiplierProperty = "Missing" }, Chakra = 10 },
+			},
 		},
-	}, { mana, chakra })
+		{ mana, chakra },
+		nil,
+		{
+			{ id = "Chakra", defaultBaseValue = 0 },
+			{ id = "Mana", defaultBaseValue = 0 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "Missing", defaultBaseValue = 0 },
+			{ id = "Multiplier", defaultBaseValue = 0 },
+			{ id = "requirement", defaultBaseValue = 0 },
+		}
+	)
 
 	local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 		ResourceTestUtils.registerActor()
@@ -488,13 +588,25 @@ for _, mutation: string in { "requirement", "cost", "bounds", "multiplier", "nes
 		end
 
 		local dynamicMana: ResourceTypes.ResourceDefinition = table.clone(mana)
-		dynamicMana.max = { propertyName = "MaxMana", defaultBaseValue = 100 }
+		dynamicMana.max = { propertyName = "MaxMana" }
 
-		ResourceTestUtils.initialize({
-			definition,
-			{ id = "Nested", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 30 } },
-			{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
-		}, { dynamicMana })
+		ResourceTestUtils.initialize(
+			{
+				definition,
+				{ id = "Nested", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 30 } },
+				{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
+			},
+			{ dynamicMana },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 			ResourceTestUtils.registerActor()
@@ -516,24 +628,36 @@ end
 
 for _, invalidation: string in { "remove", "destroy" } do
 	it("rejects ResourceController invalidation during decisions before activation " .. invalidation, function()
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = { Mana = 20 },
-				onCanStart = function(context: ActionTypes.ActionStartContext): (boolean, string?)
-					if invalidation == "remove" then
-						context.actor:RemoveController("ResourceController")
-					else
-						(context.actor:GetController("ResourceController") :: ResourceController):Destroy()
-					end
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { Mana = 20 },
+					onCanStart = function(context: ActionTypes.ActionStartContext): (boolean, string?)
+						if invalidation == "remove" then
+							context.actor:RemoveController("ResourceController")
+						else
+							(context.actor:GetController("ResourceController") :: ResourceController):Destroy()
+						end
 
-					return true, nil
-				end,
+						return true, nil
+					end,
+				},
+				{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
 			},
-			{ id = "Probe", visibility = "ServerOnly", autoGrant = true },
-		}, { mana })
+			{ mana },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 		local started: number = 0
@@ -559,7 +683,15 @@ it("uses loaded metadata when the execution factory returns different Resource p
 	local definition: ActionDefinition =
 		{ id = "Cast", visibility = "ServerOnly", autoGrant = true, costs = { Mana = 20 } }
 
-	ResourceTestUtils.initialize({ definition }, { mana })
+	ResourceTestUtils.initialize({ definition }, { mana }, nil, {
+		{ id = "Chakra", defaultBaseValue = 0 },
+		{ id = "Mana", defaultBaseValue = 0 },
+		{ id = "MaxMana", defaultBaseValue = 100 },
+		{ id = "Missing", defaultBaseValue = 0 },
+		{ id = "Multiplier", defaultBaseValue = 0 },
+		{ id = "requirement", defaultBaseValue = 0 },
+	})
+
 	definition.costs = { Mana = 1 }
 	local _actor: Actor, actions: ActionController, resources: ResourceController = ResourceTestUtils.registerActor()
 	expect((ActionRegistry.Get("Cast") :: ActionTypes.LoadedActionDefinition).costs.Mana).toBe(20)
@@ -569,37 +701,49 @@ end)
 
 for _, changed: string in { "bounds", "multiplier" } do
 	it("accepts the exact new price resolved after onCanStart changes " .. changed, function()
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = {
-					Mana = if changed == "bounds"
-						then { percent = 0.25 }
-						else { amount = 20, multiplierProperty = "Multiplier" },
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = {
+						Mana = if changed == "bounds"
+							then { percent = 0.25 }
+							else { amount = 20, multiplierProperty = "Multiplier" },
+					},
+					onCanStart = function(context: ActionTypes.ActionStartContext): (boolean, string?)
+						local properties: PropertyController =
+							context.actor:GetController("PropertyController") :: PropertyController
+
+						local succeeded: boolean, reason: string? = properties:SetBaseProperty(
+							if changed == "bounds" then "MaxMana" else "Multiplier",
+							if changed == "bounds" then 200 else 0.5
+						)
+
+						return succeeded, reason
+					end,
 				},
-				onCanStart = function(context: ActionTypes.ActionStartContext): (boolean, string?)
-					local properties: PropertyController =
-						context.actor:GetController("PropertyController") :: PropertyController
-
-					local succeeded: boolean, reason: string? = properties:SetBaseProperty(
-						if changed == "bounds" then "MaxMana" else "Multiplier",
-						if changed == "bounds" then 200 else 0.5
-					)
-
-					return succeeded, reason
-				end,
 			},
-		}, {
 			{
-				id = "Mana",
-				visibility = "ServerOnly",
-				autoAssign = true,
-				max = { propertyName = "MaxMana", defaultBaseValue = 100 },
-				initialValue = 100,
+				{
+					id = "Mana",
+					visibility = "ServerOnly",
+					autoAssign = true,
+					max = { propertyName = "MaxMana" },
+					initialValue = 100,
+				},
 			},
-		})
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 			ResourceTestUtils.registerActor()
@@ -616,24 +760,36 @@ for _, invalidBounds: string in { "non-finite maximum", "overflowed capacity" } 
 		else "rejects overflowed percentage costs before spending any Resource"
 
 	it(name, function()
-		ResourceTestUtils.initialize({
+		ResourceTestUtils.initialize(
 			{
-				id = "Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = { Mana = { percent = 0.25 }, Chakra = 10 },
+				{
+					id = "Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { Mana = { percent = 0.25 }, Chakra = 10 },
+				},
 			},
-		}, {
 			{
-				id = "Mana",
-				visibility = "ServerOnly",
-				autoAssign = true,
-				min = { value = if invalidBounds == "overflowed capacity" then -1e308 else 0 },
-				max = { propertyName = "MaxMana", defaultBaseValue = 100 },
-				initialValue = 60,
+				{
+					id = "Mana",
+					visibility = "ServerOnly",
+					autoAssign = true,
+					min = { value = if invalidBounds == "overflowed capacity" then -1e308 else 0 },
+					max = { propertyName = "MaxMana" },
+					initialValue = 60,
+				},
+				chakra,
 			},
-			chakra,
-		})
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
+		)
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =
 			ResourceTestUtils.registerActor()
@@ -744,7 +900,16 @@ for _, case: RejectionCase in rejectionCases do
 
 		ResourceTestUtils.initialize(
 			{ definition, { id = "Probe", visibility = "ServerOnly", autoGrant = true } },
-			{ resource }
+			{ resource },
+			nil,
+			{
+				{ id = "Chakra", defaultBaseValue = 0 },
+				{ id = "Mana", defaultBaseValue = 0 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "Missing", defaultBaseValue = 0 },
+				{ id = "Multiplier", defaultBaseValue = 0 },
+				{ id = "requirement", defaultBaseValue = 0 },
+			}
 		)
 
 		local actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController =

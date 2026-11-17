@@ -40,7 +40,7 @@ const sidebarsApi: SidebarsConfig = {
     {
       type: 'category',
       label: 'Property',
-      items: ['Property/property-controller'],
+      items: ['Property/property-registry', 'Property/property-controller'],
     },
     {
       type: 'category',

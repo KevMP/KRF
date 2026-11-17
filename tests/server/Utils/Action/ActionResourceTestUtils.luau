@@ -50,7 +50,8 @@ end
 function ActionResourceTestUtils.initialize(
 	definitions: { ActionTypes.ActionDefinition },
 	resources: { ResourceTypes.ResourceDefinition },
-	tags: { TagTypes.TagDefinition }?
+	tags: { TagTypes.TagDefinition }?,
+	properties: { PropertyTypes.PropertyDefinition }?
 ): ()
 	local factories: { ActionTypes.ActionFactory } = {}
 
@@ -62,7 +63,9 @@ function ActionResourceTestUtils.initialize(
 		end)
 	end
 
-	local started: boolean, failure = Server.Init({ actions = factories, resources = resources, tags = tags or {} })
+	local started: boolean, failure =
+		Server.Init({ properties = properties, actions = factories, resources = resources, tags = tags or {} })
+
 	expect(started).toBe(true)
 	expect(failure).toBeNil()
 end

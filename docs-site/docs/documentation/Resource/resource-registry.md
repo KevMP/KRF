@@ -19,9 +19,11 @@ Minimum, maximum, and regeneration rate each use one source mode.
 | Source | Shape | Choose it when… |
 | --- | --- | --- |
 | Static | `{ value = 100 }` | Every Actor uses the same authored number. |
-| Property-backed | `{ propertyName = "MaxStamina", defaultBaseValue = 100 }` | The number should follow an Actor property and active tag modifiers. |
+| Property-backed | `{ propertyName = "MaxStamina" }` | The number should follow an Actor property and active tag modifiers. |
 
-With an attached `PropertyController`, a property-backed source seeds `defaultBaseValue` only when the Actor does not already have that property. Existing base values are preserved.
+With an attached `PropertyController`, a property-backed source seeds the registered Property default only when the Actor does not already have that property. Existing base values are preserved.
+
+Without a PropertyController, sources resolve from the same registry defaults.
 
 ## Defaults
 
@@ -31,13 +33,15 @@ With an attached `PropertyController`, a property-backed source seeds `defaultBa
 | `autoAssign` | `false` |
 | `initialValue` | Use the Actor's resolved maximum at assignment time |
 
-The registry can validate only default source values. Runtime assignment resolves the actual Actor properties and rejects a maximum below the minimum.
+Every backing Property must be registered. Defaults come only from [PropertyRegistry](../Property/property-registry); Resource `defaultBaseValue` is rejected. The registry validates bounds, initial values and nonnegative regeneration against these defaults. Runtime assignment resolves the actual Actor properties and rejects a maximum below the minimum.
 
 ## Client visibility
 
 `ClientVisible` definitions contribute ids to the built-in Resource protocol. Assigned entries appear in [ResourcesView](./resource-views); registered but unassigned definitions create no Actor state. `ServerOnly` definitions and their ids remain outside client metadata and state. When no visible definitions exist, the protocol omits the Resource domain and every ActorView still provides an empty ResourcesView.
 
 ## Catalog example
+
+Declare `MaxStamina = 100` and `StaminaRegen = 12` in the [Property catalog](../Property/property-registry) for this example.
 
 This ModuleScript returns definitions for the `resources` field of your [game configuration](../initializing-krf). Game startup loads the catalog; the module does not call `ResourceRegistry.Load`.
 
@@ -51,14 +55,12 @@ local definitions: { KRF.ResourceDefinition } = {
 		id = "Resource.Stamina",
 		max = {
 			propertyName = "MaxStamina",
-			defaultBaseValue = 100,
 		},
 		visibility = "ServerOnly",
 		autoAssign = true,
 		regen = {
 			rate = {
 				propertyName = "StaminaRegen",
-				defaultBaseValue = 12,
 			},
 		},
 	},

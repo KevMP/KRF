@@ -79,7 +79,11 @@ for _, catalog: { ResourceTypes.ResourceDefinition } in
 	}
 do
 	it("omits domain and Resource metadata with no visible definitions (catalog size " .. #catalog .. ")", function()
-		local started: boolean, failure: Server.StartupFailure? = Server.Init({ resources = catalog })
+		local started: boolean, failure: Server.StartupFailure? = Server.Init({
+			properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
+			resources = catalog,
+		})
+
 		expect(failure).toBeNil()
 		expect(started).toBe(true)
 		expect(Domains.GetAll()).toEqual({})
@@ -92,6 +96,7 @@ end
 
 it("registers the state-only All-audience domain beside Tags and game domains with only ordinary Remotes", function()
 	local started: boolean, failure: Server.StartupFailure? = Server.Init({
+		properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
 		resources = { visible("Resource.Mana") },
 		tags = { { id = "Status.Ready", visibility = "ClientVisible", duplicateBehavior = "Ignore" } },
 		replicationDomains = { DomainUtils.createDomain("Game.Custom") },
@@ -119,6 +124,7 @@ end)
 
 it("bounds the assigned-resource Map by visible catalog count with finite F64 anchors and optional rate", function()
 	expect(Server.Init({
+		properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
 		resources = {
 			visible("Resource.Z"),
 			{ id = "Private.Secret", visibility = "ServerOnly", max = { value = 50 } },
@@ -149,16 +155,21 @@ end)
 it(
 	"keeps bootstrap bytes identical across declaration order, private catalog and server-only metadata changes",
 	function()
-		expect(Server.Init({ resources = { visible("Resource.Z"), visible("Resource.A") } })).toBe(true)
+		expect(Server.Init({
+			properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
+			resources = { visible("Resource.Z"), visible("Resource.A") },
+		})).toBe(true)
+
 		local previous: string = buffer.tostring(protocol().bootstrapBuffer)
 		Server._ResetForTests()
 
 		local changed: ResourceTypes.ResourceDefinition = visible("Resource.A")
-		changed.max = { propertyName = "SecretImplementation", defaultBaseValue = 900 }
+		changed.max = { propertyName = "SecretImplementation" }
 		changed.regen = { rate = { value = 7 } }
 		changed.autoAssign = true
 
 		expect(Server.Init({
+			properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
 			resources = {
 				changed,
 				{ id = "Private.NeverSerializeMe", visibility = "ServerOnly", max = { value = 99 } },
@@ -176,6 +187,7 @@ it(
 for _, enabled: boolean in { false, true } do
 	it("reserves KRF.Resources before any publication even when enabled=" .. tostring(enabled), function()
 		local started: boolean, failure: Server.StartupFailure? = Server.Init({
+			properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
 			resources = if enabled then { visible("Resource.Mana") } else {},
 			replicationDomains = { DomainUtils.createDomain("KRF.Resources") },
 		})
@@ -207,7 +219,11 @@ it(
 			return originalBuild(catalogs)
 		end
 
-		expect(Server.Init({ resources = { visible("Resource.Mana") } })).toBe(true)
+		expect(Server.Init({
+			properties = { { id = "SecretImplementation", defaultBaseValue = 900 } },
+			resources = { visible("Resource.Mana") },
+		})).toBe(true)
+
 		local domain: ReplicationTypes.LoadedReplicationDomainDefinition? = Domains.Get("KRF.Resources")
 		assert(domain ~= nil, "Expected startup-generated domain")
 

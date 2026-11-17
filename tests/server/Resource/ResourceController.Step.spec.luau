@@ -19,6 +19,26 @@ type ResourceDefinition = ResourceTypes.ResourceDefinition
 local ResourceControllerModule = require(KRF.server.Resource.ResourceController)
 local ResourceControllerTestUtils = require(script.Parent.Parent.Utils.Resource.ResourceControllerTestUtils)
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "ManaRegen", defaultBaseValue = 2 },
+		{ id = "MaxHeat", defaultBaseValue = 100 },
+		{ id = "MaxPosture", defaultBaseValue = 100 },
+		{ id = "MaxResolve", defaultBaseValue = 100 },
+		{ id = "MinPosture", defaultBaseValue = 10 },
+		{ id = "MinResolve", defaultBaseValue = 0 },
+		{ id = "UnrelatedResourceProperty", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 it("restores static regen in units per second and preserves fractional values", function()
 	ResourceControllerTestUtils.resetAndLoadDefinitions({
 		{
@@ -162,7 +182,6 @@ it("uses later property-backed regen rates without firing for the regen-only rec
 			regen = {
 				rate = {
 					propertyName = "ManaRegen",
-					defaultBaseValue = 2,
 				},
 			},
 		},
@@ -229,11 +248,9 @@ it("recomputes property-backed bounds and clamps current in both directions", fu
 			id = "Resource.Resolve",
 			min = {
 				propertyName = "MinResolve",
-				defaultBaseValue = 0,
 			},
 			max = {
 				propertyName = "MaxResolve",
-				defaultBaseValue = 100,
 			},
 			initialValue = 50,
 			visibility = "ServerOnly",
@@ -316,11 +333,9 @@ it("preserves the last valid bounds when property-backed bounds become invalid",
 			id = "Resource.Posture",
 			min = {
 				propertyName = "MinPosture",
-				defaultBaseValue = 10,
 			},
 			max = {
 				propertyName = "MaxPosture",
-				defaultBaseValue = 100,
 			},
 			initialValue = 50,
 			visibility = "ServerOnly",
@@ -377,7 +392,6 @@ it("ignores unrelated property changes without recomputing assigned resources", 
 			id = "Resource.Heat",
 			max = {
 				propertyName = "MaxHeat",
-				defaultBaseValue = 100,
 			},
 			initialValue = 50,
 			visibility = "ServerOnly",

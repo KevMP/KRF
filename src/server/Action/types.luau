@@ -1,4 +1,5 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Property.types)
 
 export type ActionVisibility = "ServerOnly" | "ClientVisible"
 export type ActionTagApplicationOptions = { id: string, duration: number? }
@@ -170,12 +171,14 @@ export type InternalActionRegistry = ActionRegistry & {
 	Load: (
 		factories: { ActionFactory },
 		preparedTagIds: { [string]: boolean },
-		preparedResourceIds: { [string]: boolean }
+		preparedResourceIds: { [string]: boolean },
+		preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 	) -> (boolean, string?),
 	Prepare: (
 		factories: { ActionFactory },
 		preparedTagIds: { [string]: boolean },
-		preparedResourceIds: { [string]: boolean }
+		preparedResourceIds: { [string]: boolean },
+		preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 	) -> (PreparedActionCatalog?, string?),
 	Publish: (prepared: PreparedActionCatalog) -> (boolean, string?),
 	CreateExecution: (actionId: string) -> (InternalActionImplementation?, string?),

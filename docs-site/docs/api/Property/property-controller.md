@@ -28,11 +28,13 @@ local properties = actor:GetController("PropertyController")
 
 ### `SetBaseProperty(propertyName: string, value: number) -> (boolean, string?)` {#set-base-property}
 
-Creates or updates a numeric base value, then recomputes the resolved value from active tags.
+Creates or updates a registered Property’s Actor-local numeric base value, then recomputes the resolved value from active tags.
 
 **Returns**
 
 - `true, nil`: the value is valid. Writing the current base value is a successful no-op.
+- `false, "InvalidPropertyId"`: ID is not a nonempty string.
+- `false, "UnknownPropertyId"`: ID is not registered.
 - `false, "InvalidPropertyValue"`: `value` is not a number; no property is created or changed.
 - `false, "PropertyControllerDestroyed"`: the controller has been destroyed; retained values stay unchanged.
 
@@ -50,7 +52,7 @@ Returns a frozen snapshot of all current resolved values. Later controller chang
 
 ### `HasProperty(propertyName: string) -> boolean` {#has-property}
 
-Returns whether a property entry exists. A tag modifier does not create a custom property; `SetBaseProperty` does.
+Returns whether an Actor-local Property entry exists. Global registration alone returns `false`. A tag modifier does not create a custom property; `SetBaseProperty` does.
 
 ### `Destroy() -> ()` {#destroy}
 

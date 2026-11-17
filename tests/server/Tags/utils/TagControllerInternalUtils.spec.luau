@@ -23,6 +23,24 @@ type StepTagInstanceResult = TagControllerStepUtils.StepTagInstanceResult
 
 local MixedTagCatalog: { TagDefinition } = require(TagTestUtils.MixedTagCatalog) :: { TagDefinition }
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "DamageDealt", defaultBaseValue = 0 },
+		{ id = "DamageTaken", defaultBaseValue = 0 },
+		{ id = "DashCostMultiplier", defaultBaseValue = 0 },
+		{ id = "HealingReceived", defaultBaseValue = 0 },
+		{ id = "Stamina", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 it("SelectStackRefreshTarget breaks equal remaining-duration ties by oldest applied order", function()
 	local firstInstance: TagInstanceRecord = {
 		tagId = "Buff.Sprint",

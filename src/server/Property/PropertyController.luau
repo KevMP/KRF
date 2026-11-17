@@ -4,6 +4,7 @@ local SignalFolder = serverFolder.Parent.shared.Signal
 local utilsFolder = script.Parent.utils
 
 local PropertyTypes = require(script.Parent.types)
+local PropertyRegistry = require(script.Parent.PropertyRegistry)
 local ActorTypes = require(serverFolder.Actor.types)
 local TagTypes = require(serverFolder.Tags.types)
 local SignalTypes = require(SignalFolder.types)
@@ -44,17 +45,17 @@ function PropertyController.new(actor: Actor): PropertyController
 	local controller: InternalPropertyController = {} :: InternalPropertyController
 	local destroyed: boolean = false
 
-	local propertiesById: PropertyRecordsById = {
-		WalkSpeed = {
-			baseValue = 16,
-			resolvedValue = 16,
-		},
+	assert(PropertyRegistry.IsLoaded(), "PropertyDefinitionsNotLoaded")
+	local propertiesById: PropertyRecordsById = {}
 
-		JumpPower = {
-			baseValue = 50,
-			resolvedValue = 50,
-		},
-	}
+	for _, definition: PropertyTypes.PropertyDefinition in PropertyRegistry.GetAll() do
+		if definition.autoAssign then
+			propertiesById[definition.id] = {
+				baseValue = definition.defaultBaseValue,
+				resolvedValue = definition.defaultBaseValue,
+			}
+		end
+	end
 
 	local OnBasePropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
 	local OnResolvedPropertyChangedSignal: SignalTypes.Signal<Actor, string, number?, number> = SignalModule.new()
@@ -193,9 +194,24 @@ function PropertyController.new(actor: Actor): PropertyController
 		PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
 	end
 
+	function controller:_initializeBaseProperties(properties: { [string]: number }): ()
+		for propertyName: string, value: number in properties do
+			propertiesById[propertyName] = { baseValue = value, resolvedValue = value }
+			PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
+		end
+	end
+
 	function controller:SetBaseProperty(propertyName: string, value: number): (boolean, string?)
 		if destroyed then
 			return false, "PropertyControllerDestroyed"
+		end
+
+		if type(propertyName) ~= "string" or propertyName == "" then
+			return false, "InvalidPropertyId"
+		end
+
+		if PropertyRegistry.Get(propertyName) == nil then
+			return false, "UnknownPropertyId"
 		end
 
 		if typeof(value) ~= "number" then

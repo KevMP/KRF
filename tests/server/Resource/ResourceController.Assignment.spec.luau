@@ -19,6 +19,32 @@ local ActorEntity = require(KRF.server.Actor.ActorEntity)
 local ResourceControllerModule = require(KRF.server.Resource.ResourceController)
 local ResourceControllerTestUtils = require(script.Parent.Parent.Utils.Resource.ResourceControllerTestUtils)
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "EnergyRegen", defaultBaseValue = 4 },
+		{ id = "MaxBreath", defaultBaseValue = 100 },
+		{ id = "MaxEnergy", defaultBaseValue = 50 },
+		{ id = "MaxHeat", defaultBaseValue = 25 },
+		{ id = "MaxMana", defaultBaseValue = 80 },
+		{ id = "MaxPosture", defaultBaseValue = 60 },
+		{ id = "MaxShield", defaultBaseValue = 80 },
+		{ id = "MaxStamina", defaultBaseValue = 60 },
+		{ id = "MinEnergy", defaultBaseValue = 5 },
+		{ id = "MinPosture", defaultBaseValue = 20 },
+		{ id = "MinStamina", defaultBaseValue = 10 },
+		{ id = "StaminaRegen", defaultBaseValue = 5 },
+		{ id = "WillpowerRegen", defaultBaseValue = 3 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 local function createActorWithPropertyController(): (Actor, PropertyController)
 	return ResourceControllerTestUtils.createActorWithPropertyController()
 end
@@ -37,18 +63,15 @@ it("auto-assigns only resources marked with autoAssign and seeds their property-
 			id = "Resource.Stamina",
 			min = {
 				propertyName = "MinStamina",
-				defaultBaseValue = 10,
 			},
 			max = {
 				propertyName = "MaxStamina",
-				defaultBaseValue = 60,
 			},
 			visibility = "ServerOnly",
 			autoAssign = true,
 			regen = {
 				rate = {
 					propertyName = "StaminaRegen",
-					defaultBaseValue = 5,
 				},
 			},
 		},
@@ -83,18 +106,15 @@ it("seeds missing sources, preserves existing property values, and uses definiti
 			id = "Resource.Energy",
 			min = {
 				propertyName = "MinEnergy",
-				defaultBaseValue = 5,
 			},
 			max = {
 				propertyName = "MaxEnergy",
-				defaultBaseValue = 50,
 			},
 			initialValue = 20,
 			visibility = "ServerOnly",
 			regen = {
 				rate = {
 					propertyName = "EnergyRegen",
-					defaultBaseValue = 4,
 				},
 			},
 		},
@@ -143,7 +163,6 @@ it("uses explicit overrides and clamps seeded current values to the resolved bou
 			},
 			max = {
 				propertyName = "MaxShield",
-				defaultBaseValue = 80,
 			},
 			initialValue = 75,
 			visibility = "ServerOnly",
@@ -220,11 +239,9 @@ it("rejects resource assignment when the resolved max is below the resolved min"
 			id = "Resource.Posture",
 			min = {
 				propertyName = "MinPosture",
-				defaultBaseValue = 20,
 			},
 			max = {
 				propertyName = "MaxPosture",
-				defaultBaseValue = 60,
 			},
 			visibility = "ServerOnly",
 		},
@@ -255,7 +272,6 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			id = "Resource.Heat",
 			max = {
 				propertyName = "MaxHeat",
-				defaultBaseValue = 25,
 			},
 			visibility = "ServerOnly",
 		},
@@ -268,7 +284,6 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			regen = {
 				rate = {
 					propertyName = "WillpowerRegen",
-					defaultBaseValue = 3,
 				},
 			},
 		},
@@ -321,7 +336,6 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 			id = "Resource.Breath",
 			max = {
 				propertyName = "MaxBreath",
-				defaultBaseValue = 100,
 			},
 			visibility = "ServerOnly",
 			autoAssign = true,
@@ -350,17 +364,15 @@ it("surfaces property-backed source failures during manual add and auto-assign s
 	resourceController:Destroy()
 end)
 
-it("uses defaultBaseValue fallbacks when PropertyController is missing", function()
+it("uses registered Property defaults when PropertyController is missing", function()
 	resetAndLoadDefinitions({
 		{
 			id = "Resource.Stamina",
 			min = {
 				propertyName = "MinStamina",
-				defaultBaseValue = 10,
 			},
 			max = {
 				propertyName = "MaxStamina",
-				defaultBaseValue = 60,
 			},
 			initialValue = 25,
 			visibility = "ServerOnly",
@@ -368,7 +380,6 @@ it("uses defaultBaseValue fallbacks when PropertyController is missing", functio
 			regen = {
 				rate = {
 					propertyName = "StaminaRegen",
-					defaultBaseValue = 5,
 				},
 			},
 		},
@@ -376,7 +387,6 @@ it("uses defaultBaseValue fallbacks when PropertyController is missing", functio
 			id = "Resource.Mana",
 			max = {
 				propertyName = "MaxMana",
-				defaultBaseValue = 80,
 			},
 			visibility = "ServerOnly",
 		},

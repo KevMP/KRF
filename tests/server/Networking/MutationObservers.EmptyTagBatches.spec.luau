@@ -44,7 +44,7 @@ local function initialize(definitions: { ActionTypes.ActionDefinition }): ()
 			visibility = "ClientVisible",
 			autoAssign = true,
 			initialValue = 100,
-			max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+			max = { propertyName = "MaxMana" },
 		},
 	}, {
 		{
@@ -53,7 +53,7 @@ local function initialize(definitions: { ActionTypes.ActionDefinition }): ()
 			duplicateBehavior = "Refresh",
 			properties = { MaxMana = { set = 50 } },
 		},
-	})
+	}, { { id = "MaxMana", defaultBaseValue = 100 } })
 end
 
 for _, operation: string in { "Start", "End", "Interrupt", "ClaimLocks", "Destroy" } do

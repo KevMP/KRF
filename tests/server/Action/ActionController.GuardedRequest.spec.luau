@@ -25,8 +25,8 @@ local mana: ResourceTypes.ResourceDefinition = {
 	id = "Mana",
 	visibility = "ServerOnly",
 	autoAssign = true,
-	min = { propertyName = "MinMana", defaultBaseValue = 0 },
-	max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+	min = { propertyName = "MinMana" },
+	max = { propertyName = "MaxMana" },
 	initialValue = 100,
 }
 
@@ -82,7 +82,12 @@ local function setup(onCanStart: ActionTypes.OnCanStart?): Fixture
 		end,
 	}
 
-	TestUtils.initialize({ stance, incoming }, { mana }, { channel })
+	TestUtils.initialize(
+		{ stance, incoming },
+		{ mana },
+		{ channel },
+		{ { id = "MaxMana", defaultBaseValue = 100 }, { id = "MinMana", defaultBaseValue = 0 } }
+	)
 
 	local actor: ActorTypes.Actor, actions: ActionTypes.ActionController, resources: ResourceTypes.ResourceController, _properties: PropertyTypes.PropertyController, tags: TagTypes.TagController =
 		TestUtils.registerActor()

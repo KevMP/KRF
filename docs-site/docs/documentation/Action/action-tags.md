@@ -31,7 +31,7 @@ KRF applies `activeTags`, then `appliedTags`, each in declaration order. Accepta
 
 A required or blocked Tag is checked before the request factory and again after decision work. Preemption cannot bypass a failing gate: an Action blocked by another owner's Tag is rejected even if it could otherwise preempt that owner. See the [controller API](/api/Action/action-controller#request-action) for rejection strings and [advanced ordering](./action-ordering) for the full transaction.
 
-Use a Tag's `properties` modifiers for temporary numeric effects. Game movement code reads the resolved `WalkSpeed` from `PropertyController`; Actions should not save and restore numeric base values to implement a temporary sprint buff. A Tag modifier does not create a custom Property: create its base value before relying on it.
+Use a Tag's `properties` modifiers for temporary numeric effects. Game movement code reads the resolved `WalkSpeed` from `PropertyController`; Actions should not save and restore numeric base values to implement a temporary sprint buff. A Tag modifier does not create a custom Property: register it in the [Property catalog](../Property/property-registry) and assign its base value before relying on it.
 
 ## Active ownership follows ordinary Tag rules
 

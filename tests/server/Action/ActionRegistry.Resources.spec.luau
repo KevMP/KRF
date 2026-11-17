@@ -14,6 +14,22 @@ type ActionResourceRequirement = ActionTypes.ActionResourceRequirement
 type ActionResourceCost = ActionTypes.ActionResourceCost
 local resourceIds: { [string]: boolean } = { Mana = true, Chakra = true, Stamina = true }
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "ManaCostMultiplier", defaultBaseValue = 0 },
+		{ id = "Multiplier", defaultBaseValue = 0 },
+		{ id = "OtherMultiplier", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 beforeEach(function()
 	ActionRegistry._resetForTests()
 end)
