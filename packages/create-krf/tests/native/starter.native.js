@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PACKAGES, createProject, installPackedCreator, run } from "../integration/Utils/packedCreator.js";
+import { PACKAGES, createProject, generateDefinitions, installPackedCreator, run } from "../integration/Utils/packedCreator.js";
 
 const FIXTURES = fileURLToPath(new URL("./", import.meta.url));
 const REPOSITORY = path.resolve(PACKAGES, "..");
@@ -31,13 +31,18 @@ const SCENARIOS = {
 		fs.writeFileSync(path.join(project, "src", "server", "Tags", "TestSecret.luau"), TEST_SECRET_TAG);
 	},
 	"example-removed": (project) => {
-		for (const file of ["server/Actions/Focus.luau", "server/Tags/Focused.luau", "server/Resources/Energy.luau"]) {
+		for (const file of [
+			"server/Actions/Focus.luau",
+			"server/Tags/Focused.luau",
+			"server/Resources/Energy.luau",
+			"shared/ActionRequests/Focus.luau",
+			"shared/ActionRequests/Guard.luau",
+		]) {
 			fs.rmSync(path.join(project, "src", file));
 		}
-		for (const file of ["ActionInputPolicies.luau", "Controls", "EnergyDisplay.luau", "LocalCharacter.luau"]) {
+		for (const file of ["ActionInputPolicies", "Controls", "EnergyDisplay.luau", "LocalCharacter.luau"]) {
 			fs.rmSync(path.join(project, "src", "client", file), { recursive: true });
 		}
-		edit(project, "src/shared/ActionRequests.luau", /\tFocus = \{[\s\S]*?\n\t\},\n/, "");
 		edit(
 			project,
 			"src/client/Startup.client.luau",
@@ -53,6 +58,7 @@ const SCENARIOS = {
 	"invalid-definitions": (project) => {
 		edit(project, "src/server/Actions/Focus.luau", 'blockedTags = { "Focused" }', 'blockedTags = { "MissingTag" }');
 	},
+	generated: () => {},
 };
 
 function studioPath() {
@@ -126,8 +132,9 @@ async function main() {
 	const failures = [];
 	for (const scenario of scenarios) {
 		const project = createProject(packed, path.join(root, "work"), `starter-${scenario}`, ["--mode", "full", "--no-ci"]);
-		SCENARIOS[scenario](project);
 		run("npm", ["install"], project);
+		generateDefinitions(project);
+		SCENARIOS[scenario](project);
 		run("npm", ["run", "build"], project);
 
 		const place = testProject(project, scenario);

@@ -1,6 +1,10 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+if not game:IsLoaded() then
+	game.Loaded:Wait()
+end
+
 local packages = ReplicatedStorage:WaitForChild("Packages")
 local KRF = require(packages:WaitForChild("KRF"))
 local ActionRequests = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ActionRequests"))

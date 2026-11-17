@@ -5,6 +5,9 @@ export const ExitCode = Object.freeze({
 	ok: 0,
 	failure: 1,
 	usage: 2,
+	alreadyExists: 3,
+	createdNotLoaded: 4,
+	manualWiringRequired: 5,
 	cancelled: 130,
 });
 

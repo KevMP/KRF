@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local requests: KRF.ActionRequestSchemas = {
+local Focus: KRF.ActionRequestSchemas = {
 	Focus = {
 		stop = {},
 		allowInputInterrupt = true,
@@ -12,4 +12,4 @@ local requests: KRF.ActionRequestSchemas = {
 	},
 }
 
-return requests
+return Focus

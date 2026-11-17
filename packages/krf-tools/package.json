@@ -1,7 +1,7 @@
 {
   "name": "krf-tools",
   "version": "0.1.0",
-  "description": "Shared project-generation library for create-krf and future KRF project tooling.",
+  "description": "Project tools for KRF games: the create-krf template engine and the definition generators behind a project's npm run create* scripts.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -16,11 +16,16 @@
   "engines": {
     "node": ">=22.12.0"
   },
+  "bin": {
+    "krf-tools": "bin/krf-tools.js"
+  },
   "exports": {
     ".": "./src/index.js"
   },
   "files": [
+    "bin",
     "src",
+    "templates",
     "README.md",
     "LICENSE"
   ],
@@ -28,6 +33,8 @@
     "test": "node --test \"tests/**/*.test.js\""
   },
   "dependencies": {
+    "@clack/prompts": "1.8.1",
+    "commander": "15.0.0",
     "mem-fs": "6.0.0",
     "mem-fs-editor": "12.1.0",
     "zod": "4.6.7"

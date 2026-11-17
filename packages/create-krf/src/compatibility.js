@@ -2,8 +2,6 @@ import packageJson from "../package.json" with { type: "json" };
 
 export const CREATOR_VERSION = packageJson.version;
 
-export const KRF_RUNTIME = Object.freeze({ package: "kevmp/krf", version: "0.1.0" });
-
 export const WALLY_REGISTRY = "https://github.com/UpliftGames/wally-index";
 
 export const ROBLOX_DEFINITIONS_URL = "https://luau-lsp.pages.dev/type-definitions/globalTypes.None.d.luau";

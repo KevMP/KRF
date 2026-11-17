@@ -1,4 +1,7 @@
-import { KRF_RUNTIME, ROBLOX_DEFINITIONS_URL, TOOLCHAIN, WALLY_REGISTRY } from "./compatibility.js";
+import { DEFINITION_SCRIPTS, KRF_RUNTIME } from "krf-tools";
+
+import { ROBLOX_DEFINITIONS_URL, TOOLCHAIN, WALLY_REGISTRY } from "./compatibility.js";
+import { TOOLS_DEPENDENCY } from "./tooling.js";
 
 export const ROJO_PROJECT_FILE = "default.project.json";
 export const HYBRID_START_PROJECT_FILE = "start-place.project.json";
@@ -20,6 +23,7 @@ export function projectScripts(config) {
 			`curl -sSfL --create-dirs -o ${DEFINITIONS_FILE} ${ROBLOX_DEFINITIONS_URL}`,
 			`luau-lsp analyze --flag:LuauSolverV2=true --platform=roblox --no-strict-dm-types --definitions:@roblox=${DEFINITIONS_FILE} --sourcemap=sourcemap.json --ignore="Packages/**" src`,
 		].join(" && "),
+		...DEFINITION_SCRIPTS,
 	};
 }
 
@@ -30,6 +34,7 @@ export function packageManifest(config) {
 		private: true,
 		description: "A Roblox game built with KRF.",
 		scripts: projectScripts(config),
+		devDependencies: TOOLS_DEPENDENCY,
 	});
 }
 

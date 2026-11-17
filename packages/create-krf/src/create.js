@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { KrfToolError, renderTemplates, writeNewDirectory } from "krf-tools";
+import { KRF_RUNTIME, KrfToolError, renderTemplates, writeNewDirectory } from "krf-tools";
 
-import { CREATOR_VERSION, KRF_RUNTIME, ROKIT_VERSION } from "./compatibility.js";
+import { CREATOR_VERSION, ROKIT_VERSION } from "./compatibility.js";
 import { HYBRID_START_PROJECT_FILE, ROJO_PROJECT_FILE, generatedManifests } from "./manifests.js";
 
 const TEMPLATES = fileURLToPath(new URL("../templates/", import.meta.url));

@@ -80,3 +80,10 @@ export function renderTemplates(templateRoots, data) {
 
 	return files;
 }
+
+export function renderTemplate(templateFile, data) {
+	const editor = createEditor(createStore());
+	const destination = path.join(os.tmpdir(), `krf-render-${randomUUID()}`, path.basename(templateFile));
+	editor.copyTpl(templateFile, destination, data);
+	return editor.read(destination);
+}

@@ -246,7 +246,44 @@ local function bound(): ()
 	assertControlsOwnView()
 end
 
+local function requestFireball(): ()
+	local view: KRF.ActorView = ownView()
+	local sequenceId: number?, reason: string? = actions.RequestAction(view, "Fireball")
+	assert(sequenceId ~= nil, `The Fireball request was refused: {reason}`)
+end
+
+local function sendCommand(): ()
+	local view: KRF.ActorView = ownView()
+	local outcome: KRF.CommandResult? = nil
+	local connection = KRF.CommandRuntime.OnCommandResult:Connect(function(result: KRF.CommandResult)
+		if result.commandId == "CastSpell" then
+			outcome = result
+		end
+	end)
+
+	local requestId: number?, reason: string? = KRF.CommandRuntime.Send("CastSpell", view, nil)
+	assert(requestId ~= nil, `CastSpell could not be sent: {reason}`)
+	waitFor("the CastSpell result", function()
+		return outcome ~= nil
+	end)
+	connection:Disconnect()
+
+	local result: KRF.CommandResult = outcome :: KRF.CommandResult
+	assert(
+		result.status == "Rejected" and result.reason == "NotImplemented",
+		`The generated Command rejects requests, got {result.status} {result.reason}`
+	)
+end
+
+local function sendHint(): ()
+	local sent: boolean, reason: string? = KRF.ClientHintRuntime.Send("Ping", ownView(), {})
+	assert(sent, `Ping could not be sent: {reason}`)
+end
+
 local PHASES: { [string]: (any) -> () } = {
+	RequestFireball = requestFireball,
+	SendCommand = sendCommand,
+	SendHint = sendHint,
 	Watch = watch,
 	Published = published,
 	Bound = bound,

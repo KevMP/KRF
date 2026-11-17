@@ -1,0 +1,24 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.ReplicationDomainDefinition = {
+	id = <%- luaString(id) %>,
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+	audience = "<%- options.audience %>",
+	snapshot = function(_actor: KRF.Actor): { [string]: any }
+<% for (const line of snapshot) { -%>
+<%- line %>
+<% } -%>
+	end,
+<% if (options.observe) { -%>
+	observe = function(_actor: KRF.Actor, _onCommitted: (events: { any }?) -> ()): () -> ()
+		return function() end
+	end,
+<% } -%>
+}
+
+return <%- name %>

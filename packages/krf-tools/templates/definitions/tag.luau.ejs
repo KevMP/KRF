@@ -1,0 +1,27 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.TagDefinition = {
+	id = <%- luaString(id) %>,
+<% if (options.duration !== undefined) { -%>
+	defaultDuration = <%- luaNumber(options.duration) %>,
+<% } -%>
+<% if (options.tickInterval !== undefined) { -%>
+	tickInterval = <%- luaNumber(options.tickInterval) %>,
+<% } -%>
+	duplicateBehavior = "<%- options.duplicateBehavior %>",
+<% if (options.maxStacks !== undefined) { -%>
+	maxStacks = <%- luaNumber(options.maxStacks) %>,
+<% } -%>
+	visibility = "<%- options.visibility %>",
+<% if (options.tickInterval !== undefined) { -%>
+	onTick = function(_actor: KRF.Actor, _deltaTime: number): () end,
+<% } -%>
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+}
+
+return <%- name %>

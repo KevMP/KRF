@@ -12,7 +12,11 @@ npx create-krf@latest my-game --yes
 
 Requires Node.js 22.12 or newer. The project's npm scripts call the Roblox tools pinned in its
 `rokit.toml`: Rojo, Wally, StyLua, Selene and luau-lsp. Its `npm install` installs Rokit when it
-is missing, then those tools and the Wally packages; the project has no npm dependencies.
+is missing, then those tools and the Wally packages. Its only npm dependency is `krf-tools`, which runs
+the project's [definition generators](https://kevmp.github.io/KRF/definition-generators) such as
+`npm run createAction`. It is pinned to the exact release this creator ships with; when the
+creator itself was installed from a local `krf-tools` tarball, the project depends on that same
+tarball instead, so `npm install` works before the packages are published.
 
 ## Options
 
@@ -53,9 +57,20 @@ npm run test:packages:integration
 npm run test:integration:starter
 ```
 
-The integration test creates both modes from packed tarballs, installs the
-published KRF, checks, builds and inspects each place, and reads Hybrid's live-sync ownership from
-`rojo serve`. The starter test plays generated projects in Studio with one server and two clients;
+To try an unpublished build by hand, pack both packages and run the creator from the tarballs in
+any folder:
+
+```bash
+npm pack --pack-destination build/tarballs --workspace krf-tools --workspace create-krf
+```
+
+```bash
+npx --yes --package <repo>/build/tarballs/krf-tools-0.1.0.tgz --package <repo>/build/tarballs/create-krf-0.1.0.tgz create-krf
+```
+
+The integration test creates both modes from packed tarballs, installs the packed `krf-tools` and
+the published KRF, runs every definition generator through the project's npm scripts, checks,
+builds and inspects each place, and reads Hybrid's live-sync ownership from `rojo serve`. The starter test plays generated projects in Studio with one server and two clients;
 see [test workflows](../../tests/README.md#starter-project).
 
 Templates live in `templates/`: `base`, plus `ci` when selected. Rojo

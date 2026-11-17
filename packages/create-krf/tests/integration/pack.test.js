@@ -5,8 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME } from "../../src/compatibility.js";
-import { createProject, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
+import { KRF_RUNTIME } from "krf-tools";
+
+import { createProject, generateDefinitions, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
 
 const VARIANTS = [
 	{ mode: "full", flags: ["--ci"] },
@@ -90,6 +91,8 @@ test("packed create-krf projects install the published KRF, check and build in e
 	assert.ok(packed.creator.files.includes("templates/base/_vscode/settings.json"));
 	assert.ok(!packed.creator.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(!packed.tooling.files.some((file) => file.startsWith("tests/")), "tests must not ship");
+	assert.ok(packed.tooling.files.includes("bin/krf-tools.js"), "the generator executable must ship");
+	assert.ok(packed.tooling.files.includes("templates/definitions/action.luau.ejs"), "definition templates must ship");
 	assert.equal(fs.lstatSync(path.join(packed.installRoot, "node_modules", "krf-tools")).isSymbolicLink(), false);
 
 	for (const variant of VARIANTS) {
@@ -98,7 +101,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 			const project = createProject(packed, path.join(root, "work"), name, ["--mode", variant.mode, ...variant.flags]);
 			const generated = readTree(project);
 			const manifest = JSON.parse(generated["package.json"]);
-			assert.equal(manifest.devDependencies, undefined);
+			assert.deepEqual(manifest.devDependencies, { "krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` }, "the project installs the krf-tools tarball the creator came from");
 			assert.equal(fs.existsSync(path.join(project, "node_modules")), false);
 
 			run("npm", ["install"], project);
@@ -106,7 +109,10 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.match(fs.readFileSync(path.join(project, "wally.lock"), "utf8"), new RegExp(`^name = "${KRF_RUNTIME.package}"\nversion = "${KRF_RUNTIME.version}"$`, "m"));
 			assert.match(fs.readFileSync(path.join(project, "Packages", "KRF.lua"), "utf8"), /export type ServerStartConfig = REQUIRED_MODULE\.ServerStartConfig/);
 
+			generateDefinitions(project);
+			const generatedSource = readTree(path.join(project, "src"));
 			run("npm", ["run", "check"], project);
+			assert.deepEqual(readTree(path.join(project, "src")), generatedSource, "generated modules are already formatted");
 
 			const startProject = variant.mode === "hybrid" ? "start-place.project.json" : "default.project.json";
 			run("npm", ["run", "build"], project);
@@ -118,20 +124,30 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.equal(child(packages, "KRF").className, "ModuleScript");
 			const krf = child(child(child(packages, "_Index"), "kevmp_krf@0.1.0"), "krf");
 			assert.deepEqual(Object.keys(shape(krf)).sort(), ["client", "server", "shared"]);
-			assert.deepEqual(shape(child(replicated, "Shared")), { ActionRequests: "ModuleScript" });
+			const shared = child(replicated, "Shared");
+			assert.deepEqual(shape(shared), { ActionRequests: "ModuleScript", MergeDescendants: "ModuleScript", RequireDescendants: "ModuleScript" });
+			assert.deepEqual(shape(child(shared, "ActionRequests")), { Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript" });
 
 			const server = child(child(place, "ServerScriptService"), "Game");
 			assert.deepEqual(shape(server), {
 				Actions: "ModuleScript",
+				Commands: "ModuleScript",
+				Controllers: "ModuleScript",
+				Hints: "ModuleScript",
 				PlayerActors: "ModuleScript",
-				RequireDescendants: "ModuleScript",
+				ReplicationDomains: "ModuleScript",
 				Resources: "ModuleScript",
 				Startup: "Script",
 				Tags: "ModuleScript",
 			});
-			assert.deepEqual(shape(child(server, "Actions")), { Focus: "ModuleScript" });
-			assert.deepEqual(shape(child(server, "Tags")), { Focused: "ModuleScript" });
-			assert.deepEqual(shape(child(server, "Resources")), { Energy: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Actions")), { Combat: "Folder", Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript" });
+			assert.deepEqual(shape(child(child(server, "Actions"), "Combat")), { Meditate: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Tags")), { Burning: "ModuleScript", Focused: "ModuleScript", Stunned: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Resources")), { Energy: "ModuleScript", Mana: "ModuleScript", Stamina: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Controllers")), { Cooldowns: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Commands")), { CastSpell: "ModuleScript", Trade: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Hints")), { ImpactFx: "ModuleScript", Ping: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "ReplicationDomains")), { ComboState: "ModuleScript" });
 
 			const client = child(child(child(place, "StarterPlayer"), "StarterPlayerScripts"), "Game");
 			assert.deepEqual(shape(client), {
@@ -141,6 +157,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 				LocalCharacter: "ModuleScript",
 				Startup: "LocalScript",
 			});
+			assert.deepEqual(shape(child(client, "ActionInputPolicies")), { Focus: "ModuleScript", Guard: "ModuleScript" });
 			assert.deepEqual(shape(child(place, "Workspace")), { Baseplate: "Part", SpawnLocation: "SpawnLocation" });
 
 			walk(place, (node) => assert.doesNotMatch(node.name ?? "", LEAKED_NAMES, `unexpected ${node.className} ${node.name} in the place`));
