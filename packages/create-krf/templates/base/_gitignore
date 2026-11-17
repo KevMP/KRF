@@ -1,13 +1,14 @@
-# npm
 node_modules/
 
-# Build output and local places
+Packages/
+ServerPackages/
+sourcemap.json
+
 build/
 *.rbxl
 *.rbxlx
 *.rbxl.lock
 *.rbxlx.lock
 
-# Local secrets
 .env
 .env.*

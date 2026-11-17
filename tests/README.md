@@ -48,6 +48,26 @@ was verified. To select Studio, invoke the corresponding
 See [benchmark workflows](./benchmarks/README.md) for load projects, CPU
 measurements, analyzers, and interpretation limits.
 
+## Starter project
+
+`npm run test:integration:starter` packs `create-krf` and `krf-tools`, generates
+projects through the packed creator, installs the published KRF release with
+`npm install`, builds them with `npm run build`, and plays
+each one in Studio with one server and two clients. The generated project is not
+changed beyond each scenario's edit; the runner only adds its fixtures from
+`packages/create-krf/tests/native/` and a control RemoteEvent.
+
+| Scenario | Coverage |
+| --- | --- |
+| `starter` | Player character Actors, built-in controllers, one `Server.Init` and `Client.Init`, Focus held through its real ability-slot binding, an emptied slot starting nothing, `Focused` regenerating Energy while held and release ending it, the Energy display, ActorViews on both clients, a test-only ServerOnly Tag never reaching clients, respawn, destroyed characters and player departure |
+| `late-model` | Controls starts after the local character's ActorView is published but before its Model replicates, then takes control when the Model arrives |
+| `example-removed` | Startup and player Actors with the example definitions, Controls and Energy display deleted |
+| `invalid-definitions` | A rejected startup reports its failure and registers no Actors |
+
+Pass scenario names to run a subset, for example
+`npm run test:integration:starter -- starter`. Places and logs stay under
+`build/starter-native/<run-id>/`. Set `KRF_STUDIO_PATH` to choose Studio.
+
 ## Package consumer smoke
 
 [`consumer/Smoke.luau`](./consumer/Smoke.luau) starts KRF from an installed

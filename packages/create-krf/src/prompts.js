@@ -1,8 +1,7 @@
-// Interactive wizard. It only collects answers; normalizeConfig validates them like flags.
 import * as clack from "@clack/prompts";
 import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, inspectTarget } from "krf-tools";
 
-import { SETUP_DEFAULTS, resolveProjectPath } from "./options.js";
+import { resolveProjectPath } from "./options.js";
 
 function cancelled() {
 	return new KrfToolError("Cancelled", "Project creation cancelled. No files were written.", { exitCode: ExitCode.cancelled });
@@ -51,36 +50,21 @@ export async function promptForMissing(given, context) {
 				message: "Project mode",
 				initialValue: PROJECT_OPTION_DEFAULTS.mode,
 				options: [
-					{ value: "full", label: "Full", hint: "Git and Rojo own the whole place" },
-					{ value: "hybrid", label: "Hybrid", hint: "Rojo owns code; Studio keeps world content" },
+					{ value: "full", label: "Full", hint: "code and world live in this repo; npm run build makes the whole place" },
+					{ value: "hybrid", label: "Hybrid", hint: "only code lives in this repo; you build the world in Studio and keep the place file" },
 				],
 			}),
 		);
 	}
 
-	if (answers.tooling === undefined) {
-		answers.tooling = await ask(
+	if (answers.ci === undefined) {
+		answers.ci = await ask(
 			prompts,
-			prompts.select({
-				message: "Developer tooling",
-				initialValue: PROJECT_OPTION_DEFAULTS.tooling,
-				options: [
-					{ value: "standard", label: "Standard", hint: "formatting, linting, type checks and tests" },
-					{ value: "minimal", label: "Minimal", hint: "build only" },
-				],
+			prompts.confirm({
+				message: "Add a GitHub Actions workflow that checks and builds on every push and pull request?",
+				initialValue: PROJECT_OPTION_DEFAULTS.ci,
 			}),
 		);
-	}
-
-	const confirmations = [
-		["ci", "Add a GitHub Actions workflow?", PROJECT_OPTION_DEFAULTS.ci],
-		["agents", "Add instructions for AI coding agents?", PROJECT_OPTION_DEFAULTS.agents],
-		["git", "Initialize a Git repository?", SETUP_DEFAULTS.git],
-		["install", "Install npm dependencies?", SETUP_DEFAULTS.install],
-	];
-
-	for (const [key, message, initialValue] of confirmations) {
-		if (answers[key] === undefined) answers[key] = await ask(prompts, prompts.confirm({ message, initialValue }));
 	}
 
 	return answers;

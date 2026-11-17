@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rokit, Roblox tools and Wally packages
+        run: |
+          npm install
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Verify wally.lock is committed
+        run: git ls-files --error-unmatch wally.lock
+
+      - name: Verify wally.lock is up to date
+        run: git diff --exit-code wally.lock
+
+      - name: Check formatting
+        run: stylua --check src
+
+      - name: Format, lint and type check
+        run: npm run check
+
+      - name: Build place
+        run: npm run build

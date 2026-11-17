@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, projectOptionsSchema } from "krf-tools";
 
 /** Defaults for steps that run after the files are written. */
-export const SETUP_DEFAULTS = Object.freeze({ install: true, git: true });
+export const SETUP_DEFAULTS = Object.freeze({ git: true });
 
 const RESERVED_NAMES = new Set(["node_modules", "favicon.ico", "krf", "create-krf", "krf-tools"]);
 
@@ -62,12 +62,11 @@ export const creatorConfigSchema = z.strictObject({
 	target: z.string().min(1),
 	name: z.string().min(1),
 	options: projectOptionsSchema,
-	install: z.boolean(),
 	git: z.boolean(),
 });
 
 /**
- * @typedef {{ projectPath?: string, mode?: string, tooling?: string, ci?: boolean, agents?: boolean, install?: boolean, git?: boolean }} CreatorInput
+ * @typedef {{ projectPath?: string, mode?: string, ci?: boolean, git?: boolean }} CreatorInput
  * @typedef {z.infer<typeof creatorConfigSchema>} CreatorConfig
  */
 
@@ -84,11 +83,8 @@ export function normalizeConfig(input, cwd) {
 		name,
 		options: {
 			mode: input.mode ?? PROJECT_OPTION_DEFAULTS.mode,
-			tooling: input.tooling ?? PROJECT_OPTION_DEFAULTS.tooling,
 			ci: input.ci ?? PROJECT_OPTION_DEFAULTS.ci,
-			agents: input.agents ?? PROJECT_OPTION_DEFAULTS.agents,
 		},
-		install: input.install ?? SETUP_DEFAULTS.install,
 		git: input.git ?? SETUP_DEFAULTS.git,
 	};
 

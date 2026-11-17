@@ -1,30 +1,44 @@
 # <%= name %>
 
-A Roblox game project created by `create-krf` <%= creatorVersion %>. It targets KRF
-`<%= runtime.package %>@<%= runtime.version %>`.
+A Roblox game built with [KRF](https://kevmp.github.io/KRF/) `<%= runtime.package %>@<%= runtime.version %>`.
 
-## Current status
+## Setup
 
-This release of `create-krf` creates the project shell: its npm tooling and its recorded
-configuration. It does not yet include a Rojo project, Wally dependencies or game code, so there
-is no place to build or play yet.
+```bash
+npm install
+npm run build
+```
 
-| Setting | Value |
+`npm install` installs [Rokit](https://github.com/rojo-rbx/rokit) if you don't have it, the Roblox
+tools pinned in `rokit.toml`, and the Wally packages. Wally records the resolved versions in
+`wally.lock`; commit it. Open `<%= name %>.rbxl` in Roblox Studio and press Play.
+Hold F (or X on a gamepad) to Focus: Energy regenerates while you hold it.
+<% if (options.mode === "hybrid") { -%>
+
+This is a Hybrid project: Rojo owns `src` and `Packages`, and your Studio place owns the world.
+Save the built place somewhere else, keep building the world there, and sync code with `rojo serve`.
+<% } -%>
+
+## Scripts
+
+| Script | Does |
 | --- | --- |
-| Project mode | <%= options.mode === "full" ? "Full: Git and Rojo will own the whole place" : "Hybrid: Rojo will own code; Studio keeps world content" %> |
-| Developer tooling | <%= options.tooling %> |
-| GitHub Actions workflow | <%= options.ci ? "included" : "not included" %> |
-| Agent instructions | <%= options.agents ? "included" : "not included" %> |
+| `npm run build` | Builds `<%= name %>.rbxl` |
+| `npm run format` | Formats `src` |
+| `npm run check` | Formats `src`, then lints and strict type checks |
 
-`krf.project.json` records these settings and the versions this project targets. Keep it in Git.
+## Adding definitions
 
-## Commands
+Add a ModuleScript anywhere under `src/server/Actions`, `Tags` or `Resources`; each folder's
+`init.luau` loads every module beneath it. Actions return a factory function; Tags and Resources
+return a definition table. Actions players request from the client also need an entry in
+`src/shared/ActionRequests.luau`; held Actions also need a `WhileDown` policy in
+`src/client/ActionInputPolicies.luau`.
 
-Project tasks run through npm scripts. No global tools are required.
+## Controls
 
-| Command | Purpose |
-| --- | --- |
-| `npm install` | Install the pinned project tooling (`<%= tooling.package %>@<%= tooling.version %>`). |
-| `npm run project:info` | Validate `krf.project.json` and show the project's settings and versions. |
-
-Commit `package-lock.json` after `npm install`.
+Keys bind to ability slots, not to Actions. `src/client/Controls/Keybinds.luau` binds F and
+ButtonX to `AbilitySlot1`; `src/client/Controls/Loadout.luau` decides which Action each slot
+triggers. Call `Loadout.Equip("AbilitySlot1", actionId)` to swap the Action in a slot: the next
+press uses it, without rebinding keys. `src/client/LocalCharacter.luau` finds the local
+character's ActorView, which Controls selects as the Actor your input drives.

@@ -10,26 +10,24 @@ test("fills every value the caller omitted with the documented defaults", () => 
 	assert.deepEqual(normalizeConfig({ projectPath: "my-game" }, CWD), {
 		target: path.join(CWD, "my-game"),
 		name: "my-game",
-		options: { mode: "full", tooling: "standard", ci: true, agents: true },
-		install: true,
+		options: { mode: "full", ci: true },
 		git: true,
 	});
 });
 
 test("keeps explicit values, including false booleans", () => {
 	const config = normalizeConfig(
-		{ projectPath: "games/arena", mode: "hybrid", tooling: "minimal", ci: false, agents: false, install: false, git: false },
+		{ projectPath: "games/arena", mode: "hybrid", ci: false, git: false },
 		CWD,
 	);
 	assert.equal(config.target, path.join(CWD, "games", "arena"));
 	assert.equal(config.name, "arena");
-	assert.deepEqual(config.options, { mode: "hybrid", tooling: "minimal", ci: false, agents: false });
-	assert.equal(config.install, false);
+	assert.deepEqual(config.options, { mode: "hybrid", ci: false });
 	assert.equal(config.git, false);
 });
 
 test("rejects unsupported option values as usage errors", () => {
-	for (const input of [{ mode: "studio" }, { tooling: "everything" }]) {
+	for (const input of [{ mode: "studio" }]) {
 		assert.throws(() => normalizeConfig({ projectPath: "my-game", ...input }, CWD), (error) => {
 			assert.equal(error.code, "InvalidOption");
 			assert.equal(error.exitCode, 2);
