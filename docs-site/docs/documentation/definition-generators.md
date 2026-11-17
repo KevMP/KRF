@@ -20,6 +20,7 @@ The scripts run the `krf-tools` version pinned in the project's `devDependencies
 | `npm run createAction` | `src/server/Actions/<Name>.luau`, an Action factory | `actions` |
 | `npm run createTag` | `src/server/Tags/<Name>.luau` | `tags` |
 | `npm run createResource` | `src/server/Resources/<Name>.luau` | `resources` |
+| `npm run createProperty` | `src/server/Properties/<Name>.luau` | `properties` |
 | `npm run createController` | `src/server/Controllers/<Name>.luau` | `controllers` |
 | `npm run createCommand` | `src/server/Commands/<Name>.luau` | `commands` |
 | `npm run createHint` | `src/server/Hints/<Name>.luau` | `hints` |
@@ -42,7 +43,7 @@ Run any script with `-- --help` for its full flag list.
 
 ## Definition options
 
-Every option is a flag, and repeatable flags can be given more than once. Without `--yes`, the wizard asks for the same values one at a time, naming each definition field with a short note on what it does, such as `activeTags (Tags it applies while it runs, removed when it ends)`. List questions show the IDs the project already defines and accept new ones; per-entry details such as a cost's amount or a requirement's minimum follow as their own questions, and percentages are entered from 0 to 100. Any value given as a flag is not asked again.
+Every option is a flag, and repeatable flags can be given more than once. Without `--yes`, the wizard asks for the same values one at a time, naming each definition field with a short note on what it does, such as `activeTags (Tags applied while the Action runs, removed when the Action ends)`. List questions show the IDs the project already defines and accept new ones; property questions show the registered Properties, including the built-in `WalkSpeed` and `JumpPower`; per-entry details such as a cost's amount or a requirement's minimum follow as their own questions, and percentages are entered from 0 to 100. Any value given as a flag is not asked again.
 
 ### Actions
 
@@ -72,7 +73,7 @@ All of these except `--recipe`, `--duration`, `--auto-grant` and `--visibility` 
 
 `--requestable` and the flags that describe the client's request are covered in [requestable Actions](#example-a-requestable-action).
 
-### Tags, Resources and Controllers
+### Tags, Resources, Properties and Controllers
 
 | Script | Flag | Writes | Default |
 | --- | --- | --- | --- |
@@ -82,15 +83,19 @@ All of these except `--recipe`, `--duration`, `--auto-grant` and `--visibility` 
 | | `--duration <seconds>` | `defaultDuration` | Lasts until removed |
 | | `--tick-interval <seconds>` | `tickInterval` and an empty `onTick` | No ticking |
 | | `--property <Property:operation=value,...>` | One `properties` entry; operations are `set`, `add`, `multiply`, `min` and `max`, and `set` stands alone. Repeatable, one flag per property | |
-| `createResource` | `--max <value>` or `--max <Property=base>` | `max`, as a constant or a property with its default base value | 100 |
-| | `--min <value>` or `--min <Property=base>` | `min` | 0 |
+| `createResource` | `--max <value>` or `--max <Property>` | `max`, as a constant or a registered Property reference | 100 |
+| | `--min <value>` or `--min <Property>` | `min` | 0 |
 | | `--initial <value>` | `initialValue` | The maximum |
-| | `--regen <rate>` or `--regen <Property=base>` | `regen.rate`, per second | No regeneration |
+| | `--regen <rate>` or `--regen <Property>` | `regen.rate`, per second | No regeneration |
 | | `--visibility`, `--no-auto-assign` | `visibility`, `autoAssign` | ServerOnly, auto-assigned |
+| `createProperty` | `--default <value>` | `defaultBaseValue` | 0 |
+| | `--auto-assign` | `autoAssign = true` | Not assigned |
 | `createController` | `--depends-on <key>` | `dependsOn`; repeatable | |
 | | `--no-auto-attach` | `autoAttach = false` | Attached to every Actor |
 
-For example, `--property WalkSpeed:multiply=0.5,min=4` writes `WalkSpeed = { multiply = 0.5, min = 4 }`, and `--max MaxStamina=100` writes `max = { propertyName = "MaxStamina", defaultBaseValue = 100 }`.
+For example, `--property WalkSpeed:multiply=0.5,min=4` writes `WalkSpeed = { multiply = 0.5, min = 4 }`, and `--max MaxStamina` writes `max = { propertyName = "MaxStamina" }`.
+
+A Tag modifier, Resource source or cost `multiplierProperty` names a registered [Property](./Property/property-registry); create it with `createProperty`. The generator warns when a referenced Property is not defined, and KRF rejects startup until it is.
 
 ### Commands, Hints and replication domains
 

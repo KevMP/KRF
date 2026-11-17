@@ -67,7 +67,7 @@ export function readKrfDependency(consumer) {
 	const alias = dependency[1];
 	if (!isIdentifier(alias)) {
 		throw new KrfToolError("KrfAliasUnsupported", `The KRF dependency alias '${alias}' is not a Luau identifier.`, {
-			hint: 'Rename it in wally.toml, for example: KRF = "kevmp/krf@=0.1.0"',
+			hint: `Rename it in wally.toml, for example: KRF = "${KRF_RUNTIME.package}@=${KRF_RUNTIME.version}"`,
 		});
 	}
 

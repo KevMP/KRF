@@ -54,7 +54,7 @@ export const GENERATED_DEFINITIONS = [
 	["createTag", "--name", "Stunned"],
 	["createTag", "--name", "Burning", "--duplicate-behavior", "Stack", "--max-stacks", "3", "--duration", "2", "--tick-interval", "0.5", "--property", "WalkSpeed:multiply=0.5,min=4"],
 	["createResource", "--name", "Stamina"],
-	["createResource", "--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "ManaRegen=1", "--visibility", "ClientVisible"],
+	["createResource", "--name", "Mana", "--max", "MaxMana", "--initial", "0", "--regen", "ManaRegen", "--visibility", "ClientVisible"],
 	["createAction", "--name", "Fireball", "--requestable", "--auto-grant", "--blocked-tag", "Stunned", "--cost", "Stamina=10", "--hook", "onEnd"],
 	[
 		"createAction",
@@ -89,6 +89,8 @@ export const GENERATED_DEFINITIONS = [
 ];
 
 export function generateDefinitions(project) {
+	fs.writeFileSync(path.join(project, "src/server/Properties/MaxMana.luau"), '--!strict\nreturn { id = "MaxMana", defaultBaseValue = 50 }\n');
+	fs.writeFileSync(path.join(project, "src/server/Properties/ManaRegen.luau"), '--!strict\nreturn { id = "ManaRegen", defaultBaseValue = 1 }\n');
 	for (const [script, ...args] of GENERATED_DEFINITIONS) {
 		const result = JSON.parse(run("npm", ["run", "--silent", script, "--", ...args, "--yes", "--json"], project).stdout);
 		assert.equal(result.status, "created", `${script} ${args.join(" ")}: ${JSON.stringify(result)}`);

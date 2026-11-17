@@ -126,7 +126,7 @@ test("first use of each catalog creates its loader and wires Startup once; later
 		assert.match(tree[`src/server/${folder}/init.luau`], /= requireDescendants\(script\)$/m, folder);
 	}
 	assert.match(tree[STARTUP], /^local Commands = require\(script\.Parent\.Commands\)\nlocal Controllers = require\(script\.Parent\.Controllers\)\nlocal Hints = require\(script\.Parent\.Hints\)\nlocal PlayerActors/m);
-	assert.match(tree[STARTUP], /KRF\.Server\.Init\(\{\n\thints = Hints,\n\tcommands = Commands,\n\tcontrollers = Controllers,\n\ttags = Tags,\n\tresources = Resources,\n\tactions = Actions,\n\treplicationDomains = ReplicationDomains,\n\tactionRequestSchemas = ActionRequests,\n\}\)/);
+	assert.match(tree[STARTUP], /KRF\.Server\.Init\(\{\n\thints = Hints,\n\tcommands = Commands,\n\tcontrollers = Controllers,\n\tproperties = Properties,\n\ttags = Tags,\n\tresources = Resources,\n\tactions = Actions,\n\treplicationDomains = ReplicationDomains,\n\tactionRequestSchemas = ActionRequests,\n\}\)/);
 	assert.ok(tree["src/server/Actions/Combat/Meditate.luau"].includes('id = "Combat.Meditate"'));
 	assert.match(tree[`${REQUESTS}/Fireball.luau`], /^local Fireball: KRF\.ActionRequestSchemas = \{\n\tFireball = \{\},\n\}$/m);
 	assert.match(tree[`${REQUESTS}/Guard.luau`], /\tGuard = \{\n\t\tstop = \{\},\n\t\tallowInputInterrupt = true,\n\t\trequiresClientRelease = true,\n\t\tonDisconnect = "Interrupt",\n\t\},\n\}/);
@@ -406,7 +406,7 @@ test("the Action wizard names each field, lets lists be typed, and writes what t
 			"resourceRequirements.Energy.maxPercent (highest percent of the Resource's maximum, 0-100; blank to skip)": "90",
 			"costs (Resources spent when the Action starts; comma separated, blank for none; this project has Energy)": "Energy",
 			"costs.Energy (an amount such as 10, or a percent of the Resource's range such as 25%)": "25%",
-			"costs.Energy.multiplierProperty (a property whose value multiplies the cost, such as CostMultiplier; blank for none)": "",
+			"costs.Energy.multiplierProperty (a Property whose value multiplies the cost; blank for none; this project has EnergyRegen, JumpPower, WalkSpeed)": "",
 			"locks (lock names held while the Action runs; Actions that share a lock never run at the same time; comma separated, blank for none)": "Hands",
 			"interruptibleBy (Actions allowed to end this Action and take over its locks; comma separated, blank for none; this project has Focus)": "Focus",
 			"hooks (extra lifecycle hook stubs; space to select, enter to confirm)": [["onEnd", "canBeInterruptedBy"]],
@@ -479,7 +479,7 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"maxStacks (most stacks of the Tag allowed; blank for no limit)": "3",
 			"defaultDuration (seconds the Tag lasts; blank: until removed)": "",
 			"tickInterval (seconds between onTick calls; blank for no onTick)": "0.5",
-			"properties (properties the Tag modifies while active; comma separated, blank for none; this project has EnergyRegen)": "WalkSpeed, EnergyRegen",
+			"properties (properties the Tag modifies while active; comma separated, blank for none; this project has EnergyRegen, JumpPower, WalkSpeed)": "WalkSpeed, EnergyRegen",
 			"properties.WalkSpeed.set (replace the property with this value; blank to adjust the property instead)": "",
 			"properties.WalkSpeed.add (amount added; blank to skip)": "",
 			"properties.WalkSpeed.multiply (multiplier; blank to skip)": "0.5",
@@ -497,8 +497,7 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"name (module and file name, such as Fireball)": "Mana",
 			"id (blank: Mana; a namespace such as Combat.Mana is allowed)": "",
 			"max (the Resource's maximum)": "property",
-			"max.propertyName (the property to read)": "MaxMana",
-			"max.defaultBaseValue (MaxMana's value before Tag modifiers)": "50",
+			"max.propertyName (a registered Property ID; this project has EnergyRegen, JumpPower, WalkSpeed)": "MaxMana",
 			"min (the Resource's minimum; none means 0)": "none",
 			"initialValue (the Resource's starting value; blank: the maximum)": "0",
 			"regen.rate (how much the Resource regenerates per second)": "value",
@@ -506,7 +505,7 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"visibility (who can see the Resource)": "ClientVisible",
 			"autoAssign (every Actor gets the Resource automatically)": true,
 		},
-		["--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
+		["--name", "Mana", "--max", "MaxMana", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
 	);
 
 	await wizardMatchesFlags(
@@ -529,6 +528,55 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 		},
 		["--name", "ComboState", "--audience", "All", "--state-field", "Count:Array(Enum(Fire|Ice),4)", "--event", "Finisher(Damage:U16)"],
 	);
+});
+
+test("createProperty writes a registered Property, and references to unregistered Properties warn", async (t) => {
+	const { root, stdout } = await wizardMatchesFlags(
+		t,
+		"property",
+		{
+			"name (module and file name, such as Fireball)": "MaxMana",
+			"id (blank: MaxMana; a namespace such as Combat.MaxMana is allowed)": "",
+			"defaultBaseValue (the Property's value on an Actor before Tag modifiers)": "100",
+			"autoAssign (every Actor gets the Property automatically)": false,
+		},
+		["--name", "MaxMana", "--default", "100"],
+	);
+	assert.equal(
+		readTree(root)["src/server/Properties/MaxMana.luau"],
+		`--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.KRF)
+
+local MaxMana: KRF.PropertyDefinition = {
+	id = "MaxMana",
+	defaultBaseValue = 100,
+}
+
+return MaxMana
+`,
+	);
+	assert.match(stdout, /MaxMana is not auto-assigned\. Give it to an Actor with ActorRuntime\.RegisterActor\(model, \{ properties = \{ MaxMana = value \} \}\)/);
+
+	const assigned = await generate(root, ["property", "--name", "Defense", "--default", "5", "--auto-assign", "--yes"]);
+	assert.equal(assigned.code, 0, assigned.stderr);
+	assert.match(readTree(root)["src/server/Properties/Defense.luau"], /\tdefaultBaseValue = 5,\n\tautoAssign = true,\n\}/);
+	assert.doesNotMatch(assigned.stdout, /not auto-assigned/);
+
+	const registered = await generate(root, ["resource", "--name", "Mana", "--max", "MaxMana", "--regen", "WalkSpeed", "--yes", "--json"]);
+	assert.deepEqual(registered.json.warnings, []);
+
+	const unregistered = [
+		["tag", "--name", "Armored", "--property", "Armor:add=5", "--yes", "--json"],
+		["resource", "--name", "Stamina", "--max", "MaxStamina", "--yes", "--json"],
+		["action", "--name", "Blink", "--cost", "Energy:amount=5,multiplierProperty=BlinkCost", "--yes", "--json"],
+	];
+	for (const [argv, id] of unregistered.map((argv, index) => [argv, ["Armor", "MaxStamina", "BlinkCost"][index]])) {
+		const result = await generate(root, argv);
+		assert.equal(result.code, 0, result.stderr);
+		assert.deepEqual(result.json.warnings, [`Property '${id}' is not defined in src/server/Properties; KRF rejects startup until it is.`]);
+	}
 });
 
 test("the wizard rejects an out-of-range percent at the question itself", async (t) => {

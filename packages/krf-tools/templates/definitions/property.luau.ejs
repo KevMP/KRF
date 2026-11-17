@@ -1,0 +1,14 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.PropertyDefinition = {
+	id = <%- luaString(id) %>,
+	defaultBaseValue = <%- luaNumber(options.defaultBaseValue) %>,
+<% if (options.autoAssign) { -%>
+	autoAssign = true,
+<% } -%>
+}
+
+return <%- name %>

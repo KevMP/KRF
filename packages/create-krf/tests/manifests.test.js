@@ -189,7 +189,7 @@ test("every definition folder loads its descendants and startup passes it to Ser
 	const generated = files({});
 	const startup = generated.get("src/server/Startup.server.luau");
 	const folders = [...new Set([...generated.keys()].map((file) => file.match(/^src\/server\/(\w+)\//)?.[1]).filter(Boolean))].sort();
-	assert.deepEqual(folders, ["Actions", "Resources", "Tags"]);
+	assert.deepEqual(folders, ["Actions", "Properties", "Resources", "Tags"]);
 
 	for (const folder of folders) {
 		assert.match(generated.get(`src/server/${folder}/init.luau`), /= requireDescendants\(script\)$/m, folder);
