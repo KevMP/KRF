@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME, ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
+import { KRF_RUNTIME } from "krf-tools";
+
+import { ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
 import { buildProjectFiles } from "../src/create.js";
 import { wallyPackageName } from "../src/manifests.js";
 
@@ -194,6 +196,10 @@ test("every definition folder loads its descendants and startup passes it to Ser
 		assert.match(startup, new RegExp(`^local ${folder} = require\\(script\\.Parent\\.${folder}\\)$`, "m"), folder);
 		assert.match(startup, new RegExp(`^\\t${folder.toLowerCase()} = ${folder},$`, "m"), folder);
 	}
+
+	for (const folder of ["src/shared/ActionRequests", "src/client/ActionInputPolicies"]) {
+		assert.match(generated.get(`${folder}/init.luau`), /= mergeDescendants\(script\)$/m, folder);
+	}
 });
 
 test("every loadout slot is a bound input and every equipped Action is registered and client-requestable", () => {
@@ -201,7 +207,9 @@ test("every loadout slot is a bound input and every equipped Action is registere
 	const actionIds = [...generated]
 		.filter(([file]) => file.startsWith("src/server/Actions/"))
 		.flatMap(([, source]) => [...source.matchAll(/^\s*id = "([^"]+)"/gm)].map((match) => match[1]));
-	const requestable = [...generated.get("src/shared/ActionRequests.luau").matchAll(/^\s*\[?"?([\w.]+)"?\]? = \{/gm)].map((match) => match[1]);
+	const requestable = [...generated]
+		.filter(([file]) => file.startsWith("src/shared/ActionRequests/") && !file.endsWith("/init.luau"))
+		.flatMap(([, source]) => [...source.matchAll(/^\t\[?"?([\w.]+)"?\]? = \{/gm)].map((match) => match[1]));
 	const loadout = generated.get("src/client/Controls/Loadout.luau");
 	const slots = [...loadout.match(/^local SLOTS: \{ string \} = \{ (.+) \}$/m)[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
 	const equipped = Object.fromEntries([...loadout.match(/^local equipped[^\n]*\n([\s\S]*?)^\}$/m)[1].matchAll(/^\t(\w+) = "([^"]+)",$/gm)].map((match) => [match[1], match[2]]));

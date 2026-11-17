@@ -82,6 +82,102 @@ export function writeNewDirectory(target, files, options = {}) {
 	}
 }
 
+function lstatOrUndefined(target) {
+	try {
+		return fs.lstatSync(target);
+	} catch (error) {
+		if (error?.code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function assertNoLinks(root, relative) {
+	let current = root;
+	for (const segment of relative.split("/")) {
+		current = path.join(current, segment);
+		const stats = lstatOrUndefined(current);
+		if (stats === undefined) return;
+		if (stats.isSymbolicLink()) {
+			throw new KrfToolError("UnsafeOutputPath", `Refusing to write through the link '${path.relative(root, current).split(path.sep).join("/")}'.`);
+		}
+	}
+}
+
+function fileChanged(relative) {
+	return new KrfToolError("FileChanged", `${relative} changed while the generator was running.`, {
+		hint: "Nothing was written. Run the command again.",
+	});
+}
+
+export function applyProjectChanges(root, changes, options = {}) {
+	const fileSystem = options.fileSystem ?? fs;
+	const resolve = (relative) => path.join(root, ...relative.split("/"));
+
+	for (const change of changes) {
+		assertRelativeFile(change.path);
+		assertNoLinks(root, change.path);
+	}
+
+	for (const change of changes) {
+		const stats = lstatOrUndefined(resolve(change.path));
+		if (change.kind === "create" && stats !== undefined) {
+			throw new KrfToolError("FileExists", `${change.path} already exists.`, { hint: "Nothing was written." });
+		}
+		if (change.kind === "edit" && (stats === undefined || !fs.readFileSync(resolve(change.path)).equals(Buffer.from(change.before)))) {
+			throw fileChanged(change.path);
+		}
+	}
+
+	const createdFiles = [];
+	const createdDirectories = [];
+	const temporaryFiles = [];
+	const editedFiles = [];
+
+	try {
+		for (const change of changes.filter((entry) => entry.kind === "create")) {
+			const destination = resolve(change.path);
+			const missing = [];
+			for (let directory = path.dirname(destination); lstatOrUndefined(directory) === undefined; directory = path.dirname(directory)) {
+				missing.unshift(directory);
+			}
+			for (const directory of missing) {
+				fileSystem.mkdirSync(directory);
+				createdDirectories.push(directory);
+			}
+			fileSystem.writeFileSync(destination, change.contents, { flag: "wx" });
+			createdFiles.push(destination);
+		}
+
+		for (const change of changes.filter((entry) => entry.kind === "edit")) {
+			const destination = resolve(change.path);
+			const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.krf-${randomUUID().slice(0, 8)}`);
+			fileSystem.writeFileSync(temporary, change.after, { flag: "wx" });
+			temporaryFiles.push(temporary);
+
+			if (!fs.readFileSync(destination).equals(Buffer.from(change.before))) throw fileChanged(change.path);
+			fileSystem.renameSync(temporary, destination);
+			temporaryFiles.pop();
+			editedFiles.push({ destination, before: change.before });
+		}
+	} catch (error) {
+		for (const { destination, before } of editedFiles.reverse()) fs.writeFileSync(destination, before);
+		for (const temporary of temporaryFiles) fs.rmSync(temporary, { force: true });
+		for (const file of createdFiles.reverse()) fs.rmSync(file, { force: true });
+		for (const directory of createdDirectories.reverse()) {
+			try {
+				fs.rmdirSync(directory);
+			} catch {
+				break;
+			}
+		}
+		if (error instanceof KrfToolError) throw error;
+		throw new KrfToolError("WriteFailed", `Could not write the generated files: ${error.message}`, {
+			cause: error,
+			hint: "Every change was undone. Fix the cause and run the command again.",
+		});
+	}
+}
+
 /** The highest directory on the way to `directory` that does not exist yet, or null. */
 function firstMissingAncestor(directory) {
 	let missing = null;

@@ -26,14 +26,42 @@ Save the built place somewhere else, keep building the world there, and sync cod
 | `npm run build` | Builds `<%= name %>.rbxl` |
 | `npm run format` | Formats `src` |
 | `npm run check` | Formats `src`, then lints and strict type checks |
+| `npm run createAction` | Creates an Action in `src/server/Actions` |
+| `npm run createTag` | Creates a Tag in `src/server/Tags` |
+| `npm run createResource` | Creates a Resource in `src/server/Resources` |
+| `npm run createController` | Creates a Controller in `src/server/Controllers` |
+| `npm run createCommand` | Creates a Command in `src/server/Commands` |
+| `npm run createHint` | Creates a Hint in `src/server/Hints` |
+| `npm run createDomain` | Creates a replication domain in `src/server/ReplicationDomains` |
 
 ## Adding definitions
 
-Add a ModuleScript anywhere under `src/server/Actions`, `Tags` or `Resources`; each folder's
-`init.luau` loads every module beneath it. Actions return a factory function; Tags and Resources
-return a definition table. Actions players request from the client also need an entry in
-`src/shared/ActionRequests.luau`; held Actions also need a `WhileDown` policy in
-`src/client/ActionInputPolicies.luau`.
+Each folder under `src/server` that `Startup.server.luau` passes to `KRF.Server.Init` has an
+`init.luau` that loads every module beneath it, so a new module there loads on the next build.
+The generators write a typed module for you:
+
+```bash
+npm run createAction -- --name Fireball --recipe channel --duration 2 --cost Energy=10 --yes
+```
+
+Every field a definition supports has a flag, such as `--required-tag`, `--requirement`,
+`--lock`, `--hook`, `--property`, `--regen`, `--request-field` or `--event`; add `-- --help` to see
+them all. Pass flags after `--`. Without `--yes`, the generator asks for everything you left out,
+one question at a time, offering the Tags, Resources and Actions the project already has.
+`--dry-run` shows the plan without writing, and `--json` prints one
+result object (use `npm run --silent` to keep npm's banner out of it). The first Controller,
+Command, Hint or replication domain also creates its folder's loader and adds it to
+`Startup.server.luau`.
+
+Players can request only the Actions declared in `src/shared/ActionRequests`. Like the definition
+folders, its `init.luau` merges every module beneath it, one module per Action. `--requestable`
+writes that module, and a `--recipe held` Action also gets a `WhileDown` policy module in
+`src/client/ActionInputPolicies`. Then put the Action in an ability slot (see Controls below).
+
+The generator never overwrites a file. If you have changed `Startup.server.luau` or a folder's
+`init.luau` so that it cannot wire the new module safely, it still writes the module, leaves your
+code unchanged, prints the lines to add, and exits with code 5. See
+[Definition Generators](https://kevmp.github.io/KRF/definition-generators) for every option.
 
 ## Controls
 

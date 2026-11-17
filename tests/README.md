@@ -51,11 +51,13 @@ measurements, analyzers, and interpretation limits.
 ## Starter project
 
 `npm run test:integration:starter` packs `create-krf` and `krf-tools`, generates
-projects through the packed creator, installs the published KRF release with
-`npm install`, builds them with `npm run build`, and plays
-each one in Studio with one server and two clients. The generated project is not
-changed beyond each scenario's edit; the runner only adds its fixtures from
-`packages/create-krf/tests/native/` and a control RemoteEvent.
+projects through the packed creator, installs the packed `krf-tools` and the
+published KRF release with `npm install`, creates one definition of every kind
+through the project's `npm run create*` scripts, builds with `npm run build`, and
+plays each project in Studio with one server and two clients. The generated
+project is not changed beyond the generated definitions and each scenario's edit;
+the runner only adds its fixtures from `packages/create-krf/tests/native/` and a
+control RemoteEvent.
 
 | Scenario | Coverage |
 | --- | --- |
@@ -63,6 +65,7 @@ changed beyond each scenario's edit; the runner only adds its fixtures from
 | `late-model` | Controls starts after the local character's ActorView is published but before its Model replicates, then takes control when the Model arrives |
 | `example-removed` | Startup and player Actors with the example definitions, Controls and Energy display deleted |
 | `invalid-definitions` | A rejected startup reports its failure and registers no Actors |
+| `generated` | `Server.Init` accepts the generated Action, Tag, Resource, Controller, Command, Hint and replication domain; the Controller attaches and the Resource is assigned; the channel Action ends after its duration; a client requests the generated requestable Action, which pays its cost; the generated Command and client-to-server Hint reject client calls |
 
 Pass scenario names to run a subset, for example
 `npm run test:integration:starter -- starter`. Places and logs stay under

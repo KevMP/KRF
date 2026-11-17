@@ -419,8 +419,109 @@ local function runLateModel(): ()
 	end)
 end
 
+local function hintAbuseLogged(): boolean
+	for _, entry in LogService:GetLogHistory() do
+		if string.find(entry.message, "[Networking] HintAbuse: hintsUnauthorized", 1, true) then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function runGenerated(): ()
+	local everyone: { Player } = {}
+
+	step("Accepted", function()
+		waitFor("two players", function()
+			return #Players:GetPlayers() == CLIENTS
+		end)
+		everyone = players()
+		waitForActors(everyone)
+		assert(not startupFailureLogged(), "Startup accepts every generated definition")
+
+		for _, actionId: string in { "Fireball", "Guard", "Combat.Meditate" } do
+			assert(KRF.ActionRegistry.Get(actionId) ~= nil, `Action {actionId} is loaded`)
+		end
+
+		for _, tagId: string in { "Stunned", "Burning" } do
+			assert(KRF.TagRegistry.Get(tagId) ~= nil, `Tag {tagId} is loaded`)
+		end
+
+		for _, resourceId: string in { "Stamina", "Mana" } do
+			assert(KRF.ResourceRegistry.Get(resourceId) ~= nil, `Resource {resourceId} is loaded`)
+		end
+
+		for _, commandId: string in { "CastSpell", "Trade" } do
+			assert(KRF.CommandRegistry.Get(commandId) ~= nil, `Command {commandId} is loaded`)
+		end
+
+		assert(KRF.ControllerRegistry.Get("Cooldowns") ~= nil, "Controller Cooldowns is loaded")
+		assert(KRF.HintRegistry.Get("ImpactFx") ~= nil and KRF.HintRegistry.Get("Ping") ~= nil, "Hints are loaded")
+		assert(KRF.ReplicationDomainRegistry.Get("ComboState") ~= nil, "Replication domain ComboState is loaded")
+
+		for _, player: Player in everyone do
+			local actor: KRF.Actor = actorOf(player)
+			controller(actor, "Cooldowns")
+			local resources: KRF.ResourceController = controller(actor, "ResourceController")
+			assert(resources:GetCurrent("Stamina") == 100, "Stamina is auto-assigned at its maximum")
+		end
+	end)
+
+	step("Channel", function()
+		local actions: KRF.ActionController = controller(actorOf(everyone[1]), "ActionController")
+		local endedAt: number? = nil
+		local connection = actions.OnActionEnded:Connect(function(event: KRF.ActionLifecycleEvent)
+			if event.actionId == "Combat.Meditate" then
+				endedAt = os.clock()
+			end
+		end)
+
+		local startedAt: number = os.clock()
+		local result: KRF.ActionRequestResult = actions:RequestAction("Combat.Meditate")
+		assert(result.accepted, "The channel Action starts")
+		waitFor("the channel Action to end", function()
+			return endedAt ~= nil
+		end, 5)
+		connection:Disconnect()
+
+		local channelled: number = (endedAt :: number) - startedAt
+		assert(channelled >= 0.4 and channelled <= 2, `The channel Action ends after its duration, ran {channelled}s`)
+	end)
+
+	local player: Player = players()[1]
+	local actor: KRF.Actor = actorOf(player)
+	local actions: KRF.ActionController = controller(actor, "ActionController")
+	local resources: KRF.ResourceController = controller(actor, "ResourceController")
+	local fireballs: number = 0
+	local fireballConnection = actions.OnActionEnded:Connect(function(event: KRF.ActionLifecycleEvent)
+		if event.actionId == "Fireball" then
+			fireballs += 1
+		end
+	end)
+
+	askClients("RequestFireball", {}, { player })
+
+	step("Requested", function()
+		waitFor("the requested Fireball to run", function()
+			return fireballs == 1
+		end, 10)
+		fireballConnection:Disconnect()
+		assert(resources:GetCurrent("Stamina") == 90, "Fireball paid its Stamina cost")
+		assert(not hintAbuseLogged(), "No Hint was rejected before Ping was sent")
+	end)
+
+	askClients("SendCommand", {}, { player })
+	askClients("SendHint", {}, { player })
+
+	step("HintRejected", function()
+		waitFor("the server to reject the unauthorized Ping", hintAbuseLogged, 10)
+	end)
+end
+
 local SCENARIOS: { [string]: () -> () } = {
 	starter = runStarter,
+	generated = runGenerated,
 	["late-model"] = runLateModel,
 	["example-removed"] = runExampleRemoved,
 	["invalid-definitions"] = runInvalidDefinitions,

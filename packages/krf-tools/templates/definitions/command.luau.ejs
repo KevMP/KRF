@@ -1,0 +1,24 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.CommandDefinition = {
+	id = <%- luaString(id) %>,
+	target = "<%- options.target %>",
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+<% if (options.authorize === "deny") { -%>
+	authorize = function(_context: KRF.CommandContext, _request: unknown): (boolean, string?)
+		return false, "NotImplemented"
+	end,
+<% } else { -%>
+	authorize = KRF.CommandAuthorization.<%- options.authorize %>,
+<% } -%>
+	handle = function(_context: KRF.CommandContext, _request: unknown): KRF.CommandHandlerResult
+		return { accepted = false, reason = "NotImplemented" }
+	end,
+}
+
+return <%- name %>

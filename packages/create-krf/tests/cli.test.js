@@ -4,8 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { KRF_RUNTIME, TOOLS_VERSION } from "krf-tools";
+
 import { runCreator } from "../src/cli.js";
-import { CREATOR_VERSION, KRF_RUNTIME } from "../src/compatibility.js";
+import { CREATOR_VERSION } from "../src/compatibility.js";
 
 const CANCEL = Symbol("cancel");
 
@@ -101,7 +103,8 @@ test("--yes creates the default project without prompting", async (t) => {
 		"rokit.toml",
 		"scripts/setup.mjs",
 		"selene.toml",
-		"src/client/ActionInputPolicies.luau",
+		"src/client/ActionInputPolicies/Focus.luau",
+		"src/client/ActionInputPolicies/init.luau",
 		"src/client/Controls/Keybinds.luau",
 		"src/client/Controls/Loadout.luau",
 		"src/client/Controls/init.luau",
@@ -111,13 +114,15 @@ test("--yes creates the default project without prompting", async (t) => {
 		"src/server/Actions/Focus.luau",
 		"src/server/Actions/init.luau",
 		"src/server/PlayerActors.luau",
-		"src/server/RequireDescendants.luau",
 		"src/server/Resources/Energy.luau",
 		"src/server/Resources/init.luau",
 		"src/server/Startup.server.luau",
 		"src/server/Tags/Focused.luau",
 		"src/server/Tags/init.luau",
-		"src/shared/ActionRequests.luau",
+		"src/shared/ActionRequests/Focus.luau",
+		"src/shared/ActionRequests/init.luau",
+		"src/shared/MergeDescendants.luau",
+		"src/shared/RequireDescendants.luau",
 		"stylua.toml",
 		"wally.toml",
 	]);
@@ -126,14 +131,27 @@ test("--yes creates the default project without prompting", async (t) => {
 	assert.deepEqual(result.calls, []);
 });
 
-test("the project has no npm dependencies; its scripts call the pinned Roblox tools", async (t) => {
+test("the project's only npm dependency is the exact krf-tools release behind its generator scripts", async (t) => {
 	const result = await create(t, ["my-game", "--yes", "--no-git"]);
 	const manifest = JSON.parse(fs.readFileSync(path.join(result.cwd, "my-game", "package.json"), "utf8"));
 	assert.equal(manifest.private, true);
 	assert.equal(manifest.dependencies, undefined);
-	assert.equal(manifest.devDependencies, undefined);
-	assert.deepEqual(Object.keys(manifest.scripts), ["postinstall", "build", "format", "check", "typecheck"]);
-	assert.doesNotMatch(JSON.stringify(manifest.scripts), /krf-tools|npx/);
+	assert.deepEqual(manifest.devDependencies, { "krf-tools": TOOLS_VERSION });
+	assert.deepEqual(manifest.scripts, {
+		postinstall: "node scripts/setup.mjs",
+		build: manifest.scripts.build,
+		format: "stylua src",
+		check: manifest.scripts.check,
+		typecheck: manifest.scripts.typecheck,
+		createAction: "krf-tools create action",
+		createTag: "krf-tools create tag",
+		createResource: "krf-tools create resource",
+		createController: "krf-tools create controller",
+		createCommand: "krf-tools create command",
+		createHint: "krf-tools create hint",
+		createDomain: "krf-tools create domain",
+	});
+	assert.doesNotMatch(JSON.stringify(manifest.scripts), /npx/);
 });
 
 test("the wizard and explicit flags create identical projects for every option combination", async (t) => {
@@ -250,7 +268,7 @@ test("documents and workflows mention only npm scripts the project has", async (
 		const documents = ["README.md", ...(config.ci ? [".github/workflows/ci.yml"] : [])];
 
 		for (const document of documents) {
-			const mentioned = [...tree[document].matchAll(/npm run ([a-z:]+)/g)].map((match) => match[1]);
+			const mentioned = [...tree[document].matchAll(/npm run ([A-Za-z:]+)/g)].map((match) => match[1]);
 			assert.deepEqual(
 				mentioned.filter((script) => !scripts.includes(script)),
 				[],

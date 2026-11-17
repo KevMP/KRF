@@ -1,0 +1,21 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.ControllerDefinition = {
+	key = <%- luaString(id) %>,
+	factory = function(_actor: KRF.Actor): KRF.Controller
+		return {
+			Destroy = function(): () end,
+		}
+	end,
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+<% if (!options.autoAttach) { -%>
+	autoAttach = false,
+<% } -%>
+}
+
+return <%- name %>

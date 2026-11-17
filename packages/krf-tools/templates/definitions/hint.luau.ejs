@@ -1,0 +1,26 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.HintDefinition = {
+	id = <%- luaString(id) %>,
+	direction = "<%- options.direction %>",
+	target = "<%- options.target %>",
+	mode = "<%- options.mode %>",
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+<% if (options.direction === "ClientToServer") { -%>
+<% if (options.authorize === "deny") { -%>
+	authorize = function(_context: KRF.HintContext, _payload: unknown): (boolean, string?)
+		return false, "NotImplemented"
+	end,
+<% } else { -%>
+	authorize = KRF.HintAuthorization.<%- options.authorize %>,
+<% } -%>
+	receive = function(_context: KRF.HintContext, _payload: unknown): () end,
+<% } -%>
+}
+
+return <%- name %>

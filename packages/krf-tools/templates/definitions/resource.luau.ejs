@@ -1,0 +1,22 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+local <%- name %>: KRF.ResourceDefinition = {
+	id = <%- luaString(id) %>,
+<% if (options.min !== undefined) { -%>
+	min = <%- numericSource(options.min) %>,
+<% } -%>
+	max = <%- numericSource(options.max) %>,
+	initialValue = <%- luaNumber(options.initial) %>,
+	visibility = "<%- options.visibility %>",
+<% if (options.autoAssign) { -%>
+	autoAssign = true,
+<% } -%>
+<% if (options.regen !== undefined) { -%>
+	regen = { rate = <%- numericSource(options.regen) %> },
+<% } -%>
+}
+
+return <%- name %>

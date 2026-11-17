@@ -1,0 +1,71 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+<% if (options.recipe === "channel") { -%>
+
+local DURATION: number = <%- luaNumber(options.duration) %>
+<% } -%>
+
+function <%- name %>(): KRF.ActionDefinition
+<% if (options.recipe === "channel") { -%>
+	local elapsed: number = 0
+
+<% } -%>
+	return {
+		id = <%- luaString(id) %>,
+		visibility = "<%- options.visibility %>",
+<% if (options.autoGrant) { -%>
+		autoGrant = true,
+<% } -%>
+<% for (const line of lists) { -%>
+<%- line %>
+<% } -%>
+<% if (options.hooks.includes("onCanStart")) { -%>
+		onCanStart = function(_context: KRF.ActionStartContext): (boolean, string?)
+			return true, nil
+		end,
+<% } -%>
+<% if (options.recipe === "instant") { -%>
+		onStart = function(context: KRF.ActionExecutionContext): ()
+			context:End()
+		end,
+<% } else if (options.hooks.includes("onStart")) { -%>
+		onStart = function(_context: KRF.ActionExecutionContext): () end,
+<% } -%>
+<% if (options.recipe === "held") { -%>
+		onStopRequested = function(context: KRF.ActionExecutionContext): ()
+			context:End()
+		end,
+<% } else if (options.hooks.includes("onStopRequested")) { -%>
+		onStopRequested = function(_context: KRF.ActionExecutionContext, _request: KRF.ActionStopRequest): () end,
+<% } -%>
+<% if (options.recipe === "channel") { -%>
+		onUpdate = function(context: KRF.ActionExecutionContext, deltaTime: number): ()
+			elapsed += deltaTime
+
+			if elapsed >= DURATION then
+				context:End()
+			end
+		end,
+<% } else if (options.hooks.includes("onUpdate")) { -%>
+		onUpdate = function(_context: KRF.ActionExecutionContext, _deltaTime: number): () end,
+<% } -%>
+<% if (options.hooks.includes("onEnd")) { -%>
+		onEnd = function(_context: KRF.ActionExecutionContext): () end,
+<% } -%>
+<% if (options.hooks.includes("onInterrupt")) { -%>
+		onInterrupt = function(_context: KRF.ActionExecutionContext, _reason: string): () end,
+<% } -%>
+<% if (options.hooks.includes("canBeInterruptedBy")) { -%>
+		canBeInterruptedBy = function(
+			_context: KRF.ActionExecutionContext,
+			_incoming: KRF.ActionInterruptionContext
+		): boolean
+			return true
+		end,
+<% } -%>
+	}
+end
+
+return <%- name %>

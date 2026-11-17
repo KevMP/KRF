@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { CREATOR_VERSION, KRF_RUNTIME } from "../src/compatibility.js";
+import { KRF_RUNTIME } from "krf-tools";
+
+import { CREATOR_VERSION } from "../src/compatibility.js";
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const toolingPackage = JSON.parse(fs.readFileSync(new URL("../../krf-tools/package.json", import.meta.url), "utf8"));

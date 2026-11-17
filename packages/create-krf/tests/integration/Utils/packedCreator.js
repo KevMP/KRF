@@ -50,6 +50,51 @@ export function createProject(packed, work, name, flags) {
 	return path.join(work, name);
 }
 
+export const GENERATED_DEFINITIONS = [
+	["createTag", "--name", "Stunned"],
+	["createTag", "--name", "Burning", "--duplicate-behavior", "Stack", "--max-stacks", "3", "--duration", "2", "--tick-interval", "0.5", "--property", "WalkSpeed:multiply=0.5,min=4"],
+	["createResource", "--name", "Stamina"],
+	["createResource", "--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "ManaRegen=1", "--visibility", "ClientVisible"],
+	["createAction", "--name", "Fireball", "--requestable", "--auto-grant", "--blocked-tag", "Stunned", "--cost", "Stamina=10", "--hook", "onEnd"],
+	[
+		"createAction",
+		"--name",
+		"Guard",
+		"--recipe",
+		"held",
+		"--requestable",
+		"--auto-grant",
+		"--applied-tag",
+		"Burning:1",
+		"--requirement",
+		"Stamina:minPercent=0.1",
+		"--lock",
+		"Stance",
+		"--interruptible-by",
+		"Fireball",
+		"--hook",
+		"canBeInterruptedBy",
+		"--start-field",
+		"Element:Enum(Fire|Ice)",
+		"--stop-field",
+		"Direction:Array(F32,3)",
+	],
+	["createAction", "--id", "Combat.Meditate", "--recipe", "channel", "--duration", "0.5", "--auto-grant", "--active-tag", "Burning:0.5"],
+	["createController", "--name", "Cooldowns", "--depends-on", "ResourceController"],
+	["createCommand", "--name", "CastSpell"],
+	["createCommand", "--name", "Trade", "--target", "None", "--request-field", "Item:String(16)", "--result-field", "Accepted:Boolean", "--authorize", "AnyReadyClient"],
+	["createHint", "--name", "ImpactFx", "--payload-field", "Position:Array(F32,3)"],
+	["createHint", "--name", "Ping", "--direction", "ClientToServer"],
+	["createDomain", "--name", "ComboState", "--state-field", "Count:U8", "--state-field", "Finished:Boolean", "--event", "Finisher(Damage:U16)"],
+];
+
+export function generateDefinitions(project) {
+	for (const [script, ...args] of GENERATED_DEFINITIONS) {
+		const result = JSON.parse(run("npm", ["run", "--silent", script, "--", ...args, "--yes", "--json"], project).stdout);
+		assert.equal(result.status, "created", `${script} ${args.join(" ")}: ${JSON.stringify(result)}`);
+	}
+}
+
 export function readTree(root) {
 	const files = {};
 	for (const entry of fs.readdirSync(root, { recursive: true, withFileTypes: true })) {
