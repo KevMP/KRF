@@ -6,21 +6,27 @@ A Roblox game built with [KRF](https://kevmp.github.io/KRF/) `<%= runtime.packag
 
 ```bash
 npm install
-npm run build
+npm run dev
 ```
 
-Open `<%= name %>.rbxl` in Roblox Studio and press Play. Commit `wally.lock`.
+`npm run dev` opens `<%= name %>.rbxl` in Roblox Studio and serves the project with Rojo. Connect the Rojo plugin, then press Play. Commit `wally.lock`.
 <% if (options.mode === "hybrid") { -%>
 
-This is a Hybrid project: Rojo syncs `src` and `Packages` with `rojo serve`, and your Studio place
-owns the world.
+This is a Hybrid project: Rojo syncs `src` and `Packages`, and `<%= name %>.rbxl` owns the world. Save your world in it; `npm run dev` creates it once and never rebuilds it.
 <% } -%>
 
 ## Scripts
 
 | Script | Does |
 | --- | --- |
+| `npm run dev` | Builds and opens the place in Studio and serves it with Rojo; `-- --no-open` only serves |
+<% if (options.mode === "hybrid") { -%>
+| `npm run build` | Builds `build/<%= name %>.rbxl` from the starter world, without touching your place |
+<% } else { -%>
 | `npm run build` | Builds `<%= name %>.rbxl` |
-| `npm run format` | Formats `src` |
-| `npm run check` | Formats, lints and type checks `src` |
+<% } -%>
+| `npm test` | Runs the Jest specs in `tests` inside Roblox Studio |
+| `npm run test:studio` | Plays the game in Studio with a server and two clients and checks that KRF starts |
+| `npm run format` | Formats `src` and `tests` |
+| `npm run check` | Checks formatting, lints and type checks without changing files |
 | `npm run createAction`, `createTag`, `createResource`, `createProperty`, `createController`, `createCommand`, `createHint`, `createDomain` | Creates a definition; see [Definition Generators](https://kevmp.github.io/KRF/definition-generators) |

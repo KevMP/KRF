@@ -6,7 +6,7 @@ sidebar_position: 2
 
 Initialize KRF once on the server and once on each client. Ordinary gameplay modules supply definitions or use controllers and views after initialization; they do not repeat setup.
 
-Projects created with `create-krf` already initialize KRF and load definitions from catalog folders; add definitions with the [definition generators](./definition-generators). Use this page for manual integration. The system guides assume initialization is handled by your game's startup code.
+Projects created with `create-krf` already initialize KRF and load definitions from catalog folders; add definitions with the [definition generators](./definition-generators), and build, sync and test them with the [local development scripts](./local-development). Use this page for manual integration. The system guides assume initialization is handled by your game's startup code.
 
 ## Install the package
 

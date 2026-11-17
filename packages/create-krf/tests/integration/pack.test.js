@@ -116,7 +116,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 
 			const startProject = variant.mode === "hybrid" ? "start-place.project.json" : "default.project.json";
 			run("npm", ["run", "build"], project);
-			assert.ok(fs.statSync(path.join(project, `${name}.rbxl`)).size > 0);
+			assert.ok(fs.statSync(path.join(project, ...(variant.mode === "hybrid" ? ["build", `${name}.rbxl`] : [`${name}.rbxl`]))).size > 0);
 
 			const place = inspectBuild(project, startProject);
 			const replicated = child(place, "ReplicatedStorage");

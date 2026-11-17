@@ -54,7 +54,7 @@ function report(io, config, result) {
 	const lines = [`Created ${config.name} in ${config.target}`, `  ${result.files.length} files`];
 	for (const step of result.steps) lines.push(`  ${step.name}: ${step.status}${step.detail ? ` (${step.detail})` : ""}`);
 
-	lines.push("", "Next:", `  cd ${path.relative(io.cwd, config.target) || "."}`, "  npm install", "  npm run build", "");
+	lines.push("", "Next:", `  cd ${path.relative(io.cwd, config.target) || "."}`, "  npm install", "  npm run dev", "");
 
 	io.stdout(`${lines.join("\n")}\n`);
 }

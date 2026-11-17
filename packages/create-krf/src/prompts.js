@@ -50,7 +50,7 @@ export async function promptForMissing(given, context) {
 				message: "Project mode",
 				initialValue: PROJECT_OPTION_DEFAULTS.mode,
 				options: [
-					{ value: "full", label: "Full", hint: "code and world live in this repo; npm run build makes the whole place" },
+					{ value: "full", label: "Full", hint: "code and world live in this repo; npm run dev builds the whole place" },
 					{ value: "hybrid", label: "Hybrid", hint: "only code lives in this repo; you build the world in Studio and keep the place file" },
 				],
 			}),

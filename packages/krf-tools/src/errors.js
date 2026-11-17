@@ -8,6 +8,8 @@ export const ExitCode = Object.freeze({
 	alreadyExists: 3,
 	createdNotLoaded: 4,
 	manualWiringRequired: 5,
+	testsNotConfigured: 6,
+	testInfrastructure: 7,
 	cancelled: 130,
 });
 

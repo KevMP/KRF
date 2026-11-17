@@ -54,7 +54,8 @@ measurements, analyzers, and interpretation limits.
 projects through the packed creator, installs the packed `krf-tools` and the
 published KRF release with `npm install`, creates one definition of every kind
 through the project's `npm run create*` scripts, builds with `npm run build`, and
-plays each project in Studio with one server and two clients. The generated
+plays each project in Studio with one server and two clients. The `starter`
+scenario also runs the project's own `npm test` and `npm run test:studio`. The generated
 project is not changed beyond the generated definitions and each scenario's edit;
 the runner only adds its fixtures from `packages/create-krf/tests/native/` and a
 control RemoteEvent.

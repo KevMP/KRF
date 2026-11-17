@@ -122,12 +122,27 @@ test("wally.toml depends on exactly the KRF release the templates target", () =>
 	assert.match(manifest, new RegExp(`^KRF = "${KRF_RUNTIME.package}@=${KRF_RUNTIME.version}"$`, "m"));
 });
 
-test("check formats source locally while CI fails on unformatted source", () => {
+test("check never changes files, format is the only formatter, and CI runs check", () => {
 	const generated = files({});
-	assert.match(JSON.parse(generated.get("package.json")).scripts.check, /^npm run format && /);
+	const { check, format } = JSON.parse(generated.get("package.json")).scripts;
+	assert.equal(check, "stylua --check src tests && selene src tests && npm run typecheck");
+	assert.equal(format, "stylua src tests");
 	const workflow = generated.get(".github/workflows/ci.yml");
-	assert.ok(workflow.indexOf("run: stylua --check src") !== -1, "CI does not check formatting");
-	assert.ok(workflow.indexOf("run: stylua --check src") < workflow.indexOf("run: npm run check"), "CI formats before checking formatting");
+	assert.match(workflow, /^ {8}run: npm run check$/m);
+	assert.doesNotMatch(workflow, /npm run format/);
+});
+
+test("Full builds the place at the root; Hybrid builds into build/ and never touches the Studio-owned place", () => {
+	assert.equal(JSON.parse(files({}).get("package.json")).scripts.build, "rojo build default.project.json --output my-game.rbxl");
+	assert.equal(JSON.parse(files({ mode: "hybrid" }).get("package.json")).scripts.build, "rojo build start-place.project.json --output build/my-game.rbxl");
+});
+
+test("Jest is a Wally dev dependency and the starter ships a Jest config and spec", () => {
+	const generated = files({});
+	assert.match(generated.get("wally.toml"), /^\[dev-dependencies\]\nJest = "jsdotlua\/jest@3\.10\.0"\nJestGlobals = "jsdotlua\/jest-globals@3\.10\.0"$/m);
+	assert.match(generated.get("tests/jest.config.luau"), /testMatch = \{ "\*\*\/\*\.spec" \}/);
+	assert.match(generated.get("tests/Definitions.spec.luau"), /require\(ReplicatedStorage\.DevPackages\.JestGlobals\)/);
+	assert.match(generated.get(".gitignore"), /^DevPackages\/$/m);
 });
 
 test("Wally package names use only characters Wally accepts", () => {
@@ -141,7 +156,7 @@ test("only the server and client startup files are executable scripts", () => {
 		generated.filter((file) => /\.(server|client)\.luau$/.test(file)),
 		["src/client/Startup.client.luau", "src/server/Startup.server.luau"],
 	);
-	assert.ok(generated.filter((file) => file.endsWith(".luau")).every((file) => /^src\/(server|client|shared)\//.test(file)));
+	assert.ok(generated.filter((file) => file.endsWith(".luau")).every((file) => /^(src\/(server|client|shared)|tests)\//.test(file)));
 });
 
 const ROOTS = { server: "ServerScriptService/Game", client: "StarterPlayerScripts/Game", shared: "ReplicatedStorage/Shared" };
@@ -169,7 +184,7 @@ function resolve(file, expression) {
 const PACKAGE_REQUIRES = new Set(["ReplicatedStorage.Packages.KRF", 'packages:WaitForChild("KRF")']);
 
 test("every static require names KRF or a generated module, with exact case", () => {
-	const generated = [...files({}).entries()].filter(([file]) => file.endsWith(".luau"));
+	const generated = [...files({}).entries()].filter(([file]) => file.startsWith("src/") && file.endsWith(".luau"));
 	const modules = new Set(generated.map(([file]) => instancePath(file).join("/")));
 	let checked = 0;
 
