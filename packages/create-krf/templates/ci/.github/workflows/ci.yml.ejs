@@ -28,7 +28,10 @@ jobs:
       - name: Verify wally.lock is up to date
         run: git diff --exit-code wally.lock
 
-      - name: Check formatting, lint and types
+      - name: Check formatting
+        run: stylua --check src
+
+      - name: Format, lint and type check
         run: npm run check
 
       - name: Build place

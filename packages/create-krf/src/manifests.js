@@ -14,7 +14,7 @@ export function projectScripts(config) {
 		postinstall: "node scripts/setup.mjs",
 		build: `rojo build ${buildProject} --output ${config.name}.rbxl`,
 		format: "stylua src",
-		check: "stylua --check src && selene src && npm run typecheck",
+		check: "npm run format && selene src && npm run typecheck",
 		typecheck: [
 			sourcemap,
 			`curl -sSfL --create-dirs -o ${DEFINITIONS_FILE} ${ROBLOX_DEFINITIONS_URL}`,

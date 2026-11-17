@@ -120,6 +120,14 @@ test("wally.toml depends on exactly the KRF release the templates target", () =>
 	assert.match(manifest, new RegExp(`^KRF = "${KRF_RUNTIME.package}@=${KRF_RUNTIME.version}"$`, "m"));
 });
 
+test("check formats source locally while CI fails on unformatted source", () => {
+	const generated = files({});
+	assert.match(JSON.parse(generated.get("package.json")).scripts.check, /^npm run format && /);
+	const workflow = generated.get(".github/workflows/ci.yml");
+	assert.ok(workflow.indexOf("run: stylua --check src") !== -1, "CI does not check formatting");
+	assert.ok(workflow.indexOf("run: stylua --check src") < workflow.indexOf("run: npm run check"), "CI formats before checking formatting");
+});
+
 test("Wally package names use only characters Wally accepts", () => {
 	assert.equal(wallyPackageName("my-game"), "my-game/my-game");
 	assert.equal(wallyPackageName("my_game.v2"), "my-game-v2/my-game-v2");
