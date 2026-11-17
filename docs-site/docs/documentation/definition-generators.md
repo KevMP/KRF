@@ -82,17 +82,15 @@ All of these except `--recipe`, `--duration`, `--auto-grant` and `--visibility` 
 | | `--duration <seconds>` | `defaultDuration` | Lasts until removed |
 | | `--tick-interval <seconds>` | `tickInterval` and an empty `onTick` | No ticking |
 | | `--property <Property:operation=value,...>` | One `properties` entry; operations are `set`, `add`, `multiply`, `min` and `max`, and `set` stands alone. Repeatable, one flag per property | |
-| `createResource` | `--max <value>` or `--max <Property>` | `max`, as a constant or a registered Property reference | 100 |
-| | `--min <value>` or `--min <Property>` | `min` | 0 |
+| `createResource` | `--max <value>` or `--max <Property=base>` | `max`, as a constant or a property with its default base value | 100 |
+| | `--min <value>` or `--min <Property=base>` | `min` | 0 |
 | | `--initial <value>` | `initialValue` | The maximum |
-| | `--regen <rate>` or `--regen <Property>` | `regen.rate`, per second | No regeneration |
+| | `--regen <rate>` or `--regen <Property=base>` | `regen.rate`, per second | No regeneration |
 | | `--visibility`, `--no-auto-assign` | `visibility`, `autoAssign` | ServerOnly, auto-assigned |
 | `createController` | `--depends-on <key>` | `dependsOn`; repeatable | |
 | | `--no-auto-attach` | `autoAttach = false` | Attached to every Actor |
 
-For example, `--property WalkSpeed:multiply=0.5,min=4` writes `WalkSpeed = { multiply = 0.5, min = 4 }`, and `--max MaxStamina` writes `max = { propertyName = "MaxStamina" }`.
-
-Register referenced Properties and their defaults in your game’s Property catalog. The generator writes only the reference; KRF validates catalog defaults during startup.
+For example, `--property WalkSpeed:multiply=0.5,min=4` writes `WalkSpeed = { multiply = 0.5, min = 4 }`, and `--max MaxStamina=100` writes `max = { propertyName = "MaxStamina", defaultBaseValue = 100 }`.
 
 ### Commands, Hints and replication domains
 

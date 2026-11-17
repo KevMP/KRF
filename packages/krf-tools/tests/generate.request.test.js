@@ -150,11 +150,11 @@ test("Tag, Resource and networking options parse property modifiers, numeric sou
 		},
 	);
 
-	assert.deepEqual(normalizeRequest("resource", { name: "Mana", options: { max: "MaxMana", min: "5", regen: "ManaRegen" } }).options, {
-		max: { propertyName: "MaxMana" },
+	assert.deepEqual(normalizeRequest("resource", { name: "Mana", options: { max: "MaxMana=100", min: "5", regen: "ManaRegen=2" } }).options, {
+		max: { propertyName: "MaxMana", defaultBaseValue: 100 },
 		min: { value: 5 },
-		initial: undefined,
-		regen: { propertyName: "ManaRegen" },
+		initial: 100,
+		regen: { propertyName: "ManaRegen", defaultBaseValue: 2 },
 		visibility: "ServerOnly",
 		autoAssign: true,
 	});
@@ -202,8 +202,6 @@ test("rejects contradictory or malformed options with the flag that caused them"
 		["resource", { max: "10", min: "20" }, /The minimum 20 is greater than the maximum 10/],
 		["resource", { regen: "-1" }, /--regen cannot be negative/],
 		["resource", { max: "Max Mana=10" }, /Invalid --max/],
-		["resource", { max: "MaxMana=100" }, /registered Property ID/],
-		["resource", { regen: "ManaRegen=2" }, /registered Property ID/],
 		["controller", { dependsOn: ["Example"] }, /cannot depend on itself/],
 		["command", { target: "None", authorize: "OwnerActor" }, /OwnerActor needs --target Actor/],
 		["hint", { direction: "Both" }, /Invalid --direction/],

@@ -9,9 +9,7 @@ local <%- name %>: KRF.ResourceDefinition = {
 	min = <%- numericSource(options.min) %>,
 <% } -%>
 	max = <%- numericSource(options.max) %>,
-<% if (options.initial !== undefined) { -%>
 	initialValue = <%- luaNumber(options.initial) %>,
-<% } -%>
 	visibility = "<%- options.visibility %>",
 <% if (options.autoAssign) { -%>
 	autoAssign = true,

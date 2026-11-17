@@ -114,8 +114,6 @@ test("--yes creates the default project without prompting", async (t) => {
 		"src/server/Actions/Focus.luau",
 		"src/server/Actions/init.luau",
 		"src/server/PlayerActors.luau",
-		"src/server/Properties/EnergyRegen.luau",
-		"src/server/Properties/init.luau",
 		"src/server/Resources/Energy.luau",
 		"src/server/Resources/init.luau",
 		"src/server/Startup.server.luau",

@@ -4,7 +4,7 @@
 
 ## Declare Properties
 
-The starter loads `src/server/Properties` through `ServerStartConfig.properties`. Add definition modules there; manual integrations pass an array to the [game configuration](../initializing-krf).
+Pass an array of definitions as `properties` in the [game configuration](../initializing-krf).
 
 | Field | Contract |
 | --- | --- |

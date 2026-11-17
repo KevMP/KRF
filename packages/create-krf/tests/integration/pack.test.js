@@ -135,7 +135,6 @@ test("packed create-krf projects install the published KRF, check and build in e
 				Controllers: "ModuleScript",
 				Hints: "ModuleScript",
 				PlayerActors: "ModuleScript",
-				Properties: "ModuleScript",
 				ReplicationDomains: "ModuleScript",
 				Resources: "ModuleScript",
 				Startup: "Script",
@@ -144,7 +143,6 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.deepEqual(shape(child(server, "Actions")), { Combat: "Folder", Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript" });
 			assert.deepEqual(shape(child(child(server, "Actions"), "Combat")), { Meditate: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Tags")), { Burning: "ModuleScript", Focused: "ModuleScript", Stunned: "ModuleScript" });
-			assert.deepEqual(shape(child(server, "Properties")), { EnergyRegen: "ModuleScript", ManaRegen: "ModuleScript", MaxMana: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Resources")), { Energy: "ModuleScript", Mana: "ModuleScript", Stamina: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Controllers")), { Cooldowns: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Commands")), { CastSpell: "ModuleScript", Trade: "ModuleScript" });

@@ -52,10 +52,10 @@ const KIND_OPTIONS = {
 		repeat("--property <Property:operation=value>", "a property modifier, such as WalkSpeed:multiply=0.5,min=4; operations are set, add, multiply, min and max", "properties"),
 	],
 	resource: [
-		{ flags: "--max <value | Property>", description: "maximum: a number, or a registered Property ID (default: 100)", key: "max" },
-		{ flags: "--min <value | Property>", description: "minimum: a number, or a registered Property ID (default: 0)", key: "min" },
+		{ flags: "--max <value | Property=base>", description: "maximum: a number, or a property with its default base value (default: 100)", key: "max" },
+		{ flags: "--min <value | Property=base>", description: "minimum: a number, or a property with its default base value (default: 0)", key: "min" },
 		{ flags: "--initial <value>", description: "starting value (default: the maximum)", key: "initial" },
-		{ flags: "--regen <rate | Property>", description: "regeneration per second: a number, or a registered Property ID", key: "regen" },
+		{ flags: "--regen <rate | Property=base>", description: "regeneration per second: a number, or a property with its default base value", key: "regen" },
 		VISIBILITY,
 		{ flags: "--no-auto-assign", description: "do not give it to every Actor", key: "autoAssign" },
 	],
@@ -82,7 +82,7 @@ const KIND_OPTIONS = {
 const EXAMPLES = {
 	action: "--name Fireball --recipe channel --duration 2 --cost Mana=10 --active-tag Casting --requestable --yes",
 	tag: "--name Slowed --duration 3 --property WalkSpeed:multiply=0.5 --yes",
-	resource: "--name Stamina --max MaxStamina --regen 5 --yes",
+	resource: "--name Stamina --max MaxStamina=100 --regen 5 --yes",
 	controller: "--name Cooldowns --depends-on ResourceController --yes",
 	command: "--name CastSpell --request-field Slot:U8 --authorize OwnerActor --yes",
 	hint: "--name ImpactFx --payload-field Position:Array(F32,3) --yes",

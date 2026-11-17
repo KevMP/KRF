@@ -194,7 +194,6 @@ function PropertyController.new(actor: Actor): PropertyController
 		PropertyRecompute.RecomputeProperty(propertiesById, tagController, propertyName)
 	end
 
-	-- Construction-only installation, before dependent controller factories run.
 	function controller:_initializeBaseProperties(properties: { [string]: number }): ()
 		for propertyName: string, value: number in properties do
 			propertiesById[propertyName] = { baseValue = value, resolvedValue = value }
