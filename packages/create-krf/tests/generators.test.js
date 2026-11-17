@@ -8,7 +8,6 @@ import { runGenerator, writeNewDirectory } from "krf-tools";
 import { buildProjectFiles } from "../src/create.js";
 
 const CANCEL = Symbol("cancel");
-const NOT_LISTED = "\u0000other";
 
 const STARTUP = "src/server/Startup.server.luau";
 const REQUESTS = "src/shared/ActionRequests";
@@ -374,62 +373,58 @@ async function wizardMatchesFlags(t, kind, answers, flags) {
 	assert.equal(wizard.code, 0, wizard.stderr);
 	for (const [message, answer] of Object.entries(answers)) {
 		if (Array.isArray(answer)) assert.deepEqual(answer, [], `unused answers for: ${message}`);
+		assert.ok(scripted.asked.includes(message), `never asked: ${message}`);
 	}
 
 	const flagRoot = newProject(t);
 	const flagged = await generate(flagRoot, [kind, ...flags]);
 	assert.equal(flagged.code, 0, flagged.stderr);
 	assert.deepEqual(readTree(wizardRoot), readTree(flagRoot));
-	return scripted.asked;
+	return { asked: scripted.asked, root: wizardRoot, stdout: wizard.stdout };
 }
 
-test("the Action wizard asks one plain question at a time and writes what the equivalent flags write", async (t) => {
-	const asked = await wizardMatchesFlags(
+test("the Action wizard names each field, lets lists be typed, and writes what the equivalent flags write", async (t) => {
+	const { asked, root, stdout } = await wizardMatchesFlags(
 		t,
 		"action",
 		{
-			Name: "Fireball",
-			"How does it end?": "channel",
-			"How many seconds does it last?": "2",
-			"Should every Actor be able to use it? (no: you grant it with ActionController:SetGrants)": false,
-			"Tags the Actor must have before it can start (space to select, enter to continue)": [[]],
-			"Tags that stop it from starting (space to select, enter to continue)": [["Focused", NOT_LISTED]],
-			"Which other Tags? (separated by commas)": "Stunned",
-			"While it runs, should the Actor have a Tag, such as Casting? (removed when it ends)": true,
-			"Which Tag?": "Focused",
-			"Remove Focused after how many seconds? (blank: when it ends)": "2",
-			"Add another Tag the Actor has while it runs?": false,
-			"When it starts, should it give the Actor a Tag that stays after it ends, such as Burning?": false,
-			"Must a Resource be at a certain level before it can start?": true,
-			"Which Resource must be at a certain level?": "Energy",
-			"Which checks on Energy? (space to select, enter to continue)": [["min", "maxPercent"]],
-			"Energy must be at least": "10",
-			"Energy must be at most what percent of its maximum? (0-100)": "90",
-			"Add another Resource requirement?": false,
-			"Does starting it cost a Resource?": true,
-			"Which Resource does it cost?": "Energy",
-			"How is the Energy cost measured?": "percent",
-			"What percent of Energy's range does it cost?": "25",
-			"Should a property scale the Energy cost? (for example a cost multiplier stat)": false,
-			"Add another cost?": false,
-			"Should it block other Actions on the same Actor while it runs? (locks: Actions that share a lock never run at the same time)": true,
-			"Which locks does it hold? (separated by commas, blank for none)": "Hands",
-			"If another Action needs Hands while this one runs, may some Actions cancel this one and take over?": true,
-			"Which Actions may cancel it and take over its locks? (space to select, enter to continue)": [["Focus"]],
-			"Which other lifecycle hooks should it have? (space to select, enter to continue)": [["onEnd", "canBeInterruptedBy"]],
-			"Can players start it from the client, for example with a key?": true,
-			"Does the client send any data when it starts it?": true,
-			"Field name": "Target",
-			"What kind of value is Target?": "U32",
-			"Can Target be left out?": true,
-			"Add another start field?": false,
-			"Can the player stop it early?": false,
-			"Can the player's input cancel it, for example when the key binding is removed?": false,
-			"If the player who started it leaves the game:": "Interrupt",
+			"name (module and file name, such as Fireball)": "Fireball",
+			"id (blank: Fireball; a namespace such as Combat.Fireball is allowed)": "Combat.Fireball",
+			"recipe (which lifecycle hook ends it)": "channel",
+			"duration (seconds the channel runs)": "2",
+			"autoGrant (every Actor can use it without being granted it)": false,
+			"requiredTags (Tags the Actor must have to start it; comma separated, blank for none; this project has Focused)": "",
+			"blockedTags (Tags that stop it from starting; comma separated, blank for none; this project has Focused)": "Focused, Stunned",
+			"activeTags (Tags it applies while it runs, removed when it ends; comma separated, blank for none; this project has Focused)": "Focused",
+			"activeTags.Focused.duration (seconds; blank: until it ends)": "2",
+			"appliedTags (Tags it applies when it starts; comma separated, blank for none; this project has Focused)": "Burning",
+			"appliedTags.Burning.duration (seconds; blank: the Tag's default duration)": "",
+			"resourceRequirements (Resources that must be at a certain level before it can start; comma separated, blank for none; this project has Energy)": "Energy",
+			"resourceRequirements.Energy.min (lowest amount allowed; blank to skip)": "10",
+			"resourceRequirements.Energy.max (highest amount allowed; blank to skip)": "",
+			"resourceRequirements.Energy.minPercent (lowest percent of its maximum, 0-100; blank to skip)": "",
+			"resourceRequirements.Energy.maxPercent (highest percent of its maximum, 0-100; blank to skip)": "90",
+			"costs (Resources it spends when it starts; comma separated, blank for none; this project has Energy)": "Energy",
+			"costs.Energy (an amount such as 10, or a percent of its range such as 25%)": "25%",
+			"costs.Energy.multiplierProperty (a property whose value multiplies the cost, such as CostMultiplier; blank for none)": "",
+			"locks (lock names it holds while running; Actions that share a lock never run at the same time; comma separated, blank for none)": "Hands",
+			"interruptibleBy (Actions allowed to end it and take over its locks; comma separated, blank for none; this project has Focus)": "Focus",
+			"hooks (extra lifecycle hook stubs; space to select, enter to confirm)": [["onEnd", "canBeInterruptedBy"]],
+			"requestable (players can request it from the client)": true,
+			"visibility (who can see it while it runs)": "ServerOnly",
+			"start field name (parameters the client sends when it requests it; blank to finish)": ["Target", ""],
+			"start.Target type": "U32",
+			"start.Target optional (it can be left out)": true,
+			"stop (the client can request a Stop; it does not end the Action by itself, onStopRequested decides what Stop does)": true,
+			"stop.parameters field name (parameters the client sends with a Stop; blank to finish)": [""],
+			"allowInputInterrupt (the client's input can interrupt its own activation)": false,
+			"onDisconnect (what happens when the requesting player leaves)": "Interrupt",
 		},
 		[
 			"--name",
 			"Fireball",
+			"--id",
+			"Combat.Fireball",
 			"--recipe",
 			"channel",
 			"--duration",
@@ -440,6 +435,8 @@ test("the Action wizard asks one plain question at a time and writes what the eq
 			"Stunned",
 			"--active-tag",
 			"Focused:2",
+			"--applied-tag",
+			"Burning",
 			"--requirement",
 			"Energy:min=10,maxPercent=0.9",
 			"--cost",
@@ -453,37 +450,42 @@ test("the Action wizard asks one plain question at a time and writes what the eq
 			"--hook",
 			"canBeInterruptedBy",
 			"--requestable",
+			"--visibility",
+			"ServerOnly",
 			"--start-field",
 			"Target:Optional(U32)",
+			"--client-stop",
 			"--on-disconnect",
 			"Interrupt",
 		],
 	);
-	assert.ok(asked.every((message) => !/TagId|Resource:|Name:Type|=/.test(message)), "no question asks for flag syntax");
+
+	assert.ok(asked.every((message) => /^[A-Za-z.]+( [a-z ]+)? \(/.test(message) || / type$/.test(message)), "every question starts with the field it sets");
+	const action = readTree(root)["src/server/Actions/Combat/Fireball.luau"];
+	assert.match(action, /visibility = "ServerOnly",/);
+	assert.match(action, /onStopRequested = function\(_context: KRF\.ActionExecutionContext, _request: KRF\.ActionStopRequest\): \(\) end,/);
+	assert.match(stdout, /A Stop request does not end Combat\.Fireball by itself\. Decide what Stop does in onStopRequested in src\/server\/Actions\/Combat\/Fireball\.luau; call context:End\(\) there to end it\./);
 });
 
-test("the Tag, Resource and replication domain wizards build modifiers, numeric sources and schemas from questions", async (t) => {
+test("the Tag, Resource and replication domain wizards ask for each field and write what the equivalent flags write", async (t) => {
 	await wizardMatchesFlags(
 		t,
 		"tag",
 		{
-			Name: "Burning",
-			"Who can see it?": "ServerOnly",
-			"What happens when it is added to an Actor that already has it?": "Stack",
-			"Most stacks it can have (blank: no limit)": "3",
-			"How many seconds does it last by default? (blank: until removed)": "",
-			"Should it run code repeatedly while active? (onTick)": true,
-			"Every how many seconds?": "0.5",
-			"Does it change a property, such as WalkSpeed, while active?": true,
-			"Which property does it change?": [NOT_LISTED, "EnergyRegen"],
-			"Which property?": "WalkSpeed",
-			"How does it change WalkSpeed?": "adjust",
-			"How does it adjust WalkSpeed? (space to select, enter to continue)": [["multiply", "min"]],
-			"Multiply WalkSpeed by": "0.5",
-			"Keep WalkSpeed at or above": "4",
-			"Change another property?": [true, false],
-			"How does it change EnergyRegen?": "set",
-			"Set EnergyRegen to": "0",
+			"name (module and file name, such as Fireball)": "Burning",
+			"id (blank: Burning; a namespace such as Combat.Burning is allowed)": "",
+			"visibility (who can see it)": "ServerOnly",
+			"duplicateBehavior (what adding it again does)": "Stack",
+			"maxStacks (most stacks allowed; blank for no limit)": "3",
+			"defaultDuration (seconds it lasts; blank: until removed)": "",
+			"tickInterval (seconds between onTick calls; blank for no onTick)": "0.5",
+			"properties (properties it modifies while active; comma separated, blank for none; this project has EnergyRegen)": "WalkSpeed, EnergyRegen",
+			"properties.WalkSpeed.set (replace it with this value; blank to adjust it instead)": "",
+			"properties.WalkSpeed.add (amount added; blank to skip)": "",
+			"properties.WalkSpeed.multiply (multiplier; blank to skip)": "0.5",
+			"properties.WalkSpeed.min (lowest value allowed; blank to skip)": "4",
+			"properties.WalkSpeed.max (highest value allowed; blank to skip)": "",
+			"properties.EnergyRegen.set (replace it with this value; blank to adjust it instead)": "0",
 		},
 		["--name", "Burning", "--duplicate-behavior", "Stack", "--max-stacks", "3", "--tick-interval", "0.5", "--property", "WalkSpeed:multiply=0.5,min=4", "--property", "EnergyRegen:set=0"],
 	);
@@ -492,17 +494,17 @@ test("the Tag, Resource and replication domain wizards build modifiers, numeric 
 		t,
 		"resource",
 		{
-			Name: "Mana",
-			"Where does its maximum come from?": "property",
-			"Property name": "MaxMana",
-			"MaxMana's default base value": "50",
-			"Can it have a minimum other than 0?": false,
-			"What value does it start at? (blank: its maximum)": "0",
-			"Does it regenerate over time?": true,
-			"Where does its regeneration per second come from?": "value",
-			"What is its regeneration per second?": "2",
-			"Who can see it?": "ClientVisible",
-			"Should every Actor have it automatically?": true,
+			"name (module and file name, such as Fireball)": "Mana",
+			"id (blank: Mana; a namespace such as Combat.Mana is allowed)": "",
+			"max (its maximum)": "property",
+			"max.propertyName (the property to read)": "MaxMana",
+			"max.defaultBaseValue (MaxMana's value before Tag modifiers)": "50",
+			"min (its minimum; none means 0)": "none",
+			"initialValue (blank: its maximum)": "0",
+			"regen.rate (how much it regenerates per second)": "value",
+			"regen.rate.value": "2",
+			"visibility (who can see it)": "ClientVisible",
+			"autoAssign (every Actor gets it automatically)": true,
 		},
 		["--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
 	);
@@ -511,53 +513,66 @@ test("the Tag, Resource and replication domain wizards build modifiers, numeric 
 		t,
 		"domain",
 		{
-			Name: "ComboState",
-			"Which players receive it?": "All",
-			"Does it replicate any state?": true,
-			"Field name": ["Count", "Damage"],
-			"What kind of value is Count?": "Array",
-			"What kind of value is each item in Count?": "Enum",
-			"Names each item in Count can be, separated by commas": "Fire, Ice",
-			"Most items Count can hold": "4",
-			"Can Count be left out?": false,
-			"Add another state field?": false,
-			"Does it send events, such as a combo finisher?": true,
-			"Event ID": "Finisher",
-			"Does Finisher carry any data?": true,
-			"What kind of value is Damage?": "U16",
-			"Can Damage be left out?": false,
-			"Add another Finisher field?": false,
-			"Add another event?": false,
+			"name (module and file name, such as Fireball)": "ComboState",
+			"id (blank: ComboState; a namespace such as Combat.ComboState is allowed)": "",
+			"audience (which players receive it)": "All",
+			"state field name (replicated state; blank to finish)": ["Count", ""],
+			"state.Count type": "Array",
+			"state.Count item type": "Enum",
+			"state.Count item values (names it can be, comma separated)": "Fire, Ice",
+			"state.Count maxLength (most items allowed)": "4",
+			"state.Count optional (it can be left out)": false,
+			"events ID (a replicated event such as Finisher; blank to finish)": ["Finisher", ""],
+			"events.Finisher.payload field name (data the event carries; blank to finish)": ["Damage", ""],
+			"events.Finisher.payload.Damage type": "U16",
+			"events.Finisher.payload.Damage optional (it can be left out)": false,
 		},
 		["--name", "ComboState", "--audience", "All", "--state-field", "Count:Array(Enum(Fire|Ice),4)", "--event", "Finisher(Damage:U16)"],
 	);
 });
 
+test("the wizard rejects an out-of-range percent at the question itself", async (t) => {
+	const root = newProject(t);
+	const { prompts } = scriptedPrompts({
+		"resourceRequirements (Resources that must be at a certain level before it can start; comma separated, blank for none; this project has Energy)": "Energy",
+		"resourceRequirements.Energy.min (lowest amount allowed; blank to skip)": "",
+		"resourceRequirements.Energy.max (highest amount allowed; blank to skip)": "",
+		"resourceRequirements.Energy.minPercent (lowest percent of its maximum, 0-100; blank to skip)": "",
+		"resourceRequirements.Energy.maxPercent (highest percent of its maximum, 0-100; blank to skip)": "150",
+	});
+	const before = readTree(root);
+	const result = await generate(
+		root,
+		["action", "--name", "Fireball", "--id", "Fireball", "--recipe", "instant", "--auto-grant", "--required-tag", "Focused", "--blocked-tag", "Focused", "--active-tag", "Focused", "--applied-tag", "Focused"],
+		{ prompts },
+	);
+	assert.equal(result.code, 1);
+	assert.match(result.stderr, /Validation failed: Enter a number of at most 100\./);
+	assert.deepEqual(readTree(root), before);
+});
+
 test("the wizard skips what flags already answered and never asks with --yes", async (t) => {
 	const root = newProject(t);
 	const partial = scriptedPrompts({
-		"Who sends it?": "ClientToServer",
-		"Which sends matter?": "Latest",
-		"Does it carry any data?": true,
-		"Field name": "Sent",
-		"What kind of value is Sent?": "F64",
-		"Can Sent be left out?": false,
-		"Add another payload field?": false,
-		"Which players may send it?": "AnyReadyClient",
+		"direction (who sends it)": "ClientToServer",
+		"mode (which sends are delivered)": "Latest",
+		"payload field name (data it carries; blank to finish)": ["Sent", ""],
+		"payload.Sent type": "F64",
+		"payload.Sent optional (it can be left out)": false,
+		"authorize (which players may send it)": "AnyReadyClient",
 	});
-	const result = await generate(root, ["hint", "--name", "Ping", "--target", "None"], { prompts: partial.prompts });
+	const result = await generate(root, ["hint", "--name", "Ping", "--id", "Net.Ping", "--target", "None"], { prompts: partial.prompts });
 	assert.equal(result.code, 0, result.stderr);
 	assert.deepEqual(partial.asked, [
-		"Who sends it?",
-		"Which sends matter?",
-		"Does it carry any data?",
-		"Field name",
-		"What kind of value is Sent?",
-		"Can Sent be left out?",
-		"Add another payload field?",
-		"Which players may send it?",
+		"direction (who sends it)",
+		"mode (which sends are delivered)",
+		"payload field name (data it carries; blank to finish)",
+		"payload.Sent type",
+		"payload.Sent optional (it can be left out)",
+		"payload field name (data it carries; blank to finish)",
+		"authorize (which players may send it)",
 	]);
-	assert.match(readTree(root)["src/server/Hints/Ping.luau"], /Sent = KRF\.Schema\.F64,[\s\S]*authorize = KRF\.HintAuthorization\.AnyReadyClient,/);
+	assert.match(readTree(root)["src/server/Hints/Net/Ping.luau"], /Sent = KRF\.Schema\.F64,[\s\S]*authorize = KRF\.HintAuthorization\.AnyReadyClient,/);
 
 	const silent = scriptedPrompts({});
 	const yes = await generate(root, ["domain", "--name", "ComboState", "--yes"], { prompts: silent.prompts });
@@ -565,11 +580,44 @@ test("the wizard skips what flags already answered and never asks with --yes", a
 	assert.deepEqual(silent.asked, []);
 });
 
+test("manual wiring for customized projects always includes code to add and where it goes", async (t) => {
+	const root = newProject(t);
+	const loader = "src/server/Actions/init.luau";
+	fs.writeFileSync(path.join(root, loader), readTree(root)[loader].replace("requireDescendants(script)", "table.clone(require(script.List))"));
+	const customLoader = await generate(root, ["action", "--id", "Combat.Fireball", "--yes", "--json"]);
+	assert.equal(customLoader.code, 5);
+	assert.deepEqual(customLoader.json.manual, [
+		{
+			file: loader,
+			instruction: "This loader is customized, so the generator did not edit it. Add the new module to the list it returns; actions is the starter's name for that list, so use your own name if it differs.",
+			lines: ["table.insert(actions, require(script.Combat.Fireball))"],
+		},
+	]);
+
+	const startup = readTree(root)[STARTUP].replace("\ttags = Tags,", "\ttags = { Focused },");
+	fs.writeFileSync(path.join(root, STARTUP), startup);
+	const customField = await generate(root, ["tag", "--name", "Stunned", "--yes", "--json"]);
+	assert.equal(customField.code, 5);
+	assert.deepEqual(customField.json.manual, [
+		{
+			file: STARTUP,
+			instruction:
+				"tags in KRF.Server.Init is customized, so the generator cannot tell where that list is built. Require the module with the other requires, then add Stunned to the list you pass as tags.",
+			lines: ["local Stunned = require(script.Parent.Tags.Stunned)"],
+		},
+	]);
+	assert.equal(readTree(root)[STARTUP], startup);
+
+	for (const result of [customLoader, customField]) {
+		for (const step of result.json.manual) assert.notDeepEqual(step.lines, [], step.instruction);
+	}
+});
+
 test("cancelling the wizard or omitting the name without a terminal writes nothing", async (t) => {
 	const root = newProject(t);
 	const before = readTree(root);
 
-	const cancelled = await generate(root, ["resource"], { prompts: scriptedPrompts({ Name: "Stamina", "Where does its maximum come from?": CANCEL }).prompts });
+	const cancelled = await generate(root, ["resource"], { prompts: scriptedPrompts({ "name (module and file name, such as Fireball)": "Stamina", "id (blank: Stamina; a namespace such as Combat.Stamina is allowed)": "", "max (its maximum)": CANCEL }).prompts });
 	assert.equal(cancelled.code, 130);
 	assert.match(cancelled.stderr, /Cancelled\. No files were written/);
 

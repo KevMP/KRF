@@ -118,6 +118,20 @@ test("Action options normalize to explicit values", () => {
 	assert.equal(normalizeRequest("action", { name: "Fireball", options: { recipe: "channel", duration: "0.5" } }).options.duration, 0.5);
 });
 
+test("a requestable Action can stay ServerOnly, and a client Stop always gets an onStopRequested handler", () => {
+	assert.equal(normalizeRequest("action", { name: "Fireball", options: { requestable: true, visibility: "ServerOnly" } }).options.visibility, "ServerOnly");
+
+	const stoppable = normalizeRequest("action", { name: "Fireball", options: { recipe: "channel", requestable: true, clientStop: true, hooks: ["onEnd"] } }).options;
+	assert.equal(stoppable.clientStop, true);
+	assert.deepEqual(stoppable.hooks, ["onEnd", "onStopRequested"]);
+
+	const byParameters = normalizeRequest("action", { name: "Fireball", options: { requestable: true, stopFields: ["Reason:U8"] } }).options;
+	assert.deepEqual([byParameters.clientStop, byParameters.hooks], [true, ["onStopRequested"]]);
+
+	const held = normalizeRequest("action", { name: "Guard", options: { recipe: "held", requestable: true } }).options;
+	assert.deepEqual([held.clientStop, held.hooks], [false, []]);
+});
+
 test("Tag, Resource and networking options parse property modifiers, numeric sources and schemas", () => {
 	assert.deepEqual(
 		normalizeRequest("tag", {
@@ -163,7 +177,6 @@ test("rejects contradictory or malformed options with the flag that caused them"
 		["action", { duration: "2" }, /--duration applies only to the channel recipe/],
 		["action", { recipe: "channel", duration: "0" }, /Invalid --duration/],
 		["action", { recipe: "toggle" }, /Invalid --recipe/],
-		["action", { requestable: true, visibility: "ServerOnly" }, /must be ClientVisible/],
 		["action", { costs: ["Mana"] }, /Invalid --cost/],
 		["action", { costs: ["Mana=-1"] }, /Invalid --cost: Mana: the cost must be positive/],
 		["action", { costs: ["Mana:amount=1,percent=0.5"] }, /exactly one of amount or percent/],

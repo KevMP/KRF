@@ -42,7 +42,7 @@ Run any script with `-- --help` for its full flag list.
 
 ## Definition options
 
-Every option is a flag, and repeatable flags can be given more than once. Without `--yes`, the wizard asks for the same values one plain question at a time. It offers the Tags, Resources, Actions, Controllers, locks and properties the project already defines, builds costs, requirements, property modifiers and payload fields from follow-up questions, and asks for percentages from 0 to 100. Any value given as a flag is not asked again.
+Every option is a flag, and repeatable flags can be given more than once. Without `--yes`, the wizard asks for the same values one at a time, naming each definition field with a short note on what it does, such as `activeTags (Tags it applies while it runs, removed when it ends)`. List questions show the IDs the project already defines and accept new ones; per-entry details such as a cost's amount or a requirement's minimum follow as their own questions, and percentages are entered from 0 to 100. Any value given as a flag is not asked again.
 
 ### Actions
 
@@ -157,7 +157,7 @@ return Fireball
 npm run createAction -- --name Guard --recipe held --requestable --auto-grant --stop-field "Direction:Array(F32,3)" --yes
 ```
 
-Clients may only request Actions declared in the [Action request](./Action/action-requests) map that both `Server.Init` and `Client.Init` read. In the starter project that map is the `src/shared/ActionRequests` folder: its `init.luau` merges every module beneath it, and each module returns the entries for one Action. `--requestable` makes the Action ClientVisible and writes `src/shared/ActionRequests/Guard.luau`:
+Clients may only request Actions declared in the [Action request](./Action/action-requests) map that both `Server.Init` and `Client.Init` read. In the starter project that map is the `src/shared/ActionRequests` folder: its `init.luau` merges every module beneath it, and each module returns the entries for one Action. `--requestable` writes `src/shared/ActionRequests/Guard.luau` and defaults the Action to ClientVisible; a requestable Action can stay `--visibility ServerOnly`, since requesting is not the same as seeing it:
 
 ```lua title="src/shared/ActionRequests/Guard.luau"
 --!strict
@@ -189,7 +189,7 @@ When input starts or releases the Action, its policy supplies the parameters. So
 | --- | --- | --- |
 | `--requestable` | The request module | Not requestable |
 | `--start-field <Name:Type>` | `start`, the parameters the client sends with a request | No parameters |
-| `--client-stop` | `stop = {}`, so the client may request a Stop | Only for `held` |
+| `--client-stop` | `stop = {}`, so the client may request a Stop, and an `onStopRequested` stub. A Stop does not end the Action by itself; call `context:End()` there if it should | Only for `held` |
 | `--stop-field <Name:Type>` | `stop.parameters` | No parameters |
 | `--allow-input-interrupt` | `allowInputInterrupt = true` | Only for `held` |
 | `--on-disconnect Keep\|Interrupt` | `onDisconnect = "Interrupt"` when `Interrupt` | `Keep`; always `Interrupt` for `held` |

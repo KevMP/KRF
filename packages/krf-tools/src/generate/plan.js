@@ -8,10 +8,12 @@ import {
 	KINDS,
 	LOADOUT_FILE,
 	REQUIRE_DESCENDANTS_FILE,
+	SERVER_SOURCE,
 	STARTUP_FILE,
 } from "./catalogs.js";
 import { assertPathAvailable, definitionId, findDefinition } from "./consumer.js";
 import { actionPolicyEntry, actionRequestEntry, mapEntryLines, needsInputPolicy, renderDefinition, renderLoader, renderMapModule } from "./modules.js";
+import { isIdentifier, luaString } from "./luau.js";
 import { addCatalog, readStartup, startupLines, wiringOf } from "./startup.js";
 
 const CATALOG_LOADER = /\brequireDescendants\(script\)/;
@@ -110,6 +112,7 @@ function nextSteps(request, file) {
 				...(options.requestable && (options.startFields.length > 0 || (options.recipe === "held" && options.stopFields.length > 0))
 					? [`Return the parameters input sends from the producers in ${[ACTION_INPUT_POLICIES_FOLDER, ...request.namespace, `${request.name}.luau`].join("/")}.`]
 					: []),
+				...(options.clientStop ? [`A Stop request does not end ${id} by itself. Decide what Stop does in onStopRequested in ${file}; call context:End() there to end it.`] : []),
 				...(options.autoGrant ? [] : [`${id} is not auto-granted. Grant it with ActionController:SetGrants, or set autoGrant = true in ${file}.`]),
 			];
 		case "controller":
@@ -167,30 +170,55 @@ function wireRequest(consumer, request, plan, alias) {
 	}
 }
 
+function instancePath(root, folder, file) {
+	const segments = file.slice(folder.length + 1).replace(/\.luau$/, "").split("/");
+	return `${root}${segments.map((segment) => (isIdentifier(segment) ? `.${segment}` : `[${luaString(segment)}]`)).join("")}`;
+}
+
+function loaderManual(consumer, request, own, alias, plan) {
+	const catalog = CATALOGS[request.kind];
+	const loader = `${own.folder}/init.luau`;
+
+	if (loaderState(consumer, own.folder) === "custom") {
+		plan.manual.push({
+			file: loader,
+			instruction: `This loader is customized, so the generator did not edit it. Add the new module to the list it returns; ${catalog.variable} is the starter's name for that list, so use your own name if it differs.`,
+			lines: [`table.insert(${catalog.variable}, require(${instancePath("script", own.folder, plan.file)}))`],
+		});
+		return;
+	}
+
+	plan.manual.push({
+		file: loader,
+		instruction: consumer.stat(REQUIRE_DESCENDANTS_FILE)?.isFile()
+			? `${own.folder} has no loader. Create ${loader} with these lines.`
+			: `${own.folder} has no loader. Create ${loader} with these lines; it also needs ${REQUIRE_DESCENDANTS_FILE}, which this project does not have, so add that helper or build the list another way.`,
+		lines: renderLoader(request.kind, alias).trimEnd().split("\n"),
+	});
+}
+
 function wireCatalog(consumer, request, own, startup, alias, plan) {
 	const catalog = CATALOGS[request.kind];
 	const loader = loaderState(consumer, own.folder);
 
 	if (own.wiring.state === "wired") {
-		if (loader !== "recognized") {
-			plan.manual.push({ file: `${own.folder}/init.luau`, instruction: `Return ${plan.file} from this loader with the other ${catalog.field}.`, lines: [] });
-		}
+		if (loader !== "recognized") loaderManual(consumer, request, own, alias, plan);
 		return;
 	}
 
 	if (own.wiring.state === "custom") {
-		plan.manual.push({ file: STARTUP_FILE, instruction: `Include ${plan.file} in the ${catalog.field} passed to KRF.Server.Init.`, lines: [] });
+		plan.manual.push({
+			file: STARTUP_FILE,
+			instruction: `${catalog.field} in KRF.Server.Init is customized, so the generator cannot tell where that list is built. Require the module with the other requires, then add ${request.name} to the list you pass as ${catalog.field}.`,
+			lines: [`local ${request.name} = require(${instancePath("script.Parent", SERVER_SOURCE, plan.file)})`],
+		});
 		return;
 	}
 
 	if (loader === "missing" && consumer.stat(REQUIRE_DESCENDANTS_FILE)?.isFile()) {
 		plan.changes.push({ kind: "create", path: `${own.folder}/init.luau`, contents: renderLoader(request.kind, alias) });
 	} else if (loader !== "recognized") {
-		plan.manual.push({
-			file: `${own.folder}/init.luau`,
-			instruction: `Make this folder's loader return every ${catalog.label} module beneath it, including ${plan.file}.`,
-			lines: [],
-		});
+		loaderManual(consumer, request, own, alias, plan);
 	}
 
 	const edited = addCatalog(startup, catalog);

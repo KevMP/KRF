@@ -361,9 +361,6 @@ function checkAction(options, given) {
 	if (options.duration !== undefined && options.recipe !== "channel") {
 		throw usage("InvalidOption", "--duration applies only to the channel recipe.");
 	}
-	if (options.requestable && options.visibility === "ServerOnly") {
-		throw usage("InvalidOption", "A --requestable Action must be ClientVisible.", "Omit --visibility; --requestable makes the Action ClientVisible.");
-	}
 	if (options.hooks.includes(RECIPE_HOOKS[options.recipe])) {
 		throw usage("InvalidOption", `The ${options.recipe} recipe already writes ${RECIPE_HOOKS[options.recipe]}; drop --hook ${RECIPE_HOOKS[options.recipe]}.`);
 	}
@@ -374,8 +371,11 @@ function checkAction(options, given) {
 	if (options.recipe === "held" && options.onDisconnect === "Keep") {
 		throw usage("InvalidOption", "A held Action requires the client to release its input, so a disconnect must interrupt it; drop --on-disconnect Keep.");
 	}
+	const clientStop = options.requestable && options.recipe !== "held" && (options.clientStop || options.stopFields.length > 0);
 	return {
 		...options,
+		clientStop,
+		hooks: clientStop && !options.hooks.includes("onStopRequested") ? [...options.hooks, "onStopRequested"] : options.hooks,
 		duration: options.recipe === "channel" ? (options.duration ?? OPTION_DEFAULTS.action.duration) : undefined,
 		visibility: options.visibility ?? (options.requestable ? "ClientVisible" : "ServerOnly"),
 	};
