@@ -9,14 +9,11 @@ npm install
 npm run build
 ```
 
-`npm install` installs [Rokit](https://github.com/rojo-rbx/rokit) if you don't have it, the Roblox
-tools pinned in `rokit.toml`, and the Wally packages. Wally records the resolved versions in
-`wally.lock`; commit it. Open `<%= name %>.rbxl` in Roblox Studio and press Play.
-Hold F (or X on a gamepad) to Focus: Energy regenerates while you hold it.
+Open `<%= name %>.rbxl` in Roblox Studio and press Play. Commit `wally.lock`.
 <% if (options.mode === "hybrid") { -%>
 
-This is a Hybrid project: Rojo owns `src` and `Packages`, and your Studio place owns the world.
-Save the built place somewhere else, keep building the world there, and sync code with `rojo serve`.
+This is a Hybrid project: Rojo syncs `src` and `Packages` with `rojo serve`, and your Studio place
+owns the world.
 <% } -%>
 
 ## Scripts
@@ -25,48 +22,5 @@ Save the built place somewhere else, keep building the world there, and sync cod
 | --- | --- |
 | `npm run build` | Builds `<%= name %>.rbxl` |
 | `npm run format` | Formats `src` |
-| `npm run check` | Formats `src`, then lints and strict type checks |
-| `npm run createAction` | Creates an Action in `src/server/Actions` |
-| `npm run createTag` | Creates a Tag in `src/server/Tags` |
-| `npm run createResource` | Creates a Resource in `src/server/Resources` |
-| `npm run createController` | Creates a Controller in `src/server/Controllers` |
-| `npm run createCommand` | Creates a Command in `src/server/Commands` |
-| `npm run createHint` | Creates a Hint in `src/server/Hints` |
-| `npm run createDomain` | Creates a replication domain in `src/server/ReplicationDomains` |
-
-## Adding definitions
-
-Each folder under `src/server` that `Startup.server.luau` passes to `KRF.Server.Init` has an
-`init.luau` that loads every module beneath it, so a new module there loads on the next build.
-The generators write a typed module for you:
-
-```bash
-npm run createAction -- --name Fireball --recipe channel --duration 2 --cost Energy=10 --yes
-```
-
-Every field a definition supports has a flag, such as `--required-tag`, `--requirement`,
-`--lock`, `--hook`, `--property`, `--regen`, `--request-field` or `--event`; add `-- --help` to see
-them all. Pass flags after `--`. Without `--yes`, the generator asks for everything you left out,
-one question at a time, offering the Tags, Resources and Actions the project already has.
-`--dry-run` shows the plan without writing, and `--json` prints one
-result object (use `npm run --silent` to keep npm's banner out of it). The first Controller,
-Command, Hint or replication domain also creates its folder's loader and adds it to
-`Startup.server.luau`.
-
-Players can request only the Actions declared in `src/shared/ActionRequests`. Like the definition
-folders, its `init.luau` merges every module beneath it, one module per Action. `--requestable`
-writes that module, and a `--recipe held` Action also gets a `WhileDown` policy module in
-`src/client/ActionInputPolicies`. Then put the Action in an ability slot (see Controls below).
-
-The generator never overwrites a file. If you have changed `Startup.server.luau` or a folder's
-`init.luau` so that it cannot wire the new module safely, it still writes the module, leaves your
-code unchanged, prints the lines to add, and exits with code 5. See
-[Definition Generators](https://kevmp.github.io/KRF/definition-generators) for every option.
-
-## Controls
-
-Keys bind to ability slots, not to Actions. `src/client/Controls/Keybinds.luau` binds F and
-ButtonX to `AbilitySlot1`; `src/client/Controls/Loadout.luau` decides which Action each slot
-triggers. Call `Loadout.Equip("AbilitySlot1", actionId)` to swap the Action in a slot: the next
-press uses it, without rebinding keys. `src/client/LocalCharacter.luau` finds the local
-character's ActorView, which Controls selects as the Actor your input drives.
+| `npm run check` | Formats, lints and type checks `src` |
+| `npm run createAction`, `createTag`, `createResource`, `createController`, `createCommand`, `createHint`, `createDomain` | Creates a definition; see [Definition Generators](https://kevmp.github.io/KRF/definition-generators) |
