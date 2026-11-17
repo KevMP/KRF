@@ -18,6 +18,17 @@ type ResourceDefinition = ResourceTypes.ResourceDefinition
 local ResourceControllerModule = require(KRF.server.Resource.ResourceController)
 local ResourceControllerTestUtils = require(script.Parent.Parent.Utils.Resource.ResourceControllerTestUtils)
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+	assert(PropertyCatalog.Load({}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 local function createActorWithPropertyController(): (Actor, PropertyController)
 	return ResourceControllerTestUtils.createActorWithPropertyController()
 end

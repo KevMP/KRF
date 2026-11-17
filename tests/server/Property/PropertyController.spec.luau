@@ -15,6 +15,23 @@ type PropertyChange = PropertyTypes.PropertyChange
 local ActorEntity = require(ReplicatedStorage.Packages.KRF.server.Actor.ActorEntity)
 local PropertyControllerModule = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyController)
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "Armor", defaultBaseValue = 0 },
+		{ id = "CriticalChance", defaultBaseValue = 0 },
+		{ id = "Defense", defaultBaseValue = 0 },
+		{ id = "Mana", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 it("initializes built-in properties with the documented defaults", function()
 	local actor: Actor = ActorEntity.new()
 	local propertyController: PropertyController = PropertyControllerModule.new(actor)

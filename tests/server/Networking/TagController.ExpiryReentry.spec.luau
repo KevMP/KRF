@@ -66,7 +66,7 @@ for _, source: string in { "Tick", "EarlierExpiry" } do
 						visibility = "ClientVisible",
 						autoAssign = true,
 						initialValue = 100,
-						max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+						max = { propertyName = "MaxMana" },
 					},
 				}, {
 					{ id = "Timer", visibility = "ClientVisible", duplicateBehavior = "Ignore" },
@@ -78,7 +78,7 @@ for _, source: string in { "Tick", "EarlierExpiry" } do
 						tickInterval = if source == "Tick" then 1 else nil,
 						onTick = if source == "Tick" then refresh else nil,
 					},
-				})
+				}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 				local actor: ActorTypes.Actor, _, resources: ResourceTypes.ResourceController, properties: PropertyTypes.PropertyController, publicTags: TagTypes.TagController =
 					ActionUtils.registerActor()

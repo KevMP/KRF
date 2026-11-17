@@ -45,7 +45,7 @@ local function initialize(definitions: { ActionTypes.ActionDefinition }): ()
 			visibility = "ClientVisible",
 			autoAssign = true,
 			initialValue = 100,
-			max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+			max = { propertyName = "MaxMana" },
 		},
 	}, {
 		{ id = "Marker", visibility = "ClientVisible", duplicateBehavior = "Refresh" },
@@ -67,7 +67,7 @@ local function initialize(definitions: { ActionTypes.ActionDefinition }): ()
 			duplicateBehavior = "Refresh",
 			properties = { MaxMana = { add = 5 }, WalkSpeed = { add = 5 } },
 		},
-	})
+	}, { { id = "MaxMana", defaultBaseValue = 100 } })
 end
 
 for _, operation: string in { "Added", "Refreshed", "Removed", "Expired" } do

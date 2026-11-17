@@ -48,7 +48,7 @@ for _, operation: string in { "Added", "Removed", "SingleRemoved", "Refreshed", 
 					visibility = "ClientVisible",
 					autoAssign = true,
 					initialValue = 100,
-					max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+					max = { propertyName = "MaxMana" },
 				},
 			}, {
 				{
@@ -57,7 +57,7 @@ for _, operation: string in { "Added", "Removed", "SingleRemoved", "Refreshed", 
 					duplicateBehavior = if operation == "SingleRemoved" then "Stack" else "Refresh",
 					properties = { MaxMana = { set = 50 } },
 				},
-			})
+			}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 			local actor: ActorTypes.Actor, _, resources: ResourceTypes.ResourceController, properties: PropertyTypes.PropertyController, publicTags: TagTypes.TagController =
 				ActionUtils.registerActor()

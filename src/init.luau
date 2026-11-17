@@ -48,6 +48,7 @@ export type ResourceRegenDefinition = ResourceTypes.ResourceRegenDefinition
 export type ResourceChange = ResourceTypes.ResourceChange
 export type ResourceController = ResourceTypes.ResourceController
 
+export type PropertyDefinition = PropertyTypes.PropertyDefinition
 export type PropertyChange = PropertyTypes.PropertyChange
 export type PropertyController = PropertyTypes.PropertyController
 
@@ -134,6 +135,7 @@ type KRF = {
 	read ActorRuntime: typeof(require(script.server.Actor.ActorRuntime)),
 	read ActorRegistry: typeof(require(script.server.Actor.ActorRegistry)),
 	read ControllerRegistry: typeof(require(script.server.Controller.ControllerRegistry)),
+	read PropertyRegistry: typeof(require(script.server.Property.PropertyRegistry)),
 	read TagRegistry: typeof(require(script.server.Tags.TagRegistry)),
 	read ResourceRegistry: typeof(require(script.server.Resource.ResourceRegistry)),
 	read ActionRegistry: typeof(require(script.server.Action.ActionRegistry)),
@@ -160,6 +162,7 @@ local MEMBERS: { [string]: ModuleScript } = {
 	ActorRuntime = script.server.Actor.ActorRuntime,
 	ActorRegistry = script.server.Actor.ActorRegistry,
 	ControllerRegistry = script.server.Controller.ControllerRegistry,
+	PropertyRegistry = script.server.Property.PropertyRegistry,
 	TagRegistry = script.server.Tags.TagRegistry,
 	ResourceRegistry = script.server.Resource.ResourceRegistry,
 	ActionRegistry = script.server.Action.ActionRegistry,

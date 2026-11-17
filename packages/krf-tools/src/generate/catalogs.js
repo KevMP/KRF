@@ -10,6 +10,7 @@ export const SERVER_START_FIELDS = Object.freeze([
 	"hints",
 	"commands",
 	"controllers",
+	"properties",
 	"tags",
 	"resources",
 	"actions",

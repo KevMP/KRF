@@ -24,6 +24,7 @@ Map Wally's `Packages` folder to `ReplicatedStorage.Packages` in your Rojo proje
 | Field | Supply |
 | --- | --- |
 | `controllers` | Game-specific controller factories and dependencies; KRF supplies its built-in controllers |
+| `properties` | [Numeric Property definitions](./Property/property-registry), defaults and auto-assignment; built-ins load when omitted |
 | `tags` | Status definitions and numeric modifiers |
 | `resources` | Meter definitions, bounds, and regeneration |
 | `actions` | Action factories with declarative requirements, costs, and behavior |
@@ -33,7 +34,7 @@ Map Wally's `Packages` folder to `ReplicatedStorage.Packages` in your Rojo proje
 | `actionRequestSchemas` | The shared [Action request](./Action/action-requests) module declaring which Actions clients may Start, Stop or Interrupt; pass the same module to `Client.Init` |
 | `actionControlAuthority` | Optional server-only policy granting [delegated Action control](./Action/action-requests#who-may-request), such as a mount's rider |
 
-Omitted catalogs are empty. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
+Omitted game catalogs are empty; Properties include built-in `WalkSpeed` and `JumpPower`. Supply definitions here rather than calling registries' `Load` methods separately. KRF validates references across catalogs before publishing them.
 
 ## Server initialization
 
@@ -82,7 +83,7 @@ A successful return means the client has installed the server's protocol catalog
 
 ## Server startup guarantees
 
-`Server.Init` does not yield. It validates catalogs, dependencies, Action references, domain schemas, event size bounds, and command definitions and schemas before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. Command authorization and handlers run only for received requests. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
+`Server.Init` does not yield. It prepares the effective Property catalog before Tag, Resource and Action validation or Action factory evaluation. It validates catalogs, dependencies, Action references, domain schemas, event size bounds, and command definitions and schemas before publishing registries and transport. Domain `snapshot` and `observe` callbacks run later, when an Actor registers. Command authorization and handlers run only for received requests. If publication fails, KRF rolls back the catalogs and transport it created; pre-existing conflicting instances are preserved. The failure identifies its stage in `system` and its cause in `reason`.
 
 A domain validation failure uses `system = "ReplicationDomain"`, a command catalog failure uses `system = "Command"`, a Hint catalog failure uses `system = "Hint"`, and an Action request catalog failure uses `system = "ActionRequest"`. Hint callbacks are not invoked during startup. Protocol preparation and transport failures use `system = "Networking"`. See [Networking startup](./Networking/startup) for diagnosis.
 

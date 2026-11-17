@@ -11,6 +11,22 @@ local ResourceValidator = require(KRF.server.Resource.utils.ResourceValidator)
 
 type ResourceDefinition = ResourceTypes.ResourceDefinition
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "MaxStamina", defaultBaseValue = 100 },
+		{ id = "MinStamina", defaultBaseValue = 0 },
+		{ id = "StaminaRegen", defaultBaseValue = 12 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 local function createValidResourceDefinition(): ResourceDefinition
 	return {
 		id = "Resource.Stamina",
@@ -157,7 +173,7 @@ it("ResourceValidator.ValidateResourceDefinition rejects non-finite numeric meta
 		ResourceValidator.ValidateResourceDefinition(invalidPropertyBackedMinDefinition, {})
 
 	expect(isInvalidPropertyBackedMinValid).toBe(false)
-	expect(invalidPropertyBackedMinReason).toBe("ResourceMinDefaultBaseValueMustBeFiniteNumber")
+	expect(invalidPropertyBackedMinReason).toBe("ResourceMinDefaultBaseValueUnsupported")
 
 	local invalidRegenRateDefinition: ResourceDefinition = createValidResourceDefinition();
 
@@ -198,7 +214,6 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 	(mixedMaxSourceDefinition :: any).max = {
 		value = 100,
 		propertyName = "MaxStamina",
-		defaultBaseValue = 100,
 	}
 
 	local isMixedMaxSourceValid: boolean, mixedMaxSourceReason: string? =
@@ -239,13 +254,12 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 		ResourceValidator.ValidateResourceDefinition(invalidStaticMaxSourceDefinition, {})
 
 	expect(isInvalidStaticMaxSourceValid).toBe(false)
-	expect(invalidStaticMaxSourceReason).toBe("ResourceMaxDefaultBaseValueRequiresPropertyName")
+	expect(invalidStaticMaxSourceReason).toBe("ResourceMaxDefaultBaseValueUnsupported")
 
 	local nonStringPropertyBackedMaxDefinition: ResourceDefinition = createValidResourceDefinition();
 
 	(nonStringPropertyBackedMaxDefinition :: any).max = {
 		propertyName = 123,
-		defaultBaseValue = 100,
 	}
 
 	local isNonStringPropertyBackedMaxValid: boolean, nonStringPropertyBackedMaxReason: string? =
@@ -258,7 +272,6 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 
 	(invalidPropertyBackedMinDefinition :: any).min = {
 		propertyName = "",
-		defaultBaseValue = 0,
 	}
 
 	local isInvalidPropertyBackedMinValid: boolean, invalidPropertyBackedMinReason: string? =
@@ -269,19 +282,19 @@ it("ResourceValidator.ValidateResourceDefinition rejects malformed max and min n
 end)
 
 it(
-	"ResourceValidator.ValidateResourceDefinition rejects property-backed numeric sources without usable defaults",
+	"ResourceValidator.ValidateResourceDefinition rejects unknown Property references and Resource-authored defaults",
 	function()
 		local missingDefaultBaseValueDefinition: ResourceDefinition = createValidResourceDefinition();
 
 		(missingDefaultBaseValueDefinition :: any).max = {
-			propertyName = "MaxStamina",
+			propertyName = "UnregisteredMax",
 		}
 
 		local isMissingDefaultBaseValueValid: boolean, missingDefaultBaseValueReason: string? =
 			ResourceValidator.ValidateResourceDefinition(missingDefaultBaseValueDefinition, {})
 
 		expect(isMissingDefaultBaseValueValid).toBe(false)
-		expect(missingDefaultBaseValueReason).toBe("ResourceMaxDefaultBaseValueMissing")
+		expect(missingDefaultBaseValueReason).toBe("UnknownPropertyId:UnregisteredMax")
 
 		local nonNumericDefaultBaseValueDefinition: ResourceDefinition = createValidResourceDefinition();
 
@@ -294,13 +307,21 @@ it(
 			ResourceValidator.ValidateResourceDefinition(nonNumericDefaultBaseValueDefinition, {})
 
 		expect(isNonNumericDefaultBaseValueValid).toBe(false)
-		expect(nonNumericDefaultBaseValueReason).toBe("ResourceMaxDefaultBaseValueMustBeNumber")
+		expect(nonNumericDefaultBaseValueReason).toBe("ResourceMaxDefaultBaseValueUnsupported")
 	end
 )
 
 it(
 	"ResourceValidator.ValidateResourceDefinition rejects malformed regen definitions and negative regen rates",
 	function()
+		PropertyCatalog._resetForTests()
+
+		assert(PropertyCatalog.Load({
+			{ id = "MaxStamina", defaultBaseValue = 100 },
+			{ id = "MinStamina", defaultBaseValue = 0 },
+			{ id = "StaminaRegen", defaultBaseValue = -5 },
+		}))
+
 		local nonTableRegenDefinition: ResourceDefinition = createValidResourceDefinition();
 		(nonTableRegenDefinition :: any).regen = "fast"
 
@@ -324,7 +345,6 @@ it(
 		(invalidRegenRateSourceDefinition :: any).regen = {
 			rate = {
 				propertyName = "",
-				defaultBaseValue = 5,
 			},
 		}
 
@@ -353,7 +373,6 @@ it(
 		(negativePropertyBackedRegenRateDefinition :: any).regen = {
 			rate = {
 				propertyName = "StaminaRegen",
-				defaultBaseValue = -5,
 			},
 		}
 
@@ -368,16 +387,22 @@ it(
 it(
 	"ResourceValidator.ValidateResourceDefinition rejects definitions whose default max resolves below default min",
 	function()
+		PropertyCatalog._resetForTests()
+
+		assert(PropertyCatalog.Load({
+			{ id = "MaxStamina", defaultBaseValue = 10 },
+			{ id = "MinStamina", defaultBaseValue = 25 },
+			{ id = "StaminaRegen", defaultBaseValue = 12 },
+		}))
+
 		local invalidBoundsDefinition: ResourceDefinition = createValidResourceDefinition();
 
 		(invalidBoundsDefinition :: any).min = {
 			propertyName = "MinStamina",
-			defaultBaseValue = 25,
 		}
 
 		(invalidBoundsDefinition :: any).max = {
 			propertyName = "MaxStamina",
-			defaultBaseValue = 10,
 		}
 
 		local isInvalidBoundsValid: boolean, invalidBoundsReason: string? =
@@ -425,12 +450,10 @@ it("ResourceValidator.ValidateResourceDefinition accepts property-backed min, ma
 
 	(definition :: any).min = {
 		propertyName = "MinStamina",
-		defaultBaseValue = 0,
 	}
 
 	(definition :: any).max = {
 		propertyName = "MaxStamina",
-		defaultBaseValue = 100,
 	}
 
 	(definition :: any).initialValue = 75
@@ -440,7 +463,6 @@ it("ResourceValidator.ValidateResourceDefinition accepts property-backed min, ma
 	(definition :: any).regen = {
 		rate = {
 			propertyName = "StaminaRegen",
-			defaultBaseValue = 12,
 		},
 	}
 

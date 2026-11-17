@@ -8,7 +8,6 @@ export type ResourceVisibility = "ServerOnly" | "ClientVisible"
 export type ResourceNumericSource = {
 	value: number?,
 	propertyName: string?,
-	defaultBaseValue: number?,
 }
 
 export type ResourceRegenDefinition = {

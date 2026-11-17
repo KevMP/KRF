@@ -48,7 +48,7 @@ for _, source: string in { "Property", "Tag" } do
 							visibility = "ClientVisible",
 							autoAssign = true,
 							initialValue = 100,
-							max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+							max = { propertyName = "MaxMana" },
 						},
 					}, {
 						{
@@ -57,7 +57,7 @@ for _, source: string in { "Property", "Tag" } do
 							duplicateBehavior = "Ignore",
 							properties = { MaxMana = { multiply = 0.5 } },
 						},
-					})
+					}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 					local actor: ActorTypes.Actor, _, resources: ResourceTypes.ResourceController, publicProperties: PropertyTypes.PropertyController, tags: TagTypes.TagController =
 						ActionUtils.registerActor()
@@ -248,7 +248,7 @@ for _, source: string in { "Property", "Tag" } do
 				visibility = "ClientVisible",
 				autoAssign = true,
 				initialValue = 100,
-				max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+				max = { propertyName = "MaxMana" },
 			},
 		}, {
 			{
@@ -257,7 +257,7 @@ for _, source: string in { "Property", "Tag" } do
 				duplicateBehavior = "Ignore",
 				properties = { MaxMana = { multiply = 0.5 } },
 			},
-		})
+		}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 		local actor: ActorTypes.Actor, _, publicResources: ResourceTypes.ResourceController, properties: PropertyTypes.PropertyController, tags: TagTypes.TagController =
 			ActionUtils.registerActor()

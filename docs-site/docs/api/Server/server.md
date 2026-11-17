@@ -22,6 +22,7 @@ local Server = KRF.Server
 
 Combines built-in and game definitions, then prepares and publishes the registries and networking transport in one non-yielding startup attempt.
 
+- Property catalog failures use `system = "Property"`. `config.properties` supplies numeric definitions merged with the built-ins. Tag, Resource and Action references validate against this prepared catalog.
 - Returns `true, nil` when all registries and the transport are ready.
 - Returns `false, { system, reason }` when preparation or publication fails; partially published startup state is rolled back.
 - Networking failures use `system = "Networking"`, including `TransportConflict`, `BootstrapManifestTooLarge`, `InvalidProtocolManifest`, and `CodecCompilationFailure`.

@@ -26,9 +26,9 @@ afterEach(ResourceTestUtils.cleanup)
 local mana: ResourceTypes.ResourceDefinition = {
 	id = "Mana",
 	visibility = "ServerOnly",
-	min = { propertyName = "MinMana", defaultBaseValue = 10 },
-	max = { propertyName = "MaxMana", defaultBaseValue = 100 },
-	regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 5 } },
+	min = { propertyName = "MinMana" },
+	max = { propertyName = "MaxMana" },
+	regen = { rate = { propertyName = "ManaRegen" } },
 	initialValue = 60,
 }
 
@@ -45,7 +45,11 @@ local invalidValues: { InvalidValueCase } = {
 for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 	for _, case: InvalidValueCase in invalidValues do
 		it("preserves the complete Resource snapshot when " .. propertyName .. " resolves to " .. case.name, function()
-			ResourceTestUtils.initialize({}, { mana })
+			ResourceTestUtils.initialize({}, { mana }, nil, {
+				{ id = "ManaRegen", defaultBaseValue = 5 },
+				{ id = "MaxMana", defaultBaseValue = 100 },
+				{ id = "MinMana", defaultBaseValue = 10 },
+			})
 
 			local _actor: Actor, _actions: ActionController, resources: ResourceController, properties: PropertyController =
 				ResourceTestUtils.registerActor()
@@ -117,6 +121,10 @@ for _, propertyName: string in { "MinMana", "MaxMana", "ManaRegen" } do
 				duplicateBehavior = "Ignore",
 				properties = { [propertyName] = { multiply = 1e308 } },
 			},
+		}, {
+			{ id = "ManaRegen", defaultBaseValue = 5 },
+			{ id = "MaxMana", defaultBaseValue = 100 },
+			{ id = "MinMana", defaultBaseValue = 10 },
 		})
 
 		local _actor: Actor, actions: ActionController, resources: ResourceController, properties: PropertyController, tags: TagController =

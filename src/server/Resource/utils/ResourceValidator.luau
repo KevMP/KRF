@@ -1,4 +1,6 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Parent.Property.types)
+local PropertyRegistry = require(script.Parent.Parent.Parent.Property.PropertyRegistry)
 local ResourceTypes = require(script.Parent.Parent.types)
 
 type ResourceDefinition = ResourceTypes.ResourceDefinition
@@ -87,7 +89,11 @@ local function ValidateResourceAutoAssign(definition: ResourceDefinition): (bool
 	return true, nil
 end
 
-local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix: string): (boolean, string?)
+local function ValidateNumericSource(
+	source: ResourceNumericSource,
+	sourcePrefix: string,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if type(source) ~= "table" then
 		return false, `{sourcePrefix}MustBeTable`
 	end
@@ -95,7 +101,10 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 	local sourceTable: { [string]: any } = source :: any
 	local sourceValue: any = sourceTable.value
 	local propertyName: any = sourceTable.propertyName
-	local defaultBaseValue: any = sourceTable.defaultBaseValue
+
+	if sourceTable.defaultBaseValue ~= nil then
+		return false, `{sourcePrefix}DefaultBaseValueUnsupported`
+	end
 
 	local hasValue: boolean = sourceValue ~= nil
 	local hasPropertyName: boolean = propertyName ~= nil
@@ -119,10 +128,6 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 			return false, sourceValueFailReason
 		end
 
-		if defaultBaseValue ~= nil then
-			return false, `{sourcePrefix}DefaultBaseValueRequiresPropertyName`
-		end
-
 		return true, nil
 	end
 
@@ -134,50 +139,56 @@ local function ValidateNumericSource(source: ResourceNumericSource, sourcePrefix
 		return false, `{sourcePrefix}PropertyNameCannotBeEmpty`
 	end
 
-	if defaultBaseValue == nil then
-		return false, `{sourcePrefix}DefaultBaseValueMissing`
+	if properties == nil then
+		return false, "PropertyDefinitionsNotLoaded"
 	end
 
-	local isDefaultBaseValueValid: boolean, defaultBaseValueFailReason: string? = ValidateFiniteNumber(
-		defaultBaseValue,
-		`{sourcePrefix}DefaultBaseValueMustBeNumber`,
-		`{sourcePrefix}DefaultBaseValueMustBeFiniteNumber`
-	)
-
-	if not isDefaultBaseValueValid then
-		return false, defaultBaseValueFailReason
+	if properties[propertyName] == nil then
+		return false, "UnknownPropertyId:" .. propertyName
 	end
 
 	return true, nil
 end
 
-local function ValidateResourceMax(definition: ResourceDefinition): (boolean, string?)
+local function ValidateResourceMax(
+	definition: ResourceDefinition,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if definition.max == nil then
 		return false, "ResourceMaxMissing"
 	end
 
-	return ValidateNumericSource(definition.max, "ResourceMax")
+	return ValidateNumericSource(definition.max, "ResourceMax", properties)
 end
 
-local function ValidateResourceMin(definition: ResourceDefinition): (boolean, string?)
+local function ValidateResourceMin(
+	definition: ResourceDefinition,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if definition.min == nil then
 		return true, nil
 	end
 
-	return ValidateNumericSource(definition.min, "ResourceMin")
+	return ValidateNumericSource(definition.min, "ResourceMin", properties)
 end
 
-local function GetDefaultResolvedNumericSourceValue(source: ResourceNumericSource): number
+local function GetDefaultResolvedNumericSourceValue(
+	source: ResourceNumericSource,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): number
 	local sourceTable: { [string]: any } = source :: any
 
 	if sourceTable.value ~= nil then
 		return sourceTable.value
 	end
 
-	return sourceTable.defaultBaseValue
+	return (properties :: { [string]: PropertyTypes.PropertyDefinition })[sourceTable.propertyName].defaultBaseValue
 end
 
-local function ValidateResourceRegen(regen: ResourceRegenDefinition?): (boolean, string?)
+local function ValidateResourceRegen(
+	regen: ResourceRegenDefinition?,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if regen == nil then
 		return true, nil
 	end
@@ -194,13 +205,13 @@ local function ValidateResourceRegen(regen: ResourceRegenDefinition?): (boolean,
 	end
 
 	local isRegenRateValid: boolean, regenRateFailReason: string? =
-		ValidateNumericSource(regenRate, "ResourceRegenRate")
+		ValidateNumericSource(regenRate, "ResourceRegenRate", properties)
 
 	if not isRegenRateValid then
 		return false, regenRateFailReason
 	end
 
-	local defaultResolvedRate: number = GetDefaultResolvedNumericSourceValue(regenRate)
+	local defaultResolvedRate: number = GetDefaultResolvedNumericSourceValue(regenRate, properties)
 
 	if defaultResolvedRate < 0 then
 		return false, "ResourceRegenRateCannotBeNegative"
@@ -209,14 +220,17 @@ local function ValidateResourceRegen(regen: ResourceRegenDefinition?): (boolean,
 	return true, nil
 end
 
-local function ValidateDefaultResolvedBounds(definition: ResourceDefinition): (boolean, string?)
+local function ValidateDefaultResolvedBounds(
+	definition: ResourceDefinition,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	local defaultResolvedMin: number = 0
 
 	if definition.min ~= nil then
-		defaultResolvedMin = GetDefaultResolvedNumericSourceValue(definition.min)
+		defaultResolvedMin = GetDefaultResolvedNumericSourceValue(definition.min, properties)
 	end
 
-	local defaultResolvedMax: number = GetDefaultResolvedNumericSourceValue(definition.max)
+	local defaultResolvedMax: number = GetDefaultResolvedNumericSourceValue(definition.max, properties)
 
 	if defaultResolvedMax < defaultResolvedMin then
 		return false, "ResourceDefaultMaxLessThanDefaultMin"
@@ -225,7 +239,10 @@ local function ValidateDefaultResolvedBounds(definition: ResourceDefinition): (b
 	return true, nil
 end
 
-local function ValidateInitialValueWithinDefaultResolvedBounds(definition: ResourceDefinition): (boolean, string?)
+local function ValidateInitialValueWithinDefaultResolvedBounds(
+	definition: ResourceDefinition,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if definition.initialValue == nil then
 		return true, nil
 	end
@@ -233,10 +250,10 @@ local function ValidateInitialValueWithinDefaultResolvedBounds(definition: Resou
 	local defaultResolvedMin: number = 0
 
 	if definition.min ~= nil then
-		defaultResolvedMin = GetDefaultResolvedNumericSourceValue(definition.min)
+		defaultResolvedMin = GetDefaultResolvedNumericSourceValue(definition.min, properties)
 	end
 
-	local defaultResolvedMax: number = GetDefaultResolvedNumericSourceValue(definition.max)
+	local defaultResolvedMax: number = GetDefaultResolvedNumericSourceValue(definition.max, properties)
 
 	if definition.initialValue < defaultResolvedMin then
 		return false, "ResourceInitialValueLessThanDefaultMin"
@@ -251,8 +268,12 @@ end
 
 function ResourceValidator.ValidateResourceDefinition(
 	definition: ResourceDefinition,
-	loadedResources: { [string]: ResourceDefinition }
+	loadedResources: { [string]: ResourceDefinition },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (boolean, string?)
+	local properties = preparedProperties
+		or (if PropertyRegistry.IsLoaded() then PropertyRegistry.GetAllById() else nil)
+
 	if definition == nil then
 		return false, "ResourceDefinitionMissing"
 	end
@@ -288,33 +309,34 @@ function ResourceValidator.ValidateResourceDefinition(
 		return false, resourceAutoAssignFailReason
 	end
 
-	local isResourceMaxValid: boolean, resourceMaxFailReason: string? = ValidateResourceMax(definition)
+	local isResourceMaxValid: boolean, resourceMaxFailReason: string? = ValidateResourceMax(definition, properties)
 
 	if not isResourceMaxValid then
 		return false, resourceMaxFailReason
 	end
 
-	local isResourceMinValid: boolean, resourceMinFailReason: string? = ValidateResourceMin(definition)
+	local isResourceMinValid: boolean, resourceMinFailReason: string? = ValidateResourceMin(definition, properties)
 
 	if not isResourceMinValid then
 		return false, resourceMinFailReason
 	end
 
-	local isResourceRegenValid: boolean, resourceRegenFailReason: string? = ValidateResourceRegen(definition.regen)
+	local isResourceRegenValid: boolean, resourceRegenFailReason: string? =
+		ValidateResourceRegen(definition.regen, properties)
 
 	if not isResourceRegenValid then
 		return false, resourceRegenFailReason
 	end
 
 	local isDefaultResolvedBoundsValid: boolean, defaultResolvedBoundsFailReason: string? =
-		ValidateDefaultResolvedBounds(definition)
+		ValidateDefaultResolvedBounds(definition, properties)
 
 	if not isDefaultResolvedBoundsValid then
 		return false, defaultResolvedBoundsFailReason
 	end
 
 	local isInitialValueWithinDefaultResolvedBoundsValid: boolean, initialValueWithinDefaultResolvedBoundsFailReason: string? =
-		ValidateInitialValueWithinDefaultResolvedBounds(definition)
+		ValidateInitialValueWithinDefaultResolvedBounds(definition, properties)
 
 	if not isInitialValueWithinDefaultResolvedBoundsValid then
 		return false, initialValueWithinDefaultResolvedBoundsFailReason

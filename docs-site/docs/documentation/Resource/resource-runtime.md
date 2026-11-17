@@ -13,11 +13,13 @@ For game-driven changes outside Action acceptance, obtain the Actor's `ResourceC
 Adding a resource resolves its state in this order:
 
 1. Find the loaded definition.
-2. Seed missing property-backed sources.
+2. Seed missing backing Properties from their registered defaults, preserving Actor values.
 3. Resolve minimum, maximum, and optional regeneration rate.
 4. Choose explicit override, definition initial value, or resolved maximum.
 5. Clamp current value to the resolved bounds.
 6. Store the resource and fire `OnResourceAdded`.
+
+Backing IDs must be declared in the [Property catalog](../Property/property-registry). Actor registration overrides are installed before this flow; a Resource never overwrites them. A standalone ResourceController without a PropertyController resolves the same registered defaults.
 
 Definitions marked `autoAssign` run this flow when the controller is constructed. Assignment fails without partial resource state when the id, override, property source, or bounds are invalid.
 

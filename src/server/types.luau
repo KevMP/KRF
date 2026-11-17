@@ -2,6 +2,7 @@
 local serverFolder = script.Parent
 
 local ControllerTypes = require(serverFolder.Controller.types)
+local PropertyTypes = require(serverFolder.Property.types)
 local TagTypes = require(serverFolder.Tags.types)
 local ResourceTypes = require(serverFolder.Resource.types)
 local ActionTypes = require(serverFolder.Action.types)
@@ -16,6 +17,7 @@ export type ServerStartConfig = {
 	hints: { NetworkingTypes.HintDefinition }?,
 	commands: { NetworkingTypes.CommandDefinition }?,
 	controllers: { ControllerTypes.ControllerDef }?,
+	properties: { PropertyTypes.PropertyDefinition }?,
 	tags: { TagTypes.TagDefinition }?,
 	resources: { ResourceTypes.ResourceDefinition }?,
 	actions: { ActionTypes.ActionFactory }?,

@@ -1,4 +1,5 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Property.types)
 local ActionTypes = require(script.Parent.types)
 local ActionValidator = require(script.Parent.ActionValidator)
 local ActionControllerHooks = require(script.Parent.utils.ActionControllerHooks)
@@ -81,7 +82,8 @@ table.freeze(factoriesById)
 function ActionRegistry.Prepare(
 	factories: { ActionFactory },
 	preparedTagIds: { [string]: boolean },
-	preparedResourceIds: { [string]: boolean }
+	preparedResourceIds: { [string]: boolean },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (PreparedActionCatalog?, string?)
 	if isLoaded then
 		return nil, "ActionDefinitionsAlreadyLoaded"
@@ -133,7 +135,7 @@ function ActionRegistry.Prepare(
 	end
 
 	local valid: boolean, reason: string? =
-		ActionValidator.ValidateCatalog(definitions, preparedTagIds, preparedResourceIds)
+		ActionValidator.ValidateCatalog(definitions, preparedTagIds, preparedResourceIds, preparedProperties)
 
 	if not valid then
 		return nil, reason
@@ -192,10 +194,11 @@ end
 function ActionRegistry.Load(
 	factories: { ActionFactory },
 	preparedTagIds: { [string]: boolean },
-	preparedResourceIds: { [string]: boolean }
+	preparedResourceIds: { [string]: boolean },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (boolean, string?)
 	local prepared: PreparedActionCatalog?, reason: string? =
-		ActionRegistry.Prepare(factories, preparedTagIds, preparedResourceIds)
+		ActionRegistry.Prepare(factories, preparedTagIds, preparedResourceIds, preparedProperties)
 
 	if prepared == nil then
 		return false, reason

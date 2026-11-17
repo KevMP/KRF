@@ -8,6 +8,8 @@ Declare a Resource as `ClientVisible` to expose it to clients aware of its Actor
 
 This catalog module defines Stamina with Property-backed maximum and regeneration:
 
+Declare `MaxStamina` and `StaminaRegen` in the [Property catalog](../Property/property-registry) before using these sources.
+
 ```lua
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,8 +20,8 @@ local definitions: { KRF.ResourceDefinition } = {
 		id = "Resource.Stamina",
 		visibility = "ClientVisible",
 		autoAssign = true,
-		max = { propertyName = "MaxStamina", defaultBaseValue = 100 },
-		regen = { rate = { propertyName = "StaminaRegen", defaultBaseValue = 12 } },
+		max = { propertyName = "MaxStamina" },
+		regen = { rate = { propertyName = "StaminaRegen" } },
 	},
 	{
 		id = "Resource.InternalBudget",

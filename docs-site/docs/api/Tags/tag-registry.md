@@ -37,7 +37,7 @@ Validates the complete catalog and commits it in input order.
 - `false, "TagDefinitionsAlreadyLoded"`: a catalog already committed.
 - `false, reason`: validation failed; nothing from the call committed and `IsLoaded()` remains `false`.
 
-Validation reasons identify missing or duplicate ids, invalid duration and tick values, invalid duplicate or visibility values, invalid `maxStacks`, and malformed modifiers.
+Validation reasons identify missing or duplicate ids, invalid duration and tick values, invalid duplicate or visibility values, invalid `maxStacks`, malformed modifiers, `PropertyDefinitionsNotLoaded` for referenced Properties without a loaded catalog, and `UnknownPropertyId:<id>` for unknown references.
 
 The returned registry containers are frozen. Definitions remain the same table references supplied to `Load`; treat authored definitions as immutable after loading.
 

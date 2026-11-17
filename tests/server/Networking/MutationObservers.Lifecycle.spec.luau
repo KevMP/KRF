@@ -46,7 +46,7 @@ for _, source: string in { "Expiry", "Regeneration" } do
 				visibility = "ClientVisible",
 				autoAssign = true,
 				initialValue = if source == "Expiry" then 100 else 0,
-				max = { propertyName = "MaxMana", defaultBaseValue = 100 },
+				max = { propertyName = "MaxMana" },
 				regen = { rate = { value = 1 } },
 			},
 			{
@@ -64,7 +64,7 @@ for _, source: string in { "Expiry", "Regeneration" } do
 				duplicateBehavior = "Stack",
 				properties = { MaxMana = { multiply = 0.5 } },
 			},
-		})
+		}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 		local actors: { ActorTypes.Actor } = {}
 		local resourcesByActor: { ResourceTypes.ResourceController } = {}
@@ -171,7 +171,7 @@ end
 it("retains the original Tag observer error when that observer destroys the controller", function()
 	ActionUtils.initialize({}, {}, {
 		{ id = "Marker", visibility = "ClientVisible", duplicateBehavior = "Stack" },
-	})
+	}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _, _, _, _, publicTags: TagTypes.TagController = ActionUtils.registerActor()
 	local tags: TagTypes.InternalTagController = publicTags :: TagTypes.InternalTagController
@@ -214,7 +214,7 @@ it("retains the original Tag observer error when that observer destroys the cont
 end)
 
 it("does not mutate retained Property truth or accept private observers after controller destruction", function()
-	ActionUtils.initialize({}, {}, {})
+	ActionUtils.initialize({}, {}, {}, { { id = "MaxMana", defaultBaseValue = 100 } })
 
 	local _, _, _, publicProperties: PropertyTypes.PropertyController, publicTags: TagTypes.TagController =
 		ActionUtils.registerActor()

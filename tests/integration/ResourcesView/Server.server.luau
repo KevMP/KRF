@@ -278,6 +278,7 @@ end)
 local before: { [Instance]: boolean } = captureRemotes()
 
 local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
+	properties = { { id = "ManaRegen", defaultBaseValue = 10 }, { id = "PrivateRegen", defaultBaseValue = 4 } },
 	resources = {
 		{
 			id = "Resource.Mana",
@@ -285,7 +286,7 @@ local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 			autoAssign = true,
 			initialValue = 20,
 			max = { value = 1000 },
-			regen = { rate = { propertyName = "ManaRegen", defaultBaseValue = 10 } },
+			regen = { rate = { propertyName = "ManaRegen" } },
 		},
 		{
 			id = "Resource.Stamina",
@@ -301,7 +302,7 @@ local initialized: boolean, failure: Server.StartupFailure? = Server.Init({
 			visibility = "ServerOnly",
 			autoAssign = true,
 			max = { value = 100 },
-			regen = { rate = { propertyName = "PrivateRegen", defaultBaseValue = 4 } },
+			regen = { rate = { propertyName = "PrivateRegen" } },
 		},
 		{ id = "Private.Live", visibility = "ServerOnly", max = { value = 100 } },
 	},

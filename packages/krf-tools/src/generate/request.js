@@ -151,17 +151,11 @@ function parseTagApplication(value) {
 }
 
 function parseNumericSource(value) {
-	const property = /^([^=]+)=(.+)$/.exec(value);
-	if (property) {
-		const base = finite(property[2]);
-		if (!ID.test(property[1].trim()) || base === undefined) return { problem: `'${value}' must be a number, or Property=defaultBaseValue such as MaxStamina=100` };
-		return { propertyName: property[1].trim(), defaultBaseValue: base };
-	}
 	const constant = finite(value);
-	return constant === undefined ? { problem: `'${value}' must be a number, or Property=defaultBaseValue such as MaxStamina=100` } : { value: constant };
+	if (constant !== undefined) return { value: constant };
+	if (ID.test(value.trim())) return { propertyName: value.trim() };
+	return { problem: `'${value}' must be a number or a registered Property ID such as MaxStamina` };
 }
-
-const resolved = (source) => source.value ?? source.defaultBaseValue;
 
 const fieldList = z
 	.array(z.string())
@@ -382,14 +376,14 @@ function checkAction(options, given) {
 }
 
 function checkResource(options) {
-	const minimum = options.min === undefined ? 0 : resolved(options.min);
-	const maximum = resolved(options.max);
-	if (minimum > maximum) throw usage("InvalidOption", `The minimum ${minimum} is greater than the maximum ${maximum}.`);
-	if (options.regen !== undefined && resolved(options.regen) < 0) throw usage("InvalidOption", "--regen cannot be negative.");
+	const minimum = options.min === undefined ? 0 : options.min.value;
+	const maximum = options.max.value;
+	if (minimum !== undefined && maximum !== undefined && minimum > maximum) throw usage("InvalidOption", `The minimum ${minimum} is greater than the maximum ${maximum}.`);
+	if (options.regen !== undefined && options.regen.value < 0) throw usage("InvalidOption", "--regen cannot be negative.");
 
 	const initial = options.initial ?? maximum;
-	if (initial > maximum) throw usage("InvalidOption", `--initial ${initial} is greater than the maximum ${maximum}.`);
-	if (initial < minimum) throw usage("InvalidOption", `--initial ${initial} is less than the minimum ${minimum}.`);
+	if (initial !== undefined && maximum !== undefined && initial > maximum) throw usage("InvalidOption", `--initial ${initial} is greater than the maximum ${maximum}.`);
+	if (initial !== undefined && minimum !== undefined && initial < minimum) throw usage("InvalidOption", `--initial ${initial} is less than the minimum ${minimum}.`);
 	return { ...options, initial };
 }
 

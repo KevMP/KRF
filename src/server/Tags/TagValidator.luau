@@ -1,4 +1,6 @@
 --!strict
+local PropertyTypes = require(script.Parent.Parent.Property.types)
+local PropertyRegistry = require(script.Parent.Parent.Property.PropertyRegistry)
 local RegistryTypes = require(script.Parent.types)
 
 export type TagRegistry = RegistryTypes.TagRegistry
@@ -186,7 +188,10 @@ local function ValidatePropertyModifier(modifier: PropertyModifier): (boolean, s
 	return true, nil
 end
 
-local function ValidateTagProperties(tagDefinition: TagDefinition): (boolean, string?)
+local function ValidateTagProperties(
+	tagDefinition: TagDefinition,
+	properties: { [string]: PropertyTypes.PropertyDefinition }?
+): (boolean, string?)
 	if tagDefinition.properties == nil then
 		return true, nil
 	end
@@ -209,6 +214,14 @@ local function ValidateTagProperties(tagDefinition: TagDefinition): (boolean, st
 		if not isModifierValid then
 			return false, modifierFailReason :: string
 		end
+
+		if properties == nil then
+			return false, "PropertyDefinitionsNotLoaded"
+		end
+
+		if properties[propertyName] == nil then
+			return false, "UnknownPropertyId:" .. propertyName
+		end
 	end
 
 	return true, nil
@@ -216,7 +229,8 @@ end
 
 function TagValidator.ValidateTagDefinition(
 	tagDefinition: TagDefinition,
-	loadedTags: { [string]: TagDefinition }
+	loadedTags: { [string]: TagDefinition },
+	preparedProperties: { [string]: PropertyTypes.PropertyDefinition }?
 ): (boolean, string?)
 	if tagDefinition == nil then
 		return false, "TagDefinitionMissing"
@@ -270,7 +284,10 @@ function TagValidator.ValidateTagDefinition(
 		return false, tagOnTickFailReason
 	end
 
-	local isTagPropertiesValid: boolean, tagPropertiesFailReason: string? = ValidateTagProperties(tagDefinition)
+	local isTagPropertiesValid: boolean, tagPropertiesFailReason: string? = ValidateTagProperties(
+		tagDefinition,
+		preparedProperties or (if PropertyRegistry.IsLoaded() then PropertyRegistry.GetAllById() else nil)
+	)
 
 	if not isTagPropertiesValid then
 		return false, tagPropertiesFailReason

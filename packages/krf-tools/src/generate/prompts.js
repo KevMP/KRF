@@ -156,9 +156,8 @@ function createAsker(prompts) {
 			if (from === "none") return undefined;
 			const constraints = allowNegative ? {} : { min: 0 };
 			if (from === "value") return asker.number(`${field}.value`, constraints, initialValue);
-			const property = await asker.text(`${field}.propertyName (the property to read)`, { placeholder: "MaxStamina", validate: (value) => ENTRY_PROBLEMS.id((value ?? "").trim()) });
-			const base = await asker.number(`${field}.defaultBaseValue (${property}'s value before Tag modifiers)`, constraints, initialValue);
-			return `${property}=${base}`;
+			const property = await asker.text(`${field}.propertyName (a registered Property ID)`, { placeholder: "MaxStamina", validate: (value) => ENTRY_PROBLEMS.id((value ?? "").trim()) });
+			return property;
 		},
 	};
 	return asker;

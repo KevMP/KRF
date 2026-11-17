@@ -126,7 +126,7 @@ test("first use of each catalog creates its loader and wires Startup once; later
 		assert.match(tree[`src/server/${folder}/init.luau`], /= requireDescendants\(script\)$/m, folder);
 	}
 	assert.match(tree[STARTUP], /^local Commands = require\(script\.Parent\.Commands\)\nlocal Controllers = require\(script\.Parent\.Controllers\)\nlocal Hints = require\(script\.Parent\.Hints\)\nlocal PlayerActors/m);
-	assert.match(tree[STARTUP], /KRF\.Server\.Init\(\{\n\thints = Hints,\n\tcommands = Commands,\n\tcontrollers = Controllers,\n\ttags = Tags,\n\tresources = Resources,\n\tactions = Actions,\n\treplicationDomains = ReplicationDomains,\n\tactionRequestSchemas = ActionRequests,\n\}\)/);
+	assert.match(tree[STARTUP], /KRF\.Server\.Init\(\{\n\thints = Hints,\n\tcommands = Commands,\n\tcontrollers = Controllers,\n\tproperties = Properties,\n\ttags = Tags,\n\tresources = Resources,\n\tactions = Actions,\n\treplicationDomains = ReplicationDomains,\n\tactionRequestSchemas = ActionRequests,\n\}\)/);
 	assert.ok(tree["src/server/Actions/Combat/Meditate.luau"].includes('id = "Combat.Meditate"'));
 	assert.match(tree[`${REQUESTS}/Fireball.luau`], /^local Fireball: KRF\.ActionRequestSchemas = \{\n\tFireball = \{\},\n\}$/m);
 	assert.match(tree[`${REQUESTS}/Guard.luau`], /\tGuard = \{\n\t\tstop = \{\},\n\t\tallowInputInterrupt = true,\n\t\trequiresClientRelease = true,\n\t\tonDisconnect = "Interrupt",\n\t\},\n\}/);
@@ -497,8 +497,7 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"name (module and file name, such as Fireball)": "Mana",
 			"id (blank: Mana; a namespace such as Combat.Mana is allowed)": "",
 			"max (the Resource's maximum)": "property",
-			"max.propertyName (the property to read)": "MaxMana",
-			"max.defaultBaseValue (MaxMana's value before Tag modifiers)": "50",
+			"max.propertyName (a registered Property ID)": "MaxMana",
 			"min (the Resource's minimum; none means 0)": "none",
 			"initialValue (the Resource's starting value; blank: the maximum)": "0",
 			"regen.rate (how much the Resource regenerates per second)": "value",
@@ -506,7 +505,7 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"visibility (who can see the Resource)": "ClientVisible",
 			"autoAssign (every Actor gets the Resource automatically)": true,
 		},
-		["--name", "Mana", "--max", "MaxMana=50", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
+		["--name", "Mana", "--max", "MaxMana", "--initial", "0", "--regen", "2", "--visibility", "ClientVisible"],
 	);
 
 	await wizardMatchesFlags(

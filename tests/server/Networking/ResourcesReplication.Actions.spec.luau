@@ -39,14 +39,25 @@ it("commits all real Action costs as one private touched set and publishes befor
 		return originalConnect(self, callback)
 	end
 
-	ActionUtils.initialize({
+	ActionUtils.initialize(
 		{
-			id = "Action.Cast",
-			visibility = "ServerOnly",
-			autoGrant = true,
-			costs = { ["Resource.Mana"] = 15, ["Resource.Stamina"] = 5 },
+			{
+				id = "Action.Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				costs = { ["Resource.Mana"] = 15, ["Resource.Stamina"] = 5 },
+			},
 		},
-	}, ResourceUtils.catalog())
+		ResourceUtils.catalog(),
+		nil,
+		{
+			{ id = "ManaMax", defaultBaseValue = 100 },
+			{ id = "ManaMin", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 10 },
+			{ id = "PrivateMax", defaultBaseValue = 50 },
+			{ id = "PrivateRegen", defaultBaseValue = 4 },
+		}
+	)
 
 	local actor: ActorTypes.Actor, actions: ActionTypes.ActionController, resources: ResourceTypes.ResourceController =
 		ActionUtils.registerActor()
@@ -108,14 +119,25 @@ end)
 it(
 	"uses ordinary Actor commit grouping for several Resource costs without Action metadata in Resource state",
 	function()
-		ActionUtils.initialize({
+		ActionUtils.initialize(
 			{
-				id = "Action.Cast",
-				visibility = "ServerOnly",
-				autoGrant = true,
-				costs = { ["Resource.Mana"] = 15, ["Resource.Stamina"] = 5 },
+				{
+					id = "Action.Cast",
+					visibility = "ServerOnly",
+					autoGrant = true,
+					costs = { ["Resource.Mana"] = 15, ["Resource.Stamina"] = 5 },
+				},
 			},
-		}, ResourceUtils.catalog())
+			ResourceUtils.catalog(),
+			nil,
+			{
+				{ id = "ManaMax", defaultBaseValue = 100 },
+				{ id = "ManaMin", defaultBaseValue = 0 },
+				{ id = "ManaRegen", defaultBaseValue = 10 },
+				{ id = "PrivateMax", defaultBaseValue = 50 },
+				{ id = "PrivateRegen", defaultBaseValue = 4 },
+			}
+		)
 
 		local actor: ActorTypes.Actor, actions: ActionTypes.ActionController = ActionUtils.registerActor()
 		local publication: NetworkingTypes.PublicationRuntime? = Networking._GetPublicationRuntimeForTests()
@@ -162,6 +184,13 @@ it("publishes final cost, Tag-derived bounds and rate together without intermedi
 				duplicateBehavior = "Ignore",
 				properties = { ManaMax = { set = 20 }, ManaRegen = { set = 25 } },
 			},
+		},
+		{
+			{ id = "ManaMax", defaultBaseValue = 100 },
+			{ id = "ManaMin", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 10 },
+			{ id = "PrivateMax", defaultBaseValue = 50 },
+			{ id = "PrivateRegen", defaultBaseValue = 4 },
 		}
 	)
 
@@ -192,14 +221,25 @@ it("publishes final cost, Tag-derived bounds and rate together without intermedi
 end)
 
 it("creates no Resource publication work when real Action cost planning rejects atomically", function()
-	ActionUtils.initialize({
+	ActionUtils.initialize(
 		{
-			id = "Action.Cast",
-			visibility = "ServerOnly",
-			autoGrant = true,
-			costs = { ["Resource.Mana"] = 500, ["Resource.Stamina"] = 5 },
+			{
+				id = "Action.Cast",
+				visibility = "ServerOnly",
+				autoGrant = true,
+				costs = { ["Resource.Mana"] = 500, ["Resource.Stamina"] = 5 },
+			},
 		},
-	}, ResourceUtils.catalog())
+		ResourceUtils.catalog(),
+		nil,
+		{
+			{ id = "ManaMax", defaultBaseValue = 100 },
+			{ id = "ManaMin", defaultBaseValue = 0 },
+			{ id = "ManaRegen", defaultBaseValue = 10 },
+			{ id = "PrivateMax", defaultBaseValue = 50 },
+			{ id = "PrivateRegen", defaultBaseValue = 4 },
+		}
+	)
 
 	local actor: ActorTypes.Actor, actions: ActionTypes.ActionController, resources: ResourceTypes.ResourceController =
 		ActionUtils.registerActor()

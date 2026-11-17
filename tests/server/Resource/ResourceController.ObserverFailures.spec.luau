@@ -12,6 +12,24 @@ local TestUtils = require(script.Parent.Parent.Utils.Networking.ResourcesReplica
 
 local fixture: TestUtils.Fixture
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "ManaMax", defaultBaseValue = 0 },
+		{ id = "ManaMin", defaultBaseValue = 0 },
+		{ id = "ManaRegen", defaultBaseValue = 10 },
+		{ id = "PrivateMax", defaultBaseValue = 50 },
+		{ id = "PrivateRegen", defaultBaseValue = 4 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 beforeEach(function()
 	fixture = TestUtils.new()
 end)

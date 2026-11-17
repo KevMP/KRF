@@ -52,6 +52,24 @@ local UnknownPropertyModifierFieldCataloge: unknown = require(TagTestUtils.Unkno
 local EmptyPropertyModifierCataloge: unknown = require(TagTestUtils.EmptyPropertyModifierCatalog)
 local PartiallyInvalidTagCataloge: unknown = require(TagTestUtils.PartiallyInvalidTagCatalog)
 
+local PropertyCatalog = require(ReplicatedStorage.Packages.KRF.server.Property.PropertyRegistry)
+
+JestGlobals.beforeEach(function()
+	PropertyCatalog._resetForTests()
+
+	assert(PropertyCatalog.Load({
+		{ id = "DamageDealt", defaultBaseValue = 0 },
+		{ id = "DamageTaken", defaultBaseValue = 0 },
+		{ id = "DashCostMultiplier", defaultBaseValue = 0 },
+		{ id = "HealingReceived", defaultBaseValue = 0 },
+		{ id = "Stamina", defaultBaseValue = 0 },
+	}))
+end)
+
+JestGlobals.afterEach(function()
+	PropertyCatalog._resetForTests()
+end)
+
 it("TagRegistry.Load accepts valid catalogs across minimal and mixed metadata cases", function()
 	TagRegistry._resetForTests()
 

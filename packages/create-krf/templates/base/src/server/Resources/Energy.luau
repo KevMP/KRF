@@ -7,7 +7,7 @@ local Energy: KRF.ResourceDefinition = {
 	id = "Energy",
 	max = { value = 100 },
 	initialValue = 0,
-	regen = { rate = { propertyName = "EnergyRegen", defaultBaseValue = 0 } },
+	regen = { rate = { propertyName = "EnergyRegen" } },
 	visibility = "ClientVisible",
 	autoAssign = true,
 }
