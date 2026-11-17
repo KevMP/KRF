@@ -37,7 +37,7 @@ function actionLines(options) {
 	];
 }
 
-const numericSource = (source) => inline(source.value !== undefined ? { value: source.value } : { propertyName: source.propertyName, defaultBaseValue: source.defaultBaseValue });
+const numericSource = (source) => inline(source.value !== undefined ? { value: source.value } : { propertyName: source.propertyName });
 
 function listLines(request) {
 	const { options } = request;

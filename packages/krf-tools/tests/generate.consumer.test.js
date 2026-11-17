@@ -23,7 +23,7 @@ const dependency = (t, files) => readKrfDependency(createConsumer(project(t, fil
 
 test("reads the installed KRF version from wally.lock, or an exact wally.toml pin before install", (t) => {
 	assert.deepEqual(dependency(t, { "wally.toml": `[dependencies]\nKRF = "kevmp/krf@=${KRF_RUNTIME.version}"\n` }), { alias: "KRF", version: KRF_RUNTIME.version });
-	assert.deepEqual(dependency(t, { "wally.toml": '[dependencies]\nFramework = "kevmp/krf@0.1"\n', "wally.lock": LOCK(KRF_RUNTIME.version) }), {
+	assert.deepEqual(dependency(t, { "wally.toml": '[dependencies]\nFramework = "kevmp/krf@0.2"\n', "wally.lock": LOCK(KRF_RUNTIME.version) }), {
 		alias: "Framework",
 		version: KRF_RUNTIME.version,
 	});
@@ -32,7 +32,7 @@ test("reads the installed KRF version from wally.lock, or an exact wally.toml pi
 test("refuses projects whose KRF version the generator cannot vouch for", (t) => {
 	assert.throws(() => dependency(t, { "wally.toml": "[dependencies]\n" }), { code: "KrfDependencyMissing" });
 	assert.throws(() => dependency(t, { "wally.toml": '[dependencies]\nKRF = "kevmp/krf@0.1"\n' }), { code: "KrfVersionUnresolved", hint: /npm install/ });
-	assert.throws(() => dependency(t, { "wally.toml": '[dependencies]\nKRF = "kevmp/krf@=0.2.0"\n' }), { code: "KrfVersionUnsupported", message: /this project uses 0\.2\.0/ });
+	assert.throws(() => dependency(t, { "wally.toml": '[dependencies]\nKRF = "kevmp/krf@=0.3.0"\n' }), { code: "KrfVersionUnsupported", message: /this project uses 0\.3\.0/ });
 	assert.throws(() => dependency(t, { "wally.toml": '[dependencies]\nKRF = "kevmp/krf@=0.1.0"\n', "wally.lock": LOCK("0.3.1") }), { code: "KrfVersionUnsupported", hint: /npm install --save-dev --save-exact krf-tools@/ });
 	assert.throws(() => dependency(t, { "wally.toml": '[dependencies]\n"K-R-F" = "kevmp/krf@=0.1.0"\n' }), { code: "KrfAliasUnsupported" });
 });

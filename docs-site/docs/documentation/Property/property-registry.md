@@ -4,7 +4,7 @@
 
 ## Declare Properties
 
-Pass an array of definitions as `properties` in the [game configuration](../initializing-krf).
+Projects created with `create-krf` load `src/server/Properties` as `properties`; add one with `npm run createProperty`. Manual integrations pass an array of definitions as `properties` in the [game configuration](../initializing-krf).
 
 | Field | Contract |
 | --- | --- |

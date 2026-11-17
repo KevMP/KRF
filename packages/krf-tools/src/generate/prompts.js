@@ -151,14 +151,12 @@ function createAsker(prompts) {
 			}
 		},
 
-		async numericSource(field, description, { initialValue, allowNegative, allowNone }) {
+		async numericSource(field, description, { initialValue, allowNegative, allowNone, known = [] }) {
 			const from = await asker.select(`${field} (${description})`, allowNone ? [{ value: "none", label: "none" }, ...NUMERIC_SOURCE] : NUMERIC_SOURCE);
 			if (from === "none") return undefined;
 			const constraints = allowNegative ? {} : { min: 0 };
 			if (from === "value") return asker.number(`${field}.value`, constraints, initialValue);
-			const property = await asker.text(`${field}.propertyName (the property to read)`, { placeholder: "MaxStamina", validate: (value) => ENTRY_PROBLEMS.id((value ?? "").trim()) });
-			const base = await asker.number(`${field}.defaultBaseValue (${property}'s value before Tag modifiers)`, constraints, initialValue);
-			return `${property}=${base}`;
+			return asker.text(`${field}.propertyName (a registered Property ID${knownText(known)})`, { placeholder: "MaxStamina", validate: (value) => ENTRY_PROBLEMS.id((value ?? "").trim()) });
 		},
 	};
 	return asker;
@@ -203,7 +201,7 @@ async function askCosts(asker, known) {
 		const cost = await asker.text(`costs.${resource} (an amount such as 10, or a percent of the Resource's range such as 25%)`, { validate: costProblem });
 		const isPercent = cost.endsWith("%");
 		const value = isPercent ? percent(cost.slice(0, -1).trim()) : cost;
-		const property = await asker.text(`costs.${resource}.multiplierProperty (a property whose value multiplies the cost, such as CostMultiplier; blank for none)`, {
+		const property = await asker.text(`costs.${resource}.multiplierProperty (a Property whose value multiplies the cost; blank for none${knownText(known.property)})`, {
 			validate: optional((text) => ENTRY_PROBLEMS.id(text.trim())),
 		});
 		if (property !== "") entries.push(`${resource}:${isPercent ? "percent" : "amount"}=${value},multiplierProperty=${property}`);
@@ -327,10 +325,15 @@ const FLOWS = {
 		if (need("properties")) set("properties", await askPropertyModifiers(asker, known));
 	},
 
-	async resource(asker, need, set) {
-		if (need("max")) set("max", await asker.numericSource("max", "the Resource's maximum", { initialValue: "100" }));
+	async property(asker, need, set) {
+		if (need("defaultBaseValue")) set("defaultBaseValue", await asker.number("defaultBaseValue (the Property's value on an Actor before Tag modifiers)", {}, "0"));
+		if (need("autoAssign")) set("autoAssign", await asker.confirm("autoAssign (every Actor gets the Property automatically)", false));
+	},
+
+	async resource(asker, need, set, known) {
+		if (need("max")) set("max", await asker.numericSource("max", "the Resource's maximum", { initialValue: "100", known: known.property }));
 		if (need("min")) {
-			const min = await asker.numericSource("min", "the Resource's minimum; none means 0", { initialValue: "0", allowNegative: true, allowNone: true });
+			const min = await asker.numericSource("min", "the Resource's minimum; none means 0", { initialValue: "0", allowNegative: true, allowNone: true, known: known.property });
 			if (min !== undefined) set("min", min);
 		}
 		if (need("initial")) {
@@ -338,7 +341,7 @@ const FLOWS = {
 			if (initial !== "") set("initial", initial);
 		}
 		if (need("regen")) {
-			const regen = await asker.numericSource("regen.rate", "how much the Resource regenerates per second", { initialValue: "1", allowNone: true });
+			const regen = await asker.numericSource("regen.rate", "how much the Resource regenerates per second", { initialValue: "1", allowNone: true, known: known.property });
 			if (regen !== undefined) set("regen", regen);
 		}
 		if (need("visibility")) set("visibility", await asker.select("visibility (who can see the Resource)", VISIBILITY, OPTION_DEFAULTS.resource.visibility));

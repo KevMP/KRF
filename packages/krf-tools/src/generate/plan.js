@@ -3,6 +3,7 @@ import {
 	ACTION_INPUT_POLICIES_FOLDER,
 	ACTION_REQUESTS_FOLDER,
 	BUILT_IN_CONTROLLER_KEYS,
+	BUILT_IN_PROPERTY_IDS,
 	CATALOGS,
 	KEYBINDS_FILE,
 	KINDS,
@@ -13,7 +14,7 @@ import {
 } from "./catalogs.js";
 import { assertPathAvailable, definitionId, findDefinition } from "./consumer.js";
 import { actionPolicyEntry, actionRequestEntry, mapEntryLines, needsInputPolicy, renderDefinition, renderLoader, renderMapModule } from "./modules.js";
-import { isIdentifier, luaString } from "./luau.js";
+import { isIdentifier, luaKey, luaString } from "./luau.js";
 import { addCatalog, readStartup, startupLines, wiringOf } from "./startup.js";
 
 const CATALOG_LOADER = /\brequireDescendants\(script\)/;
@@ -63,19 +64,13 @@ export function projectCatalog(consumer) {
 		for (const lock of list.matchAll(/"([^"]+)"/g)) locks.add(lock[1]);
 	}
 
-	const properties = new Set([
-		...matchesIn(consumer, folder("tag"), /\b([A-Za-z_][A-Za-z0-9_]*) = \{ (?:set|add|multiply|min|max) = /g),
-		...matchesIn(consumer, folder("resource"), /\bpropertyName = "([^"]+)"/g),
-		...matchesIn(consumer, folder("action"), /\bmultiplierProperty = "([^"]+)"/g),
-	]);
-
 	return Object.freeze({
 		tag: ids("tag"),
 		resource: ids("resource"),
 		action: ids("action"),
 		controller: [...BUILT_IN_CONTROLLER_KEYS, ...ids("controller")],
 		lock: [...locks].sort(),
-		property: [...properties].sort(),
+		property: [...new Set([...BUILT_IN_PROPERTY_IDS, ...ids("property")])].sort(),
 	});
 }
 
@@ -96,6 +91,13 @@ function referenceWarnings(consumer, request, folders) {
 		missing("tag", [...new Set([...options.requiredTags, ...options.blockedTags, ...options.activeTags.map((entry) => entry.id), ...options.appliedTags.map((entry) => entry.id)])]);
 		missing("resource", [...new Set([...options.requirements.map((entry) => entry.resource), ...options.costs.map((entry) => entry.resource)])]);
 		missing("action", options.interruptibleBy, [request.id]);
+		missing("property", [...new Set(options.costs.map((entry) => entry.cost.multiplierProperty).filter(Boolean))], BUILT_IN_PROPERTY_IDS);
+	}
+	if (request.kind === "tag") missing("property", request.options.properties.map((entry) => entry.property), BUILT_IN_PROPERTY_IDS);
+	if (request.kind === "resource") {
+		const { options } = request;
+		const sources = [options.max, options.min, options.regen].filter((source) => source?.propertyName !== undefined);
+		missing("property", [...new Set(sources.map((source) => source.propertyName))], BUILT_IN_PROPERTY_IDS);
 	}
 	if (request.kind === "controller") missing("controller", request.options.dependsOn, BUILT_IN_CONTROLLER_KEYS);
 	return warnings;
@@ -115,6 +117,12 @@ function nextSteps(request, file) {
 				...(options.clientStop ? [`A Stop request does not end ${id} by itself. Decide what Stop does in onStopRequested in ${file}; call context:End() there to end it.`] : []),
 				...(options.autoGrant ? [] : [`${id} is not auto-granted. Grant it with ActionController:SetGrants, or set autoGrant = true in ${file}.`]),
 			];
+		case "property":
+			return options.autoAssign
+				? []
+				: [
+						`${id} is not auto-assigned. Give it to an Actor with ActorRuntime.RegisterActor(model, { properties = { ${luaKey(id)} = value } }), SetBaseProperty or a Resource that reads it, or set autoAssign = true in ${file}.`,
+					];
 		case "controller":
 			return [`Get it on the server with actor:GetController("${id}").`];
 		case "command":

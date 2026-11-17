@@ -10,6 +10,7 @@ export const SERVER_START_FIELDS = Object.freeze([
 	"hints",
 	"commands",
 	"controllers",
+	"properties",
 	"tags",
 	"resources",
 	"actions",
@@ -31,6 +32,15 @@ export const CATALOGS = Object.freeze({
 		folder: "Resources",
 		type: "ResourceDefinition",
 		variable: "resources",
+	}),
+	property: catalog({
+		kind: "property",
+		script: "createProperty",
+		label: "Property",
+		field: "properties",
+		folder: "Properties",
+		type: "PropertyDefinition",
+		variable: "properties",
 	}),
 	controller: catalog({
 		kind: "controller",
@@ -58,5 +68,7 @@ export const CATALOGS = Object.freeze({
 export const KINDS = Object.freeze(Object.keys(CATALOGS));
 
 export const BUILT_IN_CONTROLLER_KEYS = Object.freeze(["TagController", "PropertyController", "ResourceController", "ActionController"]);
+
+export const BUILT_IN_PROPERTY_IDS = Object.freeze(["WalkSpeed", "JumpPower"]);
 
 export const DEFINITION_SCRIPTS = Object.freeze(Object.fromEntries(KINDS.map((kind) => [CATALOGS[kind].script, `krf-tools create ${kind}`])));
