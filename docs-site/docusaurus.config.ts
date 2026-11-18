@@ -61,7 +61,7 @@ const config: Config = {
       {
         id: 'reference',
         path: 'next/reference',
-        routeBasePath: 'next/reference',
+        routeBasePath: 'reference',
       },
     ],
     [
@@ -69,7 +69,7 @@ const config: Config = {
       {
         id: 'walkthrough',
         path: 'next/walkthrough',
-        routeBasePath: 'next/walkthrough',
+        routeBasePath: 'walkthrough',
       },
     ],
   ],
@@ -93,6 +93,20 @@ const config: Config = {
           docsPluginId: 'api',
           position: 'left',
           label: 'API',
+        },
+        {
+          type: 'doc',
+          docId: 'resources',
+          docsPluginId: 'reference',
+          position: 'left',
+          label: 'Reference',
+        },
+        {
+          type: 'doc',
+          docId: 'gather-qi',
+          docsPluginId: 'walkthrough',
+          position: 'left',
+          label: 'Walkthrough',
         },
         {
           href: 'https://github.com/KevMP/KRF',

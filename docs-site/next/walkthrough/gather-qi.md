@@ -345,7 +345,7 @@ Qi is a Resource: a per-Actor meter with a current value, bounds and regeneratio
 
 On the server, the spring changed Qi through the Actor's `ResourceController`, which also has `SetCurrent`, `Drain` and `Spend`. On the client, the HUD reads the `ResourcesView` estimate every frame and uses `OnResourceChanged` only to react to real changes.
 
-[Resources](/next/reference/resources) covers the rest, including cooldowns and charges, and the [Resources API](/next/reference/resources-api) lists every method and failure reason.
+[Resources](/reference/resources) covers the rest, including cooldowns and charges, and the [Resources API](/reference/resources-api) lists every method and failure reason.
 
 ## Next
 
