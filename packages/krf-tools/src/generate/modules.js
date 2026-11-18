@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { renderTemplate } from "../render.js";
 import { CATALOGS } from "./catalogs.js";
 import { luaKey, luaNumber, luaString, tableField } from "./luau.js";
-import { defaultStateLines, structLines } from "./schema.js";
+import { defaultStateLines, structLines, structTypeLines } from "./schema.js";
 
 const TEMPLATES = fileURLToPath(new URL("../../templates/definitions/", import.meta.url));
 
@@ -101,7 +101,7 @@ export function renderMapModule(name, type, entry, alias) {
 }
 
 const producerLines = (key, fields) => [
-	`${key} = function(_context: KRF.ActionInputContext): { [string]: any }`,
+	...structTypeLines(`${key} = function(_context: KRF.ActionInputContext): `, fields),
 	...defaultStateLines(1, fields),
 	"end,",
 ];

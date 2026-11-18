@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultStateLines, parseEvent, parseFields, renderType, structLines } from "../src/generate/schema.js";
+import { defaultStateLines, parseEvent, parseFields, renderType, structLines, structTypeLines } from "../src/generate/schema.js";
 
 test("renders every schema type as KRF.Schema calls", () => {
 	const fields = parseFields([
@@ -34,6 +34,33 @@ test("writes an empty struct inline and one field per line otherwise", () => {
 		"\t\tCount = KRF.Schema.U8,",
 		"\t\tActive = KRF.Schema.Boolean,",
 		"\t}),",
+	]);
+});
+
+test("writes each field's exact Luau type for the payload a producer returns", () => {
+	const fields = parseFields([
+		"Flag:Boolean",
+		"Amount:U16",
+		"Label:String(32)",
+		"Element:Enum(Fire|Ice)",
+		"Mode:Optional(Enum(Fast|Slow))",
+		"Only:Optional(Enum(Solo))",
+		"Target:Optional(U32)",
+		"Grid:Array(Array(F32,3),8)",
+		"Scores:Map(String(8),Optional(I32),4)",
+	]);
+	assert.deepEqual(structTypeLines("f = function(): ", fields), [
+		"f = function(): {",
+		"\tFlag: boolean,",
+		"\tAmount: number,",
+		"\tLabel: string,",
+		'\tElement: "Fire" | "Ice",',
+		'\tMode: ("Fast" | "Slow")?,',
+		'\tOnly: "Solo"?,',
+		"\tTarget: number?,",
+		"\tGrid: { { number } },",
+		"\tScores: { [string]: number? },",
+		"}",
 	]);
 });
 

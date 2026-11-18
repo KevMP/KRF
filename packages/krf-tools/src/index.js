@@ -1,7 +1,8 @@
-export { KRF_RUNTIME, SUPPORTED_KRF_VERSIONS, TOOLS_PACKAGE, TOOLS_VERSION } from "./compatibility.js";
+export { KRF_RUNTIME, SUPPORTED_KRF_VERSIONS, TEST_PACKAGES, TOOLS_PACKAGE, TOOLS_VERSION } from "./compatibility.js";
 export { ExitCode, KrfToolError, formatError } from "./errors.js";
 export { PROJECT_OPTION_DEFAULTS, projectOptionsSchema } from "./project.js";
 export { outputPath, renderTemplate, renderTemplates } from "./render.js";
 export { applyProjectChanges, inspectTarget, writeNewDirectory } from "./files.js";
 export { DEFINITION_SCRIPTS } from "./generate/catalogs.js";
 export { runGenerator } from "./generate/cli.js";
+export { WORKFLOW_COMMANDS, runWorkflow } from "./workflow/cli.js";

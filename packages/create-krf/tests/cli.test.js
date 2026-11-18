@@ -126,14 +126,16 @@ test("--yes creates the default project without prompting", async (t) => {
 		"src/shared/MergeDescendants.luau",
 		"src/shared/RequireDescendants.luau",
 		"stylua.toml",
+		"tests/Definitions.spec.luau",
+		"tests/jest.config.luau",
 		"wally.toml",
 	]);
 	assert.match(result.stdout, /Created my-game/);
-	assert.match(result.stdout, /Next:\n {2}cd my-game\n {2}npm install\n {2}npm run build\n/);
+	assert.match(result.stdout, /Next:\n {2}cd my-game\n {2}npm install\n {2}npm run dev\n/);
 	assert.deepEqual(result.calls, []);
 });
 
-test("the project's only npm dependency is the exact krf-tools release behind its generator scripts", async (t) => {
+test("the project's only npm dependency is the exact krf-tools release behind its workflow and generator scripts", async (t) => {
 	const result = await create(t, ["my-game", "--yes", "--no-git"]);
 	const manifest = JSON.parse(fs.readFileSync(path.join(result.cwd, "my-game", "package.json"), "utf8"));
 	assert.equal(manifest.private, true);
@@ -141,8 +143,11 @@ test("the project's only npm dependency is the exact krf-tools release behind it
 	assert.deepEqual(manifest.devDependencies, { "krf-tools": TOOLS_VERSION });
 	assert.deepEqual(manifest.scripts, {
 		postinstall: "node scripts/setup.mjs",
+		dev: "krf-tools dev",
 		build: manifest.scripts.build,
-		format: "stylua src",
+		test: "krf-tools test",
+		"test:studio": "krf-tools test-studio",
+		format: "stylua src tests",
 		check: manifest.scripts.check,
 		typecheck: manifest.scripts.typecheck,
 		createAction: "krf-tools create action",
@@ -277,7 +282,8 @@ test("documents and workflows mention only npm scripts the project has", async (
 				[],
 				`${document} ${JSON.stringify(config)}`,
 			);
-			assert.doesNotMatch(tree[document], /npm (test|ci)\b|npm run packages:install|krf-tools|krf\.project\.json/, `${document} ${JSON.stringify(config)}`);
+			if (/\bnpm test\b/.test(tree[document])) assert.ok(scripts.includes("test"), `${document} mentions npm test`);
+			assert.doesNotMatch(tree[document], /npm ci\b|npm run packages:install|krf-tools|krf\.project\.json/, `${document} ${JSON.stringify(config)}`);
 		}
 
 		assert.match(tree["README.md"], new RegExp(`${KRF_RUNTIME.package}@${KRF_RUNTIME.version}`));

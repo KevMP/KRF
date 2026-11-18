@@ -107,6 +107,33 @@ export function structLines(depth, prefix, fields, suffix = ",") {
 	return [`${indent}${prefix}KRF.Schema.Struct({`, ...fields.map((field) => `${indent}\t${field.name} = ${renderType(field.type)},`), `${indent}})${suffix}`];
 }
 
+function luauType(type) {
+	switch (type.kind) {
+		case "Boolean":
+			return "boolean";
+		case "String":
+			return "string";
+		case "Enum":
+			return type.values.map(luaString).join(" | ");
+		case "Optional": {
+			const inner = luauType(type.inner);
+			const union = type.inner.kind === "Optional" || (type.inner.kind === "Enum" && type.inner.values.length > 1);
+			return union ? `(${inner})?` : `${inner}?`;
+		}
+		case "Array":
+			return `{ ${luauType(type.element)} }`;
+		case "Map":
+			return `{ [${luauType(type.key)}]: ${luauType(type.value)} }`;
+		default:
+			return "number";
+	}
+}
+
+export function structTypeLines(prefix, fields, suffix = "") {
+	if (fields.length === 0) return [`${prefix}{}${suffix}`];
+	return [`${prefix}{`, ...fields.map((field) => `\t${field.name}: ${luauType(field.type)},`), `}${suffix}`];
+}
+
 function defaultValue(type) {
 	switch (type.kind) {
 		case "Boolean":

@@ -1,6 +1,6 @@
 # create-krf
 
-Creates a Roblox game project that uses [KRF](https://kevmp.github.io/KRF/) `kevmp/krf@0.1.0`.
+Creates a Roblox game project that uses [KRF](https://kevmp.github.io/KRF/) `kevmp/krf@0.2.0`.
 
 ```bash
 npm create krf@latest
@@ -13,8 +13,8 @@ npx create-krf@latest my-game --yes
 Requires Node.js 22.12 or newer. The project's npm scripts call the Roblox tools pinned in its
 `rokit.toml`: Rojo, Wally, StyLua, Selene and luau-lsp. Its `npm install` installs Rokit when it
 is missing, then those tools and the Wally packages. Its only npm dependency is `krf-tools`, which runs
-the project's [definition generators](https://kevmp.github.io/KRF/definition-generators) such as
-`npm run createAction`. It is pinned to the exact release this creator ships with; when the
+[`npm run dev`, `npm test` and `npm run test:studio`](https://kevmp.github.io/KRF/local-development) and the
+[definition generators](https://kevmp.github.io/KRF/definition-generators) such as `npm run createAction`. It is pinned to the exact release this creator ships with; when the
 creator itself was installed from a local `krf-tools` tarball, the project depends on that same
 tarball instead, so `npm install` works before the packages are published.
 
@@ -26,7 +26,7 @@ given as flags. With `--yes`, or without a terminal, missing values use the defa
 | Flag | Values | Default |
 | --- | --- | --- |
 | `[project-name]` | Lowercase letters, digits, `-`, `_`, `.` | Asked; required without a terminal |
-| `--mode` | `full`: code and world live in the repository, and `npm run build` makes the whole place. `hybrid`: only code and packages live in the repository; you build the world in Studio and keep the place file | `full` |
+| `--mode` | `full`: code and world live in the repository, and `npm run dev` builds the whole place. `hybrid`: only code and packages live in the repository; you build the world in Studio and keep the place file | `full` |
 | `--ci` / `--no-ci` | A GitHub Actions workflow that checks and builds on every push and pull request | `--ci` |
 | `--no-git` | Skip `git init`, which otherwise runs unless the target is already inside a repository | |
 | `-y`, `--yes` | Use defaults for every missing value; never prompt | |

@@ -1,4 +1,4 @@
-import { DEFINITION_SCRIPTS, KRF_RUNTIME } from "krf-tools";
+import { DEFINITION_SCRIPTS, KRF_RUNTIME, TEST_PACKAGES } from "krf-tools";
 
 import { ROBLOX_DEFINITIONS_URL, TOOLCHAIN, WALLY_REGISTRY } from "./compatibility.js";
 import { TOOLS_DEPENDENCY } from "./tooling.js";
@@ -11,13 +11,17 @@ const DEFINITIONS_FILE = "build/globalTypes.d.luau";
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 export function projectScripts(config) {
-	const buildProject = config.options.mode === "hybrid" ? HYBRID_START_PROJECT_FILE : ROJO_PROJECT_FILE;
+	const build =
+		config.options.mode === "hybrid" ? `rojo build ${HYBRID_START_PROJECT_FILE} --output build/${config.name}.rbxl` : `rojo build ${ROJO_PROJECT_FILE} --output ${config.name}.rbxl`;
 	const sourcemap = `rojo sourcemap ${ROJO_PROJECT_FILE} --output sourcemap.json`;
 	return {
 		postinstall: "node scripts/setup.mjs",
-		build: `rojo build ${buildProject} --output ${config.name}.rbxl`,
-		format: "stylua src",
-		check: "npm run format && selene src && npm run typecheck",
+		dev: "krf-tools dev",
+		build,
+		test: "krf-tools test",
+		"test:studio": "krf-tools test-studio",
+		format: "stylua src tests",
+		check: "stylua --check src tests && selene src tests && npm run typecheck",
 		typecheck: [
 			sourcemap,
 			`curl -sSfL --create-dirs -o ${DEFINITIONS_FILE} ${ROBLOX_DEFINITIONS_URL}`,
@@ -130,6 +134,9 @@ export function wallyManifest(config) {
 		"",
 		"[dependencies]",
 		`KRF = "${KRF_RUNTIME.package}@=${KRF_RUNTIME.version}"`,
+		"",
+		"[dev-dependencies]",
+		...Object.entries(TEST_PACKAGES).map(([alias, dependency]) => `${alias} = "${dependency}"`),
 		"",
 	].join("\n");
 }

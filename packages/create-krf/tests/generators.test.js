@@ -208,12 +208,16 @@ test("request parameters get schemas, and input policies get producers that retu
 		`local Guard: KRF.ActionInputPolicies = {
 	Guard = {
 		activation = "WhileDown",
-		startParameters = function(_context: KRF.ActionInputContext): { [string]: any }
+		startParameters = function(_context: KRF.ActionInputContext): {
+			Element: "Fire" | "Ice",
+		}
 			return {
 				Element = "Fire",
 			}
 		end,
-		stopParameters = function(_context: KRF.ActionInputContext): { [string]: any }
+		stopParameters = function(_context: KRF.ActionInputContext): {
+			Direction: { number },
+		}
 			return {
 				Direction = {},
 			}
@@ -227,7 +231,7 @@ return Guard
 
 	const oneShot = await generate(root, ["action", "--name", "Bolt", "--requestable", "--start-field", "Target:Optional(U32)", "--yes"]);
 	assert.equal(oneShot.code, 0, oneShot.stderr);
-	assert.match(readTree(root)[`${POLICIES}/Bolt.luau`], /\tBolt = \{\n\t\tstartParameters = function\(_context: KRF\.ActionInputContext\): \{ \[string\]: any \}\n\t\t\treturn \{\}\n\t\tend,\n\t\},/);
+	assert.match(readTree(root)[`${POLICIES}/Bolt.luau`], /\tBolt = \{\n\t\tstartParameters = function\(_context: KRF\.ActionInputContext\): \{\n\t\t\tTarget: number\?,\n\t\t\}\n\t\t\treturn \{\}\n\t\tend,\n\t\},/);
 });
 
 test("an Action whose request another module already declares gets a warning instead of a second declaration", async (t) => {
@@ -515,18 +519,26 @@ test("the Tag, Resource and replication domain wizards ask for each field and wr
 			"name (module and file name, such as Fireball)": "ComboState",
 			"id (blank: ComboState; a namespace such as Combat.ComboState is allowed)": "",
 			"audience (which players receive the domain)": "All",
-			"state field name (replicated state; blank to finish)": ["Count", ""],
+			"state field name (replicated state; blank to finish)": ["Count", "Bonus", ""],
 			"state.Count type": "Array",
-			"state.Count item type": "Enum",
-			"state.Count item values (allowed names, comma separated)": "Fire, Ice",
-			"state.Count maxLength (most items allowed)": "4",
+			"state.Count maxLength (most items the list holds)": "4",
+			"state.Count[] type (each item in state.Count)": "Array",
+			"state.Count[] maxLength (most items the list holds)": "2",
+			"state.Count[][] type (each item in state.Count[])": "Enum",
+			"state.Count[][] values (allowed names, comma separated)": "Fire, Ice",
 			"state.Count optional (the field can be left out)": false,
+			"state.Bonus type": "Map",
+			"state.Bonus maxEntries (most entries the lookup table holds)": "2",
+			"state.Bonus[key] type (each key in state.Bonus)": "String",
+			"state.Bonus[key] maxBytes (longest text allowed, in bytes)": "8",
+			"state.Bonus[value] type (each value in state.Bonus)": "Boolean",
+			"state.Bonus optional (the field can be left out)": false,
 			"events ID (a replicated event such as Finisher; blank to finish)": ["Finisher", ""],
 			"events.Finisher.payload field name (data the event carries; blank to finish)": ["Damage", ""],
 			"events.Finisher.payload.Damage type": "U16",
 			"events.Finisher.payload.Damage optional (the field can be left out)": false,
 		},
-		["--name", "ComboState", "--audience", "All", "--state-field", "Count:Array(Enum(Fire|Ice),4)", "--event", "Finisher(Damage:U16)"],
+		["--name", "ComboState", "--audience", "All", "--state-field", "Count:Array(Array(Enum(Fire|Ice),2),4)", "--state-field", "Bonus:Map(String(8),Boolean,2)", "--event", "Finisher(Damage:U16)"],
 	);
 });
 

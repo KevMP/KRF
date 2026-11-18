@@ -142,6 +142,15 @@ async function main() {
 		const result = await runStudio(studio, place, project);
 		console.log(`${result.ok ? "PASS" : "FAIL"} ${scenario}: ${result.detail}`);
 		if (!result.ok) failures.push(scenario);
+
+		if (scenario === "starter") {
+			for (const script of [["test"], ["run", "test:studio"]]) {
+				const workflow = run("npm", [...script, "--", "--studio-path", studio], project, { allowFailure: true });
+				const ok = workflow.status === 0;
+				console.log(`${ok ? "PASS" : "FAIL"} npm ${script.join(" ")}: ${`${workflow.stdout}${workflow.stderr}`.trim().split(/\r?\n/).at(-1)}`);
+				if (!ok) failures.push(`npm ${script.join(" ")}`);
+			}
+		}
 	}
 
 	if (failures.length > 0) {
