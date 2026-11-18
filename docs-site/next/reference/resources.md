@@ -1,15 +1,18 @@
 ---
 title: Resources
-description: Per-Actor meters such as stamina, mana, ammo, cooldowns and charges.
+sidebar_position: 1
+description: Give Actors meters such as stamina, mana, ammo, cooldowns and charges, and read them on clients.
 ---
 
 # Resources
 
-A Resource is a meter an Actor owns: a current value that stays between a minimum and a maximum, and can regenerate over time. Stamina, mana, ammunition, a dash cooldown and ability charges are all Resources.
+When a character needs a meter that gets spent and refilled, make it a Resource. Stamina, mana, ammunition, a dash cooldown and ability charges are all Resources. Each one keeps a current value between a minimum and a maximum, and it can regenerate on its own.
 
-The server owns every Resource. Game code changes values through the Actor's `ResourceController`, Actions pay for themselves with declarative `costs`, and clients read values through a read-only `ResourcesView`.
+The server owns every Resource. An Action pays for itself by declaring `costs`, other server code changes values through the Actor's `ResourceController`, and clients only read values through a `ResourcesView`. The examples on this page assume a project created with `create-krf`. For exact signatures and every failure reason, see the [Resources API](./resources-api).
 
-## Choose the right system
+## When a value should be a Resource
+
+A Resource fits a value that goes down when used and comes back over time or through play. Other kinds of values have their own systems:
 
 | You need | Use |
 | --- | --- |
@@ -19,19 +22,15 @@ The server owns every Resource. Game code changes values through the Actor's `Re
 | A temporary or permanent status, like Stunned or Blocking | A [Tag](/api/Tags/tag-controller) |
 | Other gameplay state clients must see, like a quest stage | A [replication domain](/Networking/replication-domains) |
 
-A Resource's current value is never a Property. Properties can supply its bounds and regeneration rate, but the current value belongs to the Resource.
+A Resource's current value is never a Property. A Property can set a Resource's maximum or its regeneration rate, while the current value stays with the Resource.
 
 ## How a Resource works
 
-1. **Define** it once in your game's Resource catalog. A definition describes the meter; it holds no per-Actor value.
-2. **Assign** it to an Actor. The Actor gets its own current value, resolved bounds and regeneration rate.
-3. **Change** the value on the server: an Action pays its `costs`, or game code calls `ResourceController` methods.
-4. **Regenerate** automatically while the Actor is enabled, if the definition has a rate.
-5. **Read** it on clients through `ResourcesView`, if the definition is `ClientVisible`.
+You define a Resource once, in your game's Resource catalog, and the definition holds no per-Actor value. KRF then assigns the Resource to Actors, and each Actor gets its own current value, bounds and regeneration rate. From then on the server changes that value: an Action pays its `costs`, or game code calls the Actor's `ResourceController`. If the definition has a rate, the value regenerates while the Actor is enabled. If the definition is `ClientVisible`, every client that can see the Actor reads it through a `ResourcesView`.
 
 ## Define a Resource
 
-Each definition is a module in your game's Resource catalog. A project created with `create-krf` loads every module under `src/server/Resources` and passes them to `Server.Init` as `resources`. Once the `MaxStamina` and `StaminaRegen` Properties exist, create the module with the generator:
+Each definition is a module in your game's Resource catalog. A `create-krf` project loads every module under `src/server/Resources` and passes them to `Server.Init` as `resources`. Once the `MaxStamina` and `StaminaRegen` Properties exist, the generator writes the module for you:
 
 ```bash
 npm run createResource -- --name Stamina --max MaxStamina --regen StaminaRegen --visibility ClientVisible
@@ -59,32 +58,24 @@ return Stamina
 | `id` | required | Unique, non-empty name used by every API, such as `"Stamina"` |
 | `max` | required | Upper bound, as a [numeric source](#numeric-sources) |
 | `min` | `{ value = 0 }` | Lower bound, as a numeric source |
-| `initialValue` | the resolved maximum | Value on assignment. Must sit within the default bounds |
+| `initialValue` | the resolved maximum | Value on assignment. It must sit within the default bounds |
 | `visibility` | required | `"ClientVisible"` to replicate to clients, or `"ServerOnly"` |
 | `autoAssign` | `false` | Assign to every Actor when it registers |
-| `regen` | none | `{ rate = source }`, in units per second. The default rate must not be negative |
+| `regen` | none | `{ rate = source }`, in units per second. The default rate can't be negative |
 
-Startup validates every definition before KRF accepts any of them. A bad definition makes `Server.Init` return a failure with `system = "Resource"` and one of the [definition failure reasons](#definition-failures).
+`Server.Init` checks every definition before it accepts any of them. If one is invalid, it returns a failure with `system = "Resource"` and a reason from the [definition failures](./resources-api#definition-failures) list. KRF ignores fields it doesn't recognize, so a misspelled field such as `autoAsign` fails silently.
 
 ### Numeric sources
 
-`min`, `max` and `regen.rate` each take one numeric source:
-
-| Source | Example | Use it when |
-| --- | --- | --- |
-| Fixed | `{ value = 100 }` | Every Actor uses the same number |
-| Property | `{ propertyName = "MaxStamina" }` | The number differs per Actor or changes during play |
-
-A Property source must name a Property registered in your Property catalog. Its `defaultBaseValue` is the starting number; Resource definitions do not take their own default.
+`min`, `max` and `regen.rate` each take one numeric source. Use a fixed number, such as `{ value = 100 }`, when every Actor shares it. Use a Property, such as `{ propertyName = "MaxStamina" }`, when the number differs per Actor or changes during play. The Property must be registered in your Property catalog, and its `defaultBaseValue` supplies the starting number. A Resource definition never takes its own default.
 
 ## Bounds and regeneration from Properties
 
-A Property source follows the Actor's resolved Property value, including modifiers from active Tags. For example, a `Winded` Tag that multiplies `StaminaRegen` by 0.5 halves the regeneration of every Actor that has it, without any Resource code.
+A Property source follows the Actor's resolved Property value, so modifiers from active Tags change the Resource too. A `Winded` Tag that halves `StaminaRegen` halves the regeneration of every Actor that has the Tag, and the Resource needs no code for it.
 
-- **Assigning the Resource gives the Actor its Properties.** If the Actor lacks a Property the Resource needs, KRF assigns it at its registered default. An existing Actor value is kept.
-- **Changes apply immediately.** When a Property changes, KRF resolves the new bounds and rate before any listener runs, and fires one Resource change for the result.
-- **The current value is clamped, never refilled.** Lowering the maximum pulls the current value down to it. Raising the maximum leaves the current value where it was; restore it yourself if the design calls for a refill.
-- **Invalid results are ignored.** If a Property change would make the maximum smaller than the minimum, or any value non-finite, the Resource keeps its last valid bounds and rate.
+When KRF assigns a Resource that reads a Property the Actor doesn't have yet, it gives the Actor that Property at its registered default. An existing Actor value is kept. When a Property later changes, KRF resolves the new bounds and rate before any listener runs, then fires one Resource change for the result.
+
+Bounds clamp the current value but never fill it. Lowering the maximum pulls the current value down with it, while raising the maximum leaves the current value where it was, so call `Restore` or `SetCurrent` if your design wants a refill. If a Property change would put the maximum below the minimum, or make any value non-finite, the Resource keeps its last valid bounds and rate.
 
 To give one Actor different numbers, set its Properties when you register it:
 
@@ -96,22 +87,19 @@ local actor: KRF.Actor?, reason: string? = KRF.ActorRuntime.RegisterActor(bossMo
 
 ## Assign Resources to Actors
 
-An Actor has only the Resources assigned to it. There are two ways to assign one:
+An Actor has only the Resources assigned to it. Set `autoAssign = true` for meters every character has, and KRF assigns them at registration. For a Resource only some Actors earn, such as mana after an unlock, call `ResourceController:AddResource(id, initialValue?)` at that moment. The optional value replaces the definition's `initialValue` and is clamped to the Actor's bounds.
 
-- **`autoAssign = true`** assigns the Resource to every Actor at registration. Use it for meters every character has.
-- **`ResourceController:AddResource(id, initialValue?)`** assigns it to one Actor later, for example when a player unlocks mana. The optional value replaces the definition's `initialValue` and is clamped to the Actor's bounds.
-
-The starting value is, in order of priority: the value passed to `AddResource`, the definition's `initialValue`, then the Actor's resolved maximum.
-
-A Resource stays assigned for the Actor's lifetime; there is no way to unassign one. To make it unusable, keep it at its minimum or gate the Actions that use it with a Tag.
+A newly assigned Resource starts at the value passed to `AddResource` if there is one, otherwise at the definition's `initialValue`, otherwise at the Actor's resolved maximum. It stays assigned for the Actor's lifetime, because KRF has no way to unassign a Resource. To take one away in practice, keep it at its minimum or block the Actions that use it with a Tag.
 
 ## Change values on the server
 
-Get the Actor's controller, then call the method that matches the intent:
+Get the Actor's controller first:
 
 ```lua
 local resources: KRF.ResourceController? = actor:GetController("ResourceController") :: KRF.ResourceController?
 ```
+
+Then pick the method that matches what the game is doing:
 
 | Intent | Method | At a bound |
 | --- | --- | --- |
@@ -121,32 +109,28 @@ local resources: KRF.ResourceController? = actor:GetController("ResourceControll
 | Remove up to an amount | `Drain(id, amount)` | Stops at the minimum and still succeeds |
 | Set an exact value | `SetCurrent(id, value)` | Clamps into the bounds |
 
-Spending measures what sits above the minimum, not above zero: with a minimum of 10 and a current value of 30, at most 20 can be spent.
-
-Every method returns `true` on success, or `false` and a reason. A change that leaves the value where it was succeeds without firing an event.
+Spending counts only what sits above the minimum. With a minimum of 10 and a current value of 30, an Actor can spend at most 20. Every method returns `true` on success, or `false` and a reason, and a call that leaves the value unchanged succeeds without firing an event.
 
 ### Pay for Actions with `costs`, not `Spend`
 
-When an Action uses a Resource, declare it on the Action. KRF checks every cost and pays them together when the Action is accepted:
+When an Action uses a Resource, declare the price on the Action. KRF checks every cost and pays them all at once when it accepts the Action:
 
 ```lua
 costs = { Stamina = 20 },
 resourceRequirements = { Stamina = { minPercent = 0.5 } },
 ```
 
-`costs` are paid once, on acceptance, and are never refunded automatically. `resourceRequirements` only checks a condition and spends nothing. Calling `Spend` before requesting an Action, or inside its `onCanStart`, can charge for an Action that is then rejected. See [Action Resources](/Action/action-resources) for percentages, multipliers and the rejection reasons.
+KRF pays `costs` once, on acceptance, and never refunds them on its own. `resourceRequirements` checks a condition and spends nothing. If you call `Spend` before requesting an Action, or inside its `onCanStart`, the player can be charged for an Action that KRF then rejects. [Action Resources](/Action/action-resources) covers percentage costs, multipliers and rejection reasons.
 
-Call `ResourceController` methods for changes that are not an Action's price: a pickup that restores mana, a trap that drains stamina, a refund your design grants.
+Use `ResourceController` methods for changes that aren't an Action's price, such as a pickup that restores mana, a trap that drains stamina, or a refund your design grants.
 
 ## Regeneration
 
-A Resource with `regen` advances by its rate every 0.1 seconds while the Actor is enabled, and stops at its maximum. The rate is read fresh each step, so a Tag that changes the rate takes effect on the next step.
-
-A rate of zero or less does nothing; Resources never decay on their own. To drain a meter over time, call `Drain` from your own loop.
+A Resource with `regen` gains its rate every 0.1 seconds while the Actor is enabled, and stops at its maximum. KRF reads the rate fresh on each step, so a Tag that changes the rate takes effect on the next one. A rate of zero or less does nothing; Resources never decay on their own. To drain a meter over time, call `Drain` from your own loop.
 
 ## React to changes on the server
 
-`OnResourceChanged` fires after a Resource's current value or bounds change, with the old and new values:
+`OnResourceChanged` fires after a Resource's current value or bounds change, and its payload carries the old and new values:
 
 ```lua
 resources.OnResourceChanged:Connect(function(change: KRF.ResourceChange)
@@ -156,27 +140,22 @@ resources.OnResourceChanged:Connect(function(change: KRF.ResourceChange)
 end)
 ```
 
-- It fires on every regeneration step that changes the value, up to ten times a second per Resource. Keep listeners cheap.
-- A change to the regeneration rate alone fires no server event.
-- When one operation changes several Resources, such as an Action paying two costs, each Resource fires once, in Resource ID order, after all of them have changed.
+The event fires on every regeneration step that changes the value, so a regenerating Resource can fire it up to ten times a second. Keep listeners cheap. A change to the regeneration rate alone fires nothing. When one operation changes several Resources, such as an Action paying two costs, KRF finishes all the changes first and then fires once per Resource, in Resource ID order.
 
 `OnResourceAdded` fires once when a Resource is assigned, with the Actor and the Resource ID.
 
 ## Read Resources on clients
 
-A `ClientVisible` Resource replicates to every client that can see its Actor, not only to the Actor's own player. Keep a value `ServerOnly` if other players must not see it. `ServerOnly` Resources are never sent to clients, and their IDs are not either.
+KRF sends a `ClientVisible` Resource to every client that can see its Actor, which includes other players. Make a value `ServerOnly` if other players shouldn't see it; KRF never sends `ServerOnly` Resources or their IDs to clients.
 
-Read values through the Actor's view:
+Clients read values through the Actor's view:
 
 ```lua
 local resources: KRF.ResourcesView = actorView:GetResources()
 local stamina: KRF.ResourceSnapshot? = resources:GetResource("Stamina")
 ```
 
-Two things differ from the server:
-
-- **`GetCurrent` is an estimate.** The server does not send regeneration steps. The client works out the current value from the last value it received, the time since then and the rate. Read it every frame for a smooth bar.
-- **`OnResourceChanged` fires only when the server sends a new value**: a spend, restore, drain, assignment, or a change to the bounds or rate. It does not fire while the value regenerates. Use it for one-off reactions, such as flashing a bar when it takes a hit, and per-frame reads for display.
+The server doesn't send a message for each regeneration step. The client works out the current value from the last value it received, the time since then and the rate, and `GetCurrent` returns that estimate. Read it every frame for a smooth bar. The client's `OnResourceChanged` fires only when the server sends a new value: after a spend, restore, drain or assignment, or when the bounds or rate change. It stays silent while the value regenerates, which makes it right for one-off reactions such as flashing a bar when it takes a hit, and wrong as the only trigger for redrawing a bar.
 
 This bar assumes `actorView` is the local character's ActorView and `fill` is the bar's inner Frame:
 
@@ -192,11 +171,11 @@ RunService.RenderStepped:Connect(function()
 end)
 ```
 
-Clients cannot change Resources. A client asks the server to do something through an Action request or a Command, and the server decides.
+Clients can't change Resources. To change one, a client asks the server through an Action request or a Command, and the server decides.
 
 ## Cooldowns and charges
 
-A cooldown is a Resource that an Action requires to be full, spends in full, and regenerates:
+A cooldown is a Resource that an Action requires to be full, spends in full, and then regenerates:
 
 ```lua title="src/server/Resources/DashCooldown.luau"
 --!strict
@@ -215,9 +194,9 @@ local DashCooldown: KRF.ResourceDefinition = {
 return DashCooldown
 ```
 
-The dash then declares `resourceRequirements = { DashCooldown = { minPercent = 1 } }` and `costs = { DashCooldown = 1 }`. It can be used again three seconds later, and the client can draw the cooldown from the Resource's estimate.
+The dash declares `resourceRequirements = { DashCooldown = { minPercent = 1 } }` and `costs = { DashCooldown = 1 }`. The player can dash again three seconds later, and the client can draw the cooldown from the Resource's estimate.
 
-Charges work the same way with a larger maximum. With `max = { value = 3 }`, a cost of 1 and a rate of `1 / 5`, the Action holds up to three uses and earns one back every five seconds.
+Charges use the same shape with a larger maximum. With `max = { value = 3 }`, a cost of 1 and a rate of `1 / 5`, the Action holds up to three uses and earns one back every five seconds.
 
 ## Common mistakes
 
@@ -228,192 +207,4 @@ Charges work the same way with a larger maximum. With `max = { value = 3 }`, a c
 | Writing a custom controller or RemoteEvent to replicate a meter | Make it `ClientVisible` and read `ResourcesView` |
 | Redrawing a HUD only from the client's `OnResourceChanged` | Read the view every frame; the event skips regeneration |
 | Expecting a higher maximum to refill the meter | Call `Restore` or `SetCurrent` when the design calls for it |
-| Assuming `ClientVisible` is private to the owner | Every client that sees the Actor receives it; use `ServerOnly` for secrets |
-
-## API
-
-### `ResourceDefinition` {#resource-definition}
-
-The table each catalog module returns. See [Define a Resource](#define-a-resource) for its fields.
-
-### `ResourceController` {#resource-controller}
-
-The server-side owner of one Actor's Resources. Every Actor has one; get it with `actor:GetController("ResourceController")`.
-
-| Kind | Members |
-| --- | --- |
-| Methods | [`AddResource`](#add-resource) · [`HasResource`](#has-resource) · [`GetCurrent`](#get-current) · [`GetMin`](#get-min) · [`GetMax`](#get-max) · [`CanSpend`](#can-spend) · [`Spend`](#spend) · [`Restore`](#restore) · [`Drain`](#drain) · [`SetCurrent`](#set-current) |
-| Events | [`OnResourceAdded`](#on-resource-added) · [`OnResourceChanged`](#on-resource-changed) |
-| Infrastructure | [`Step`](#step) · [`Destroy`](#destroy) |
-
-#### `AddResource(resourceId: string, initialValueOverride: number?) -> (boolean, string?)` {#add-resource}
-
-Assigns a registered Resource to the Actor. The override, when given, must be a finite number and is clamped to the Actor's bounds.
-
-| Failure | Cause |
-| --- | --- |
-| `UnknownResourceId:<id>` | No definition has this ID |
-| `ResourceAlreadyAssigned` | The Actor already has it |
-| `InvalidResourceOverrideValue` | The override is not a finite number |
-| `ResourcePropertyNonFinite:<property>` | A Property source resolved to a non-finite value |
-| `ResourcePropertySeedFailed:<property>:<reason>`, `ResourcePropertyUnresolved:<property>` | The Actor's Property could not be assigned or resolved |
-| `ResourceResolvedMaxLessThanResolvedMin` | The Actor's resolved maximum is below its minimum |
-| `ResourceControllerDestroyed` | The Actor has been unregistered |
-
-#### `HasResource(resourceId: string) -> boolean` {#has-resource}
-
-Whether the Resource is assigned to this Actor.
-
-#### `GetCurrent(resourceId: string) -> number?` {#get-current}
-
-The current value, or `nil` if the Resource is not assigned.
-
-#### `GetMin(resourceId: string) -> number?` {#get-min}
-
-The resolved minimum, or `nil` if the Resource is not assigned.
-
-#### `GetMax(resourceId: string) -> number?` {#get-max}
-
-The resolved maximum, or `nil` if the Resource is not assigned.
-
-#### `CanSpend(resourceId: string, amount: number) -> (boolean, string?)` {#can-spend}
-
-Whether `Spend` would succeed with this amount. Changes nothing.
-
-| Failure | Cause |
-| --- | --- |
-| `ResourceNotAssigned` | The Actor does not have the Resource |
-| `InvalidResourceAmount` | The amount is negative or not a finite number |
-| `InsufficientResourceValue` | Less than `amount` sits above the minimum |
-
-#### `Spend(resourceId: string, amount: number) -> (boolean, string?)` {#spend}
-
-Removes exactly `amount`, or nothing. Fails with the same reasons as `CanSpend`.
-
-#### `Restore(resourceId: string, amount: number) -> (boolean, string?)` {#restore}
-
-Adds `amount`, stopping at the maximum. Fails with `ResourceNotAssigned` or `InvalidResourceAmount`.
-
-#### `Drain(resourceId: string, amount: number) -> (boolean, string?)` {#drain}
-
-Removes up to `amount`, stopping at the minimum. Fails with `ResourceNotAssigned` or `InvalidResourceAmount`.
-
-#### `SetCurrent(resourceId: string, value: number) -> (boolean, string?)` {#set-current}
-
-Sets the current value, clamped into the bounds. Fails with `ResourceNotAssigned`, or `InvalidResourceValue` if the value is not a finite number.
-
-#### `OnResourceAdded: Event<(Actor, string)>` {#on-resource-added}
-
-Fires after a Resource is assigned, with the Actor and the Resource ID.
-
-#### `OnResourceChanged: Event<(ResourceChange)>` {#on-resource-changed}
-
-Fires after a Resource's current value, minimum or maximum changes. The payload is a `ResourceChange`:
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `actor` | `Actor` | The Actor that owns the Resource |
-| `resourceId` | `string` | Which Resource changed |
-| `currentOldValue`, `currentNewValue` | `number` | Current value before and after |
-| `minOldValue`, `minNewValue` | `number` | Resolved minimum before and after |
-| `maxOldValue`, `maxNewValue` | `number` | Resolved maximum before and after |
-
-#### `Step(deltaTime: number) -> ()` {#step}
-
-Infrastructure API. Advances this Actor's regeneration by `deltaTime` seconds. KRF already steps every enabled Actor automatically, so calling this adds extra regeneration.
-
-#### `Destroy() -> ()` {#destroy}
-
-Infrastructure API. Removes all Resource state and disconnects listeners. `ActorRuntime.UnregisterActor` calls it; game code should unregister the Actor instead.
-
-### `ResourcesView` {#resources-view}
-
-The client-side, read-only view of one Actor's `ClientVisible` Resources. Get it with `actorView:GetResources()`; it exists even when the Actor has no visible Resources.
-
-| Kind | Members |
-| --- | --- |
-| Methods | [`HasResource`](#view-has-resource) · [`GetResource`](#view-get-resource) · [`GetCurrent`](#view-get-current) · [`GetMin`](#view-get-min) · [`GetMax`](#view-get-max) · [`GetRegenRate`](#view-get-regen-rate) · [`GetAssignedResources`](#view-get-assigned-resources) |
-| Events | [`OnResourceChanged`](#view-on-resource-changed) |
-
-#### `HasResource(resourceId: string) -> boolean` {#view-has-resource}
-
-Whether the Actor has this visible Resource. Always `false` for `ServerOnly` Resources.
-
-#### `GetResource(resourceId: string) -> ResourceSnapshot?` {#view-get-resource}
-
-A frozen snapshot of the Resource right now, or `nil`. The snapshot does not update; call again for a new estimate.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `resourceId` | `string` | The Resource ID |
-| `current` | `number` | Estimated current value at the time of the call |
-| `min`, `max` | `number` | Resolved bounds |
-| `regenRate` | `number?` | Resolved rate per second, or `nil` without `regen` |
-
-#### `GetCurrent(resourceId: string) -> number?` {#view-get-current}
-
-The estimated current value, including regeneration since the last server update.
-
-#### `GetMin(resourceId: string) -> number?` {#view-get-min}
-
-The resolved minimum.
-
-#### `GetMax(resourceId: string) -> number?` {#view-get-max}
-
-The resolved maximum.
-
-#### `GetRegenRate(resourceId: string) -> number?` {#view-get-regen-rate}
-
-The resolved regeneration rate, or `nil` for a Resource without `regen`.
-
-#### `GetAssignedResources() -> { ResourceSnapshot }` {#view-get-assigned-resources}
-
-Snapshots of every visible Resource the Actor has, sorted by ID and estimated at the same moment.
-
-#### `OnResourceChanged: Event<(ResourceViewChange)>` {#view-on-resource-changed}
-
-Fires when the server sends new state for a Resource. It does not fire for regeneration.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `resourceId` | `string` | Which Resource changed |
-| `previous` | `ResourceSnapshot?` | State before, or `nil` if newly assigned |
-| `current` | `ResourceSnapshot?` | State after |
-| `source` | `"Commit" \| "Baseline"` | `"Commit"` for a server change; `"Baseline"` when the client receives the Actor's full state, such as after reconnecting |
-
-### `ResourceRegistry` {#resource-registry}
-
-Read-only lookup of the loaded Resource definitions. `Server.Init` loads it from your catalog.
-
-| Member | Returns |
-| --- | --- |
-| `Get(resourceId: string)` | `LoadedResourceDefinition?`: the definition with defaults filled in |
-| `GetAll()` | `{ LoadedResourceDefinition }` in catalog order |
-| `GetAllById()` | `{ [string]: LoadedResourceDefinition }` |
-| `IsLoaded()` | `boolean` |
-
-### Definition failures {#definition-failures}
-
-`Server.Init` reports these with `system = "Resource"`. `<Source>` stands for `ResourceMax`, `ResourceMin` or `ResourceRegenRate`.
-
-| Reason | Cause |
-| --- | --- |
-| `ResourceDefinitionMustBeTable` | An entry in the catalog is not a table |
-| `ResourceIdMissing`, `ResourceIdMustBeString`, `ResourceIdCannotBeEmpty` | `id` is absent, not a string, or `""` |
-| `ResourceIdAlreadyRegistered` | Two definitions share an `id` |
-| `ResourceVisibilityMissing`, `ResourceVisibilityMustBeString`, `ResourceVisibilityInvalid` | `visibility` is absent or not `"ClientVisible"`/`"ServerOnly"` |
-| `ResourceInitialValueMustBeNumber`, `ResourceInitialValueMustBeFiniteNumber` | `initialValue` is not a finite number |
-| `ResourceAutoAssignMustBeBoolean` | `autoAssign` is not a boolean |
-| `ResourceMaxMissing` | `max` is absent |
-| `<Source>MustBeTable` | A numeric source is not a table |
-| `<Source>MustProvideValueOrPropertyName`, `<Source>CannotUseValueAndPropertyNameTogether` | A source needs exactly one of `value` and `propertyName` |
-| `<Source>ValueMustBeNumber`, `<Source>ValueMustBeFiniteNumber` | `value` is not a finite number |
-| `<Source>PropertyNameMustBeString`, `<Source>PropertyNameCannotBeEmpty` | `propertyName` is not a non-empty string |
-| `<Source>DefaultBaseValueUnsupported` | A source has `defaultBaseValue`; put it on the Property definition |
-| `UnknownPropertyId:<property>` | A source names an unregistered Property |
-| `ResourceRegenMustBeTable`, `ResourceRegenRateMissing` | `regen` is not `{ rate = source }` |
-| `ResourceRegenRateCannotBeNegative` | The default rate is below zero |
-| `ResourceDefaultMaxLessThanDefaultMin` | With default Property values, the maximum is below the minimum |
-| `ResourceInitialValueLessThanDefaultMin`, `ResourceInitialValueGreaterThanDefaultMax` | `initialValue` is outside the default bounds |
-
-Unknown fields in a definition are ignored.
+| Treating `ClientVisible` as private to the owner | Every client that sees the Actor receives it; use `ServerOnly` for secrets |

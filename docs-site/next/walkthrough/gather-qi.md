@@ -7,9 +7,9 @@ description: Give every cultivator a Qi meter that fills over time, shows on scr
 
 # Gather Qi
 
-Every cultivator in our game gathers Qi, the energy later chapters spend on techniques and breakthroughs. In this chapter you give every player a Qi meter that fills slowly, draw it on screen, and add a spirit spring that refills it.
+Your cultivators can spawn and walk around, but they have nothing to cultivate yet. In this chapter you give each of them Qi, the energy later chapters spend on techniques and breakthroughs. By the end, every player has a Qi bar that fills slowly on its own, and a glowing spirit spring tops it up when they step in.
 
-Along the way you'll learn how KRF stores per-player meters as **Resources**, how **Properties** can drive them, and how the server and clients each work with them.
+KRF keeps per-player meters like Qi as Resources, and you'll build Qi on top of two Properties so later chapters can raise its limits.
 
 ## Before you start
 
@@ -19,11 +19,11 @@ This chapter continues the game from the earlier chapters. You need:
 - The starter files unchanged, apart from what earlier chapters asked you to change.
 - `npm run dev` working: Roblox Studio opens the place and you can press Play.
 
-You should also know that each player's character becomes an **Actor** when it spawns. The starter's `src/server/PlayerActors.luau` registers it. Every per-player value in this chapter belongs to that Actor.
+You should also know that each player's character becomes an Actor when it spawns; the starter's `src/server/PlayerActors.luau` registers it. Every per-player value in this chapter belongs to that Actor.
 
 ## What Qi is
 
-Qi has three numbers: how much a cultivator has now, how much they can hold, and how fast it comes back. KRF splits these between two systems:
+Qi comes down to three numbers: how much a cultivator has now, how much they can hold, and how fast it comes back. KRF splits these between two systems:
 
 | Number | KRF system | Why |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ Qi has three numbers: how much a cultivator has now, how much they can hold, and
 | Maximum Qi | A Property named `MaxQi` | Breakthroughs will raise it in a later chapter |
 | Qi per second | A Property named `QiRegen` | Meditation will boost it in a later chapter |
 
-A Resource is a meter: a current value kept between a minimum and a maximum. A Property is a number other systems can modify. Making the maximum and the rate Properties now means later chapters can change them without touching Qi itself.
+A Resource is a meter, a current value kept between a minimum and a maximum. A Property is a number that other systems can modify. If the maximum and the rate are Properties now, later chapters can change them without touching Qi itself.
 
 ## Create the Properties
 
@@ -58,7 +58,7 @@ local MaxQi: KRF.PropertyDefinition = {
 return MaxQi
 ```
 
-`defaultBaseValue` is the number every Actor starts with. The generator mentions that these Properties are not auto-assigned. That's intended: the Qi Resource assigns them to every Actor that has Qi.
+`defaultBaseValue` is the number every Actor starts with. The generator will mention that these Properties aren't auto-assigned. You can ignore that, because the Qi Resource gives both Properties to every Actor that has Qi.
 
 ## Create the Qi Resource
 
@@ -84,27 +84,29 @@ local Qi: KRF.ResourceDefinition = {
 return Qi
 ```
 
-Line by line:
+| Line | What it does |
+| --- | --- |
+| `max = { propertyName = "MaxQi" }` | The maximum follows each Actor's `MaxQi`. A fixed maximum would be `{ value = 100 }` |
+| `initialValue = 0` | Cultivators start empty. Without this line they would start full |
+| `visibility = "ClientVisible"` | Clients can read Qi |
+| `autoAssign = true` | Every Actor gets Qi when it registers |
+| `regen = { rate = ... }` | Qi rises by `QiRegen` per second, up to the maximum |
 
-- **`max = { propertyName = "MaxQi" }`**: the maximum follows each Actor's `MaxQi`. A fixed maximum would be `{ value = 100 }`.
-- **`initialValue = 0`**: cultivators start empty. Without it they would start full.
-- **`visibility = "ClientVisible"`**: clients can read Qi. Every player can see every other cultivator's Qi, which suits a game where you can sense an opponent's strength. A secret value would be `"ServerOnly"`.
-- **`autoAssign = true`**: every Actor gets Qi when it registers.
-- **`regen`**: Qi rises by `QiRegen` per second, up to the maximum.
+The definition has no `min` line because a Resource's minimum defaults to 0.
 
-There is no minimum line. A Resource's minimum defaults to 0.
+`ClientVisible` sends Qi to every player, so each cultivator can see how much Qi the others carry. That suits a game where you sense an opponent's strength. A value only its owner should see would be `"ServerOnly"`.
 
-The starter loads every module in `src/server/Resources` and `src/server/Properties` at startup, so there is nothing to register by hand. The starter's own Energy meter stays as it is; a later chapter replaces it.
+The starter loads every module in `src/server/Resources` and `src/server/Properties` at startup, so you don't register anything by hand. Leave the starter's Energy meter alone for now; a later chapter replaces it.
 
 ### Checkpoint
 
-Run `npm run dev` and press Play. The game should start as before, with no errors in the Output window. You can't see Qi yet, but every character now has it and it is already filling.
+Run `npm run dev` and press Play. The game starts as before, with no errors in the Output window. You can't see Qi yet, but every character already has it and it's filling.
 
-If the Output window shows `KRF server startup failed (Resource: ...)`, the reason names the problem. For example, `UnknownPropertyId:MaxQi` means the `MaxQi` Property module is missing or misnamed.
+If the Output window shows `KRF server startup failed (Resource: ...)`, the text after the colon names the problem. `UnknownPropertyId:MaxQi`, for example, means the `MaxQi` Property module is missing or misnamed.
 
 ## Show Qi on screen
 
-Clients read an Actor's Resources through its **ActorView**, the client's read-only copy of the Actor. The starter's `LocalCharacter` module finds the view for your own character.
+Clients read an Actor's Resources through its ActorView, the client's read-only copy of the Actor. The starter's `LocalCharacter` module finds the view for your own character.
 
 Create `src/client/QiDisplay.luau`:
 
@@ -166,7 +168,7 @@ end
 return QiDisplay
 ```
 
-The bar reads Qi every frame. That's deliberate: the server doesn't send a message each time Qi regenerates. Instead, the client estimates the current value from the last value the server sent, the time since then and the regeneration rate. `GetResource` returns that estimate, so reading it every frame gives a smoothly filling bar.
+The bar reads Qi every frame because the server doesn't send a message each time Qi regenerates. The client estimates the current value from the last value the server sent, the time since then and the regeneration rate, and `GetResource` returns that estimate. Reading it every frame gives a bar that fills smoothly.
 
 Start the display after KRF starts on the client. In `src/client/Startup.client.luau`, require the module next to the others and call `Start` at the end:
 
@@ -183,9 +185,9 @@ Press Play. A blue bar appears above the Energy label and fills from `Qi 0/100` 
 
 ## Add a spirit spring
 
-Now give players a faster way to gather Qi: a glowing spring that restores 25 Qi when they step in, at most once every 5 seconds.
+Waiting 100 seconds for a full bar is slow, so give players a faster way to gather Qi. A glowing spring restores 25 Qi when a player steps in, at most once every 5 seconds.
 
-Restoring Qi is a server decision, so the spring is server code. It finds the Actor for the character that touched it, gets the Actor's `ResourceController`, and calls `Restore`.
+Only the server can change Qi, so the spring is server code. When something touches it, the spring looks up the Actor for that character, gets the Actor's `ResourceController` and calls `Restore`.
 
 Create `src/server/SpiritSpring.luau`:
 
@@ -249,14 +251,11 @@ end
 return SpiritSpring
 ```
 
-A few things to notice:
+`KRF.ActorRegistry.GetActorByModel` returns `nil` for anything that isn't an Actor, such as a loose part, so only cultivators gain Qi. For a cultivator, `actor:GetController("ResourceController")` returns the object that owns that Actor's Resources; each Actor has its own.
 
-- **`KRF.ActorRegistry.GetActorByModel`** returns `nil` for anything that isn't an Actor, such as a loose part, so only cultivators gain Qi.
-- **`actor:GetController("ResourceController")`** gets the object that owns this Actor's Resources. Each Actor has its own.
-- **`Restore`** adds Qi and stops at the maximum. A full cultivator can step in without error; nothing changes.
-- **`Restore` returns whether it worked, and why not.** It fails if the Actor has no Qi or the amount is invalid. The spring warns instead of failing silently.
+`Restore` adds Qi and stops at the maximum, so a cultivator who is already full can step in and nothing happens. It returns whether it worked and, if not, why. It fails only if the Actor has no Qi or the amount is invalid, and the spring warns in that case so a mistake doesn't go unnoticed.
 
-Why not make the spring an Action? Actions are abilities an Actor chooses to use, with their own costs and rules. The spring is the world giving Qi to whoever walks in, so calling the `ResourceController` directly is the right tool. When an ability spends Qi in a later chapter, it will declare the cost on the Action instead.
+The spring calls the `ResourceController` directly because it's the world handing out Qi to whoever walks in. Actions are for abilities a player chooses to use, and they carry their own costs and rules. When a technique spends Qi in a later chapter, the cost goes on the Action instead.
 
 Start the spring after KRF starts on the server. In `src/server/Startup.server.luau`:
 
@@ -273,7 +272,7 @@ Press Play and walk forward to the glowing pad. Each time you step in, the bar j
 
 ## Flash the bar when Qi arrives
 
-The bar reads Qi every frame, but some moments deserve a reaction: the spring's burst should make the bar flash. A per-frame read can't tell a burst from regeneration. The view's `OnResourceChanged` event can: it fires only when the server sends a new value, never for regeneration.
+A burst from the spring should look different from slow regeneration, so make the bar flash when it happens. A per-frame read can't tell the two apart, but the view's `OnResourceChanged` event can, because it fires only when the server sends a new value and never for regeneration.
 
 Add this at the end of `QiDisplay.Start`:
 
@@ -297,9 +296,9 @@ Add this at the end of `QiDisplay.Start`:
 	end)
 ```
 
-- **`LocalCharacter.Observe`** calls the function for each new character, including after a respawn. When a character goes away, KRF disconnects listeners on its old view, so there's nothing to clean up.
-- **`change.source ~= "Commit"`** ignores `"Baseline"` changes, which happen when the client receives the Actor's full state, for example after reconnecting. Those aren't events in the game.
-- **`before == nil`** is the moment Qi is first assigned, which isn't a burst either.
+`LocalCharacter.Observe` calls the function for each new character, including after a respawn. When a character goes away, KRF disconnects the listeners on its old view, so you have nothing to clean up.
+
+The checks at the top skip two kinds of change that aren't bursts. A `"Baseline"` change arrives when the client receives the Actor's full state, for example after reconnecting, so the code only reacts to `"Commit"`. A change with no `before` snapshot is Qi being assigned for the first time.
 
 ### Checkpoint
 
@@ -314,7 +313,7 @@ npm run check
 npm run test:studio
 ```
 
-`npm run check` checks formatting, lints and type-checks your code. `npm run test:studio` starts a server and two clients in Studio and confirms KRF starts and every player becomes an Actor. A mistake in a definition, such as a misspelled Property, fails here with the reason.
+`npm run check` checks formatting, lints and type-checks your code. `npm run test:studio` starts a server and two clients in Studio and confirms that KRF starts and every player becomes an Actor. A mistake in a definition, such as a misspelled Property, makes it fail with the reason.
 
 ## Exercise
 
@@ -336,20 +335,18 @@ Replace the `Restore` call in `visit`:
 local restored: boolean, reason: string? = resources:SetCurrent("Qi", resources:GetMax("Qi") or 0)
 ```
 
-`SetCurrent` clamps into the bounds, so the value can never go past the maximum. Keep using the Actor's maximum rather than writing 100, because later chapters raise `MaxQi`.
+`SetCurrent` clamps into the bounds, so the value can never go past the maximum. Read the Actor's maximum instead of writing 100, because later chapters raise `MaxQi`.
 
 </details>
 
 ## What you learned
 
-- A **Resource** is a per-Actor meter with a current value, bounds and optional regeneration.
-- **Properties** can supply a Resource's maximum and rate, so other systems can change them later.
-- `autoAssign` gives a Resource to every Actor; `initialValue` sets where it starts.
-- Server code changes a Resource through the Actor's **`ResourceController`**: `Restore`, `SetCurrent`, `Drain` and `Spend`.
-- Clients read Resources through the **`ResourcesView`**: read the estimate every frame for display, and use `OnResourceChanged` for reactions to real changes.
+Qi is a Resource: a per-Actor meter with a current value, bounds and regeneration. Its maximum and rate come from the `MaxQi` and `QiRegen` Properties, which later chapters will change. `autoAssign` gave it to every cultivator, and `initialValue` made them start empty.
 
-The [Resources reference](/next/reference/resources) covers everything else, including cooldowns, charges and every failure reason.
+On the server, the spring changed Qi through the Actor's `ResourceController`, which also has `SetCurrent`, `Drain` and `Spend`. On the client, the HUD reads the `ResourcesView` estimate every frame and uses `OnResourceChanged` only to react to real changes.
+
+[Resources](/next/reference/resources) covers the rest, including cooldowns and charges, and the [Resources API](/next/reference/resources-api) lists every method and failure reason.
 
 ## Next
 
-In the next chapter, cultivators **meditate**: an Action that raises `QiRegen` while held, and your first technique that spends Qi.
+In the next chapter, cultivators meditate. Meditation is an Action that raises `QiRegen` while the player holds a key, and it leads to your first technique that spends Qi.

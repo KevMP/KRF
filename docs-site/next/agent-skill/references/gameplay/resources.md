@@ -16,15 +16,15 @@ Read a different reference instead when the value is:
 
 ## Facts that change the code you write
 
-- **The server owns Resources.** Clients cannot change them; there is no Resource remote. A client asks for gameplay through an Action request or a Command.
-- **Definitions are catalog modules, not calls.** In a `create-krf` project, each module in `src/server/Resources` returns one `KRF.ResourceDefinition`, and the starter passes the folder to `Server.Init({ resources = ... })`. Never call `ResourceRegistry.Load`.
-- **The current value is never a Property.** Properties may supply `min`, `max` and `regen.rate` through `{ propertyName = "..." }`. Every named Property must be registered in `src/server/Properties`.
-- **Assignment is explicit.** An Actor has a Resource only via `autoAssign = true` or `ResourceController:AddResource`. There is no unassign.
-- **Action payment is declarative.** Use the Action's `costs` and `resourceRequirements`. Never call `Spend` before `RequestAction` or inside `onCanStart`; a rejected Action would still have been charged.
-- **Bounds clamp, they never refill.** Raising `max` leaves `current` unchanged.
-- **Regeneration is automatic.** It runs every 0.1 s while `actor.enabled`, and a rate of 0 or less does nothing. Never call `ResourceController:Step` from game code.
-- **Clients estimate regeneration locally.** The client `OnResourceChanged` does not fire for regeneration, so HUDs must read `GetResource`/`GetCurrent` every frame.
-- **`ClientVisible` goes to every client that sees the Actor**, not only its owner. Use `ServerOnly` for private values.
+- Only the server changes Resources. KRF has no Resource remote; a client asks for gameplay through an Action request or a Command.
+- A Resource is defined by a catalog module, never by a call. In a `create-krf` project each module in `src/server/Resources` returns one `KRF.ResourceDefinition`, and the starter passes the folder to `Server.Init({ resources = ... })`. Don't call `ResourceRegistry.Load`.
+- A Resource's current value is never a Property. Properties can supply `min`, `max` and `regen.rate` through `{ propertyName = "..." }`, and each named Property must be registered in `src/server/Properties`.
+- An Actor has a Resource only through `autoAssign = true` or `ResourceController:AddResource`, and nothing unassigns it.
+- An Action pays with its `costs` and checks `resourceRequirements`. Calling `Spend` before `RequestAction` or inside `onCanStart` charges the player even when KRF rejects the Action.
+- Raising `max` leaves `current` where it was; bounds only clamp.
+- Regeneration runs by itself every 0.1 s while `actor.enabled` is true, and a rate of 0 or less does nothing. Game code never calls `ResourceController:Step`.
+- Clients estimate regeneration locally, and the client `OnResourceChanged` doesn't fire for it. A HUD reads `GetResource` or `GetCurrent` every frame.
+- KRF sends a `ClientVisible` Resource to every client that sees the Actor, including other players. Private values need `ServerOnly`.
 
 ## Choose the API
 
@@ -32,7 +32,7 @@ Read a different reference instead when the value is:
 | --- | --- |
 | Add a meter type | Generator: `npm run createResource -- --name Mana --max MaxMana --regen ManaRegen --visibility ClientVisible`. Create the Properties first with `npm run createProperty -- --name MaxMana --default 100` |
 | Charge for an Action | `costs = { Mana = 10 }` on the Action definition |
-| Gate an Action without charging | `resourceRequirements = { Mana = { min = 30 } }`; also `max`, `minPercent`, `maxPercent` (0–1) |
+| Gate an Action without charging | `resourceRequirements = { Mana = { min = 30 } }`; also `max`, `minPercent`, `maxPercent` (fractions from 0 to 1) |
 | A cooldown | Resource with `max = { value = 1 }` and `regen = { rate = { value = 1 / seconds } }`; the Action requires `{ minPercent = 1 }` and costs `1` |
 | Charges | Resource with `max = { value = n }`; the Action costs `1` |
 | World or game event gives value | `resources:Restore(id, amount)`, which stops at the maximum |
@@ -44,7 +44,7 @@ Read a different reference instead when the value is:
 | Refund | Explicit `Restore` in game code; KRF never refunds costs |
 | Show on a client | `actorView:GetResources():GetResource(id)` each frame |
 | React on a client | `actorView:GetResources().OnResourceChanged`, which fires for server changes only |
-| React on the server | `resources.OnResourceChanged`, which fires up to 10×/s per regenerating Resource |
+| React on the server | `resources.OnResourceChanged`, which fires up to ten times a second per regenerating Resource |
 
 ## Definition fields
 
@@ -134,10 +134,11 @@ For a HUD bar, read `actorView:GetResources():GetResource("Mana")` in `RunServic
 
 ## Verify
 
-- **Installed contracts:** `Packages/_Index/kevmp_krf@<version>/krf/src/server/Resource/types.luau` for the server, and `.../src/client/Actor/types.luau` (`ResourcesView`) for the client. The version is in `wally.toml`.
-- **A definition loads:** `npm run test:studio` fails with `system = "Resource"` and the reason if any definition is invalid, such as `UnknownPropertyId:MaxMana`.
-- **Types and style:** `npm run check`.
-- **Behavior you cannot run:** say so. Don't claim a meter refills or replicates without having played it.
+Check signatures against the installed package before relying on this file. The server contracts are in `Packages/_Index/kevmp_krf@<version>/krf/src/server/Resource/types.luau` and the client's `ResourcesView` is in `.../src/client/Actor/types.luau`; `wally.toml` gives the version.
+
+`npm run test:studio` fails with `system = "Resource"` and the reason when a definition is invalid, such as `UnknownPropertyId:MaxMana`, so run it after adding or changing a definition. `npm run check` covers types and style.
+
+If you can't run the game, say so in your report. Don't claim a meter refills or replicates without having played it.
 
 ## Related
 
