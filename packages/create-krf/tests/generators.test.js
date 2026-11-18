@@ -208,12 +208,16 @@ test("request parameters get schemas, and input policies get producers that retu
 		`local Guard: KRF.ActionInputPolicies = {
 	Guard = {
 		activation = "WhileDown",
-		startParameters = function(_context: KRF.ActionInputContext): { [string]: any }
+		startParameters = function(_context: KRF.ActionInputContext): {
+			Element: "Fire" | "Ice",
+		}
 			return {
 				Element = "Fire",
 			}
 		end,
-		stopParameters = function(_context: KRF.ActionInputContext): { [string]: any }
+		stopParameters = function(_context: KRF.ActionInputContext): {
+			Direction: { number },
+		}
 			return {
 				Direction = {},
 			}
@@ -227,7 +231,7 @@ return Guard
 
 	const oneShot = await generate(root, ["action", "--name", "Bolt", "--requestable", "--start-field", "Target:Optional(U32)", "--yes"]);
 	assert.equal(oneShot.code, 0, oneShot.stderr);
-	assert.match(readTree(root)[`${POLICIES}/Bolt.luau`], /\tBolt = \{\n\t\tstartParameters = function\(_context: KRF\.ActionInputContext\): \{ \[string\]: any \}\n\t\t\treturn \{\}\n\t\tend,\n\t\},/);
+	assert.match(readTree(root)[`${POLICIES}/Bolt.luau`], /\tBolt = \{\n\t\tstartParameters = function\(_context: KRF\.ActionInputContext\): \{\n\t\t\tTarget: number\?,\n\t\t\}\n\t\t\treturn \{\}\n\t\tend,\n\t\},/);
 });
 
 test("an Action whose request another module already declares gets a warning instead of a second declaration", async (t) => {
