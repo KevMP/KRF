@@ -96,7 +96,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
-function Fireball(): KRF.ActionDefinition
+local function Fireball(): KRF.ActionDefinition
 	return {
 		id = "Fireball",
 		visibility = "ServerOnly",

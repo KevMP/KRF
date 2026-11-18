@@ -8,7 +8,7 @@ local LocalCharacter = require(script.Parent.LocalCharacter)
 
 local Controls = {}
 
-function control(view: KRF.ActorView): ()
+local function control(view: KRF.ActorView): ()
 	assert(KRF.ClientControls.Apply({
 		profiles = { { kind = "Set", actor = view, sourceId = "Loadout", profile = Loadout.Profile() } },
 		selection = { kind = "Set", actor = view },

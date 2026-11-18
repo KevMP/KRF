@@ -17,7 +17,7 @@ function LocalCharacter.Get(): KRF.ActorView?
 	return if character ~= nil then KRF.ActorViewRegistry.GetActorViewByModel(character) else nil
 end
 
-function refresh(): ()
+local function refresh(): ()
 	local view: KRF.ActorView? = LocalCharacter.Get()
 
 	if view ~= nil and view ~= current then
@@ -29,17 +29,17 @@ function refresh(): ()
 	end
 end
 
-function watch(view: KRF.ActorView): ()
+local function watch(view: KRF.ActorView): ()
 	view.OnModelChanged:Connect(refresh)
 end
 
-function forget(view: KRF.ActorView): ()
+local function forget(view: KRF.ActorView): ()
 	if view == current then
 		current = nil
 	end
 end
 
-function start(): ()
+local function start(): ()
 	started = true
 
 	KRF.ActorViewRegistry.OnActorViewAdded:Connect(function(view: KRF.ActorView)
