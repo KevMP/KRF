@@ -49,7 +49,7 @@ Every option is a flag, and repeatable flags can be given more than once. Withou
 
 | Flag | Writes | Default |
 | --- | --- | --- |
-| `--recipe instant\|channel\|held` | The lifecycle hook that ends the Action; see below | `instant` |
+| `--recipe instant\|channel\|held\|toggle` | The lifecycle hook that ends the Action; see below | `instant` |
 | `--duration <seconds>` | How long the `channel` recipe runs | 1 |
 | `--auto-grant` | `autoGrant = true` | Not granted |
 | `--visibility ServerOnly\|ClientVisible` | `visibility` | ServerOnly; ClientVisible with `--requestable` |
@@ -70,6 +70,7 @@ All of these except `--recipe`, `--duration`, `--auto-grant` and `--visibility` 
 | `instant` | `onStart` ends the Action |
 | `channel` | `onUpdate` accumulates time and ends the Action after `--duration` seconds |
 | `held` | `onStopRequested` ends the Action, so it lasts until the player releases its input |
+| `toggle` | `onStopRequested` ends the Action, so it lasts until the player presses its input again |
 
 `--requestable` and the flags that describe the client's request are covered in [requestable Actions](#example-a-requestable-action).
 
@@ -186,17 +187,17 @@ local Guard: KRF.ActionRequestSchemas = {
 return Guard
 ```
 
-A `held` Action always gets a Stop path that requires the player to release the input, and a module in `src/client/ActionInputPolicies` declaring its `WhileDown` [input policy](./Action/action-input). The policy folder merges its modules the same way. Declaring one ID in two modules stops startup with an error naming it.
+A `held` Action always gets a Stop path that requires the player to release the input, and a module in `src/client/ActionInputPolicies` declaring its `WhileDown` [input policy](./Action/action-input). A `toggle` Action gets a Stop path without the release requirement and a `Toggle` policy, so the first press starts it and the next press asks to stop it. The policy folder merges its modules the same way. Declaring one ID in two modules stops startup with an error naming it.
 
-When input starts or releases the Action, its policy supplies the parameters. So an Action with `--start-field`, or a held Action with `--stop-field`, also gets `startParameters` or `stopParameters` producers in its policy module. They return a payload that matches the schema, with every required field at its zero value, so startup accepts the policy; replace those values with what your input should send.
+When input starts or releases the Action, its policy supplies the parameters. So an Action with `--start-field`, or a held or toggle Action with `--stop-field`, also gets `startParameters` or `stopParameters` producers in its policy module. They return a payload that matches the schema, with every required field at its zero value, so startup accepts the policy; replace those values with what your input should send.
 
 | Flag | Writes | Default |
 | --- | --- | --- |
 | `--requestable` | The request module | Not requestable |
 | `--start-field <Name:Type>` | `start`, the parameters the client sends with a request | No parameters |
-| `--client-stop` | `stop = {}`, so the client may request a Stop, and an `onStopRequested` stub. A Stop does not end the Action by itself; call `context:End()` there if it should | Only for `held` |
+| `--client-stop` | `stop = {}`, so the client may request a Stop, and an `onStopRequested` stub. A Stop does not end the Action by itself; call `context:End()` there if it should. The `instant` recipe ends in `onStart` before a Stop can arrive, so it rejects this flag and `--stop-field` | Only for `held` and `toggle` |
 | `--stop-field <Name:Type>` | `stop.parameters` | No parameters |
-| `--allow-input-interrupt` | `allowInputInterrupt = true` | Only for `held` |
+| `--allow-input-interrupt` | `allowInputInterrupt = true` | Only for `held`, and for `toggle` with `--stop-field` |
 | `--on-disconnect Keep\|Interrupt` | `onDisconnect = "Interrupt"` when `Interrupt` | `Keep`; always `Interrupt` for `held` |
 
 Input bindings are game code, so the generator does not change them. In the starter project, keys bind to ability slots, and `src/client/Controls/Loadout.luau` decides which Action each slot triggers. Call `Loadout.Equip("AbilitySlot1", "Guard")` to put Guard in the F slot, or add a slot in `src/client/Controls/Keybinds.luau` and to `SLOTS` in `Loadout.luau`.

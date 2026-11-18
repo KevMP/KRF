@@ -23,7 +23,7 @@ const field = (flags, what, key) => repeat(flags, `a field of the ${what}, such 
 
 const KIND_OPTIONS = {
 	action: [
-		{ flags: "--recipe <recipe>", description: "instant, channel or held (default: instant)", key: "recipe" },
+		{ flags: "--recipe <recipe>", description: "instant, channel, held or toggle (default: instant)", key: "recipe" },
 		{ flags: "--duration <seconds>", description: "how long the channel recipe runs (default: 1)", key: "duration" },
 		{ flags: "--auto-grant", description: "grant it to every Actor", key: "autoGrant" },
 		{ ...VISIBILITY, description: "ServerOnly or ClientVisible (default: ServerOnly; ClientVisible with --requestable)" },
@@ -39,7 +39,7 @@ const KIND_OPTIONS = {
 		{ flags: "--requestable", description: "let clients request it: creates its module in src/shared/ActionRequests", key: "requestable" },
 		field("--start-field <Name:Type>", "client's start parameters", "startFields"),
 		field("--stop-field <Name:Type>", "client's stop parameters", "stopFields"),
-		{ flags: "--client-stop", description: "let the client request a Stop (held Actions always can)", key: "clientStop" },
+		{ flags: "--client-stop", description: "let a channel Action's client request a Stop (held and toggle Actions always can)", key: "clientStop" },
 		{ flags: "--allow-input-interrupt", description: "let the client interrupt its own activation", key: "allowInputInterrupt" },
 		{ flags: "--on-disconnect <policy>", description: "Keep or Interrupt when the requesting player leaves (held Actions always interrupt)", key: "onDisconnect" },
 	],

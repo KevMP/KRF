@@ -79,6 +79,7 @@ export const GENERATED_DEFINITIONS = [
 		"--stop-field",
 		"Direction:Array(F32,3)",
 	],
+	["createAction", "--name", "Ward", "--recipe", "toggle", "--requestable", "--auto-grant", "--stop-field", "Strength:U8"],
 	["createAction", "--id", "Combat.Meditate", "--recipe", "channel", "--duration", "0.5", "--auto-grant", "--active-tag", "Burning:0.5"],
 	["createController", "--name", "Cooldowns", "--depends-on", "ResourceController"],
 	["createCommand", "--name", "CastSpell"],

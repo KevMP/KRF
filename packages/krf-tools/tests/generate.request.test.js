@@ -125,11 +125,14 @@ test("a requestable Action can stay ServerOnly, and a client Stop always gets an
 	assert.equal(stoppable.clientStop, true);
 	assert.deepEqual(stoppable.hooks, ["onEnd", "onStopRequested"]);
 
-	const byParameters = normalizeRequest("action", { name: "Fireball", options: { requestable: true, stopFields: ["Reason:U8"] } }).options;
+	const byParameters = normalizeRequest("action", { name: "Fireball", options: { recipe: "channel", requestable: true, stopFields: ["Reason:U8"] } }).options;
 	assert.deepEqual([byParameters.clientStop, byParameters.hooks], [true, ["onStopRequested"]]);
 
 	const held = normalizeRequest("action", { name: "Guard", options: { recipe: "held", requestable: true } }).options;
 	assert.deepEqual([held.clientStop, held.hooks], [false, []]);
+
+	const toggle = normalizeRequest("action", { name: "Shield", options: { recipe: "toggle", requestable: true, stopFields: ["Reason:U8"] } }).options;
+	assert.deepEqual([toggle.clientStop, toggle.hooks], [false, []]);
 });
 
 test("Tag, Resource and networking options parse property modifiers, numeric sources and schemas", () => {
@@ -176,7 +179,7 @@ test("rejects contradictory or malformed options with the flag that caused them"
 	const cases = [
 		["action", { duration: "2" }, /--duration applies only to the channel recipe/],
 		["action", { recipe: "channel", duration: "0" }, /Invalid --duration/],
-		["action", { recipe: "toggle" }, /Invalid --recipe/],
+		["action", { recipe: "burst" }, /Invalid --recipe/],
 		["action", { costs: ["Mana"] }, /Invalid --cost/],
 		["action", { costs: ["Mana=-1"] }, /Invalid --cost: Mana: the cost must be positive/],
 		["action", { costs: ["Mana:amount=1,percent=0.5"] }, /exactly one of amount or percent/],
@@ -193,6 +196,9 @@ test("rejects contradictory or malformed options with the flag that caused them"
 		["action", { requestable: true, startFields: ["Target:Array(U8)"] }, /Array takes a type and a maximum length/],
 		["action", { requestable: true, startFields: ["A:U8", "A:U16"] }, /'A' is listed twice/],
 		["action", { requestable: true, recipe: "held", onDisconnect: "Keep" }, /disconnect must interrupt it/],
+		["action", { requestable: true, clientStop: true }, /instant recipe ends the Action in onStart, so a Stop never reaches it/],
+		["action", { requestable: true, stopFields: ["Reason:U8"] }, /instant recipe ends the Action in onStart/],
+		["action", { recipe: "toggle", hooks: ["onStopRequested"] }, /toggle recipe already writes onStopRequested/],
 		["tag", { duplicateBehavior: "Merge" }, /Invalid --duplicate-behavior/],
 		["tag", { maxStacks: "3" }, /--max-stacks needs --duplicate-behavior Stack/],
 		["tag", { duplicateBehavior: "Stack", maxStacks: "1.5" }, /Invalid --max-stacks/],
