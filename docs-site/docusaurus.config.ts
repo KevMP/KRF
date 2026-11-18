@@ -56,6 +56,22 @@ const config: Config = {
         editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
       },
     ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'reference',
+        path: 'next/reference',
+        routeBasePath: 'next/reference',
+      },
+    ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'walkthrough',
+        path: 'next/walkthrough',
+        routeBasePath: 'next/walkthrough',
+      },
+    ],
   ],
 
   themeConfig: {
