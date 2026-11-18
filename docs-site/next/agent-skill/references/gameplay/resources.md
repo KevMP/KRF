@@ -10,7 +10,7 @@ Read a different reference instead when the value is:
 
 | Value | Reference |
 | --- | --- |
-| A stat that buffs and debuffs modify, such as speed or max health | `tags-and-properties.md` |
+| A stat that buffs and debuffs modify, such as max mana or a regeneration rate | `tags-and-properties.md` |
 | A status such as Stunned or Burning | `tags-and-properties.md` |
 | Other replicated game state, such as a quest stage, or data only its owner should see | `../networking/replication-domains.md` |
 

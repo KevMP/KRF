@@ -6,7 +6,7 @@ description: Give Actors meters such as stamina, mana, ammo, cooldowns and charg
 
 # Resources
 
-When a character needs a meter that gets spent and refilled, make it a Resource. Stamina, mana, ammunition, a dash cooldown and ability charges are all Resources. Each Actor that has one keeps its own current value between a minimum and a maximum, and the value can regenerate on its own.
+When a character needs a meter that gets spent and refilled, make it a Resource. Stamina, mana, ammunition, an ability cooldown and ability charges are all Resources. Each Actor that has one keeps its own current value between a minimum and a maximum, and the value can regenerate on its own.
 
 You define a Resource once, in your game's Resource catalog. The server owns every Actor's value: an Action pays for itself by declaring `costs`, other server code changes values through the Actor's `ResourceController`, and clients only read values through a `ResourcesView`. The examples on this page assume a project created with `create-krf`. For exact signatures and every failure reason, see the [Resources API](./resources-api).
 
@@ -17,8 +17,8 @@ Values that aren't spent and refilled belong to other systems:
 | You need | Use |
 | --- | --- |
 | A value that is spent, restored and refilled: stamina, mana, ammo, charges | A Resource |
-| A readiness timer that recharges after use, like a dash cooldown | A Resource that is spent in full and regenerates |
-| A number other systems modify, like walk speed, max stamina or a regeneration rate | A [Property](/api/Property/property-controller) |
+| A readiness timer that recharges after use, like an ability cooldown | A Resource that is spent in full and regenerates |
+| A number other systems modify, like max stamina or a regeneration rate | A [Property](/api/Property/property-controller) |
 | A temporary or permanent status, like Stunned or Blocking | A [Tag](/api/Tags/tag-controller) |
 | Other gameplay state clients must see, like a quest stage | A [replication domain](/Networking/replication-domains) |
 
@@ -151,7 +151,7 @@ local resources: KRF.ResourcesView = actorView:GetResources()
 local stamina: KRF.ResourceSnapshot? = resources:GetResource("Stamina")
 ```
 
-The server doesn't send a message for each regeneration step. The client works out the current value from the last value it received, the time since then and the rate, and `GetCurrent` returns that estimate. Read it every frame for a smooth bar. The client's `OnResourceChanged` fires only when the server sends a new value: after a spend, restore, drain or assignment, or when the bounds or rate change. It stays silent while the value regenerates, which makes it right for one-off reactions such as flashing a bar when it takes a hit, and wrong as the only trigger for redrawing a bar.
+The server doesn't send a message for each regeneration step. The client works out the current value from the last value it received, the time since then and the rate, and `GetCurrent` returns that estimate. Read it every frame for a smooth bar. The client's `OnResourceChanged` fires only when the server sends a new value: after a spend, restore, drain or assignment, or when the bounds or rate change. It stays silent while the value regenerates, which makes it right for one-off reactions such as flashing a bar when it drops sharply, and wrong as the only trigger for redrawing a bar.
 
 This bar assumes `actorView` is the local character's ActorView and `fill` is the bar's inner Frame:
 
@@ -171,23 +171,23 @@ end)
 
 A cooldown is a Resource that an Action requires to be full, spends in full, and then regenerates:
 
-```lua title="src/server/Resources/DashCooldown.luau"
+```lua title="src/server/Resources/AbilityCooldown.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local DashCooldown: KRF.ResourceDefinition = {
-	id = "DashCooldown",
+local AbilityCooldown: KRF.ResourceDefinition = {
+	id = "AbilityCooldown",
 	max = { value = 1 },
 	visibility = "ClientVisible",
 	autoAssign = true,
 	regen = { rate = { value = 1 / 3 } },
 }
 
-return DashCooldown
+return AbilityCooldown
 ```
 
-The dash declares `resourceRequirements = { DashCooldown = { minPercent = 1 } }` and `costs = { DashCooldown = 1 }`. The player can dash again three seconds later, and the client can draw the cooldown from the Resource's estimate.
+The ability declares `resourceRequirements = { AbilityCooldown = { minPercent = 1 } }` and `costs = { AbilityCooldown = 1 }`. The player can use it again three seconds later, and the client can draw the cooldown from the Resource's estimate.
 
 Charges use the same shape with a larger maximum. With `max = { value = 3 }`, a cost of 1 and a rate of `1 / 5`, the Action holds up to three uses and earns one back every five seconds.

@@ -1,13 +1,13 @@
 ---
 title: Break through
-sidebar_label: 6. Break through
-sidebar_position: 7
-description: Channel a full bar of Qi for five seconds to reach a higher realm and a larger Qi maximum.
+sidebar_label: 3. Break through
+sidebar_position: 4
+description: Hold R with a full bar of Qi for five seconds to reach a higher realm with a larger Qi maximum.
 ---
 
 # Break through
 
-Cultivators advance through realms. In this chapter a cultivator with a full bar of Qi can press R to break through: they spend all of it and stay rooted for five seconds, then reach the next realm, whose Qi maximum is twice as large. Getting hit during those five seconds ruins the attempt, and the Qi is lost.
+Cultivators advance through realms. In this chapter a cultivator with a full bar of Qi can hold R to break through. The attempt spends all of their Qi; if they keep holding R for five seconds, they reach the next realm, whose Qi maximum is twice as large. Letting go early ends the attempt, and the Qi is lost.
 
 ## Realms
 
@@ -26,11 +26,13 @@ end
 return Realms
 ```
 
-Each cultivator's realm is game state KRF doesn't know about, which makes it another Controller:
+Each cultivator's realm is game state KRF doesn't know about. Per-Actor game state belongs in a Controller, an object KRF creates for every Actor when it registers and destroys when it unregisters. KRF's own Resources, Tags and Actions are Controllers too, and yours sit alongside them:
 
 ```bash
 npm run createController -- --name Cultivation --depends-on PropertyController
 ```
+
+The generator writes `src/server/Controllers/Cultivation.luau` and adds a `controllers` catalog to `Server.Init`. Replace the module's contents:
 
 ```lua title="src/server/Controllers/Cultivation.luau"
 --!strict
@@ -73,18 +75,17 @@ local Cultivation: KRF.ControllerDefinition = {
 return Cultivation
 ```
 
-The Controller returns more than `Destroy`. Its exported `Cultivation` type describes the functions other server code can call once it has the Controller from `actor:GetController("Cultivation")`.
+`factory` runs once per Actor. `dependsOn` makes KRF create the Property Controller first, so the factory can look it up. The returned table needs a `Destroy` function; everything else on it is yours, and the exported `Cultivation` type lets other server code call it once it has the Controller from `actor:GetController("Cultivation")`.
 
 `Advance` raises the realm and sets the Actor's base `MaxQi`, and the Qi Resource picks up the new maximum on its own. Raising a Resource's maximum never refills it, so a cultivator who just broke through starts the larger bar nearly empty.
 
 ## The Breakthrough Action
 
 ```bash
-npm run createTag -- --name BreakingThrough --property WalkSpeed:set=0 --visibility ClientVisible
-npm run createAction -- --name Breakthrough --recipe channel --duration 5 --requestable --auto-grant --blocked-tag KnockedOut --active-tag BreakingThrough --requirement Qi:minPercent=1 --cost Qi:percent=1 --lock Stance --hook onCanStart --hook onStart --hook onEnd --hook onInterrupt
+npm run createAction -- --name Breakthrough --recipe held --requestable --auto-grant --requirement Qi:minPercent=1 --cost Qi:percent=1 --lock Stance --hook onCanStart --hook onUpdate
 ```
 
-The channel recipe generates an Action that ends itself after `--duration` seconds. Fill in the hooks in `src/server/Actions/Breakthrough.luau`:
+The held recipe generates what Meditate already has: a request entry that needs a real key release, a `WhileDown` input policy, and an `onStopRequested` that ends the Action. Fill in `src/server/Actions/Breakthrough.luau`:
 
 ```lua title="src/server/Actions/Breakthrough.luau"
 --!strict
@@ -97,24 +98,15 @@ local DURATION: number = 5
 
 local function Breakthrough(): KRF.ActionDefinition
 	local elapsed: number = 0
-	local disruptions: { KRF.Connection } = {}
 
 	local function cultivationOf(actor: KRF.Actor): Cultivation.Cultivation
 		return actor:GetController("Cultivation") :: Cultivation.Cultivation
-	end
-
-	local function stopListening(): ()
-		for _, connection: KRF.Connection in disruptions do
-			connection:Disconnect()
-		end
 	end
 
 	return {
 		id = "Breakthrough",
 		visibility = "ClientVisible",
 		autoGrant = true,
-		blockedTags = { "KnockedOut" },
-		activeTags = { "BreakingThrough" },
 		resourceRequirements = { Qi = { minPercent = 1 } },
 		costs = { Qi = { percent = 1 } },
 		locks = { "Stance" },
@@ -125,16 +117,8 @@ local function Breakthrough(): KRF.ActionDefinition
 
 			return true, nil
 		end,
-		onStart = function(context: KRF.ActionExecutionContext): ()
-			local tags = context.actor:GetController("TagController") :: KRF.TagController
-
-			local function disrupt(_actor: KRF.Actor, tagId: string): ()
-				if tagId == "Staggered" then
-					context:Interrupt("Disrupted")
-				end
-			end
-
-			disruptions = { tags.OnTagAdded:Connect(disrupt), tags.OnTagRefreshed:Connect(disrupt) }
+		onStopRequested = function(context: KRF.ActionExecutionContext): ()
+			context:Interrupt("Released")
 		end,
 		onUpdate = function(context: KRF.ActionExecutionContext, deltaTime: number): ()
 			elapsed += deltaTime
@@ -144,37 +128,40 @@ local function Breakthrough(): KRF.ActionDefinition
 				context:End()
 			end
 		end,
-		onEnd = stopListening,
-		onInterrupt = stopListening,
 	}
 end
 
 return Breakthrough
 ```
 
-The requirement and cost together mean "only with a full bar, and spend all of it". KRF never refunds a cost, so an interrupted breakthrough loses the Qi. That's the penalty for being hit.
+The requirement and cost together mean "only with a full bar, and spend all of it". KRF checks and pays them in one step when it accepts the request, so a cultivator who isn't full spends nothing.
 
-`onCanStart` runs after those checks and can refuse with a reason; here it stops cultivators at the last realm. `onUpdate` runs up to 20 times a second while the Action is active and receives the time since the last call.
+`onCanStart` runs after those checks and can refuse with a reason; here it stops cultivators at the last realm. `onUpdate` runs up to 20 times a second while the Action is active and receives the time since the last call. `elapsed` is safe as a factory local because each activation gets its own.
 
-Being hit should end the attempt, but `blockedTags` only matters at the start. To react during the channel, `onStart` listens to the Actor's Tags and interrupts the Action itself when Staggered appears. It listens for a refresh too, because Staggered refreshes instead of stacking when a cultivator is hit twice. `onEnd` and `onInterrupt` disconnect those listeners whichever way the Action finishes. The listeners and `elapsed` are safe as factory locals because each activation gets its own.
+Releasing R asks to stop, as it does for meditation, but this time `onStopRequested` interrupts the Action instead of ending it. KRF never refunds a cost, so letting go early loses the Qi; that's the price of a failed breakthrough. A successful attempt ends itself in `onUpdate`, so the release that follows has nothing left to stop.
 
-Breakthrough holds the Stance lock without allowing interruption, so no technique can start while it runs. Meditation must still give way to it. In `src/server/Actions/Meditate.luau`:
+## One stance at a time
+
+Meditating while breaking through makes no sense. Both Actions should hold the same lock, named `Stance`, and a breakthrough should be allowed to replace a meditation already in progress. In `src/server/Actions/Meditate.luau`, add:
 
 ```lua
-interruptibleBy = { "QiBolt", "Breakthrough" },
+locks = { "Stance" },
+interruptibleBy = { "Breakthrough" },
 ```
+
+A lock is just a name; two Actions that hold it can't run at once. `interruptibleBy` lists the Actions allowed to take the lock from this one. Breakthrough lists nothing, so pressing F during a breakthrough does nothing, while holding R during a meditation ends the meditation and starts the breakthrough.
 
 ## Bind R
 
-Add a third ability slot in `src/client/Controls/Keybinds.luau`:
+Add a second ability slot in `src/client/Controls/Keybinds.luau`, next to `AbilitySlot1`:
 
 ```lua
-AbilitySlot3 = {
+AbilitySlot2 = {
 	context = "Gameplay",
 	type = Enum.InputActionType.Bool,
 	bindings = {
 		Keyboard = { keyCode = Enum.KeyCode.R },
-		Gamepad = { keyCode = Enum.KeyCode.ButtonB },
+		Gamepad = { keyCode = Enum.KeyCode.ButtonY },
 	},
 },
 ```
@@ -182,25 +169,20 @@ AbilitySlot3 = {
 and fill it in `src/client/Controls/Loadout.luau`:
 
 ```lua
-local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2", "AbilitySlot3" }
+local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2" }
 ```
 
 ```lua
 local equipped: { [string]: string } = {
 	AbilitySlot1 = "Meditate",
-	AbilitySlot2 = "QiBolt",
-	AbilitySlot3 = "Breakthrough",
+	AbilitySlot2 = "Breakthrough",
 }
 ```
 
-Breakthrough has no input policy because it doesn't need one: it takes no parameters, so each press sends one start request.
-
-Show the channel in the HUD's `status` function:
+Show the attempt in the HUD's `status` function:
 
 ```lua
-if view:GetTags():HasTag("KnockedOut") then
-	text ..= " · Knocked out"
-elseif view:GetTags():HasTag("BreakingThrough") then
+if view:GetActions():IsActionActive("Breakthrough") then
 	text ..= " · Breaking through"
 elseif view:GetActions():IsActionActive("Meditate") then
 	text ..= " · Meditating"
@@ -209,9 +191,9 @@ end
 
 ## Checkpoint
 
-Hold F until Qi reads `100/100`, then press R. Your Qi drops to 0 and you can't move for five seconds. Afterwards the bar's maximum is 200, and it keeps filling from the few points it regenerated during the channel. Pressing R before the bar is full does nothing.
+Hold F until Qi reads `100/100`, then hold R. Qi drops to 0 and the HUD shows `Breaking through`. Keep holding R for five seconds: the bar's maximum becomes 200, and it keeps filling from the few points it regenerated during the attempt. Holding R before the bar is full does nothing.
 
-In a two-player test, start a breakthrough and have the other player bolt you before the five seconds are up. The attempt ends, the Qi is gone, and your maximum stays the same.
+Fill the bar again, hold R and let go after a second or two. The attempt ends, the Qi is gone, and the maximum stays at 200.
 
 ## Next
 

@@ -1,7 +1,7 @@
 ---
 title: Show realms to everyone
-sidebar_label: 7. Show realms
-sidebar_position: 8
+sidebar_label: 4. Show realms
+sidebar_position: 5
 description: Replicate each cultivator's realm with a replication domain and announce breakthroughs to every player.
 ---
 
@@ -11,7 +11,7 @@ A cultivator's realm lives in the server's Cultivation Controller, and clients c
 
 ## Replication domains
 
-KRF replicates its own state, such as Resources and Tags, automatically. To replicate state you own, you declare a replication domain. It describes what to send and how to read it from the Actor, and KRF handles sending it, keeping late joiners up to date and recovering after reconnects.
+KRF replicates its own state, such as Resources, Tags and running Actions, automatically. To replicate state you own, you declare a replication domain. It describes what to send and how to read it from the Actor, and KRF handles sending it, keeping late joiners up to date and recovering after reconnects.
 
 ```bash
 npm run createDomain -- --name Cultivation --audience All --state-field Realm:U8 --event "BrokeThrough(Realm:U8)" --observe
@@ -128,7 +128,7 @@ local Cultivation: KRF.ReplicationDomainDefinition = {
 return Cultivation
 ```
 
-`snapshot` returns the full current state whenever KRF needs it. `observe` connects to the Controller. Each time the realm changes it calls `onCommitted` with the breakthrough event, and KRF takes a new snapshot and sends both. `observe` returns the Controller's disconnect function so KRF can clean up when the Actor goes away. `audience = "All"` sends the domain to every client; `"Owner"` would send it only to the player whose character the Actor is.
+`snapshot` returns the full current state whenever KRF needs it. `observe` connects to the Controller: each time the realm changes it calls `onCommitted` with the breakthrough event, and KRF takes a new snapshot and sends both. It returns the Controller's disconnect function so KRF can clean up when the Actor goes away. `audience = "All"` sends the domain to every client; `"Owner"` would send it only to the player whose character the Actor is.
 
 ## Show realms and breakthroughs
 
@@ -153,17 +153,14 @@ local function meter(resources: KRF.ResourcesView, resourceId: string): string
 end
 
 local function status(view: KRF.ActorView): string
-	local resources: KRF.ResourcesView = view:GetResources()
-	local text: string = `{meter(resources, "Qi")} · {meter(resources, "Vitality")}`
+	local text: string = meter(view:GetResources(), "Qi")
 	local cultivation: KRF.DomainView? = view:GetDomain("Cultivation")
 
 	if cultivation ~= nil then
 		text = `{Realms.NAMES[cultivation:GetState().Realm]} · {text}`
 	end
 
-	if view:GetTags():HasTag("KnockedOut") then
-		text ..= " · Knocked out"
-	elseif view:GetTags():HasTag("BreakingThrough") then
+	if view:GetActions():IsActionActive("Breakthrough") then
 		text ..= " · Breaking through"
 	elseif view:GetActions():IsActionActive("Meditate") then
 		text ..= " · Meditating"
@@ -248,13 +245,13 @@ end
 return Hud
 ```
 
-`status` reads the realm from the domain's current state. The announcement label shows a message for three seconds through `Hud.Announce`, which chapter 8 reuses.
+`status` reads the realm from the domain's current state. The second label shows a message for three seconds through `Hud.Announce`, which chapter 5 reuses.
 
 `watch` subscribes to the `BrokeThrough` event on one ActorView. The HUD calls it for every view that already exists and for every view added later, so players hear about every cultivator's breakthrough, including their own.
 
 ## Checkpoint
 
-Press Play. The HUD now starts with `Qi Condensation`. Break through and it changes to `Foundation Establishment`, and the announcement label reports it. In a two-player test, the other player sees the same announcement.
+Press Play. The HUD now starts with `Qi Condensation`. Break through and it changes to `Foundation Establishment`, and the announcement label reports it. In Studio's Test tab, start a local server with two players: when one breaks through, the other sees the same announcement.
 
 ## Next
 

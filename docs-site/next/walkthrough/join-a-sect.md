@@ -1,125 +1,125 @@
 ---
 title: Join a sect
-sidebar_label: 8. Join a sect
-sidebar_position: 9
-description: Let players join a sect with a Command, grant the sect's technique, and add stacking and ticking Tags.
+sidebar_label: 5. Join a sect
+sidebar_position: 6
+description: Let players join a sect with a Command, grant the sect's technique, and build techniques from stacking, ticking and toggled Tags.
 ---
 
 # Join a sect
 
-Every cultivator so far has the same abilities. In this chapter players join one of two sects by pressing 1 or 2. Joining is permanent and teaches the sect's technique, which goes on E. The Flame sect's Ember sets its target burning, dealing damage every second and stacking up to three times. The Frost sect's Frost Palm chills its target, slowing them.
+Every cultivator so far cultivates the same way. In this chapter players join one of two sects by pressing 1 or 2. Joining is permanent and teaches the sect's technique, which goes on E:
+
+- The Flame sect's Kindle costs 30 Qi and speeds up Qi regeneration for 20 seconds. Using it again stacks the effect, up to three times.
+- The Frost sect's Stillness is a stance you toggle on and off. While it's on, your Qi maximum is half again as large, but it costs 3 Qi every second.
 
 ## The techniques
 
+Each technique is an Action that applies a Tag. Generate the Tags first:
+
 ```bash
-npm run createTag -- --name Burning --duration 6 --tick-interval 1 --duplicate-behavior Stack --max-stacks 3 --visibility ClientVisible
-npm run createTag -- --name Chilled --duration 3 --duplicate-behavior Refresh --property WalkSpeed:multiply=0.6 --visibility ClientVisible
-npm run createAction -- --name Ember --requestable --blocked-tag KnockedOut --requirement BoltCooldown:minPercent=1 --cost Qi=25 --cost BoltCooldown=1 --lock Stance --start-field X:F32 --start-field Y:F32 --start-field Z:F32
-npm run createAction -- --name FrostPalm --requestable --blocked-tag KnockedOut --requirement BoltCooldown:minPercent=1 --cost Qi=25 --cost BoltCooldown=1 --lock Stance --start-field X:F32 --start-field Y:F32 --start-field Z:F32
+npm run createTag -- --name Kindled --duration 20 --duplicate-behavior Stack --max-stacks 3 --property QiRegen:add=3 --visibility ClientVisible
+npm run createTag -- --name StillMind --tick-interval 1 --property MaxQi:multiply=1.5 --visibility ClientVisible
 ```
 
-The techniques share the bolt's cooldown Resource, so firing a sect technique also puts the bolt on cooldown, and the other way around. Unlike the bolt, they don't use `--auto-grant`: nobody can use them until a sect grants one.
+Kindled stacks: each use adds an independent instance with its own 20-second timer, and each instance adds 3 to `QiRegen`. Once three are active, another use refreshes the one closest to running out instead of adding a fourth.
 
-Burning stacks, and each stack ticks on its own, so three stacks burn three times as fast. Give `src/server/Tags/Burning.luau` its damage:
+StillMind has no duration; it lasts as long as something holds it. Its `tickInterval` runs `onTick` every second, which is where the stance takes its cost. Give `src/server/Tags/StillMind.luau` its drain:
 
-```lua title="src/server/Tags/Burning.luau"
+```lua title="src/server/Tags/StillMind.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
-local Burning: KRF.TagDefinition = {
-	id = "Burning",
-	defaultDuration = 6,
+local StillMind: KRF.TagDefinition = {
+	id = "StillMind",
 	tickInterval = 1,
-	duplicateBehavior = "Stack",
-	maxStacks = 3,
+	duplicateBehavior = "Ignore",
 	visibility = "ClientVisible",
 	onTick = function(actor: KRF.Actor, _deltaTime: number): ()
 		local resources = actor:GetController("ResourceController") :: KRF.ResourceController
 
-		resources:Drain("Vitality", 3)
+		resources:Drain("Qi", 3)
 	end,
+	properties = { MaxQi = { multiply = 1.5 } },
 }
 
-return Burning
+return StillMind
 ```
 
-Chilled refreshes instead of stacking, so a second hit only restarts the timer, and its `WalkSpeed` modifier needs no code.
+KRF's declarative `costs` are paid once, when an Action starts. A cost that continues while something is active is game logic, and a ticking Tag is a good place for it.
 
-Each technique works like the bolt at a shorter range. Fill in `src/server/Actions/Ember.luau`:
+Now the Actions. Neither uses `--auto-grant`; nobody can use them until a sect grants one.
 
-```lua title="src/server/Actions/Ember.luau"
+```bash
+npm run createAction -- --name Kindle --requestable --cost Qi=30 --applied-tag Kindled
+npm run createAction -- --name Stillness --recipe held --requestable --active-tag StillMind
+```
+
+The generated Kindle needs no changes:
+
+```lua title="src/server/Actions/Kindle.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local Combat = require(script.Parent.Parent.Combat)
 
-local RANGE: number = 20
-local DAMAGE: number = 10
-
-local function Ember(): KRF.ActionDefinition
+local function Kindle(): KRF.ActionDefinition
 	return {
-		id = "Ember",
+		id = "Kindle",
 		visibility = "ClientVisible",
-		blockedTags = { "KnockedOut" },
-		resourceRequirements = { BoltCooldown = { minPercent = 1 } },
-		costs = {
-			Qi = 25,
-			BoltCooldown = 1,
-		},
-		locks = { "Stance" },
+		appliedTags = { "Kindled" },
+		costs = { Qi = 30 },
 		onStart = function(context: KRF.ActionExecutionContext): ()
-			local target: KRF.Actor? = Combat.Cast(context.actor, context.parameters, RANGE)
-
-			if target ~= nil then
-				Combat.Hit(target, DAMAGE, "Burning")
-			end
-
 			context:End()
 		end,
 	}
 end
 
-return Ember
+return Kindle
 ```
 
-`src/server/Actions/FrostPalm.luau` is the same with `"Chilled"` in place of `"Burning"`. Their generated input policies need the same aim as the bolt:
+`appliedTags` applies Kindled when the Action is accepted, and the Tag then outlives the Action, which ends at once. Meditate used `activeTags` instead, which removes the Tag when the Action stops. That is the main difference between the two techniques. Stillness holds StillMind as an `activeTags` entry, so the stance lasts exactly as long as the Action runs.
 
-```lua title="src/client/ActionInputPolicies/Ember.luau"
+Stillness should toggle rather than run only while E is held. The held recipe generated a request entry that requires a key release and a `WhileDown` policy. Remove `requiresClientRelease` from `src/shared/ActionRequests/Stillness.luau`:
+
+```lua title="src/shared/ActionRequests/Stillness.luau"
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local Aim = require(script.Parent.Parent.Aim)
 
-local Ember: KRF.ActionInputPolicies = {
-	Ember = {
-		startParameters = function(context: KRF.ActionInputContext): {
-			X: number,
-			Y: number,
-			Z: number,
-		}
-			return Aim.FromMouse(context.actor)
-		end,
+local Stillness: KRF.ActionRequestSchemas = {
+	Stillness = {
+		stop = {},
+		allowInputInterrupt = true,
+		onDisconnect = "Interrupt",
 	},
 }
 
-return Ember
+return Stillness
 ```
 
-Make `src/client/ActionInputPolicies/FrostPalm.luau` match, with `FrostPalm` in place of `Ember`.
+and switch `src/client/ActionInputPolicies/Stillness.luau` to `Toggle`:
 
-Like the bolt, both techniques should be able to cut a meditation short. In `src/server/Actions/Meditate.luau`:
+```lua title="src/client/ActionInputPolicies/Stillness.luau"
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-```lua
-interruptibleBy = { "QiBolt", "Breakthrough", "Ember", "FrostPalm" },
+local KRF = require(ReplicatedStorage.Packages.KRF)
+
+local Stillness: KRF.ActionInputPolicies = {
+	Stillness = { activation = "Toggle" },
+}
+
+return Stillness
 ```
+
+With `Toggle`, the first press starts Stillness and the next press asks to stop it. The generated `onStopRequested` ends it, and the multiplier on `MaxQi` goes with the Tag. If Qi was above the normal maximum at that moment, it drops to the maximum.
 
 ## Grant a technique
 
-Whether a player may use an Action is a grant on their Actor. Grants have named sources, so a sect grant and, say, an item grant can be added and removed independently. Keep each player's sect in a server module, `src/server/Sects.luau`:
+Whether a player may use an Action is a grant on their Actor. Grants have named sources, so the grant from a sect can be added and removed without touching grants from anywhere else. Keep each player's sect in a server module, `src/server/Sects.luau`:
 
 ```lua title="src/server/Sects.luau"
 --!strict
@@ -129,8 +129,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
 local TECHNIQUES: { [string]: string } = {
-	Flame = "Ember",
-	Frost = "FrostPalm",
+	Flame = "Kindle",
+	Frost = "Stillness",
 }
 
 local Sects = {}
@@ -197,10 +197,10 @@ local Sects = require(script.Parent.Sects)
 
 ## The ChooseSect Command
 
-Joining a sect isn't an Action; it doesn't run over time or use a Stance lock. It's a one-off request from the client, which is what Commands are for. A Command declares what the client sends and what the server answers, and the server decides who may send it and what happens.
+Joining a sect isn't an Action; it doesn't run over time or hold a lock. It's a one-off request from the client, which is what Commands are for. A Command declares what the client sends and what the server answers, and the server decides who may send it and what happens.
 
 ```bash
-npm run createCommand -- --name ChooseSect --request-field "Sect:Enum(Flame|Frost)" --result-field "Technique:Enum(Ember|FrostPalm)" --authorize OwnerActor
+npm run createCommand -- --name ChooseSect --request-field "Sect:Enum(Flame|Frost)" --result-field "Technique:Enum(Kindle|Stillness)" --authorize OwnerActor
 ```
 
 Fill in the handler in `src/server/Commands/ChooseSect.luau`:
@@ -219,7 +219,7 @@ local ChooseSect: KRF.CommandDefinition = {
 		Sect = KRF.Schema.Enum({ "Flame", "Frost" }),
 	}),
 	result = KRF.Schema.Struct({
-		Technique = KRF.Schema.Enum({ "Ember", "FrostPalm" }),
+		Technique = KRF.Schema.Enum({ "Kindle", "Stillness" }),
 	}),
 	authorize = KRF.CommandAuthorization.OwnerActor,
 	handle = function(context: KRF.CommandContext, request: { Sect: string }): KRF.CommandHandlerResult
@@ -241,15 +241,15 @@ return ChooseSect
 
 ## Choose a sect
 
-Bind E to a fourth slot in `src/client/Controls/Keybinds.luau`:
+Bind E to a third slot in `src/client/Controls/Keybinds.luau`:
 
 ```lua
-AbilitySlot4 = {
+AbilitySlot3 = {
 	context = "Gameplay",
 	type = Enum.InputActionType.Bool,
 	bindings = {
 		Keyboard = { keyCode = Enum.KeyCode.E },
-		Gamepad = { keyCode = Enum.KeyCode.ButtonR1 },
+		Gamepad = { keyCode = Enum.KeyCode.ButtonB },
 	},
 },
 ```
@@ -257,7 +257,7 @@ AbilitySlot4 = {
 and add the slot, empty, in `src/client/Controls/Loadout.luau`:
 
 ```lua
-local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2", "AbilitySlot3", "AbilitySlot4" }
+local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2", "AbilitySlot3" }
 ```
 
 Then create `src/client/Sects.luau`, which sends the Command when the player presses 1 or 2 and equips the technique the server grants:
@@ -286,7 +286,7 @@ function Sects.Start(): ()
 		end
 
 		if outcome.status == "Accepted" then
-			Loadout.Equip("AbilitySlot4", outcome.result.Technique)
+			Loadout.Equip("AbilitySlot3", outcome.result.Technique)
 			Hud.Announce(`You learned {outcome.result.Technique}. Press E to use it.`)
 		else
 			Hud.Announce(`You could not join: {outcome.reason}`)
@@ -320,10 +320,28 @@ local Sects = require(script.Parent.Sects)
 Sects.Start()
 ```
 
+Finally, show the techniques' Tags in the HUD's `status` function. The TagsView reports each Tag's stack count:
+
+```lua
+local kindled: KRF.ActiveTagSnapshot? = view:GetTags():GetTag("Kindled")
+
+if kindled ~= nil then
+	text ..= ` · Kindled x{kindled.stackCount}`
+end
+```
+
+```lua
+if view:GetTags():HasTag("StillMind") then
+	text ..= " · Still mind"
+end
+```
+
 ## Checkpoint
 
-Press 1. The announcement says you learned Ember, and E now fires it. Pressing 2 reports `AlreadyInSect`. In a two-player test, hit the other player with Ember three times, as fast as the cooldown allows. Burning lasts six seconds, so all three stacks are active at once, and their Vitality drops faster with each one. Reset your character and E still works.
+Press 1. The announcement says you learned Kindle, and pressing 2 now reports `AlreadyInSect`. With at least 30 Qi, press E: Qi drops by 30, the HUD shows `Kindled x1`, and Qi climbs 3 per second faster. Use it twice more for `Kindled x3`. Reset your character and E still works.
+
+In a second session, press 2 instead. E toggles Stillness: the maximum grows by half, to 150 in the first realm, and Qi slowly drains. Press E again and the maximum returns to 100.
 
 ## Next
 
-[Dash](./dash) adds a way to move quickly.
+[Test the game](./test-the-game) adds automated checks.
