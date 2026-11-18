@@ -1,5 +1,5 @@
 --!strict
-function requireDescendants(root: Instance): { any }
+local function requireDescendants(root: Instance): { any }
 	local modules: { ModuleScript } = {}
 
 	for _, descendant: Instance in root:GetDescendants() do

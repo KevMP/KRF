@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
 
-function Focus(): KRF.ActionDefinition
+local function Focus(): KRF.ActionDefinition
 	return {
 		id = "Focus",
 		visibility = "ClientVisible",

@@ -1,7 +1,7 @@
 --!strict
 local requireDescendants = require(script.Parent.RequireDescendants)
 
-function mergeDescendants(root: Instance): { [string]: any }
+local function mergeDescendants(root: Instance): { [string]: any }
 	local merged: { [string]: any } = {}
 
 	for _, entries: { [string]: any } in requireDescendants(root) do

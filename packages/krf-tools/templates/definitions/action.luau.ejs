@@ -7,7 +7,7 @@ local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
 local DURATION: number = <%- luaNumber(options.duration) %>
 <% } -%>
 
-function <%- name %>(): KRF.ActionDefinition
+local function <%- name %>(): KRF.ActionDefinition
 <% if (options.recipe === "channel") { -%>
 	local elapsed: number = 0
 
