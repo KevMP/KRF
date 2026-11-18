@@ -111,7 +111,7 @@ function nextSteps(request, file) {
 				...(options.requestable
 					? [`Put ${id} in an ability slot with Loadout.Equip("AbilitySlot1", "${id}") in ${LOADOUT_FILE}, or add a slot for it in ${KEYBINDS_FILE}.`]
 					: []),
-				...(options.requestable && (options.startFields.length > 0 || (options.recipe === "held" && options.stopFields.length > 0))
+				...(options.requestable && (options.startFields.length > 0 || ((options.recipe === "held" || options.recipe === "toggle") && options.stopFields.length > 0))
 					? [`Return the parameters input sends from the producers in ${[ACTION_INPUT_POLICIES_FOLDER, ...request.namespace, `${request.name}.luau`].join("/")}.`]
 					: []),
 				...(options.clientStop ? [`A Stop request does not end ${id} by itself. Decide what Stop does in onStopRequested in ${file}; call context:End() there to end it.`] : []),

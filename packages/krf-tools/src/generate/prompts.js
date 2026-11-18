@@ -5,7 +5,7 @@ import { CATALOGS } from "./catalogs.js";
 import { isIdentifier } from "./luau.js";
 import { ENTRY_PROBLEMS, OPTION_DEFAULTS, nameProblem } from "./request.js";
 
-const RECIPE_HOOKS = { instant: "onStart", channel: "onUpdate", held: "onStopRequested" };
+const RECIPE_HOOKS = { instant: "onStart", channel: "onUpdate", held: "onStopRequested", toggle: "onStopRequested" };
 const KNOWN_SHOWN = 12;
 
 const HOOKS = [
@@ -244,7 +244,8 @@ const FLOWS = {
 				await asker.select("recipe (which lifecycle hook ends the Action)", [
 					{ value: "instant", label: "instant", hint: "onStart ends the Action right away" },
 					{ value: "channel", label: "channel", hint: "onUpdate ends the Action after a duration" },
-					{ value: "held", label: "held", hint: "onStopRequested ends the Action when a Stop is requested" },
+					{ value: "held", label: "held", hint: "onStopRequested ends the Action when the player releases its input" },
+					{ value: "toggle", label: "toggle", hint: "onStopRequested ends the Action when the player presses its input again" },
 				]),
 			);
 		}
@@ -271,10 +272,10 @@ const FLOWS = {
 		if (!options.requestable) return;
 
 		if (need("startFields")) set("startFields", await asker.fields("start", "parameters the client sends when requesting the Action"));
-		if (need("clientStop") && options.recipe !== "held") {
+		if (need("clientStop") && options.recipe === "channel") {
 			set("clientStop", await asker.confirm("stop (the client can request a Stop; a Stop does not end the Action by itself, onStopRequested decides what happens)"));
 		}
-		if (need("stopFields") && (options.recipe === "held" || options.clientStop)) {
+		if (need("stopFields") && (options.recipe === "held" || options.recipe === "toggle" || options.clientStop)) {
 			set("stopFields", await asker.fields("stop.parameters", "parameters the client sends with a Stop"));
 		}
 		if (need("allowInputInterrupt") && options.recipe !== "held") {

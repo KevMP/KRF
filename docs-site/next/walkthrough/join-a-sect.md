@@ -53,7 +53,7 @@ Now the Actions. Neither uses `--auto-grant`; nobody can use them until a sect g
 
 ```bash
 npm run createAction -- --name Kindle --requestable --cost Qi=30 --applied-tag Kindled
-npm run createAction -- --name Stillness --recipe held --requestable --active-tag StillMind
+npm run createAction -- --name Stillness --recipe toggle --requestable --active-tag StillMind
 ```
 
 The generated Kindle needs no changes:
@@ -81,7 +81,7 @@ return Kindle
 
 `appliedTags` applies Kindled when the Action is accepted, and the Tag then outlives the Action, which ends at once. Meditate used `activeTags` instead, which removes the Tag when the Action stops. That is the main difference between the two techniques. Stillness holds StillMind as an `activeTags` entry, so the stance lasts exactly as long as the Action runs.
 
-Stillness should toggle rather than run only while E is held. The held recipe generated a request entry that requires a key release and a `WhileDown` policy. Remove `requiresClientRelease` from `src/shared/ActionRequests/Stillness.luau`:
+Meditate and Breakthrough used the held recipe, which runs only while the key is down. Stillness uses the toggle recipe instead. Its request entry allows a Stop without requiring a key release:
 
 ```lua title="src/shared/ActionRequests/Stillness.luau"
 --!strict
@@ -92,15 +92,13 @@ local KRF = require(ReplicatedStorage.Packages.KRF)
 local Stillness: KRF.ActionRequestSchemas = {
 	Stillness = {
 		stop = {},
-		allowInputInterrupt = true,
-		onDisconnect = "Interrupt",
 	},
 }
 
 return Stillness
 ```
 
-and switch `src/client/ActionInputPolicies/Stillness.luau` to `Toggle`:
+and its input policy uses `Toggle`:
 
 ```lua title="src/client/ActionInputPolicies/Stillness.luau"
 --!strict
