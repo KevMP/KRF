@@ -110,8 +110,8 @@ function createAsker(prompts) {
 			return answer === "" ? [] : [...new Set(answer.split(",").map((id) => id.trim()))];
 		},
 
-		async type(path) {
-			const kind = await asker.select(`${path} type`, TYPES);
+		async type(path, description) {
+			const kind = await asker.select(description === undefined ? `${path} type` : `${path} type (${description})`, TYPES);
 			switch (kind) {
 				case "String":
 					return `String(${await asker.number(`${path} maxBytes (longest text allowed, in bytes)`, { above: 0, integer: true }, "32")})`;
@@ -123,13 +123,14 @@ function createAsker(prompts) {
 					return `Enum(${names.split(",").map((name) => name.trim()).join("|")})`;
 				}
 				case "Array": {
-					const element = await asker.type(`${path} item`);
-					return `Array(${element},${await asker.number(`${path} maxLength (most items allowed)`, { above: 0, integer: true }, "8")})`;
+					const maxLength = await asker.number(`${path} maxLength (most items the list holds)`, { above: 0, integer: true }, "8");
+					return `Array(${await asker.type(`${path}[]`, `each item in ${path}`)},${maxLength})`;
 				}
 				case "Map": {
-					const key = await asker.type(`${path} key`);
-					const value = await asker.type(`${path} value`);
-					return `Map(${key},${value},${await asker.number(`${path} maxEntries (most entries allowed)`, { above: 0, integer: true }, "8")})`;
+					const maxEntries = await asker.number(`${path} maxEntries (most entries the lookup table holds)`, { above: 0, integer: true }, "8");
+					const key = await asker.type(`${path}[key]`, `each key in ${path}`);
+					const value = await asker.type(`${path}[value]`, `each value in ${path}`);
+					return `Map(${key},${value},${maxEntries})`;
 				}
 				default:
 					return kind;
