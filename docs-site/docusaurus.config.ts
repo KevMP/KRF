@@ -103,7 +103,7 @@ const config: Config = {
         },
         {
           type: 'doc',
-          docId: 'gather-qi',
+          docId: 'index',
           docsPluginId: 'walkthrough',
           position: 'left',
           label: 'Walkthrough',
