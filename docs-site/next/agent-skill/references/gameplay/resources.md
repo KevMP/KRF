@@ -12,7 +12,7 @@ Read a different reference instead when the value is:
 | --- | --- |
 | A stat that buffs and debuffs modify, such as speed or max health | `tags-and-properties.md` |
 | A status such as Stunned or Burning | `tags-and-properties.md` |
-| Other replicated game state, such as a quest stage | `../networking/replication-domains.md` |
+| Other replicated game state, such as a quest stage, or data only its owner should see | `../networking/replication-domains.md` |
 
 ## Facts that change the code you write
 
@@ -22,9 +22,9 @@ Read a different reference instead when the value is:
 - An Actor has a Resource only through `autoAssign = true` or `ResourceController:AddResource`, and nothing unassigns it.
 - An Action pays with its `costs` and checks `resourceRequirements`. Calling `Spend` before `RequestAction` or inside `onCanStart` charges the player even when KRF rejects the Action.
 - Raising `max` leaves `current` where it was; bounds only clamp.
-- Regeneration runs by itself every 0.1 s while `actor.enabled` is true, and a rate of 0 or less does nothing. Game code never calls `ResourceController:Step`.
+- Regeneration runs by itself in 0.1-second steps while `actor.enabled` is true, adding the per-second rate over time; a rate of 0 or less does nothing. Game code never calls `ResourceController:Step`.
 - Clients estimate regeneration locally, and the client `OnResourceChanged` doesn't fire for it. A HUD reads `GetResource` or `GetCurrent` every frame.
-- KRF sends a `ClientVisible` Resource to every client that sees the Actor, including other players. Private values need `ServerOnly`.
+- KRF sends every `ClientVisible` Resource of every Actor to every connected client, other players included. A `ServerOnly` Resource reaches no client, not even the owner's. Resources have no owner-only option; owner-only data needs a replication domain with `audience = "Owner"`.
 
 ## Choose the API
 
@@ -34,7 +34,7 @@ Read a different reference instead when the value is:
 | Charge for an Action | `costs = { Mana = 10 }` on the Action definition |
 | Gate an Action without charging | `resourceRequirements = { Mana = { min = 30 } }`; also `max`, `minPercent`, `maxPercent` (fractions from 0 to 1) |
 | A cooldown | Resource with `max = { value = 1 }` and `regen = { rate = { value = 1 / seconds } }`; the Action requires `{ minPercent = 1 }` and costs `1` |
-| Charges | Resource with `max = { value = n }`; the Action costs `1` |
+| Charges | Resource with `max = { value = n }` and a slow regen rate; the Action costs `1` |
 | World or game event gives value | `resources:Restore(id, amount)`, which stops at the maximum |
 | World or game event removes value | `resources:Drain(id, amount)`, which stops at the minimum |
 | All-or-nothing payment outside an Action | `resources:Spend(id, amount)` |
@@ -58,7 +58,7 @@ Get the controller with `actor:GetController("ResourceController") :: KRF.Resour
 
 | Method | Returns | Failure reasons |
 | --- | --- | --- |
-| `AddResource(id, initialValue?)` | `(boolean, string?)` | `UnknownResourceId:<id>`, `ResourceAlreadyAssigned`, `InvalidResourceOverrideValue`, `ResourceResolvedMaxLessThanResolvedMin`, `ResourcePropertyNonFinite:<p>`, `ResourceControllerDestroyed` |
+| `AddResource(id, initialValue?)` | `(boolean, string?)` | `UnknownResourceId:<id>`, `ResourceAlreadyAssigned`, `InvalidResourceOverrideValue`, `ResourceResolvedMaxLessThanResolvedMin`, `ResourcePropertyNonFinite:<p>`, `ResourcePropertySeedFailed:<p>:<reason>`, `ResourcePropertyUnresolved:<p>`, `ResourceControllerDestroyed` |
 | `Spend(id, amount)` / `CanSpend` | `(boolean, string?)` | `ResourceNotAssigned`, `InvalidResourceAmount`, `InsufficientResourceValue` |
 | `Restore(id, amount)` / `Drain` | `(boolean, string?)` | `ResourceNotAssigned`, `InvalidResourceAmount` |
 | `SetCurrent(id, value)` | `(boolean, string?)` | `ResourceNotAssigned`, `InvalidResourceValue` |
@@ -130,7 +130,7 @@ For a HUD bar, read `actorView:GetResources():GetResource("Mana")` in `RunServic
 | Redrawing a HUD only in the client's `OnResourceChanged` | Read every frame; the event skips regeneration |
 | Calling `Step` to make regen happen | Set `regen`; KRF steps automatically |
 | Ignoring the `(boolean, string?)` result | Branch on it and surface the reason |
-| `ClientVisible` for a private value | `ServerOnly` |
+| `ClientVisible` or `ServerOnly` for data only the owner should see | A replication domain with `audience = "Owner"` |
 
 ## Verify
 

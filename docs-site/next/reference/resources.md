@@ -6,13 +6,13 @@ description: Give Actors meters such as stamina, mana, ammo, cooldowns and charg
 
 # Resources
 
-When a character needs a meter that gets spent and refilled, make it a Resource. Stamina, mana, ammunition, a dash cooldown and ability charges are all Resources. Each one keeps a current value between a minimum and a maximum, and it can regenerate on its own.
+When a character needs a meter that gets spent and refilled, make it a Resource. Stamina, mana, ammunition, a dash cooldown and ability charges are all Resources. Each Actor that has one keeps its own current value between a minimum and a maximum, and the value can regenerate on its own.
 
-The server owns every Resource. An Action pays for itself by declaring `costs`, other server code changes values through the Actor's `ResourceController`, and clients only read values through a `ResourcesView`. The examples on this page assume a project created with `create-krf`. For exact signatures and every failure reason, see the [Resources API](./resources-api).
+You define a Resource once, in your game's Resource catalog. The server owns every Actor's value: an Action pays for itself by declaring `costs`, other server code changes values through the Actor's `ResourceController`, and clients only read values through a `ResourcesView`. The examples on this page assume a project created with `create-krf`. For exact signatures and every failure reason, see the [Resources API](./resources-api).
 
 ## When a value should be a Resource
 
-A Resource fits a value that goes down when used and comes back over time or through play. Other kinds of values have their own systems:
+Values that aren't spent and refilled belong to other systems:
 
 | You need | Use |
 | --- | --- |
@@ -23,10 +23,6 @@ A Resource fits a value that goes down when used and comes back over time or thr
 | Other gameplay state clients must see, like a quest stage | A [replication domain](/Networking/replication-domains) |
 
 A Resource's current value is never a Property. A Property can set a Resource's maximum or its regeneration rate, while the current value stays with the Resource.
-
-## How a Resource works
-
-You define a Resource once, in your game's Resource catalog, and the definition holds no per-Actor value. KRF then assigns the Resource to Actors, and each Actor gets its own current value, bounds and regeneration rate. From then on the server changes that value: an Action pays its `costs`, or game code calls the Actor's `ResourceController`. If the definition has a rate, the value regenerates while the Actor is enabled. If the definition is `ClientVisible`, every client that can see the Actor reads it through a `ResourcesView`.
 
 ## Define a Resource
 
@@ -58,8 +54,8 @@ return Stamina
 | `id` | required | Unique, non-empty name used by every API, such as `"Stamina"` |
 | `max` | required | Upper bound, as a [numeric source](#numeric-sources) |
 | `min` | `{ value = 0 }` | Lower bound, as a numeric source |
-| `initialValue` | the resolved maximum | Value on assignment. It must sit within the default bounds |
-| `visibility` | required | `"ClientVisible"` to replicate to clients, or `"ServerOnly"` |
+| `initialValue` | the resolved maximum | Value on assignment. It must sit within the bounds that the Properties' default values give |
+| `visibility` | required | `"ClientVisible"` to send it to every client, or `"ServerOnly"` to send it to none |
 | `autoAssign` | `false` | Assign to every Actor when it registers |
 | `regen` | none | `{ rate = source }`, in units per second. The default rate can't be negative |
 
@@ -67,7 +63,7 @@ return Stamina
 
 ### Numeric sources
 
-`min`, `max` and `regen.rate` each take one numeric source. Use a fixed number, such as `{ value = 100 }`, when every Actor shares it. Use a Property, such as `{ propertyName = "MaxStamina" }`, when the number differs per Actor or changes during play. The Property must be registered in your Property catalog, and its `defaultBaseValue` supplies the starting number. A Resource definition never takes its own default.
+`min`, `max` and `regen.rate` each take one numeric source. Use a fixed number, such as `{ value = 100 }`, when every Actor shares it. Use a Property, such as `{ propertyName = "MaxStamina" }`, when the number differs per Actor or changes during play. The Property must be registered in your Property catalog, and its `defaultBaseValue` supplies the starting number; a numeric source can't carry a default of its own.
 
 ## Bounds and regeneration from Properties
 
@@ -109,7 +105,7 @@ Then pick the method that matches what the game is doing:
 | Remove up to an amount | `Drain(id, amount)` | Stops at the minimum and still succeeds |
 | Set an exact value | `SetCurrent(id, value)` | Clamps into the bounds |
 
-Spending counts only what sits above the minimum. With a minimum of 10 and a current value of 30, an Actor can spend at most 20. Every method returns `true` on success, or `false` and a reason, and a call that leaves the value unchanged succeeds without firing an event.
+Spending counts only what sits above the minimum. With a minimum of 10 and a current value of 30, an Actor can spend at most 20. Each of these methods returns `true` on success, or `false` and a reason, and a call that leaves the value unchanged succeeds without firing an event.
 
 ### Pay for Actions with `costs`, not `Spend`
 
@@ -126,7 +122,7 @@ Use `ResourceController` methods for changes that aren't an Action's price, such
 
 ## Regeneration
 
-A Resource with `regen` gains its rate every 0.1 seconds while the Actor is enabled, and stops at its maximum. KRF reads the rate fresh on each step, so a Tag that changes the rate takes effect on the next one. A rate of zero or less does nothing; Resources never decay on their own. To drain a meter over time, call `Drain` from your own loop.
+A Resource with `regen` gains its rate per second while the Actor is enabled, in steps of 0.1 seconds, and stops at its maximum. KRF reads the rate fresh on each step, so a Tag that changes the rate takes effect on the next one. A rate of zero or less does nothing; Resources never decay on their own. To drain a meter over time, call `Drain` from your own loop.
 
 ## React to changes on the server
 
@@ -146,7 +142,7 @@ The event fires on every regeneration step that changes the value, so a regenera
 
 ## Read Resources on clients
 
-KRF sends a `ClientVisible` Resource to every client that can see its Actor, which includes other players. Make a value `ServerOnly` if other players shouldn't see it; KRF never sends `ServerOnly` Resources or their IDs to clients.
+KRF sends every `ClientVisible` Resource of every Actor to every connected client, so other players receive your character's values too. A `ServerOnly` Resource, including its ID, reaches no client at all, not even the owner's. Resources have no owner-only setting; to show a value only to its owner, publish it through a [replication domain](/Networking/replication-domains) with `audience = "Owner"`.
 
 Clients read values through the Actor's view:
 
@@ -170,8 +166,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 ```
-
-Clients can't change Resources. To change one, a client asks the server through an Action request or a Command, and the server decides.
 
 ## Cooldowns and charges
 
@@ -197,14 +191,3 @@ return DashCooldown
 The dash declares `resourceRequirements = { DashCooldown = { minPercent = 1 } }` and `costs = { DashCooldown = 1 }`. The player can dash again three seconds later, and the client can draw the cooldown from the Resource's estimate.
 
 Charges use the same shape with a larger maximum. With `max = { value = 3 }`, a cost of 1 and a rate of `1 / 5`, the Action holds up to three uses and earns one back every five seconds.
-
-## Common mistakes
-
-| Mistake | Instead |
-| --- | --- |
-| Calling `Spend` before `RequestAction`, or in `onCanStart` | Declare `costs` on the Action |
-| Storing a meter's current value in a Property | Make it a Resource; use Properties for its bounds and rate |
-| Writing a custom controller or RemoteEvent to replicate a meter | Make it `ClientVisible` and read `ResourcesView` |
-| Redrawing a HUD only from the client's `OnResourceChanged` | Read the view every frame; the event skips regeneration |
-| Expecting a higher maximum to refill the meter | Call `Restore` or `SetCurrent` when the design calls for it |
-| Treating `ClientVisible` as private to the owner | Every client that sees the Actor receives it; use `ServerOnly` for secrets |
