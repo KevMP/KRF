@@ -64,10 +64,6 @@ export default function Home() {
               a project name and a couple of options:
             </p>
             <CodeBlock language="bash">npm create krf@latest</CodeBlock>
-            <p>
-              When it's done, open the new folder and run <code>npm install</code>, then{' '}
-              <code>npm run dev</code> to open your game in Studio.
-            </p>
           </section>
         </div>
       </main>
