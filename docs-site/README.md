@@ -1,9 +1,15 @@
 # KRF documentation site
 
-The [KRF guides and API reference](https://kevmp.github.io/KRF/) use Docusaurus.
-Guides live in `docs/documentation`; the manual API reference lives in `docs/api`.
-Their routes, navigation, and sidebars are configured in `docusaurus.config.ts`,
-`sidebars.ts`, and `sidebarsApi.ts`.
+The site has two primary sections:
+
+- `docs/reference/` contains system guides and API contracts.
+- `docs/tutorial/` contains the cultivation game tutorial.
+
+`sidebarsReference.ts` explicitly orders the Reference by system, with each guide
+beside its API. `sidebarsTutorial.ts` orders the tutorial chapters. Add new
+pages to the appropriate sidebar rather than relying on filename sorting.
+
+The homepage in `src/pages/index.tsx` links to both sections.
 
 ## Local development
 
@@ -14,9 +20,9 @@ npm ci
 npm start
 ```
 
-Open `http://localhost:3000/KRF/`. Most content changes update without restarting.
+Open `http://localhost:3000/`. Most content edits update without restarting.
 
-## Validate and preview
+## Preview a production build
 
 ```powershell
 npm run typecheck
@@ -24,15 +30,25 @@ npm run build
 npm run serve
 ```
 
-The production build writes `build/` and fails on broken internal links. The
-preview serves that output at `http://localhost:3000/KRF/`. Check both the Docs
-and API navigation when changing routes or sidebars.
+The build writes ignored `build/` output and reports broken internal links.
+Check Reference's folder ordering and Tutorial's chapter navigation after
+changing `docusaurus.config.ts` or either sidebar.
 
-From the repository root, use `npm --prefix docs-site run build` or the equivalent
-`npm --prefix docs-site <command>`. Generated output and dependencies stay ignored.
+From the repository root, prefix commands with `npm --prefix docs-site`.
+
+## Editing content
+
+Use the package entrypoint and current source contracts as the API authority.
+Explain ownership and lifecycle in guides; keep signatures, data shapes, events
+and failure behavior in API pages. Cross-link systems where an interaction matters.
+Planned capabilities belong in the charter, not in examples of shipped APIs.
 
 ## Deployment
 
-`.github/workflows/docs-deploy.yml` builds and deploys to GitHub Pages when
-documentation changes reach `main`; it also supports manual dispatch. The site
-uses `https://kevmp.github.io` with the `/KRF/` base path.
+`.github/workflows/docs-deploy.yml` deploys the site when documentation changes
+reach `main`. It reads the origin and mount path from GitHub Pages before the
+build. GitHub hosts the KRF project site at `https://kevmp.github.io/KRF/`. A
+custom domain configured on this project can serve it from `/`.
+
+For a different host, set `KRF_DOCS_ORIGIN` to the public origin before the build.
+Set `KRF_DOCS_BASE_PATH` only when the host serves the site from a subdirectory.

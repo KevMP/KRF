@@ -5,8 +5,9 @@ Actor lifecycle, Tags and status effects, numeric Properties, Resources, Actions
 and schema-defined replication with immutable client ActorViews, TagsViews, and ResourcesViews.
 Games supply definitions, gameplay behavior, and presentation.
 
-[Guides and API reference](https://kevmp.github.io/KRF/) describe the current
-public contracts. The [charter](./CHARTER.md) records architectural direction and
+[Reference](https://kevmp.github.io/KRF/reference/) describes the shipped systems
+and their APIs. [Build a cultivation game](https://kevmp.github.io/KRF/tutorial/)
+walks through a complete small project. The [charter](./CHARTER.md) records architectural direction and
 planned systems; it is not a list of shipped features.
 
 ## Install
@@ -20,7 +21,7 @@ KRF = "kevmp/krf@0.2.0"
 
 Mount Wally's `Packages` folder at `ReplicatedStorage.Packages`, then import KRF through its
 package module: `require(ReplicatedStorage.Packages.KRF)`. See
-[Initializing KRF](https://kevmp.github.io/KRF/initializing-krf). Maintainers publish releases
+[Initializing KRF](https://kevmp.github.io/KRF/reference/getting-started/initialization). Maintainers publish releases
 as described in [RELEASING.md](./RELEASING.md).
 
 ## Setup
@@ -44,7 +45,7 @@ rojo serve dev.project.json
 
 The dev project mounts KRF under `ReplicatedStorage.Packages.KRF`.
 `default.project.json` is the Wally package project and maps only `src`. Follow
-[Initializing KRF](https://kevmp.github.io/KRF/initializing-krf) to integrate it
+[Initializing KRF](https://kevmp.github.io/KRF/reference/getting-started/initialization) to integrate it
 with game startup.
 
 ## Development

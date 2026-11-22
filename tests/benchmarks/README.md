@@ -471,5 +471,39 @@ caching. A passing single-machine run does not certify every production setting.
 Current results, observed regressions and owner acceptance decisions belong in
 the PR; do not turn historical timings into permanent API guarantees.
 
-See [maintainer metric semantics](../../docs-site/docs/documentation/Networking/maintaining-networking.md)
-before comparing ledger, age, cumulative, high-water and transport observations.
+## Local diagnostics
+
+These are framework-private, local, read-only snapshots; they are not replicated state or a stable consumer tuning API:
+
+| Owning module | Method and result |
+| --- | --- |
+| `server.Networking.NetworkingDiagnostics` | `GetServerSnapshot() -> DiagnosticSnapshot?` |
+| Same server module | `GetConnectionSnapshot(player: Player) -> DiagnosticSnapshot?` |
+| `client.Networking.NetworkingDiagnostics` | `GetClientSnapshot() -> DiagnosticSnapshot?` |
+
+The shared Networking types define `DiagnosticSnapshot`. Reads return nil outside the owning runtime/session; querying an absent/closed connection does not create one. Each snapshot is recursively frozen numeric data with `scope` (`Server`, `Connection`, `Client`), `counters`, `gauges`, `maxima` and `ages`. It retains no Player, Actor, packet or request history. Server aggregates survive connection closure within that server lifetime; the old per-connection snapshot is no longer queryable. Held snapshots remain historical values and do not update.
+
+| Group | Interpretation |
+| --- | --- |
+| `counters` | Cumulative within the owning lifetime; observations may overlap rather than partition all traffic |
+| `gauges[name].current` | Ownership now, including staged work until its owner releases it |
+| `gauges[name].highWater` | Peak observed ownership in that lifetime; draining does not reset it |
+| `maxima` | Largest observed pump work or local queue residence, not a percentile |
+| `ages` | On-demand current oldest eligible queue age in seconds; absent when no matching work exists |
+
+Counters/gauges update cheaply without automatic snapshots or per-packet strings. Explicit age reads can inspect bounded live queues; avoid sampling snapshots on every frame. Snapshot construction allocates, and cumulative/high-water values can include earlier scenes in a shared session.
+
+### Metric meanings
+
+- `reliableSendAttempts` / `unreliableSendAttempts` count transport calls, not delivery acknowledgements. `*EncodedBytes` count complete KRF encoded payloads submitted to those calls; they exclude Roblox framing/compression and are not wire bandwidth. `*LogicalRecords` measure framed records separately from physical sends.
+- `publicationAdmitted`, `publicationDropped`, `stateCoalesces`, `semanticBarriers` and `streamDiscontinuities` describe publication outcomes. They are not equivalent to game mutation counts. `baselinesCaptured` counts admitted recipient generations; `baselinesCompleted` counts completed server transfers, not client acknowledgement. `baselinesRestarted`/`baselinesAbandoned`, `baselineCapacityRefusals` and `recoveryBackoffs`/`recoveryAbandoned` separate generation and retry outcomes. `reliableCaptures` measures expensive scheduler claims; shared materialization need not claim once per recipient.
+- `resyncRequests`, `resyncAdmitted`, `resyncDeduplicated`, `resyncRateLimited` and `resyncRefused` distinguish requests from successful replacement work. A deduplicated request is not another baseline capture.
+- `commandsReceived` counts ingress observations, `commandsAdmitted` queued requests, `commandsDispatched` selected jobs and `commandsExecuted` actual author-handler calls after authorization. Accepted/Rejected are server outcomes, not proof of receipt. `commandsFaulted` and `commandsUncertain` can both describe one request; they are not additive exclusive categories. Refused/rate-limited/abandoned work need not execute. Client `commandResultsReceived` is separate.
+- `commandResultSlots` / `commandResultReservedBytes` include outstanding maximum-size reservations, not just filled results. Pending request/history/fenced-publication gauges have separate ownership. No result/history count is durable gameplay state.
+- `hintsSent` means records submitted through a completed local unreliable send, not received remotely. `hintsReceived` counts validated eligible records reaching consumer dispatch (after C2S authorization and Latest stale checks). It does not certify callback success. Coalesced, dropped, stale-dropped, malformed, unauthorized and callback/send-fault counters describe distinct stages; some overlap. Packet admission is not record dispatch.
+- `reliableConnectionVisits`, `reliableStreamVisits`, `reliableChecks`, prepares/measurements/encodes, priority visits and the command/Hint visit counters include attempted work, even when unproductive. `*PumpWorkUnits` maxima are private composite counts, not CPU time. Do not add overlapping counters to invent a universal work total.
+- `*QueueResidenceSeconds` maxima and `ages` use a local clock and KRF eligibility/queue ownership. They are not RTT, end-to-end notification latency or a p50/p95/p99 distribution.
+
+`reliableRecords`, `reliableRetainedBytes` and `reliableDeliveryBytes` describe different ledger liabilities: retained shared payload weight differs from per-recipient delivery liability. Publication queue, active connection/stream, baseline generation, recovery, command and Hint gauges expose their respective owners. They are not an allocation profiler, whole Luau heap size or OS process memory. Quiet queues can be zero while live Actor relationships remain; after complete teardown, tracked current ownership returns to zero while high-water/counters remain historical in already-held snapshots.
+
+Repeated warnings use bounded category/window suppression, preserve an initial actionable occurrence, and may report suppressed counts on a later permitted warning. Terminal faults retain their failure behavior. Logging sinks cannot suspend or throw through authoritative execution. Quiet windows do not run an idle summary task, and suppressed output does not suppress semantic diagnostic counters. There is no retained closed-Actor/Player log history.

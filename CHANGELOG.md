@@ -12,4 +12,4 @@ Resource sources previously used `{ propertyName = "MaxStamina", defaultBaseValu
 
 Tag modifier and Action cost multiplier IDs must also be registered. Startup validates all references against the prepared Property catalog before publishing any catalogs. Direct registry loads enforce the same prerequisite. Standalone `PropertyController.new` now requires a loaded PropertyRegistry.
 
-Actor-specific values can be supplied as `ActorRuntime.RegisterActor(model, { properties = { MaxStamina = 150 } })`. They are validated before binding and installed silently before dependent controllers initialize. See the [complete Property, Resource and Tag example](docs-site/docs/documentation/Property/property-registry.md).
+Actor-specific values can be supplied as `ActorRuntime.RegisterActor(model, { properties = { MaxStamina = 150 } })`. They are validated before binding and installed silently before dependent controllers initialize. See [Actor registration](docs-site/docs/reference/actors/api.md#registeractor).

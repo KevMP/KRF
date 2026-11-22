@@ -14,7 +14,7 @@ const RESERVED_NAMES = new Set(["KRF", "ReplicatedStorage", "DURATION"]);
 const UNSAFE_CHARACTERS = /[<>:"|?*\u0000-\u001f]/;
 
 export const ACTION_HOOKS = Object.freeze(["onCanStart", "onStart", "onStopRequested", "onUpdate", "onEnd", "onInterrupt", "canBeInterruptedBy"]);
-const RECIPE_HOOKS = { instant: "onStart", channel: "onUpdate", held: "onStopRequested" };
+const RECIPE_HOOKS = { instant: "onStart", channel: "onUpdate", held: "onStopRequested", toggle: "onStopRequested" };
 const MODIFIER_OPERATIONS = ["set", "add", "multiply", "min", "max"];
 const REQUIREMENT_FIELDS = ["min", "max", "minPercent", "maxPercent"];
 const AUTHORIZATION = z.enum(["deny", "OwnerActor", "AnyReadyClient"]);
@@ -196,7 +196,7 @@ const networkTarget = z.enum(["Actor", "None"]);
 
 const OPTION_SCHEMAS = {
 	action: z.strictObject({
-		recipe: z.enum(["instant", "channel", "held"]).default(OPTION_DEFAULTS.action.recipe),
+		recipe: z.enum(["instant", "channel", "held", "toggle"]).default(OPTION_DEFAULTS.action.recipe),
 		duration: positive.optional(),
 		requestable: z.boolean().default(OPTION_DEFAULTS.action.requestable),
 		autoGrant: z.boolean().default(OPTION_DEFAULTS.action.autoGrant),
@@ -367,10 +367,13 @@ function checkAction(options, given) {
 		const requestOnly = ["startFields", "stopFields", "clientStop", "allowInputInterrupt", "onDisconnect"].find((field) => given.includes(field));
 		if (requestOnly) throw usage("InvalidOption", `${flagFor(requestOnly)} describes the client request, so it needs --requestable.`);
 	}
+	if (options.recipe === "instant" && options.requestable && (options.clientStop || options.stopFields.length > 0)) {
+		throw usage("InvalidOption", "The instant recipe ends the Action in onStart, so a Stop never reaches it; use --recipe toggle, held or channel.");
+	}
 	if (options.recipe === "held" && options.onDisconnect === "Keep") {
 		throw usage("InvalidOption", "A held Action requires the client to release its input, so a disconnect must interrupt it; drop --on-disconnect Keep.");
 	}
-	const clientStop = options.requestable && options.recipe !== "held" && (options.clientStop || options.stopFields.length > 0);
+	const clientStop = options.requestable && options.recipe !== "held" && options.recipe !== "toggle" && (options.clientStop || options.stopFields.length > 0);
 	return {
 		...options,
 		clientStop,

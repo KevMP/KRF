@@ -33,7 +33,7 @@ function <%- name %>(): KRF.ActionDefinition
 <% } else if (options.hooks.includes("onStart")) { -%>
 		onStart = function(_context: KRF.ActionExecutionContext): () end,
 <% } -%>
-<% if (options.recipe === "held") { -%>
+<% if (options.recipe === "held" || options.recipe === "toggle") { -%>
 		onStopRequested = function(context: KRF.ActionExecutionContext): ()
 			context:End()
 		end,

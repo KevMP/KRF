@@ -2,6 +2,8 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
+const deploymentPath = process.env.KRF_DOCS_BASE_PATH?.replace(/^\/+|\/+$/g, '');
+
 const config: Config = {
   title: "Kevin's Roblox Framework",
   tagline: 'A server-authoritative RPG gameplay runtime for Roblox',
@@ -10,8 +12,8 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://kevmp.github.io',
-  baseUrl: '/KRF/',
+  url: process.env.KRF_DOCS_ORIGIN || 'https://kevmp.github.io',
+  baseUrl: deploymentPath ? `/${deploymentPath}/` : '/',
 
   organizationName: 'KevMP',
   projectName: 'KRF',
@@ -40,20 +42,19 @@ const config: Config = {
     [
       '@docusaurus/plugin-content-docs',
       {
-        path: 'docs/documentation',
-        routeBasePath: '/',
-        sidebarPath: './sidebars.ts',
-        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
+        id: 'reference',
+        path: 'docs/reference',
+        routeBasePath: 'reference',
+        sidebarPath: './sidebarsReference.ts',
       },
     ],
     [
       '@docusaurus/plugin-content-docs',
       {
-        id: 'api',
-        path: 'docs/api',
-        routeBasePath: 'api',
-        sidebarPath: './sidebarsApi.ts',
-        editUrl: 'https://github.com/KevMP/KRF/edit/main/docs-site/',
+        id: 'tutorial',
+        path: 'docs/tutorial',
+        routeBasePath: 'tutorial',
+        sidebarPath: './sidebarsTutorial.ts',
       },
     ],
   ],
@@ -66,17 +67,18 @@ const config: Config = {
       title: 'KRF',
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'docsSidebar',
+          type: 'doc',
+          docId: 'index',
+          docsPluginId: 'reference',
           position: 'left',
-          label: 'Docs',
+          label: 'Reference',
         },
         {
-          type: 'docSidebar',
-          sidebarId: 'apiSidebar',
-          docsPluginId: 'api',
+          type: 'doc',
+          docId: 'index',
+          docsPluginId: 'tutorial',
           position: 'left',
-          label: 'API',
+          label: 'Tutorial',
         },
         {
           href: 'https://github.com/KevMP/KRF',
@@ -89,20 +91,20 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Reference',
           items: [
             {
-              label: 'KRF Overview',
-              to: '/',
+              label: 'Systems and APIs',
+              to: '/reference/',
             }
           ],
         },
         {
-          title: 'API',
+          title: 'Tutorial',
           items: [
             {
-              label: 'Actor Runtime',
-              to: '/api/Actor/actor-runtime',
+              label: 'Build a cultivation game',
+              to: '/tutorial/',
             },
           ],
         },

@@ -13,8 +13,8 @@ npx create-krf@latest my-game --yes
 Requires Node.js 22.12 or newer. The project's npm scripts call the Roblox tools pinned in its
 `rokit.toml`: Rojo, Wally, StyLua, Selene and luau-lsp. Its `npm install` installs Rokit when it
 is missing, then those tools and the Wally packages. Its only npm dependency is `krf-tools`, which runs
-[`npm run dev`, `npm test` and `npm run test:studio`](https://kevmp.github.io/KRF/local-development) and the
-[definition generators](https://kevmp.github.io/KRF/definition-generators) such as `npm run createAction`. It is pinned to the exact release this creator ships with; when the
+[`npm run dev`, `npm test` and `npm run test:studio`](https://kevmp.github.io/KRF/reference/getting-started/project-tools#work-on-the-game) and the
+[definition generators](https://kevmp.github.io/KRF/reference/getting-started/project-tools#generate-a-definition) such as `npm run createAction`. It is pinned to the exact release this creator ships with; when the
 creator itself was installed from a local `krf-tools` tarball, the project depends on that same
 tarball instead, so `npm install` works before the packages are published.
 

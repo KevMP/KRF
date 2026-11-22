@@ -126,7 +126,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.deepEqual(Object.keys(shape(krf)).sort(), ["client", "server", "shared"]);
 			const shared = child(replicated, "Shared");
 			assert.deepEqual(shape(shared), { ActionRequests: "ModuleScript", MergeDescendants: "ModuleScript", RequireDescendants: "ModuleScript" });
-			assert.deepEqual(shape(child(shared, "ActionRequests")), { Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript" });
+			assert.deepEqual(shape(child(shared, "ActionRequests")), { Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript", Ward: "ModuleScript" });
 
 			const server = child(child(place, "ServerScriptService"), "Game");
 			assert.deepEqual(shape(server), {
@@ -141,7 +141,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 				Startup: "Script",
 				Tags: "ModuleScript",
 			});
-			assert.deepEqual(shape(child(server, "Actions")), { Combat: "Folder", Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript" });
+			assert.deepEqual(shape(child(server, "Actions")), { Combat: "Folder", Fireball: "ModuleScript", Focus: "ModuleScript", Guard: "ModuleScript", Ward: "ModuleScript" });
 			assert.deepEqual(shape(child(child(server, "Actions"), "Combat")), { Meditate: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Tags")), { Burning: "ModuleScript", Focused: "ModuleScript", Stunned: "ModuleScript" });
 			assert.deepEqual(shape(child(server, "Properties")), { EnergyRegen: "ModuleScript", ManaRegen: "ModuleScript", MaxMana: "ModuleScript" });
@@ -159,7 +159,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 				LocalCharacter: "ModuleScript",
 				Startup: "LocalScript",
 			});
-			assert.deepEqual(shape(child(client, "ActionInputPolicies")), { Focus: "ModuleScript", Guard: "ModuleScript" });
+			assert.deepEqual(shape(child(client, "ActionInputPolicies")), { Focus: "ModuleScript", Guard: "ModuleScript", Ward: "ModuleScript" });
 			assert.deepEqual(shape(child(place, "Workspace")), { Baseplate: "Part", SpawnLocation: "SpawnLocation" });
 
 			walk(place, (node) => assert.doesNotMatch(node.name ?? "", LEAKED_NAMES, `unexpected ${node.className} ${node.name} in the place`));

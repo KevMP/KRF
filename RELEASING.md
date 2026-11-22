@@ -39,7 +39,7 @@ Consumers import KRF through the package root, `require(ReplicatedStorage.Packag
 
 1. In GitHub Actions, run **Release PR** and choose `patch`, `minor` or `major`, or enter an exact
    version. It bumps `wally.toml`, `wally.lock` and the install snippets in `README.md` and
-   [Initializing KRF](./docs-site/docs/documentation/initializing-krf.md), opens a
+   [Initializing KRF](./docs-site/docs/reference/getting-started/initialization.md), opens a
    `chore(release): vX.Y.Z` pull request and runs CI on it.
 2. Review and merge the pull request.
 

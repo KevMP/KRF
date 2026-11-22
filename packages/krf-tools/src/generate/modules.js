@@ -107,26 +107,27 @@ const producerLines = (key, fields) => [
 ];
 
 export function needsInputPolicy(options) {
-	return options.recipe === "held" || options.startFields.length > 0;
+	return options.recipe === "held" || options.recipe === "toggle" || options.startFields.length > 0;
 }
 
 export function actionPolicyEntry(options) {
-	const held = options.recipe === "held";
+	const activation = { held: "WhileDown", toggle: "Toggle" }[options.recipe];
 	const lines = [
-		...(held ? ['activation = "WhileDown",'] : []),
+		...(activation ? [`activation = "${activation}",`] : []),
 		...(options.startFields.length > 0 ? producerLines("startParameters", options.startFields) : []),
-		...(held && options.stopFields.length > 0 ? producerLines("stopParameters", options.stopFields) : []),
+		...(activation && options.stopFields.length > 0 ? producerLines("stopParameters", options.stopFields) : []),
 	];
 	return lines.length === 1 ? `{ ${lines[0].slice(0, -1)} }` : lines;
 }
 
 export function actionRequestEntry(options) {
 	const held = options.recipe === "held";
-	const stop = held || options.clientStop || options.stopFields.length > 0;
+	const toggle = options.recipe === "toggle";
+	const stop = held || toggle || options.clientStop || options.stopFields.length > 0;
 	const lines = [
 		...(options.startFields.length > 0 ? structLines(0, "start = ", options.startFields) : []),
 		...(stop ? (options.stopFields.length > 0 ? ["stop = {", ...structLines(1, "parameters = ", options.stopFields), "},"] : ["stop = {},"]) : []),
-		...(held || options.allowInputInterrupt ? ["allowInputInterrupt = true,"] : []),
+		...(held || options.allowInputInterrupt || (toggle && options.stopFields.length > 0) ? ["allowInputInterrupt = true,"] : []),
 		...(held ? ["requiresClientRelease = true,"] : []),
 		...(held || options.onDisconnect === "Interrupt" ? ['onDisconnect = "Interrupt",'] : []),
 	];

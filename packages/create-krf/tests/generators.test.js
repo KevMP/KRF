@@ -18,6 +18,7 @@ const EVERY_KIND = [
 	["resource", "--name", "Stamina", "--max", "50"],
 	["action", "--name", "Fireball", "--requestable", "--auto-grant", "--blocked-tag", "Stunned", "--cost", "Stamina=10"],
 	["action", "--name", "Guard", "--recipe", "held", "--requestable"],
+	["action", "--name", "Shield", "--recipe", "toggle", "--requestable"],
 	["action", "--id", "Combat.Meditate", "--recipe", "channel", "--duration", "0.5"],
 	["controller", "--name", "Cooldowns", "--depends-on", "ResourceController"],
 	["command", "--name", "CastSpell"],
@@ -232,6 +233,27 @@ return Guard
 	const oneShot = await generate(root, ["action", "--name", "Bolt", "--requestable", "--start-field", "Target:Optional(U32)", "--yes"]);
 	assert.equal(oneShot.code, 0, oneShot.stderr);
 	assert.match(readTree(root)[`${POLICIES}/Bolt.luau`], /\tBolt = \{\n\t\tstartParameters = function\(_context: KRF\.ActionInputContext\): \{\n\t\t\tTarget: number\?,\n\t\t\}\n\t\t\treturn \{\}\n\t\tend,\n\t\},/);
+});
+
+test("a toggle Action stops on the next press, without requiring a release", async (t) => {
+	const root = newProject(t);
+	const plain = await generate(root, ["action", "--name", "Shield", "--recipe", "toggle", "--requestable", "--yes"]);
+	assert.equal(plain.code, 0, plain.stderr);
+
+	let tree = readTree(root);
+	assert.match(tree["src/server/Actions/Shield.luau"], /\t\tonStopRequested = function\(context: KRF\.ActionExecutionContext\): \(\)\n\t\t\tcontext:End\(\)\n\t\tend,/);
+	assert.doesNotMatch(tree["src/server/Actions/Shield.luau"], /onStart/);
+	assert.match(tree[`${REQUESTS}/Shield.luau`], /\tShield = \{\n\t\tstop = \{\},\n\t\},/);
+	assert.match(tree[`${POLICIES}/Shield.luau`], /\tShield = \{ activation = "Toggle" \},/);
+
+	const withParameters = await generate(root, ["action", "--name", "Ward", "--recipe", "toggle", "--requestable", "--stop-field", "Strength:U8", "--on-disconnect", "Interrupt", "--yes"]);
+	assert.equal(withParameters.code, 0, withParameters.stderr);
+	assert.match(withParameters.stdout, /Return the parameters input sends from the producers in src\/client\/ActionInputPolicies\/Ward\.luau\./);
+
+	tree = readTree(root);
+	assert.match(tree[`${REQUESTS}/Ward.luau`], /\t\t\},\n\t\tallowInputInterrupt = true,\n\t\tonDisconnect = "Interrupt",\n\t\},/);
+	assert.doesNotMatch(tree[`${REQUESTS}/Ward.luau`], /requiresClientRelease/);
+	assert.match(tree[`${POLICIES}/Ward.luau`], /\t\tactivation = "Toggle",\n\t\tstopParameters = function/);
 });
 
 test("an Action whose request another module already declares gets a warning instead of a second declaration", async (t) => {

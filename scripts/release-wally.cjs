@@ -27,7 +27,7 @@ const WORK_DIR = path.join(REPO_ROOT, "build", "release");
 const ARCHIVE_PATH = path.join(WORK_DIR, "krf.zip");
 const SMOKE_TASK = path.join(REPO_ROOT, "tests", "consumer", "Smoke.luau");
 // Pages whose install snippet names the current runtime version; release PRs update them.
-const INSTALL_DOCS = ["README.md", "docs-site/docs/documentation/initializing-krf.md"];
+const INSTALL_DOCS = ["README.md", "docs-site/docs/reference/getting-started/initialization.md"];
 
 class ReleaseError extends Error {}
 
