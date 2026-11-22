@@ -60,7 +60,7 @@ None of these play the game. They don't hold F or break through, so a mistake in
 
 ## Where to go from here
 
-Ascension uses most of what KRF offers today. A few features it didn't need:
+The game uses most of what KRF offers today. It skipped these features.
 
 - Actions can take start and stop parameters, such as an aim direction, declared in their request entry and supplied by the input policy.
 - Inputs can recognize gestures such as a double tap or a long hold, and sequences such as X, Q, Z pressed in order. See [Action input](/Action/action-input).
