@@ -94,7 +94,7 @@ function listedPaths(project, directory, stdout) {
 	for (const line of stdout.split(/\r?\n/)) {
 		const match = LISTED.exec(line.trim());
 		if (match === null) continue;
-		const printed = match[2].replace(/^\\\\\?\\/, "");
+		const printed = match[2].replace(/^\\\\\?\\/, "").replace(/\\/g, "/");
 		planned.push({ action: match[1] === "Writing" ? "write" : "remove", path: posix(path.relative(project.root, path.resolve(directory, printed))) });
 	}
 	return planned;
