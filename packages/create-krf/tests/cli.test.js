@@ -93,6 +93,7 @@ test("--yes creates the default project without prompting", async (t) => {
 	assert.equal(result.code, 0, result.stderr);
 
 	assert.deepEqual(Object.keys(readTree(path.join(result.cwd, "my-game"))).sort(), [
+		".gitattributes",
 		".github/workflows/ci.yml",
 		".gitignore",
 		".vscode/extensions.json",
@@ -129,6 +130,9 @@ test("--yes creates the default project without prompting", async (t) => {
 		"tests/Definitions.spec.luau",
 		"tests/jest.config.luau",
 		"wally.toml",
+		"world/Workspace/.gitkeep",
+		"world/Workspace/Baseplate.model.json",
+		"world/Workspace/SpawnLocation.model.json",
 	]);
 	assert.match(result.stdout, /Created my-game/);
 	assert.match(result.stdout, /Next:\n {2}cd my-game\n {2}npm install\n {2}npm run dev\n/);
@@ -150,6 +154,8 @@ test("the project's only npm dependency is the exact krf-tools release behind it
 		format: "stylua src tests",
 		check: manifest.scripts.check,
 		typecheck: manifest.scripts.typecheck,
+		"assets:syncback": "krf-tools assets syncback",
+		"assets:check": "krf-tools assets check",
 		createAction: "krf-tools create action",
 		createTag: "krf-tools create tag",
 		createResource: "krf-tools create resource",

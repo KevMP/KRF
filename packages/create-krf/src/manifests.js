@@ -1,10 +1,11 @@
-import { DEFINITION_SCRIPTS, KRF_RUNTIME, TEST_PACKAGES } from "krf-tools";
+import { ASSET_SCRIPTS, DEFINITION_SCRIPTS, KRF_RUNTIME, TEST_PACKAGES } from "krf-tools";
 
 import { ROBLOX_DEFINITIONS_URL, TOOLCHAIN, WALLY_REGISTRY } from "./compatibility.js";
 import { TOOLS_DEPENDENCY } from "./tooling.js";
 
 export const ROJO_PROJECT_FILE = "default.project.json";
 export const HYBRID_START_PROJECT_FILE = "start-place.project.json";
+export const WORLD_FOLDER = "world/Workspace";
 
 const DEFINITIONS_FILE = "build/globalTypes.d.luau";
 
@@ -27,6 +28,7 @@ export function projectScripts(config) {
 			`curl -sSfL --create-dirs -o ${DEFINITIONS_FILE} ${ROBLOX_DEFINITIONS_URL}`,
 			`luau-lsp analyze --flag:LuauSolverV2=true --platform=roblox --no-strict-dm-types --definitions:@roblox=${DEFINITIONS_FILE} --sourcemap=sourcemap.json --ignore="Packages/**" src`,
 		].join(" && "),
+		...ASSET_SCRIPTS,
 		...DEFINITION_SCRIPTS,
 	};
 }
@@ -63,6 +65,8 @@ function codeTree() {
 	};
 }
 
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
 function starterWorld() {
 	return {
 		Workspace: {
@@ -71,40 +75,58 @@ function starterWorld() {
 				$className: "Part",
 				$properties: {
 					Anchored: true,
-					Locked: true,
-					Size: [512, 16, 512],
-					Position: [0, -8, 0],
-					Color: [0.388, 0.372, 0.384],
-					Material: "Slate",
-					TopSurface: "Smooth",
 					BottomSurface: "Smooth",
+					CFrame: [0, -8, 0, ...IDENTITY],
+					Color: { Color3uint8: [99, 95, 98] },
+					Locked: true,
+					Material: "Slate",
+					Size: [512, 16, 512],
+					TopSurface: "Smooth",
 				},
 			},
 			SpawnLocation: {
 				$className: "SpawnLocation",
 				$properties: {
 					Anchored: true,
-					Size: [12, 1, 12],
-					Position: [0, 0.5, 0],
-					TopSurface: "Smooth",
 					BottomSurface: "Smooth",
+					CFrame: [0, 0.5, 0, ...IDENTITY],
+					Size: [12, 1, 12],
+					TopSurface: "Smooth",
 				},
 			},
 		},
 	};
 }
 
-function rojoProject(name, tree) {
-	return json({ name, tree: { $className: "DataModel", ...tree } });
+function capturedWorld() {
+	return { Workspace: { $className: "Workspace", $ignoreUnknownInstances: true, $path: WORLD_FOLDER } };
+}
+
+function syncbackRules() {
+	const trees = [];
+	const visit = (node, prefix) => {
+		for (const [name, child] of Object.entries(node)) {
+			if (name.startsWith("$")) continue;
+			const tree = [...prefix, name];
+			if (child.$path !== undefined) trees.push(tree.join("/"));
+			else visit(child, tree);
+		}
+	};
+	visit(codeTree(), []);
+	return { ignoreTrees: [...trees, "Workspace/Terrain"] };
+}
+
+function rojoProject(name, tree, rules) {
+	return json({ name, tree: { $className: "DataModel", ...tree }, ...(rules === undefined ? {} : { syncbackRules: rules }) });
 }
 
 export function rojoProjects(config) {
 	if (config.options.mode === "full") {
-		return new Map([[ROJO_PROJECT_FILE, rojoProject(config.name, { ...codeTree(), ...starterWorld() })]]);
+		return new Map([[ROJO_PROJECT_FILE, rojoProject(config.name, { ...codeTree(), ...capturedWorld() }, syncbackRules())]]);
 	}
 
 	return new Map([
-		[ROJO_PROJECT_FILE, rojoProject(config.name, codeTree())],
+		[ROJO_PROJECT_FILE, rojoProject(config.name, codeTree(), syncbackRules())],
 		[HYBRID_START_PROJECT_FILE, rojoProject(config.name, { ...codeTree(), ...starterWorld() })],
 	]);
 }

@@ -72,7 +72,7 @@ export async function runDev(system, project, options, io) {
 		}
 
 		io.stdout(
-			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. Without the plugin, run rojo plugin install.\nPress Ctrl+C to stop Rojo; Studio stays open.\n`,
+			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. If the plugin is missing or older than Rojo 7.7, run rojo plugin install.\nPress Ctrl+C to stop Rojo; Studio stays open.\n`,
 		);
 
 		const code = await serve.exited;

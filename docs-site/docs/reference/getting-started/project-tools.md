@@ -18,10 +18,12 @@ For creating the project itself, follow [Create a KRF project](/tutorial/create-
 | `npm run format` | Formats source and tests |
 | `npm test` | Runs the game's Jest Lua specs in Studio |
 | `npm run test:studio` | Starts a server and clients to check KRF startup and character views |
+| `npm run assets:syncback` | Captures a place saved from Studio into source files; see [World and assets](./world-and-assets) |
+| `npm run assets:check` | Checks the hosted asset manifest and its generated Luau module; see [World and assets](./world-and-assets#reference-hosted-assets-by-name) |
 
 `dev` stays attached while Rojo serves changes. Connect the Rojo plugin in Studio, then press Play. Ctrl+C stops the server started by the command; it leaves Studio open. If the place is already open, `dev` serves without rebuilding or reopening it.
 
-Full projects build their place from `default.project.json`. Hybrid projects keep the Studio-authored world in their place file and sync source and Packages; `build` writes a separate place under `build/`. The first Hybrid development run creates the initial world place, and later runs preserve it.
+Full projects build their place from `default.project.json`, including the world captured in `world/Workspace`. Hybrid projects keep the Studio-authored world in their place file and sync source and Packages; `build` writes a separate place under `build/`. The first Hybrid development run creates the initial world place, and later runs preserve it.
 
 Pass workflow options after `--`:
 

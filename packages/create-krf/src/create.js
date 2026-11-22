@@ -11,6 +11,7 @@ const TEMPLATES = fileURLToPath(new URL("../templates/", import.meta.url));
 /** @param {import("./options.js").CreatorConfig} config */
 export function templateRoots(config) {
 	const roots = [path.join(TEMPLATES, "base")];
+	if (config.options.mode === "full") roots.push(path.join(TEMPLATES, "full"));
 	if (config.options.ci) roots.push(path.join(TEMPLATES, "ci"));
 	return roots;
 }
