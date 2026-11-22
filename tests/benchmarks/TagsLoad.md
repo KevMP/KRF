@@ -1,6 +1,6 @@
 # Native multi-Actor Tags load test
 
-Run `npm run test:integration:tags-load` from the repository root. The runner builds `tags-load-test.project.json` and launches a real Studio server with two native clients. Run Studio jobs serially. Logs and a complete `result.json` are written under `build/tags-load/<run-id>/`.
+Run `npm run test:integration:tags-load` from the repository root. The runner builds `tests/integration/projects/tags-load-test.project.json` and launches a real Studio server with two native clients. Run Studio jobs serially. Logs and a complete `result.json` are written under `build/tags-load/<run-id>/`.
 
 This exercises ordinary `Server.Init`, `Actors.RegisterActor`, automatic TagController installation, N3 publication, N4 recipient scheduling and serialization, actual Reliable RemoteEvents, normal `Client.Init` consumer installation, N5 DomainViews and typed TagsViews. There is no injected consumer, simulated transport, direct client state installation or production-code change.
 

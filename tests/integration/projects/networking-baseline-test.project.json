@@ -1,0 +1,19 @@
+{
+  "name": "KRF-Networking-Baseline",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "../../../src" } },
+      "NetworkingBaselineScenario": { "$path": "../../integration/NetworkingBaseline/Utils/Scenario.luau" },
+      "NetworkingBaselineControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": {
+      "NetworkingBaselineServer": { "$path": "../../integration/NetworkingBaseline/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "NetworkingBaselineClient": { "$path": "../../integration/NetworkingBaseline/Client.client.luau" }
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 {
   "name": "KRF-Tests",
+  "globIgnorePaths": ["**/integration/projects", "**/integration/studio", "**/benchmarks/tools"],
   "tree": {
     "$className": "DataModel",
     "ServerScriptService": {

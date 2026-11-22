@@ -2,7 +2,7 @@
 
 Run `npm run test:integration:i3` from the repository root with Studio and the
 repository prerequisites installed. The existing native runner builds
-`i3-input-sequences-test.project.json`, starts two clients through
+`tests/integration/projects/i3-input-sequences-test.project.json`, starts two clients through
 `StudioTestService`, and retains results under ignored `build/i3-native/`.
 
 The fixture uses normal `Client.Init()` installation, managed native IAS objects

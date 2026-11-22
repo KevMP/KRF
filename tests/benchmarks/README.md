@@ -152,10 +152,10 @@ every executed command must produce exactly one state change, semantic event and
 correlated result. Native retirement/reset uses the installed consumers.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Commands
-powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Commands -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
-powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -Workload Commands -ClientCount 8
-powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -Workload Commands -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-networking-baseline.ps1 -Workload Commands
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-networking-baseline.ps1 -Workload Commands -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/test-networking-baseline.ps1 -Workload Commands -ClientCount 8
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/test-networking-baseline.ps1 -Workload Commands -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
 ```
 
 Repeat CPU trials twice and native trials twice at each count, serially in fresh
@@ -191,7 +191,7 @@ For individual launches or importing older evidence, copy successful results int
 `<before|after>-native-c<2|4|6|8>-run<number>.json`. Gzip JSON is accepted.
 
 ```powershell
-node scripts/analyze-command-dispatch.cjs build/command-comparison > build/command-comparison/summary.json
+node tests/benchmarks/tools/analyze-command-dispatch.cjs build/command-comparison > build/command-comparison/summary.json
 # An optional final argument supplies a different resolved reference SHA.
 ```
 
@@ -230,7 +230,7 @@ command regressions alongside these profiles; keep results/limitations in the PR
 | `npm run test:integration:n4-performance` | The original native server/client fixture with a Scenario wrapper selecting 75/90 Actors and 45 seconds of heavy Tags traffic; two native clients. |
 | `npm run test:integration:tags-load` | Separate native two-client Tags test at 25/50/100 Actors, paced and burst mutations. See [TagsLoad.md](./TagsLoad.md). |
 | `npm run measure:tags` | Separate extreme single-Actor Tag-map scaling test. See [TagsPublication.md](./TagsPublication.md). |
-| `powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Observers` | Private mutation callback costs plus real regeneration, Tag/Property churn and Action Start/End transactions through normal server startup and N3 at 30/75/90 Actors. |
+| `powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-networking-baseline.ps1 -Workload Observers` | Private mutation callback costs plus real regeneration, Tag/Property churn and Action Start/End transactions through normal server startup and N3 at 30/75/90 Actors. |
 
 The observer workload uses six regenerating Resources per Actor, two active Actions
 per Actor at 30/75 Actors and 32 at 90 Actors. Each population runs with zero, one
@@ -270,7 +270,7 @@ The analyzer also accepts these filenames with a `.gz` suffix.
 New-Item -ItemType Directory -Force build/networking-analysis
 Copy-Item build/networking-cpu/<run-id>/result.json build/networking-analysis/cpu-run1.json
 # Copy subsequent CPU/native results using the names above.
-node scripts/analyze-networking-baseline.cjs build/networking-analysis > build/networking-analysis/summary.json
+node tests/benchmarks/tools/analyze-networking-baseline.cjs build/networking-analysis > build/networking-analysis/summary.json
 ```
 
 Both launchers accept `-StudioPath <absolute-path>` when invoked directly. Native
@@ -292,7 +292,7 @@ and `test:integration:n4-performance` (native) twice in fresh processes. Copy ea
 `<before|after>-<short|sustained|native>-run<number>.json`. Gzip JSON is also accepted.
 
 ```powershell
-node scripts/analyze-n4-performance.cjs build/n4-comparison > build/n4-comparison/summary.json
+node tests/benchmarks/tools/analyze-n4-performance.cjs build/n4-comparison > build/n4-comparison/summary.json
 ```
 
 The analyzer checks deterministic delivery signatures across paired CPU trials
@@ -303,8 +303,8 @@ Keep excluded pilots outside the matching filenames.
 To freeze a place and its workload before editing production code:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/measure-n4-performance.ps1 -PrepareOnly
-powershell -ExecutionPolicy Bypass -File scripts/measure-n4-performance.ps1 -PreparedRunDirectory <printed-directory>
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-n4-performance.ps1 -PrepareOnly
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-n4-performance.ps1 -PreparedRunDirectory <printed-directory>
 ```
 
 Use `-Profile Native -PrepareOnly` to freeze the native variant. Keep the prepared
@@ -324,8 +324,8 @@ Keep the default two-client regression and run the same nine traces (30/75/90
 Actors × Ordinary/Heavy/Burst) at each supported count in fresh processes:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -ClientCount 8
-powershell -ExecutionPolicy Bypass -File scripts/test-networking-baseline.ps1 -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/test-networking-baseline.ps1 -ClientCount 8
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/test-networking-baseline.ps1 -ClientCount 8 -ImplementationRevision a9f1d7bcaa822e3b2ee0b6180f326bd2a95efc2a
 ```
 
 Repeat with `-ClientCount 2`, `4` and `6`. The reference option archives only
@@ -436,8 +436,8 @@ not average quantiles or impose machine-time gates.
 Freeze each CPU trial before switching implementations:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -Workload Audit -PrepareOnly
-powershell -ExecutionPolicy Bypass -File scripts/measure-networking-baseline.ps1 -PreparedRunDirectory <printed-directory>
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-networking-baseline.ps1 -Workload Audit -PrepareOnly
+powershell -ExecutionPolicy Bypass -File tests/benchmarks/tools/measure-networking-baseline.ps1 -PreparedRunDirectory <printed-directory>
 ```
 
 Preparation saves the built place, workload, source/harness hashes, dirty-file
