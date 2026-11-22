@@ -9,8 +9,8 @@ call it only through their npm scripts:
 npm run createAction -- --name Fireball --yes
 ```
 
-See [Local Development](https://kevmp.github.io/KRF/local-development) for `npm run dev`, `npm test` and
-`npm run test:studio`, and [Definition Generators](https://kevmp.github.io/KRF/definition-generators) for the
+See [Project tools](https://kevmp.github.io/KRF/reference/getting-started/project-tools#work-on-the-game) for `npm run dev`, `npm test` and
+`npm run test:studio`, and [Generate a definition](https://kevmp.github.io/KRF/reference/getting-started/project-tools#generate-a-definition) for the
 `create*` scripts, their options, result statuses and exit codes. Each release generates code for the `kevmp/krf` versions
 in `SUPPORTED_KRF_VERSIONS`.
 
