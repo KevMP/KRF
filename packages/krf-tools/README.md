@@ -42,8 +42,11 @@ The workflow lives in `src/workflow/`: `project.js` reads the project and derive
 scripts they inject live in `templates/studio/`.
 
 The world and asset commands live in `src/assets/`: `scope.js` reads which project trees a capture
-may write and checks they never include code or packages, `syncback.js` runs `rojo syncback` behind
-a dry-run scope check, Git or backup protection and a change report, `normalize.js` and `json.js`
-keep captured JSON models stable between captures, `git.js` reads the working tree, `manifest.js`
-and `check.js` validate `assets/manifest.json` and generate `src/shared/GameAssets.luau`, and
-`cli.js` parses their options. See [World and assets](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets).
+may write and checks they never include code or packages, `capture.js` runs one `rojo syncback`
+against a derived project under `build/krf/`, skipping services the saved place leaves out, then
+normalizes the result, `declared.js` merges the settings Rojo records for declared instances into
+`default.project.json`, `normalize.js` and `json.js` keep captured JSON models stable between
+captures, `syncback.js` is `npm run assets:syncback` with its Git guard and report, `watch.js`
+captures each Studio save during `npm run dev`, `git.js` reads the working tree, `manifest.js` and
+`check.js` validate `assets/manifest.json` and generate `src/shared/GameAssets.luau`, and `cli.js`
+parses their options. See [World and assets](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets).

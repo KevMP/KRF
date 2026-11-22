@@ -1,0 +1,9 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Script" referent="RBX4C0A0000000000000000000000000001">
+		<Properties>
+			<string name="Name">Door</string>
+			<ProtectedString name="Source"><![CDATA[print("the door opens")
+]]></ProtectedString>
+		</Properties>
+	</Item>
+</roblox>

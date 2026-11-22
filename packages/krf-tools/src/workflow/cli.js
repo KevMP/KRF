@@ -17,6 +17,7 @@ const TIMEOUT = ["--timeout <seconds>", "how long Roblox Studio may run before t
 const OPTION_SCHEMAS = {
 	dev: z.object({
 		open: z.boolean(),
+		capture: z.boolean(),
 		studioPath: z.string().optional(),
 		port: integer(1, 65535).optional(),
 		place: z.string().optional(),
@@ -41,6 +42,7 @@ function buildProgram(io, onSelect) {
 		.command("dev")
 		.description("Build the place, serve it with Rojo and open it in Roblox Studio")
 		.option("--no-open", "serve without opening Roblox Studio")
+		.option("--no-capture", "do not capture the world into source files when Studio saves the place")
 		.option(...STUDIO_PATH)
 		.option("--port <port>", "the rojo serve port (default: 34872)")
 		.option("--place <file>", "Hybrid projects: the Studio place that holds your world (default: <name>.rbxl)")

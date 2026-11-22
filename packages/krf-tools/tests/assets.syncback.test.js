@@ -43,7 +43,18 @@ function capture() {
 	return Object.assign(io, { stdout: (text) => (io.out += text), stderr: (text) => (io.err += text) });
 }
 
-function fakeSystem(root, { version = "Rojo 7.7.1", plan = [], write = () => {}, fail, gitStatus = "", noGit = false } = {}) {
+function printed(root, line) {
+	const [action, file] = line.split(" ");
+	return file === "default.project.json" ? `${action} capture.project.json` : `${action} ${path.join(root, file)}`;
+}
+
+function stillDeclared(projectFile, child, parent) {
+	const project = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+	const visit = (node, name) => Object.entries(node).some(([key, value]) => !key.startsWith("$") && typeof value === "object" && ((key === child && name === parent) || visit(value, key)));
+	return visit(project.tree, project.name);
+}
+
+function fakeSystem(root, { version = "Rojo 7.7.1", plan = [], write = () => {}, fail, missing = [], gitStatus = "", noGit = false } = {}) {
 	const calls = [];
 	const system = {
 		platform: "linux",
@@ -56,12 +67,16 @@ function fakeSystem(root, { version = "Rojo 7.7.1", plan = [], write = () => {},
 			}
 			if (args[0] === "--version") return { status: 0, stdout: `${version}\n`, stderr: "" };
 			const dryRun = args.includes("--dry-run");
+			const absent = missing.find(([child, parent]) => stillDeclared(args[1], child, parent));
+			if (absent !== undefined) {
+				return { status: 1, stdout: "", stderr: `Beginning syncback...\n[ERROR rojo] Failed to syncback  because The child '${absent[0]}' of Instance '${absent[1]}' is present only in a project file,\n        and not the provided file.\n` };
+			}
 			if (fail !== undefined && (fail.dryRun ?? true) === dryRun) {
-				if (!dryRun) write(root);
+				if (!dryRun) write(root, args[1]);
 				return { status: 1, stdout: "", stderr: `Beginning syncback...\n\x1b[31m[ERROR rojo] ${fail.message}\x1b[0m\n` };
 			}
-			if (dryRun) return { status: 0, stdout: plan.map((line) => `${line}\n`).join(""), stderr: "Beginning syncback...\n" };
-			write(root);
+			if (dryRun) return { status: 0, stdout: plan.map((line) => `${printed(root, line)}\n`).join(""), stderr: "Beginning syncback...\n" };
+			write(root, args[1]);
 			return { status: 0, stdout: "", stderr: "Beginning syncback...\nFinished syncback.\n" };
 		},
 	};
@@ -172,9 +187,12 @@ test("syncback runs the pinned Rojo noninteractively, writing new instances as J
 	assert.equal(result.code, ExitCode.ok, result.err);
 
 	const [dryRun, real] = fake.syncbacks();
-	assert.deepEqual(dryRun.args, ["syncback", "default.project.json", "--input", path.join(root, "my-game.rbxl"), "--non-interactive", "--color", "never", "--dry-run", "--list"]);
+	assert.match(dryRun.args[1], /build[\\/]krf[\\/]syncback-[^\\/]+[\\/]capture\.project\.json$/);
+	assert.deepEqual(dryRun.args.slice(2), ["--input", path.join(root, "my-game.rbxl"), "--non-interactive", "--color", "never", "--dry-run", "--list"]);
 	assert.deepEqual(real.args, dryRun.args.slice(0, -2));
 	assert.equal(real.env.ROJO_SYNCBACK_DEBUG, "2");
+	assert.equal(fs.existsSync(dryRun.args[1]), false, "the derived project is removed after the capture");
+	assert.equal(read(root, "default.project.json"), JSON.stringify(FULL), "Rojo never runs against the real project file");
 });
 
 test("a plan that reaches outside the captured folders writes nothing", async (t) => {
@@ -186,32 +204,72 @@ test("a plan that reaches outside the captured folders writes nothing", async (t
 	assert.equal(fake.syncbacks().length, 1);
 });
 
-test("values Rojo would store in the project file stay in the place, and the capture names them", async (t) => {
-	const root = project(t);
-	const original = read(root, "default.project.json");
-	const rewritten = structuredClone(FULL);
-	rewritten.tree.Workspace.$properties = { Gravity: 50 };
-	rewritten.tree.ServerScriptService.$attributes = { Owner: "Studio" };
+function declare(values) {
+	return (directory, file) => {
+		const derived = JSON.parse(fs.readFileSync(file, "utf8"));
+		for (const [tree, entries] of Object.entries(values)) {
+			const node = tree.split("/").reduce((current, name) => current[name], derived.tree);
+			Object.assign(node, entries);
+		}
+		fs.writeFileSync(file, JSON.stringify(derived));
+	};
+}
+
+const SETTINGS = { Workspace: { $properties: { Gravity: 50, Ambient: [0, 0, 0] } }, ServerScriptService: { $attributes: { Owner: "Studio" } } };
+
+test("a Full capture writes the settings of declared instances into the project file", async (t) => {
+	const root = project(t, { tree: `${JSON.stringify(FULL, null, 2)}\n` });
 	const fake = fakeSystem(root, {
 		plan: ["Writing default.project.json", "Writing world/Workspace/Arena.model.json"],
-		write: (directory) => {
-			write("default.project.json", JSON.stringify(rewritten))(directory);
+		write: (directory, file) => {
+			declare(SETTINGS)(directory, file);
 			write("world/Workspace/Arena.model.json", ARENA(GENERATED))(directory);
 		},
 	});
 	const result = await syncback(root, fake);
 	assert.equal(result.code, ExitCode.ok, result.err);
-	assert.equal(read(root, "default.project.json"), original, "the project file is kept byte for byte");
-	assert.match(result.out, /created world\/Workspace\/Arena\.model\.json\n/);
-	assert.match(result.out, /Not captured, because default\.project\.json declares these instances; their values stay only in the place file:\n {2}ServerScriptService: attribute Owner\n {2}Workspace: Gravity\nSet them in default\.project\.json/);
+	assert.match(result.out, /Captured settings into default\.project\.json:\n {2}ServerScriptService: attribute Owner\n {2}Workspace: Ambient, Gravity\n/);
+	assert.match(result.out, /changed default\.project\.json\n/);
+	const saved = JSON.parse(read(root, "default.project.json"));
+	assert.deepEqual(Object.keys(saved.tree.Workspace), ["$className", "$ignoreUnknownInstances", "$path", "$properties"]);
+	assert.deepEqual(saved.tree.Workspace.$properties, { Ambient: [0, 0, 0], Gravity: 50 });
+	assert.deepEqual(Object.keys(saved.tree.ServerScriptService), ["$className", "$attributes", "Game"]);
+	assert.deepEqual(saved.syncbackRules, FULL.syncbackRules);
+	assert.match(read(root, "default.project.json"), /\n$/);
 
-	const onlyDeclared = fakeSystem(root, { plan: ["Writing default.project.json"], write: write("default.project.json", JSON.stringify(rewritten)) });
+	const again = await syncback(root, fakeSystem(root, { plan: ["Writing default.project.json"], write: declare(SETTINGS) }));
+	assert.match(again.out, /No changes/);
+
+	const onlyDeclared = fakeSystem(root, { plan: ["Writing default.project.json"], write: declare({ Workspace: { $properties: { Gravity: 196.2 } } }) });
 	const dryRun = await syncback(root, onlyDeclared, ["--dry-run"]);
-	assert.match(dryRun.out, /default\.project\.json would be kept as it is[\s\S]*Nothing in the captured folders would change\.\nNothing was written \(--dry-run\)\.\n$/);
-	const declaredOnly = await syncback(root, onlyDeclared);
-	assert.equal(declaredOnly.code, ExitCode.ok, declaredOnly.err);
-	assert.match(declaredOnly.out, /Workspace: Gravity\nSet them in default\.project\.json if they belong in source\.\nNo changes/);
+	assert.match(dryRun.out, /Rojo would also update settings that default\.project\.json declares\.\nNothing in the captured folders would change\.\nNothing was written \(--dry-run\)\.\n$/);
+});
+
+test("a Hybrid capture leaves declared settings in the place and names them", async (t) => {
+	const live = { name: "my-game", tree: { $className: "DataModel", ...CODE, Workspace: { $className: "Workspace", Arenas: { $path: "world/Workspace/Arenas" } } }, syncbackRules: RULES };
+	const start = structuredClone(live);
+	delete start.syncbackRules;
+	const root = project(t, { tree: live, start, files: { "world/Workspace/Arenas/.gitkeep": "" } });
+	const original = read(root, "default.project.json");
+	const fake = fakeSystem(root, { plan: ["Writing default.project.json"], write: declare({ "Workspace/Arenas": { $attributes: { Theme: "Forest" } } }) });
+	const result = await syncback(root, fake);
+	assert.equal(result.code, ExitCode.ok, result.err);
 	assert.equal(read(root, "default.project.json"), original);
+	assert.match(result.out, /Not captured, because default\.project\.json declares these instances; their values stay only in the place file:\n {2}Workspace\/Arenas: attribute Theme\nSet them in default\.project\.json if they belong in source\.\nNo changes/);
+});
+
+test("services missing from the saved place are left as they were", async (t) => {
+	const tree = structuredClone(FULL);
+	tree.tree.Lighting = { $className: "Lighting", $ignoreUnknownInstances: true, $path: "world/Lighting" };
+	tree.tree.Teams = { $className: "Teams", $ignoreUnknownInstances: true, $path: "world/Teams" };
+	const root = project(t, { tree, files: { "world/Lighting/Sky.model.json": BASEPLATE, "world/Teams/.gitkeep": "" } });
+	const fake = fakeSystem(root, { missing: [["Teams", "my-game"], ["Lighting", "my-game"]], plan: ["Writing world/Workspace/Arena.model.json"], write: write("world/Workspace/Arena.model.json", ARENA(GENERATED)) });
+	const result = await syncback(root, fake);
+	assert.equal(result.code, ExitCode.ok, result.err);
+	assert.match(result.out, /Not in the saved place, so left as they were: Teams, Lighting\.\n/);
+	assert.match(result.out, /created world\/Workspace\/Arena\.model\.json/);
+	assert.equal(read(root, "world/Lighting/Sky.model.json"), BASEPLATE);
+	assert.equal(fake.syncbacks().length, 4, "two retried dry runs, the plan and the capture");
 });
 
 test("a failed syncback is reported as a failure with Rojo's reason", async (t) => {
@@ -295,7 +353,7 @@ test("Git guards uncommitted work in the captured folders and gives review comma
 	assert.equal(clean.code, ExitCode.ok, clean.err);
 	assert.match(clean.out, /Review with git status -- world\/Workspace and git diff -- world\/Workspace, then commit\. Nothing was committed\.\nRebuild from source with npm run build/);
 	assert.doesNotMatch(clean.out, /before this capture/);
-	assert.equal(fs.existsSync(path.join(cleanRoot, "build")), false);
+	assert.deepEqual(fs.readdirSync(path.join(cleanRoot, "build", "krf")), []);
 
 	const ignoredRoot = project(t, { git: true });
 	const ignored = await syncback(ignoredRoot, fakeSystem(ignoredRoot, { plan: ["Writing world/Workspace/Arena.model.json"], write: write("world/Workspace/Arena.model.json", ARENA(GENERATED)), gitStatus: "!! world/Workspace/Baseplate.model.json\0" }));

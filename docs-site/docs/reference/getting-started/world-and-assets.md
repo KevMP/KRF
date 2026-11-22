@@ -4,47 +4,52 @@ title: World and assets
 
 # World and assets
 
-You built part of your map in Roblox Studio and now want it in Git, so a teammate who clones the repository gets the same world from `npm run build`. `npm run assets:syncback` does that: it reads a place you saved from Studio and writes the parts of it your Rojo project maps into source files you can review and commit.
+You built part of your game in Roblox Studio and now want it in Git, so a teammate who clones the repository gets the same game from `npm run build`. In a Full project that happens when you save: while `npm run dev` is running, every save in Studio is captured into source files you can review and commit.
 
-The direction matters. `npm run dev` and `npm run build` move source into Studio and into place files. `assets:syncback` goes the other way, from a saved place back into source, and only when you run it. Nothing syncs from Studio to your files on its own.
+The direction matters. `npm run dev` and `npm run build` move source into Studio and into place files. A capture goes the other way, from the place you saved back into source. Under the hood it is Rojo's `syncback`, run by `npm run dev` after each save or by `npm run assets:syncback` when you ask.
 
-## Capture the world from Studio
+## Save in Studio
 
-In a Full project, `default.project.json` maps Workspace to the `world/Workspace` folder, which starts with the Baseplate and SpawnLocation as JSON model files. Build in Studio as usual, then save the place with **File > Save to File** (Ctrl+S) over the `<name>.rbxl` that `npm run dev` opened. Then capture it:
+In a Full project, `default.project.json` maps every service you build in to a folder under `world/`: Workspace, Lighting, MaterialService, ReplicatedFirst, ReplicatedStorage, ServerScriptService, ServerStorage, StarterGui, StarterPack, StarterPlayerScripts, StarterCharacterScripts, SoundService, Teams and TextChatService. Workspace starts with the Baseplate and SpawnLocation as JSON model files; the others start empty.
+
+Run `npm run dev`, build in Studio as usual, and save with **File > Save to File** (Ctrl+S). The terminal running `dev` shows what the save changed:
+
+```text
+Studio saved my-game.rbxl; capturing it.
+Captured settings into default.project.json:
+  Lighting: Brightness, Technology
+Captured 2 file changes:
+  created world/ServerStorage/Sword.model.json
+  changed world/Workspace/Arena.model.json
+```
+
+Review the changes with `git diff` when you're ready, and commit them. Captures never commit, push or publish anything. Pass `npm run dev -- --no-capture` to turn capturing off for a session.
+
+Studio content becomes `.model.json` files, scripts become `.luau` files and folders become directories, so a moved part shows up as a changed `CFrame` in the diff. Settings of the services themselves, such as Lighting's Technology or Workspace's Gravity, go into `default.project.json`, which is where Rojo keeps them. References such as `Model.PrimaryPart` or `ObjectValue.Value` are saved as a pair of attributes, `Rojo_Id` on the target and `Rojo_Target_PrimaryPart` on the instance that points at it, named after the target's place path, like `Workspace/Arena/Floor`. Saving again without changes captures nothing.
+
+While `dev` runs, a save is skipped if a captured file changed on disk since the last capture, for example because you edited it by hand or checked out another branch. Studio already has that change if it's connected to Rojo, so saving again captures normally. The first capture of a session copies the files it replaces to `build/krf/` when the project has no Git repository or has uncommitted changes in `world/`.
+
+## Capture without dev
+
+`npm run assets:syncback` captures a saved place once, without `dev`:
 
 ```bash
 npm run assets:syncback
 ```
 
-Without `--input`, the command reads `<name>.rbxl` in the project root. Pass another saved place with `npm run assets:syncback -- --input path/to/place.rbxl`; `.rbxl` and `.rbxlx` both work.
+Without `--input`, it reads `<name>.rbxl` in the project root; pass another place with `-- --input path/to/place.rbxl`. `.rbxl` and `.rbxlx` both work. It reports the place and project it used, the captured trees and every created, changed or removed file, then tells you how to review them.
 
-Capture before you run `npm run dev` again. When Studio no longer has the place open, a Full `dev` run rebuilds `<name>.rbxl` from source, which replaces anything you saved but didn't capture.
+Because it runs on its own, it is stricter than a capture in `dev`: it refuses when the captured folders have uncommitted Git changes, so a capture never mixes with work you haven't reviewed. Commit or stash first, or pass `--allow-dirty` to capture anyway after copying the current files to `build/krf/`.
 
-The command tells you which place and project it used, which trees it captured and which files it created, changed or removed:
-
-```text
-Capturing my-game.rbxl into default.project.json (Full project).
-Captured trees:
-  Workspace -> world/Workspace
-Never captured: ReplicatedStorage/Packages, ReplicatedStorage/Shared, ServerScriptService/Game, StarterPlayer/StarterPlayerScripts/Game, Workspace/Terrain.
-Anything else in the place stays only in the place file.
-Captured 1 file change:
-  created world/Workspace/Arena.model.json
-Review with git status -- world/Workspace and git diff -- world/Workspace, then commit. Nothing was committed.
-Rebuild from source with npm run build to check the result.
-```
-
-Review the diff, commit it, and run `npm run build` to see the world come back from source. The command never commits, pushes or publishes anything.
-
-New Parts, Models, lights, effects and GUIs are written as `.model.json` files, so a moved part shows up as a changed `CFrame` in the diff. Folders become directories. References such as `Model.PrimaryPart` or `ObjectValue.Value` are saved as a pair of attributes, `Rojo_Id` on the target and `Rojo_Target_PrimaryPart` on the instance that points at it, named after the target's place path, like `Workspace/Arena/Floor`. Capturing the same saved place twice changes nothing the second time.
+If you saved in Studio while `dev` wasn't running, run `npm run assets:syncback` before you start `dev` again. When Studio no longer has the place open, `dev` rebuilds `<name>.rbxl` from source, which replaces anything you saved but didn't capture.
 
 ## Know what gets captured
 
-Only instances under a tree that the project maps to a folder or model file are captured. Code and installed packages are listed in `syncbackRules.ignoreTrees` in `default.project.json`, so a capture never rewrites `src/` or `Packages/` from the copy inside a saved place, which may be older than your files. Workspace's Terrain is ignored too.
+Code and installed packages are listed in `syncbackRules.ignoreTrees` in `default.project.json`, so a capture never rewrites `src/` or `Packages/` from the copy inside a saved place, which may be older than your files. Your own Studio scripts outside KRF's `Game` folders are captured like any other content. Workspace's Terrain and camera are never captured.
 
-Everything else in the place, such as Lighting settings, other services or the properties of Workspace itself, stays only in the place file. A fresh clone does not get it from `npm run build`. Rojo would store the properties of services and other instances that `default.project.json` declares in that file, so the capture keeps the project file exactly as it was and lists those values instead, such as `Workspace: Gravity`. Set them in `default.project.json` yourself if they belong in source. To keep more of the place in source, map it the same way Workspace is mapped and capture again; the tested baseline covers content inside Workspace.
+A saved place can leave out a service that has nothing in it. The capture then leaves that service's folder as it was and says so: `Not in the saved place, so left as they were: Teams`. Services that only exist while the game runs, such as Players, aren't mapped.
 
-`npm run dev` keeps live sync from deleting what you build in Studio before you capture it, because Workspace is marked `$ignoreUnknownInstances`. Instances you have already captured are owned by their files, though, so when the Rojo plugin reconnects it offers to reset changes made to them in Studio. Capture first, or reject that change in the plugin.
+`npm run dev` keeps live sync from deleting what you build in Studio, because every mapped service is marked `$ignoreUnknownInstances`. Instances already captured are owned by their files, though, so if the Rojo plugin reconnects before a save is captured, it offers to reset changes made to them in Studio. Save first, or reject that change in the plugin.
 
 ## Hybrid projects
 
@@ -61,9 +66,9 @@ Add an `Arenas` folder to the tree in both `default.project.json`, which `npm ru
 
 In `start-place.project.json`, Workspace already holds the starter Baseplate and SpawnLocation; add `Arenas` next to them. Then create the folder with an empty `world/Workspace/Arenas/.gitkeep` file, so Git keeps it while it has nothing else in it.
 
-Run `npm run dev` once so Rojo creates the empty Arenas folder in your place. Build your arena models inside it, save, and run `npm run assets:syncback -- --input <name>.rbxl`. Only what's inside Arenas is written; everything else in Workspace stays Studio-owned, and live sync leaves it alone. The command refuses to run if a captured tree is missing from `start-place.project.json`, because `npm run build` would then not include it.
+Run `npm run dev` so Rojo creates the empty Arenas folder in your place, then build your arena models inside it and save. `dev` captures the save, or run `npm run assets:syncback -- --input <name>.rbxl` yourself. Only what's inside Arenas is written; everything else in Workspace stays Studio-owned, and live sync leaves it alone. The command refuses to run if a captured tree is missing from `start-place.project.json`, because `npm run build` would then not include it.
 
-Keep the mapped folder itself plain. Arenas is declared in the project file, so an attribute you set on it in Studio stays in the place, and the capture lists it as not captured. Put that data on the models inside it.
+Keep the mapped folder itself plain. In a Hybrid project the capture never edits the project files, so an attribute you set on Arenas itself stays in the place, and the capture lists it as not captured. Put that data on the models inside it.
 
 ## When a capture refuses
 
@@ -73,7 +78,7 @@ The command checks everything it can before it writes, and a refusal leaves your
 | --- | --- |
 | `<place> does not exist` | Save the place from Studio, or pass the saved file with `--input` |
 | `needs Rojo 7.7.1 or newer` | Set `rojo = "rojo-rbx/rojo@7.7.1"` in `rokit.toml`, then run `npm install` |
-| `maps no world content` | Map a folder as shown above; a Hybrid project has none until you opt one in |
+| `maps no world content` | A Hybrid project captures nothing until you opt a folder in, as shown above |
 | `which holds code or installed packages` | A tree maps into `src/`, `Packages/` or another tool folder without being listed in `syncbackRules.ignoreTrees`; add it there |
 | `which does not exist` | Create the mapped folder, or restore it; give an empty folder a `.gitkeep` file |
 | `uncommitted changes` | Commit or stash your work in the captured folders first. `--allow-dirty` captures anyway after copying the current files to `build/krf/` |
@@ -89,7 +94,7 @@ Pass `--dry-run` to see the files Rojo would rewrite or remove without writing a
 
 ## What isn't covered yet
 
-Terrain, unions and other CSG parts, MeshPart geometry and other content that is hard to round-trip haven't been tested and may not rebuild faithfully, so check them in the rebuilt place before you rely on them. Terrain is never captured. There is no automatic two-way sync from Studio to your files; the Rojo plugin's experimental two-way mode is not part of this workflow.
+Terrain, unions and other CSG parts, MeshPart geometry and other content that is hard to round-trip haven't been tested and may not rebuild faithfully, so check them in the rebuilt place before you rely on them. Terrain is never captured. Captures follow saves, not every edit: an unsaved change in Studio isn't in your files yet. The Rojo plugin's experimental two-way mode is not part of this workflow.
 
 ## Reference hosted assets by name
 
@@ -144,6 +149,7 @@ Keep the original files in Git next to the manifest. New projects mark `assets/*
 
 | Option | Applies to |
 | --- | --- |
+| `--no-capture` | `dev`: don't capture when Studio saves the place |
 | `--input <place>` | `assets:syncback`: the `.rbxl` or `.rbxlx` file saved from Studio; default `<name>.rbxl` |
 | `--dry-run` | `assets:syncback`: list Rojo's planned writes and removals without writing |
 | `--allow-dirty` | `assets:syncback`: capture even with uncommitted changes in the captured folders, after backing them up under `build/krf/` |

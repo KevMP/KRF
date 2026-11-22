@@ -12,7 +12,7 @@ For creating the project itself, follow [Create a KRF project](/tutorial/create-
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Opens the place in Studio and serves source through Rojo |
+| `npm run dev` | Opens the place in Studio, serves source through Rojo, and captures each Studio save into source; see [World and assets](./world-and-assets) |
 | `npm run build` | Builds a place file with Rojo |
 | `npm run check` | Checks formatting, lint and Luau types without formatting source; refreshes type-analysis artifacts |
 | `npm run format` | Formats source and tests |
@@ -23,13 +23,14 @@ For creating the project itself, follow [Create a KRF project](/tutorial/create-
 
 `dev` stays attached while Rojo serves changes. Connect the Rojo plugin in Studio, then press Play. Ctrl+C stops the server started by the command; it leaves Studio open. If the place is already open, `dev` serves without rebuilding or reopening it.
 
-Full projects build their place from `default.project.json`, including the world captured in `world/Workspace`. Hybrid projects keep the Studio-authored world in their place file and sync source and Packages; `build` writes a separate place under `build/`. The first Hybrid development run creates the initial world place, and later runs preserve it.
+Full projects build their place from `default.project.json`, including the world captured in `world/`. Hybrid projects keep the Studio-authored world in their place file and sync source and Packages; `build` writes a separate place under `build/`. The first Hybrid development run creates the initial world place, and later runs preserve it.
 
 Pass workflow options after `--`:
 
 | Option | Applies to |
 | --- | --- |
 | `--no-open` | `dev`: serve without opening Studio |
+| `--no-capture` | `dev`: don't capture Studio saves into source |
 | `--port <port>` | `dev`: integer from 1 to 65535; default 34872; a busy port fails rather than replacing another server |
 | `--place <file>` | Hybrid `dev`: select the world place |
 | `--studio-path <path>` | Studio workflows: explicit executable path |

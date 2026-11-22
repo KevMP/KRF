@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -15,6 +16,7 @@ export const SYSTEM = Object.freeze({
 	env: process.env,
 	spawn,
 	spawnSync,
+	watch: fs.watch,
 	onInterrupt(handler) {
 		process.on("SIGINT", handler);
 		process.on("SIGTERM", handler);

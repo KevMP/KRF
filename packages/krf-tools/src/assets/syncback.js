@@ -2,29 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ExitCode, KrfToolError } from "../errors.js";
-import { runDirectory } from "../workflow/project.js";
 import { atLeast, readRojoVersion } from "../workflow/rojo.js";
 import { placeOpenInStudio } from "../workflow/studio.js";
-import { spawnTool } from "../workflow/tools.js";
+import { applyCapture, backUp, capturePaths, discardPlan, outsideCapture, planCapture, plannedFiles, readFiles } from "./capture.js";
 import { findRepository, readWorkingTree } from "./git.js";
-import { normalizeCapture } from "./normalize.js";
-import { covers, declaredChanges, readCaptureScope, topLevelPaths } from "./scope.js";
+import { readCaptureScope, topLevelPaths } from "./scope.js";
 
 export const MINIMUM_ROJO_VERSION = Object.freeze([7, 7, 1]);
 
 const PLACE_EXTENSIONS = new Set([".rbxl", ".rbxlx"]);
-const JSON_MODEL_FILES = Object.freeze({ ROJO_SYNCBACK_DEBUG: "2" });
-const LISTED = /^(Writing|Removing) (.+)$/;
-const ANSI = /\x1b\[[0-9;]*m/g;
 const SHOWN_FILES = 20;
 
-const posix = (file) => file.split(path.sep).join("/");
-const withoutCarriageReturns = (contents) => contents.toString("utf8").replace(/\r\n/g, "\n");
-const sameContents = (left, right) => left.equals(right) || withoutCarriageReturns(left) === withoutCarriageReturns(right);
-
-function resolveInput(project, input) {
+export function resolveInput(project, input) {
 	const place = input === undefined ? project.place : path.resolve(project.root, input);
-	const shown = posix(path.relative(project.root, place));
+	const shown = path.relative(project.root, place).split(path.sep).join("/");
 	if (!PLACE_EXTENSIONS.has(path.extname(place).toLowerCase())) {
 		throw new KrfToolError("InvalidInput", `--input ${input} is not a place file.`, { hint: "Pass the .rbxl or .rbxlx file you saved from Roblox Studio.", exitCode: ExitCode.usage });
 	}
@@ -40,7 +31,7 @@ function resolveInput(project, input) {
 	return { place, shown };
 }
 
-function assertRojoSupportsSyncback(system, project) {
+export function assertRojoSupportsSyncback(system, project) {
 	const version = readRojoVersion(system, project);
 	if (atLeast(version, MINIMUM_ROJO_VERSION)) return;
 	const minimum = MINIMUM_ROJO_VERSION.join(".");
@@ -49,100 +40,37 @@ function assertRojoSupportsSyncback(system, project) {
 	});
 }
 
-function readFiles(project, paths) {
-	const files = new Map();
-	for (const relative of paths) {
-		const absolute = path.join(project.root, ...relative.split("/"));
-		let stats;
-		try {
-			stats = fs.lstatSync(absolute);
-		} catch {
-			continue;
-		}
-		if (stats.isFile()) {
-			files.set(relative, fs.readFileSync(absolute));
-			continue;
-		}
-		if (!stats.isDirectory()) continue;
-		for (const entry of fs.readdirSync(absolute, { recursive: true, withFileTypes: true })) {
-			if (!entry.isFile()) continue;
-			const full = path.join(entry.parentPath, entry.name);
-			files.set(posix(path.relative(project.root, full)), fs.readFileSync(full));
-		}
-	}
-	return files;
-}
-
-function syncbackFailure(place, output) {
-	const reason =
-		output
-			.split(/\r?\n/)
-			.filter((line) => line.trim() !== "" && line !== "Beginning syncback...")
-			.join("\n")
-			.replace(/^\[ERROR rojo\]\s*/, "") || "Rojo gave no reason.";
-	const hint = /duplicated in the place file/.test(reason)
-		? "Rename the duplicated instance in Studio so siblings under a mapped tree have unique names, save, and run the command again."
-		: /present only in a project file/.test(reason)
-			? "The saved place lacks an instance the project declares. Check that --input is this game's place, or run npm run dev once so Rojo creates it, then save again."
-			: "Nothing was captured. Fix the cause and run the command again.";
-	return new KrfToolError("SyncbackFailed", `rojo syncback could not capture ${place}:\n${reason}`, { hint });
-}
-
-function runRojoSyncback(system, project, scope, input, dryRun) {
-	const args = ["syncback", scope.projectFile, "--input", input.place, "--non-interactive", "--color", "never", ...(dryRun ? ["--dry-run", "--list"] : [])];
-	const result = spawnTool(system, "rojo", args, { cwd: project.root, env: JSON_MODEL_FILES });
-	const stderr = `${result.stderr ?? ""}`.replace(ANSI, "");
-	if (result.status !== 0) throw syncbackFailure(input.shown, stderr);
-
-	const planned = [];
-	for (const line of `${result.stdout ?? ""}`.replace(ANSI, "").split(/\r?\n/)) {
-		const match = LISTED.exec(line.trim());
-		if (match !== null) planned.push({ action: match[1] === "Writing" ? "write" : "remove", path: match[2].replace(/\\/g, "/").replace(/^\.\//, "") });
-	}
-	return planned;
-}
-
-function keepProjectFile(project, scope, run) {
-	const file = path.join(project.root, scope.projectFile);
-	const original = fs.readFileSync(file);
-	let written;
-	try {
-		run();
-	} finally {
-		written = fs.readFileSync(file);
-		if (!written.equals(original)) fs.writeFileSync(file, original);
-	}
-	return written.equals(original) ? [] : declaredChanges(original.toString("utf8"), written.toString("utf8"));
-}
-
-function reportDeclared(io, scope, changes) {
-	if (changes.length === 0) return;
-	const lines = changes.map((change) => `  ${change.tree}: ${change.names.join(", ")}\n`).join("");
-	io.stdout(`Not captured, because ${scope.projectFile} declares these instances; their values stay only in the place file:\n${lines}Set them in ${scope.projectFile} if they belong in source.\n`);
-}
-
-function compare(before, after) {
-	const created = [...after.keys()].filter((file) => !before.has(file));
-	const removed = [...before.keys()].filter((file) => !after.has(file));
-	const changed = [...after.keys()].filter((file) => before.has(file) && !sameContents(before.get(file), after.get(file)));
-	return { created: created.sort(), changed: changed.sort(), removed: removed.sort() };
-}
-
-function listed(label, files) {
+export function listed(label, files) {
 	const shown = files.slice(0, SHOWN_FILES).map((file) => `  ${label === "" ? "" : `${label} `}${file}\n`);
 	if (files.length > SHOWN_FILES) shown.push(`  ...and ${files.length - SHOWN_FILES} more\n`);
 	return shown.join("");
 }
 
-function backUp(project, files) {
-	const directory = path.join(runDirectory(project, "syncback"), "backup");
-	fs.mkdirSync(directory, { recursive: true });
-	for (const [relative, contents] of files) {
-		const destination = path.join(directory, ...relative.split("/"));
-		fs.mkdirSync(path.dirname(destination), { recursive: true });
-		fs.writeFileSync(destination, contents);
+export function assertInsideCapture(project, scope, plan) {
+	const outside = outsideCapture(project, scope, plan);
+	if (outside.length === 0) return;
+	discardPlan(plan);
+	throw new KrfToolError("OutsideCaptureScope", `Rojo would also change files outside the captured folders:\n${listed("", outside).trimEnd()}`, {
+		hint: `Nothing was written. Map that content to a folder under world/, and list any code it holds in syncbackRules.ignoreTrees in ${scope.projectFile}.`,
+	});
+}
+
+export function reportCapture(io, project, scope, plan, result) {
+	const lines = [];
+	if (plan.missing.length > 0) lines.push(`Not in the saved place, so left as they were: ${plan.missing.join(", ")}.\n`);
+	if (result.declared.length > 0) {
+		const values = result.declared.map((change) => `  ${change.tree}: ${change.names.join(", ")}\n`).join("");
+		lines.push(
+			result.declaredWritten
+				? `Captured settings into ${scope.projectFile}:\n${values}`
+				: `Not captured, because ${scope.projectFile} declares these instances; their values stay only in the place file:\n${values}${project.mode === "full" ? "" : `Set them in ${scope.projectFile} if they belong in source.\n`}`,
+		);
 	}
-	return posix(path.relative(project.root, directory));
+	const { created, changed, removed } = result.files;
+	const total = created.length + changed.length + removed.length;
+	lines.push(total === 0 ? "No changes: the captured folders already match the saved place.\n" : `Captured ${total} file change${total === 1 ? "" : "s"}:\n${listed("created", created)}${listed("changed", changed)}${listed("removed", removed)}`);
+	io.stdout(lines.join(""));
+	return total;
 }
 
 function guardWorkingTree(system, project, paths, options) {
@@ -169,68 +97,57 @@ export async function runSyncback(system, project, options, io) {
 	io.stdout("Anything else in the place stays only in the place file.\n");
 	if (placeOpenInStudio(system, input.place)) io.stdout(`Roblox Studio has ${input.shown} open; this captures its last save.\n`);
 
-	const planned = runRojoSyncback(system, project, scope, input, true);
-	const outside = planned.filter((entry) => entry.path !== scope.projectFile && !covers(paths, entry.path)).map((entry) => entry.path);
-	if (outside.length > 0) {
-		throw new KrfToolError("OutsideCaptureScope", `Rojo would also change files outside the captured folders:\n${listed("", outside).trimEnd()}`, {
-			hint: `Nothing was written. Map that content to a folder under world/, and list any code it holds in syncbackRules.ignoreTrees in ${scope.projectFile}.`,
-		});
-	}
-	const files = planned.filter((entry) => entry.path !== scope.projectFile);
+	const plan = planCapture(system, project, scope, input);
+	assertInsideCapture(project, scope, plan);
+	const files = plannedFiles(project, plan);
 
-	if (planned.length === 0) {
+	if (options.dryRun) {
+		discardPlan(plan);
+		if (plan.missing.length > 0) io.stdout(`Not in the saved place, so they would be left as they are: ${plan.missing.join(", ")}.\n`);
+		if (files.length < plan.planned.length) io.stdout(`Rojo would also update settings that ${scope.projectFile} declares.\n`);
+		io.stdout(
+			files.length === 0
+				? "Nothing in the captured folders would change.\nNothing was written (--dry-run).\n"
+				: `Rojo would rewrite or remove these files; a capture keeps any whose content does not change:\n${listed("", files.map((entry) => `${entry.action} ${entry.path}`)).trimEnd()}\nNothing was written (--dry-run).\n`,
+		);
+		return ExitCode.ok;
+	}
+
+	if (plan.planned.length === 0) {
+		discardPlan(plan);
+		if (plan.missing.length > 0) io.stdout(`Not in the saved place, so left as they were: ${plan.missing.join(", ")}.\n`);
 		io.stdout("No changes: the captured folders already match the saved place.\n");
 		return ExitCode.ok;
 	}
 
-	if (options.dryRun) {
-		if (files.length < planned.length) io.stdout(`${scope.projectFile} would be kept as it is; a capture lists the declared values it leaves in the place.\n`);
-		if (files.length === 0) {
-			io.stdout("Nothing in the captured folders would change.\nNothing was written (--dry-run).\n");
-			return ExitCode.ok;
-		}
-		io.stdout(`Rojo would rewrite or remove these files; a capture keeps any whose content does not change:\n${listed("", files.map((entry) => `${entry.action === "write" ? "write" : "remove"} ${entry.path}`)).trimEnd()}\nNothing was written (--dry-run).\n`);
-		return ExitCode.ok;
-	}
-
-	const guard = guardWorkingTree(system, project, paths, options);
-	const before = readFiles(project, paths);
-	const backup = guard.needsBackup ? backUp(project, before) : undefined;
-
-	let declared = [];
+	let guard;
 	try {
-		declared = keepProjectFile(project, scope, () => runRojoSyncback(system, project, scope, input, false));
+		guard = guardWorkingTree(system, project, paths, options);
 	} catch (error) {
-		const partial = compare(before, readFiles(project, paths));
-		if (partial.created.length + partial.changed.length + partial.removed.length > 0 && error instanceof KrfToolError) {
-			error.hint = `${error.hint} Some files were already written${backup ? `; the previous files are in ${backup}` : "; restore them with git restore"}.`;
-		}
+		discardPlan(plan);
+		throw error;
+	}
+	const before = readFiles(project, capturePaths(project, scope));
+	const backup = guard.needsBackup ? backUp(project, plan, before) : undefined;
+
+	let result;
+	try {
+		result = applyCapture(system, project, scope, input, plan, { before, backup });
+	} catch (error) {
+		if (backup === undefined) discardPlan(plan);
+		else fs.rmSync(plan.file, { force: true });
 		throw error;
 	}
 
-	const written = readFiles(project, paths);
-	const rewritten = compare(before, written);
-	const normalized = normalizeCapture({ roots: scope.roots, before, after: written, changed: new Set([...rewritten.created, ...rewritten.changed]) });
-	for (const [relative, contents] of normalized) {
-		const previous = before.get(relative);
-		const desired = previous !== undefined && withoutCarriageReturns(previous) === contents ? previous : Buffer.from(contents);
-		if (!written.get(relative).equals(desired)) fs.writeFileSync(path.join(project.root, ...relative.split("/")), desired);
-	}
+	const total = reportCapture(io, project, scope, plan, result);
+	if (total === 0 || backup === undefined) discardPlan(plan);
+	else fs.rmSync(plan.file, { force: true });
+	if (total === 0) return ExitCode.ok;
 
-	const result = compare(before, readFiles(project, paths));
-	const total = result.created.length + result.changed.length + result.removed.length;
-	if (total === 0) {
-		if (backup !== undefined) fs.rmSync(path.dirname(path.join(project.root, ...backup.split("/"))), { recursive: true, force: true });
-		reportDeclared(io, scope, declared);
-		io.stdout("No changes: the captured folders already match the saved place.\n");
-		return ExitCode.ok;
-	}
-
-	io.stdout(`Captured ${total} file change${total === 1 ? "" : "s"}:\n${listed("created", result.created)}${listed("changed", result.changed)}${listed("removed", result.removed)}`);
-	reportDeclared(io, scope, declared);
 	if (backup !== undefined) io.stdout(`The files as they were before this capture are in ${backup}.\n`);
+	const reviewed = [...paths, ...(result.declaredWritten ? [scope.projectFile] : [])].join(" ");
 	if (guard.git) {
-		io.stdout(`Review with git status -- ${paths.join(" ")} and git diff -- ${paths.join(" ")}, then commit. Nothing was committed.\n`);
+		io.stdout(`Review with git status -- ${reviewed} and git diff -- ${reviewed}, then commit. Nothing was committed.\n`);
 	} else {
 		io.stdout("This project has no Git repository, so review the files listed above.\n");
 	}

@@ -9,7 +9,7 @@ import { KRF_RUNTIME } from "krf-tools";
 
 import { ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
 import { buildProjectFiles } from "../src/create.js";
-import { wallyPackageName } from "../src/manifests.js";
+import { CAPTURED_SERVICES, wallyPackageName } from "../src/manifests.js";
 
 const MATRIX = [];
 for (const mode of ["full", "hybrid"])
@@ -55,6 +55,13 @@ test("Full maps code and packages, and captures the starter world from world/Wor
 	assert.equal(project.tree.ServerScriptService.Game.$path, "src/server");
 	assert.equal(project.tree.StarterPlayer.StarterPlayerScripts.Game.$path, "src/client");
 	assert.deepEqual(project.tree.Workspace, { $className: "Workspace", $ignoreUnknownInstances: true, $path: "world/Workspace" });
+	for (const service of CAPTURED_SERVICES) {
+		const node = service.split("/").reduce((current, name) => current[name], project.tree);
+		assert.equal(node.$path, `world/${service}`, service);
+		assert.ok(generated.has(`world/${service}/.gitkeep`), `Git keeps world/${service} while it is empty`);
+	}
+	assert.deepEqual(Object.keys(project.tree.ReplicatedStorage), ["$className", "$ignoreUnknownInstances", "$path", "Packages", "Shared"]);
+	assert.equal(project.tree.StarterPlayer.$path, undefined, "StarterPlayer settings live in the project file");
 	assert.deepEqual(Object.keys(starterWorldFiles(generated)), ["Baseplate", "SpawnLocation"]);
 	assert.equal(generated.get("world/Workspace/.gitkeep"), "", "Git keeps world/Workspace when every starter part is removed");
 	assert.equal(generated.has("start-place.project.json"), false);
@@ -83,15 +90,17 @@ test("Rojo projects map only game source, installed packages and the captured wo
 		const generated = files(options);
 		for (const file of [...generated.keys()].filter((name) => name.endsWith(".project.json"))) {
 			const project = JSON.parse(generated.get(file));
-			const allowed = ["Packages", "src/server", "src/client", "src/shared", ...(options.mode === "full" ? ["world/Workspace"] : [])];
+			const world = options.mode === "full" && file === "default.project.json" ? CAPTURED_SERVICES.map((service) => `world/${service}`) : [];
+			const allowed = ["Packages", "src/server", "src/client", "src/shared", ...world];
 			for (const mapped of mappedPaths(project.tree)) {
 				assert.ok(allowed.includes(mapped), `${file} maps ${mapped}`);
 				if (mapped !== "Packages") assert.ok([...generated.keys()].some((name) => name.startsWith(`${mapped}/`)), mapped);
 			}
-			for (const service of ["ServerScriptService", "StarterPlayer", "ReplicatedStorage"]) {
-				if (project.tree[service]) assert.equal(project.tree[service].$ignoreUnknownInstances, undefined, `${file} ${service}`);
+			for (const service of CAPTURED_SERVICES) {
+				const node = service.split("/").reduce((current, name) => current?.[name], project.tree);
+				if (node === undefined) continue;
+				assert.equal(node.$ignoreUnknownInstances, node.$path === undefined ? undefined : true, `${file} ${service}: live sync must keep Studio-made content`);
 			}
-			if (project.tree.Workspace?.$path !== undefined) assert.equal(project.tree.Workspace.$ignoreUnknownInstances, true, `${file} live sync must keep Studio-made Workspace content`);
 		}
 	}
 });

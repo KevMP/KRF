@@ -5,7 +5,7 @@ import { TOOLS_DEPENDENCY } from "./tooling.js";
 
 export const ROJO_PROJECT_FILE = "default.project.json";
 export const HYBRID_START_PROJECT_FILE = "start-place.project.json";
-export const WORLD_FOLDER = "world/Workspace";
+export const WORLD_FOLDER = "world";
 
 const DEFINITIONS_FILE = "build/globalTypes.d.luau";
 
@@ -98,12 +98,44 @@ function starterWorld() {
 	};
 }
 
+export const CAPTURED_SERVICES = Object.freeze([
+	"Workspace",
+	"Lighting",
+	"MaterialService",
+	"ReplicatedFirst",
+	"ReplicatedStorage",
+	"ServerScriptService",
+	"ServerStorage",
+	"StarterGui",
+	"StarterPack",
+	"StarterPlayer/StarterPlayerScripts",
+	"StarterPlayer/StarterCharacterScripts",
+	"SoundService",
+	"Teams",
+	"TextChatService",
+]);
+
 function capturedWorld() {
-	return { Workspace: { $className: "Workspace", $ignoreUnknownInstances: true, $path: WORLD_FOLDER } };
+	const code = codeTree();
+	const tree = {};
+	for (const service of CAPTURED_SERVICES) {
+		const names = service.split("/");
+		let node = tree;
+		let source = code;
+		for (const name of names.slice(0, -1)) {
+			node = node[name] ??= { $className: name };
+			source = source?.[name];
+		}
+		const name = names.at(-1);
+		const children = Object.fromEntries(Object.entries(source?.[name] ?? {}).filter(([key]) => !key.startsWith("$")));
+		node[name] = { $className: name, $ignoreUnknownInstances: true, $path: `${WORLD_FOLDER}/${service}`, ...children };
+	}
+	return tree;
 }
 
 const STUDIO_PROPERTIES_UNKNOWN_TO_ROJO = Object.freeze({
 	Instance: ["ExplorerIconContent", "SerializedOverrides"],
+	Lighting: ["LightAttenuationMode"],
 	StarterPlayer: ["UseImprovedCharacterEvents"],
 	Workspace: ["InputSinkEnabled", "NextGenerationPhysicsSolver", "ParticlesUseDynamicWind", "ReplicationFrequency", "ReplicationThroughput", "UseNewLuauTypeSolver"],
 });
@@ -128,7 +160,7 @@ function rojoProject(name, tree, rules) {
 
 export function rojoProjects(config) {
 	if (config.options.mode === "full") {
-		return new Map([[ROJO_PROJECT_FILE, rojoProject(config.name, { ...codeTree(), ...capturedWorld() }, syncbackRules())]]);
+		return new Map([[ROJO_PROJECT_FILE, rojoProject(config.name, capturedWorld(), syncbackRules())]]);
 	}
 
 	return new Map([

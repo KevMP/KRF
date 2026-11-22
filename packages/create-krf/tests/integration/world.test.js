@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,6 +15,26 @@ const STUDIO_OWNED = `<Item class="Folder" referent="RBX0B1C2D3E4F5A6B7C8D9E0F1A
 function npm(project, script, args = [], options = {}) {
 	const result = run("npm", ["run", "--silent", script, ...(args.length > 0 ? ["--", ...args] : [])], project, options);
 	return { status: result.status, out: `${result.stdout}`, err: `${result.stderr}` };
+}
+
+function startDev(project, args) {
+	const bin = path.join(project, "node_modules", "krf-tools", "bin", "krf-tools.js");
+	const child = spawn(process.execPath, [bin, "dev", "--no-open", ...args], { cwd: project, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
+	let output = "";
+	child.stdout.on("data", (chunk) => (output += chunk));
+	child.stderr.on("data", (chunk) => (output += chunk));
+	const until = async (pattern, timeoutMs = 60000) => {
+		for (const started = Date.now(); !pattern.test(output); ) {
+			if (Date.now() - started > timeoutMs) assert.fail(`npm run dev never printed ${pattern}:\n${output}`);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		}
+	};
+	const stop = () => {
+		if (child.exitCode !== null) return;
+		if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+		else process.kill(-child.pid, "SIGTERM");
+	};
+	return { until, stop, output: () => output };
 }
 
 function git(project, ...args) {
@@ -70,16 +91,37 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		assert.equal(npm(project, "assets:syncback", ["--input", "build/built.rbxlx"]).out.trim().split("\n").at(-1), "No changes: the captured folders already match the saved place.");
 
 		const studio = saveStudioPlace(built.file, path.join(project, "build", "studio.rbxlx"), [fixtureItem("Arena.rbxmx")]);
-		fs.writeFileSync(studio, fs.readFileSync(studio, "utf8").replace('<string name="Name">Workspace</string>', '<string name="Name">Workspace</string>\n<float name="Gravity">50</float>'));
+		for (const service of ["Lighting", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterGui"]) saveStudioPlace(studio, studio, [fixtureItem(`${service}.rbxmx`)], [service]);
+		fs.writeFileSync(
+			studio,
+			fs
+				.readFileSync(studio, "utf8")
+				.replace('<string name="Name">Workspace</string>', '<string name="Name">Workspace</string>\n<float name="Gravity">50</float>')
+				.replace('<string name="Name">Lighting</string>', '<string name="Name">Lighting</string>\n<float name="Brightness">3.5</float>'),
+		);
 		const source = readTree(path.join(project, "src"));
-		const projectFile = fs.readFileSync(path.join(project, "default.project.json"), "utf8");
 		const captured = npm(project, "assets:syncback", ["--input", "build/studio.rbxlx"]);
 		assert.equal(captured.status, 0, captured.err);
-		assert.match(captured.out, /Capturing build\/studio\.rbxlx into default\.project\.json \(Full project\)\.\nCaptured trees:\n {2}Workspace -> world\/Workspace\n/);
-		assert.match(captured.out, /Captured 1 file change:\n {2}created world\/Workspace\/Arena\.model\.json\n/);
+		assert.match(captured.out, /Capturing build\/studio\.rbxlx into default\.project\.json \(Full project\)\.\nCaptured trees:\n/);
+		assert.match(captured.out, /^ {2}Workspace -> world\/Workspace$/m);
+		assert.match(captured.out, /^ {2}StarterPlayer\/StarterCharacterScripts -> world\/StarterPlayer\/StarterCharacterScripts$/m);
+		assert.match(captured.out, /Captured settings into default\.project\.json:\n {2}Workspace: Gravity\n {2}Lighting: Brightness\n/);
+		for (const file of [
+			"world/Lighting/Haze.model.json",
+			"world/ReplicatedStorage/Assets/Crate.model.json",
+			"world/ServerScriptService/Door.server.luau",
+			"world/ServerStorage/Sword.model.json",
+			"world/StarterGui/Hud.model.json",
+			"world/Workspace/Arena.model.json",
+		]) {
+			assert.ok(captured.out.includes(`created ${file}\n`), file);
+		}
+		assert.match(captured.out, /changed default\.project\.json\n/);
 		assert.match(captured.out, /This project has no Git repository/);
-		assert.match(captured.out, /Not captured, because default\.project\.json declares these instances; their values stay only in the place file:\n {2}Workspace: Gravity\n/);
-		assert.equal(fs.readFileSync(path.join(project, "default.project.json"), "utf8"), projectFile, "the project file is never rewritten");
+		const settings = JSON.parse(fs.readFileSync(path.join(project, "default.project.json"), "utf8"));
+		assert.deepEqual(settings.tree.Workspace.$properties, { Gravity: 50 });
+		assert.deepEqual(settings.tree.Lighting.$properties, { Brightness: 3.5 });
+		assert.deepEqual(Object.keys(settings.tree.ReplicatedStorage), ["$className", "$ignoreUnknownInstances", "$path", "Packages", "Shared"]);
 		assert.doesNotMatch(captured.out, /git (status|diff)/);
 		assert.equal(fs.existsSync(path.join(project, ".git")), false, "capture never initializes Git");
 		assert.deepEqual(readTree(path.join(project, "src")), source, "capture never touches code");
@@ -96,7 +138,17 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		assert.deepEqual(capturedFiles(project, "world"), world, "a second capture of the same place changes nothing");
 
 		run("npm", ["run", "build"], project);
-		assertArena(inspectBuild(project, "default.project.json", "rebuilt.rbxlx").place, ["Workspace"]);
+		const rebuilt = inspectBuild(project, "default.project.json", "rebuilt.rbxlx").place;
+		assertArena(rebuilt, ["Workspace"]);
+		assert.equal(Number(child(rebuilt, "Workspace").properties.Gravity), 50);
+		assert.equal(Number(child(rebuilt, "Lighting").properties.Brightness), 3.5);
+		assert.equal(Number(descendant(rebuilt, "Lighting", "Haze").properties.Density), 0.5);
+		assert.deepEqual(numbers(descendant(rebuilt, "ServerStorage", "Sword", "Handle").properties.size), [1, 4, 1]);
+		assert.equal(descendant(rebuilt, "StarterGui", "Hud", "Panel", "Title").properties.Text, "Cultivate");
+		assert.equal(descendant(rebuilt, "StarterGui", "Hud").properties.ResetOnSpawn, "false");
+		assert.match(descendant(rebuilt, "ServerScriptService", "Door").source, /the door opens/);
+		assert.equal(descendant(rebuilt, "ReplicatedStorage", "Assets", "Crate").className, "Part");
+		assert.deepEqual(Object.keys(shape(child(rebuilt, "ReplicatedStorage"))).sort(), ["Assets", "Packages", "Shared"], "captured assets sit next to KRF's code");
 
 		fs.mkdirSync(path.join(project, "assets", "animations"), { recursive: true });
 		fs.writeFileSync(path.join(project, "assets", "animations", "Cast.rbxm"), "animation");
@@ -195,5 +247,15 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		);
 		assert.equal(git(project, "rev-list", "--count", "HEAD").trim(), "1", "capture never commits");
 		assert.equal(fs.readFileSync(path.join(project, "NOTES.md"), "utf8"), "unrelated work\n");
+
+		const dev = startDev(project, ["--place", "hybrid-world.rbxlx", "--port", String(35000 + Math.floor(Math.random() * 1000))]);
+		try {
+			await dev.until(/Saving hybrid-world\.rbxlx in Studio captures world\/Workspace\/Arenas automatically/);
+			fs.writeFileSync(studio, fs.readFileSync(studio, "utf8").replace("<X>48</X>", "<X>56</X>"));
+			await dev.until(/Captured 1 file change:\n {2}changed world\/Workspace\/Arenas\/Arena\.model\.json\n/);
+			assert.deepEqual(numbers(descendant(inspectBuild(project, "start-place.project.json", "saved.rbxlx").place, "Workspace", "Arenas", "Arena", "Floor").properties.size), [56, 1, 40]);
+		} finally {
+			dev.stop();
+		}
 	});
 });
