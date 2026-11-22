@@ -44,8 +44,9 @@ export default function Home() {
           <section className={styles.path} aria-labelledby="new-to-krf">
             <h2 id="new-to-krf">New to KRF?</h2>
             <p>
-              Let's build a Chinese cultivation game together. You'll start with a Qi meter, then add
-              meditation, breakthroughs and sects, and you'll pick up a new part of KRF at each step.
+              The best way to learn KRF is to follow this step-by-step guide. You'll build a small
+              Chinese cultivation game in Roblox Studio, and each chapter teaches you a few KRF
+              concepts along the way.
             </p>
             <ol className={styles.chapters}>
               {chapters.map((chapter) => (
