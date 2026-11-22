@@ -104,3 +104,7 @@
     padding-bottom: 4rem;
   }
 }
+
+.path p code {
+  white-space: nowrap;
+}

@@ -3,11 +3,6 @@ import Layout from '@theme/Layout';
 import CodeBlock from '@theme/CodeBlock';
 import styles from './index.module.css';
 
-const createCommands = `npm create krf@latest my-game
-cd my-game
-npm install
-npm run dev`;
-
 const chapters = [
   {title: 'Create a KRF project', to: '/tutorial/create-the-project'},
   {title: 'Gather Qi', to: '/tutorial/gather-qi'},
@@ -49,8 +44,8 @@ export default function Home() {
           <section className={styles.path} aria-labelledby="new-to-krf">
             <h2 id="new-to-krf">New to KRF?</h2>
             <p>
-              The tutorial builds a small Chinese cultivation game. Each chapter adds one mechanic
-              and the KRF systems behind it.
+              Let's build a Chinese cultivation game together. You'll start with a Qi meter, then add
+              meditation, breakthroughs and sects, and you'll pick up a new part of KRF at each step.
             </p>
             <ol className={styles.chapters}>
               {chapters.map((chapter) => (
@@ -64,10 +59,14 @@ export default function Home() {
           <section className={styles.path} aria-labelledby="create-project">
             <h2 id="create-project">Create a KRF project</h2>
             <p>
-              You need Node.js 22.12 or later and Roblox Studio. These commands create the project,
-              install its tools and open it in Studio.
+              You'll need Node.js 22.12 or later and Roblox Studio. Run this, and it'll ask you for
+              a project name and a couple of options:
             </p>
-            <CodeBlock language="bash">{createCommands}</CodeBlock>
+            <CodeBlock language="bash">npm create krf@latest</CodeBlock>
+            <p>
+              When it's done, open the new folder and run <code>npm install</code>, then{' '}
+              <code>npm run dev</code> to open your game in Studio.
+            </p>
           </section>
         </div>
       </main>
