@@ -1,0 +1,20 @@
+{
+  "name": "KRF-I3-Input-Sequences-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "InputRecognitionWorkload": { "$path": "../../benchmarks/InputRecognition/Workload.luau" },
+      "Packages": { "$className": "Folder", "KRF": { "$path": "../../../src" } },
+      "InputSequences": { "$path": "../../examples/InputSequences.luau" },
+      "InputTestControl": { "$className": "RemoteEvent" }
+    },
+    "ServerScriptService": {
+      "InputTestServer": { "$path": "../../integration/Input/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "InputTestClient": { "$path": "../../integration/InputSequences/Client.client.luau" }
+      }
+    }
+  }
+}

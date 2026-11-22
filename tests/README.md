@@ -35,15 +35,18 @@ These fixtures run real server/client sessions separately from `npm test`:
 | `npm run test:integration:n4-performance` | Native sustained publication load with two clients |
 | `npm run test:integration:tags-load` | Native Tags delivery at multiple Actor populations |
 
-The ActorView and TagsView commands build `n5-actor-view-test.project.json` and
-`n6-tags-view-test.project.json`. Their PowerShell runners launch Studio's
-Edit-DataModel `RunScript` task, whose Luau launcher calls
-`StudioTestService:ExecuteMultiplayerTestAsync(2, ...)`. They retain places and logs
-under `build/n5-native/<run-id>/` and `build/n6-native/<run-id>/`. Exit 0 requires a
-verified success result; exit 1 reports a fixture failure; exit 2 means no result
-was verified. To select Studio, invoke the corresponding
-`scripts/test-n5-native.ps1` or `scripts/test-n6-native.ps1` with
-`-StudioPath <absolute-path>`.
+The Rojo projects for these suites and the manual Studio fixtures live in
+[tests/integration/projects](./integration/projects/). The shared PowerShell
+runner launches Studio in Edit mode and starts two clients through
+`StudioTestService`. The n5 and n6 suites write places, launchers, and logs to
+`build/n5-native/<run-id>/` and `build/n6-native/<run-id>/`. A verified success
+returns exit code 0. A fixture failure returns 1. A missing result returns 2.
+
+Pass a Studio executable explicitly with:
+
+```powershell
+npm run test:integration:n5 -- -StudioPath "C:\Path\To\RobloxStudioBeta.exe"
+```
 
 See [benchmark workflows](./benchmarks/README.md) for load projects, CPU
 measurements, analyzers, and interpretation limits.
@@ -93,37 +96,21 @@ workflow runs it against the published version installed from the registry
 (`--source registry --version X.Y.Z`). `npm run test:release-tools` covers the
 release helpers in `scripts/release/`; see [RELEASING.md](../RELEASING.md).
 
-## Standalone Edit-mode fixtures
+## Association and Networking startup
 
-Keep these focused checks alongside the broader native suites:
-
-| Project | Launcher | Distinct coverage |
-| --- | --- | --- |
-| `n4-association-test.project.json` | `scripts/run-n4-association-tests.luau` | Real Players and native Character changes between registered and unregistered Models; Owner reconciliation without rerunning canonical snapshots. Transport sends are captured by an injected sink. |
-| `networking-test.project.json` | `scripts/run-networking-tests.luau` | Normal two-client initialization, native transport discovery, matching codebooks, acknowledgement-before-follow-up ordering, no handshake recompilation/domain callbacks, and readiness cleanup on departure |
-
-Build the desired fixture:
-
-```powershell
-New-Item -ItemType Directory -Force build
-rojo build n4-association-test.project.json -o build/KRF-N4-Association-Tests.rbxl
-rojo build networking-test.project.json -o build/KRF-Networking-Tests.rbxl
-```
-
-Open the matching place in Studio **Edit mode**, then execute the matching Luau
-launcher's contents from the command bar. `StudioTestService` requires that
-security context; running these launchers inside a `run-in-roblox` simulation
-does not provide it. Success prints `__KRF_NATIVE_N4_ASSOCIATION_PASS__` or
-`__KRF_NATIVE_NETWORKING_PASS__` with structured results.
+| Command | Coverage |
+| --- | --- |
+| `npm run test:integration:n4-association` | Real Players and Character changes between registered and unregistered Models, and Owner reconciliation without rerunning canonical snapshots. An injected sink captures transport sends. |
+| `npm run test:integration:networking` | Two-client initialization, native transport discovery, matching codebooks, acknowledgement ordering, no handshake recompilation or domain callbacks, and readiness cleanup on departure. |
 
 Optional local-plugin launchers remain in
-`scripts/n4-association-test-plugin.server.luau` and
-`scripts/networking-test-plugin.server.luau`. They run only in Edit mode after
+`tests/integration/studio/n4-association-test-plugin.server.luau` and
+`tests/integration/studio/networking-test-plugin.server.luau`. They run only in Edit mode after
 detecting their fixture marker. The Networking plugin can be built with:
 
 ```powershell
-rojo build networking-test-plugin.project.json -o build/KRF-Networking-Test-Plugin.rbxmx
+rojo build tests/integration/projects/networking-test-plugin.project.json -o build/KRF-Networking-Test-Plugin.rbxmx
 ```
 
 Install that model in Studio's local Plugins directory only for the fixture run,
-then remove it afterward. The command-bar path requires no plugin installation.
+then remove it afterward. The npm commands run without a local plugin.

@@ -1,0 +1,21 @@
+{
+  "name": "KRF-I8-Action-Observations-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "../../../src" } },
+      "ActionInputSchemas": { "$path": "../../integration/ActionInput/Schemas.luau" },
+      "ObservationSchemas": { "$path": "../../integration/ActionObservations/Schemas.luau" },
+      "ObservationReport": { "$className": "RemoteEvent" },
+      "ObservationProbe": { "$className": "RemoteFunction" }
+    },
+    "ServerScriptService": {
+      "ObservationServer": { "$path": "../../integration/ActionObservations/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "ObservationClient": { "$path": "../../integration/ActionObservations/Client.client.luau" }
+      }
+    }
+  }
+}
