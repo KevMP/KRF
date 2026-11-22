@@ -2,26 +2,28 @@
 title: Show realms to everyone
 sidebar_label: 4. Show realms
 sidebar_position: 5
-description: Replicate each cultivator's realm with a replication domain and announce breakthroughs to every player.
+description: Replicate each character's realm and receive breakthrough events on every client.
 ---
 
 # Show realms to everyone
 
-A cultivator's realm lives in the server's Cultivation Controller, and clients can't see it. In this chapter every player sees their own realm in the HUD, and everyone is told when someone breaks through.
+Our Cultivation Controller keeps each character's realm on the server. Let's make that state available to clients so players will be able to see their realm beside Qi. We'll also send a breakthrough event to every client and print it in Studio's Output window.
 
-## Replication domains
+## Define what clients will receive
 
-KRF replicates its own state, such as Resources, Tags and running Actions, automatically. To replicate state you own, you declare a replication domain. It describes what to send and how to read it from the Actor, and KRF handles sending it, keeping late joiners up to date and recovering after reconnects.
+Qi already replicates because we marked its Resource definition `ClientVisible`. To replicate the realm from our Cultivation Controller, we'll define a replication domain that specifies how KRF reads the state and which clients receive it.
+
+Generate a Cultivation domain:
 
 ```bash
 npm run createDomain -- --name Cultivation --audience All --state-field Realm:U8 --event "BrokeThrough(Realm:U8)" --observe
 ```
 
-A domain separates two things. Its state is what's true now, here the realm, and KRF can always rebuild it for a client that just joined. Its events are things that happened, such as a breakthrough. They're delivered to clients who are connected when they happen and never replayed.
+We'll send the current realm as state and each breakthrough as a `BrokeThrough` event. A client joining late will receive the current realm without replaying earlier breakthrough events.
 
-## Tell the domain when the realm changes
+## Observe changes to the realm
 
-The domain needs to know when to read the realm again. Give the Cultivation Controller an `Observe` function in `src/server/Controllers/Cultivation.luau`:
+KRF needs a way to detect changes to our Controller. We'll add an `Observe` method so the domain can subscribe to realm changes and disconnect when the Actor is removed. Update `src/server/Controllers/Cultivation.luau`:
 
 ```lua title="src/server/Controllers/Cultivation.luau"
 --!strict
@@ -84,9 +86,11 @@ local Cultivation: KRF.ControllerDefinition = {
 return Cultivation
 ```
 
-`Advance` now notifies its listeners immediately after changing the realm, before it sets `MaxQi`. That order matters: setting a Property runs other code through Property events, and KRF needs the domain told about the new realm before any of that code can run.
+`Advance` will now call the listeners after updating `realm`. Keep that call before `SetBaseProperty`: changing a Property can run other callbacks, so KRF needs the new realm marked for replication first.
 
-Fill in the generated domain, `src/server/ReplicationDomains/Cultivation.luau`:
+## Connect the Controller to the domain
+
+We can now read the realm and observe changes to it. Replace the generated domain in `src/server/ReplicationDomains/Cultivation.luau` with:
 
 ```lua title="src/server/ReplicationDomains/Cultivation.luau"
 --!strict
@@ -128,131 +132,70 @@ local Cultivation: KRF.ReplicationDomainDefinition = {
 return Cultivation
 ```
 
-`snapshot` returns the full current state whenever KRF needs it. `observe` connects to the Controller: each time the realm changes it calls `onCommitted` with the breakthrough event, and KRF takes a new snapshot and sends both. It returns the Controller's disconnect function so KRF can clean up when the Actor goes away. `audience = "All"` sends the domain to every client; `"Owner"` would send it only to the player whose character the Actor is.
+When a realm changes, our observer will call `onCommitted` with the `BrokeThrough` event. KRF will read a fresh snapshot and replicate the state change with that event. Returning the disconnect function from `Observe` will let KRF remove the listener during cleanup.
 
-## Show realms and breakthroughs
+We've set `audience = "All"` so every client will receive this domain. The `U8` schema stores a whole number from 0 to 255, which is enough for our four realm numbers.
 
-On the client, every ActorView now has a Cultivation domain. Update `src/client/Hud.luau`:
+## Read the realm on the client
 
-```lua title="src/client/Hud.luau"
---!strict
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+Let's add the realm name to the label we already have. In `src/client/Hud.luau`, add this require beside the others:
 
-local KRF = require(ReplicatedStorage.Packages.KRF)
-local LocalCharacter = require(script.Parent.LocalCharacter)
+```lua
 local Realms = require(ReplicatedStorage.Shared.Realms)
-
-local Hud = {}
-
-local announcement: TextLabel? = nil
-
-local function meter(resources: KRF.ResourcesView, resourceId: string): string
-	return `{resourceId} {math.floor(resources:GetCurrent(resourceId) or 0)}/{resources:GetMax(resourceId) or 0}`
-end
-
-local function status(view: KRF.ActorView): string
-	local text: string = meter(view:GetResources(), "Qi")
-	local cultivation: KRF.DomainView? = view:GetDomain("Cultivation")
-
-	if cultivation ~= nil then
-		text = `{Realms.NAMES[cultivation:GetState().Realm]} · {text}`
-	end
-
-	if view:GetActions():IsActionActive("Breakthrough") then
-		text ..= " · Breaking through"
-	elseif view:GetActions():IsActionActive("Meditate") then
-		text ..= " · Meditating"
-	end
-
-	return text
-end
-
-function Hud.Announce(text: string): ()
-	local notice: TextLabel? = announcement
-
-	if notice == nil then
-		return
-	end
-
-	notice.Text = text
-	notice.Visible = true
-
-	task.delay(3, function()
-		if notice.Text == text then
-			notice.Visible = false
-		end
-	end)
-end
-
-function Hud.Start(): ()
-	local player: Player = Players.LocalPlayer
-
-	local gui: ScreenGui = Instance.new("ScreenGui")
-	gui.Name = "Hud"
-	gui.ResetOnSpawn = false
-
-	local label: TextLabel = Instance.new("TextLabel")
-	label.Name = "Status"
-	label.Position = UDim2.new(0, 16, 1, -56)
-	label.Size = UDim2.fromOffset(420, 40)
-	label.BackgroundColor3 = Color3.new(0, 0, 0)
-	label.BackgroundTransparency = 0.4
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextSize = 20
-	label.Parent = gui
-
-	local notice: TextLabel = label:Clone()
-	notice.Name = "Announcement"
-	notice.Position = UDim2.new(0, 16, 1, -104)
-	notice.Visible = false
-	notice.Parent = gui
-	announcement = notice
-
-	gui.Parent = player:WaitForChild("PlayerGui")
-
-	RunService.RenderStepped:Connect(function()
-		local view: KRF.ActorView? = LocalCharacter.Get()
-		local text: string = if view ~= nil then status(view) else ""
-
-		if label.Text ~= text then
-			label.Text = text
-		end
-	end)
-
-	local function watch(view: KRF.ActorView): ()
-		local cultivation: KRF.DomainView? = view:GetDomain("Cultivation")
-		local brokeThrough: KRF.Event<any>? = if cultivation ~= nil then cultivation:GetEvent("BrokeThrough") else nil
-
-		if brokeThrough ~= nil then
-			brokeThrough:Connect(function(payload: { Realm: number })
-				local model: Model? = view:GetModel()
-				local name: string = if model ~= nil then model.Name else "A cultivator"
-
-				Hud.Announce(`{name} reached {Realms.NAMES[payload.Realm]}`)
-			end)
-		end
-	end
-
-	KRF.ActorViewRegistry.OnActorViewAdded:Connect(watch)
-
-	for _, view: KRF.ActorView in KRF.ActorViewRegistry.GetAllActorViews() do
-		watch(view)
-	end
-end
-
-return Hud
 ```
 
-`status` reads the realm from the domain's current state. The second label shows a message for three seconds through `Hud.Announce`, which chapter 5 reuses.
+In `status`, insert this after the line that creates `text`, before the Action checks:
 
-`watch` subscribes to the `BrokeThrough` event on one ActorView. The HUD calls it for every view that already exists and for every view added later, so players hear about every cultivator's breakthrough, including their own.
+```lua
+local cultivation: KRF.DomainView? = view:GetDomain("Cultivation")
 
-## Checkpoint
+if cultivation ~= nil then
+	text = `{Realms.NAMES[cultivation:GetState().Realm]} · {text}`
+end
+```
 
-Press Play. The HUD now starts with `Qi Condensation`. Break through and it changes to `Foundation Establishment`, and the announcement label reports it. In Studio's Test tab, start a local server with two players: when one breaks through, the other sees the same announcement.
+`GetDomain` returns a DomainView, the client's read-only access to that domain. We'll read its current `Realm` value and use the shared module to look up the name.
+
+## Receive breakthroughs from other characters
+
+The label reads only our own character's state. To receive everyone's breakthrough events, we'll subscribe to the Cultivation domain on every ActorView.
+
+Add this function above `Hud.Start`:
+
+```lua
+local function watch(view: KRF.ActorView): ()
+	local cultivation: KRF.DomainView? = view:GetDomain("Cultivation")
+	local brokeThrough: KRF.Event<any>? = if cultivation ~= nil then cultivation:GetEvent("BrokeThrough") else nil
+
+	if brokeThrough ~= nil then
+		brokeThrough:Connect(function(payload: { Realm: number })
+			local model: Model? = view:GetModel()
+			local name: string = if model ~= nil then model.Name else "A cultivator"
+
+			print(`{name} reached {Realms.NAMES[payload.Realm]}`)
+		end)
+	end
+end
+```
+
+At the end of `Hud.Start`, after the existing `RenderStepped` connection, add:
+
+```lua
+KRF.ActorViewRegistry.OnActorViewAdded:Connect(watch)
+
+for _, view: KRF.ActorView in KRF.ActorViewRegistry.GetAllActorViews() do
+	watch(view)
+end
+```
+
+The loop will subscribe to characters that already exist. `OnActorViewAdded` will handle characters that appear later, including after a respawn. Each client will print a message when any of those characters breaks through.
+
+## Try it
+
+Press Play and check the label for `Qi Condensation`. After a breakthrough, it should change to `Foundation Establishment`, and the client's Output window should print the same realm name.
+
+Then start a local server with two players from Studio's Test tab. Break through on one character and check both clients' Output windows. Both should receive the event, even though the other character's realm hasn't changed.
 
 ## Next
 
-[Join a sect](./join-a-sect) lets players choose a path and learn its technique.
+In [Join a sect](./join-a-sect), we'll let players choose a technique and use it alongside Meditate and Breakthrough.

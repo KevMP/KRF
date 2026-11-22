@@ -2,16 +2,18 @@
 title: Meditate
 sidebar_label: 2. Meditate
 sidebar_position: 3
-description: Turn the starter's Focus into meditation and learn how a key press becomes a server-side Action.
+description: Turn the starter's Focus Action into Meditate so players can gather Qi by holding F.
 ---
 
 # Meditate
 
-Holding F already speeds up Qi; it just isn't called meditation yet. In this chapter you rename Focus to Meditate and Focused to Meditating. Every ability later in the game is built from the same pieces, so the chapter also explains what each one does.
+We've already got the Qi bonus from holding F. Let's turn the starter's Focus Action into a Meditate Action so players will be able to gather Qi through meditation.
 
-## The Action
+## Start and stop meditation
 
-An Action is something an Actor does: it starts, runs, and ends or is interrupted. The server decides whether it may start and owns its whole lifetime. Rename `src/server/Actions/Focus.luau` to `Meditate.luau`:
+We'll use an Action to keep meditation running while the player holds F. KRF runs Actions on an Actor, which holds a character's gameplay state.
+
+Rename `src/server/Actions/Focus.luau` to `Meditate.luau` and replace its contents:
 
 ```lua title="src/server/Actions/Meditate.luau"
 --!strict
@@ -35,15 +37,15 @@ end
 return Meditate
 ```
 
-An Action module returns a factory function rather than a table. KRF calls it for every activation, so local variables inside it belong to one activation; the breakthrough in chapter 3 relies on that.
+Everyone should be able to meditate, so we'll keep `autoGrant` enabled. While the Action runs, `activeTags` will apply the Meditating Tag. Including that same Tag in `blockedTags` will prevent a second meditation from starting on the character.
 
-`autoGrant` lets every Actor use the Action without being granted it first. `activeTags` gives the Actor the Meditating Tag for as long as the Action runs and removes it when the Action stops, however it stops. `blockedTags` refuses to start a second meditation while one is running.
+The `onStopRequested` callback will end meditation by calling `context:End()` when the server receives Stop. KRF will remove the active Tag if the Action ends or gets interrupted.
 
-When the player lets go of F, the client asks the server to stop. `onStopRequested` decides what that means, and here it ends the meditation. The client's release is only a request; the server could ignore it.
+## Keep the bonus while meditating
 
-## The Tag
+The `Meditating` name in the Action needs a matching Tag definition. Tags record statuses on an Actor and can modify its Properties, so we can put the Qi bonus here.
 
-Rename `src/server/Tags/Focused.luau` to `Meditating.luau`:
+The Focused Tag already has the modifier we need. Rename `src/server/Tags/Focused.luau` to `Meditating.luau` and update the names:
 
 ```lua title="src/server/Tags/Meditating.luau"
 --!strict
@@ -61,50 +63,37 @@ local Meditating: KRF.TagDefinition = {
 return Meditating
 ```
 
-A Tag is a status an Actor has, optionally with modifiers on its Properties. Meditating keeps the starter's bonus: while it's active, `QiRegen` resolves to 10 more than its base value.
+While Meditating is present, its bonus of 10 will bring `QiRegen` up to 11. When the Action removes the Tag, the rate will return to 1.
 
-## The client side
+## Connect F to Meditate
 
-Clients can only request Actions that a shared module lists. Rename `src/shared/ActionRequests/Focus.luau` to `Meditate.luau` and rename its entry:
+The server now has Meditate, but the client still uses the Focus name. Rename these two files to `Meditate.luau`:
+
+- `src/shared/ActionRequests/Focus.luau`
+- `src/client/ActionInputPolicies/Focus.luau`
+
+Inside each file, change every `Focus` to `Meditate`. Keep the existing settings. The shared request entry should now look like this:
 
 ```lua title="src/shared/ActionRequests/Meditate.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local KRF = require(ReplicatedStorage.Packages.KRF)
-
-local Meditate: KRF.ActionRequestSchemas = {
-	Meditate = {
-		stop = {},
-		allowInputInterrupt = true,
-		requiresClientRelease = true,
-		onDisconnect = "Interrupt",
-	},
-}
-
-return Meditate
+Meditate = {
+	stop = {},
+	allowInputInterrupt = true,
+	requiresClientRelease = true,
+	onDisconnect = "Interrupt",
+},
 ```
 
-This entry says what a client may send for Meditate. `stop = {}` lets it ask to stop, and `requiresClientRelease` means that stop must come from the player actually releasing the key. `onDisconnect = "Interrupt"` ends the meditation if the player leaves, and `allowInputInterrupt` lets the client cancel it when input is lost, for example when the window loses focus.
+This will let clients send a Stop request without parameters. The interruption settings will also let meditation stop if the game window loses focus or the player's connection closes.
 
-How a key press turns into requests is a client decision. Rename `src/client/ActionInputPolicies/Focus.luau` to `Meditate.luau`:
+The request entry declares which requests are allowed. The input policy decides when the client will send them. For `requiresClientRelease`, we need the `WhileDown` policy already used by Focus:
 
 ```lua title="src/client/ActionInputPolicies/Meditate.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local KRF = require(ReplicatedStorage.Packages.KRF)
-
-local Meditate: KRF.ActionInputPolicies = {
-	Meditate = { activation = "WhileDown" },
-}
-
-return Meditate
+Meditate = { activation = "WhileDown" },
 ```
 
-`WhileDown` starts the Action when the key goes down and asks to stop it when the key comes up. An Action with no policy and no stop starts once per press.
+Pressing F will send Start; releasing it will send Stop. That Stop will reach the server's `onStopRequested` callback, which will end meditation and remove the Qi bonus.
 
-Finally, the loadout decides which Action each ability slot runs. In `src/client/Controls/Loadout.luau`, put Meditate in the first slot:
+F is already bound to `AbilitySlot1`. To finish connecting it, equip Meditate in that slot in `src/client/Controls/Loadout.luau`:
 
 ```lua
 local equipped: { [string]: string } = {
@@ -114,7 +103,9 @@ local equipped: { [string]: string } = {
 
 ## Show when you're meditating
 
-Meditate is `ClientVisible`, so every client can see which Actors are running it. Add that to the HUD's `status` function in `src/client/Hud.luau`:
+Meditate has `visibility = "ClientVisible"`, so all clients will receive its active state. We'll read that state through `view:GetActions()` and show `Meditating` beside Qi in the existing label.
+
+Replace the `status` function in `src/client/Hud.luau` with:
 
 ```lua
 local function status(view: KRF.ActorView): string
@@ -128,10 +119,10 @@ local function status(view: KRF.ActorView): string
 end
 ```
 
-## Checkpoint
+## Try it
 
-Press Play and hold F. The HUD shows `Meditating` and Qi climbs 11 per second. Let go and the label and the faster rate both stop.
+Press Play and hold F while Qi is below 100. You should see `Meditating` beside the meter as Qi fills at 11 per second. Release F and watch the indicator disappear. Qi should continue increasing at 1 per second.
 
 ## Next
 
-[Break through](./break-through) gives cultivators a reason to fill the bar.
+We'll give players a reason to save Qi: a [breakthrough](./break-through) to a higher realm.

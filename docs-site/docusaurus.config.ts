@@ -106,7 +106,7 @@ const config: Config = {
           docId: 'index',
           docsPluginId: 'walkthrough',
           position: 'left',
-          label: 'Walkthrough',
+          label: 'Tutorial',
         },
         {
           href: 'https://github.com/KevMP/KRF',

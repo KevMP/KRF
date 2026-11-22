@@ -2,70 +2,143 @@
 title: Test the game
 sidebar_label: 6. Test the game
 sidebar_position: 7
-description: Unit-test the game's rules with Jest, check the code, and smoke-test it in Studio from the command line.
+description: Test how realm progression affects each character's Qi, then check code quality and server/client startup.
 ---
 
 # Test the game
 
-Every checkpoint so far meant pressing Play and watching. That doesn't scale, so this chapter adds the checks the project can run on its own.
+When one character advances, only that character's realm and Qi limit should change. Any Qi it has already gathered should stay at the same value. Let's put that behavior in a test.
 
-## Unit tests
+If you're new to Jest, keep the [Jest Lua docs](https://jsdotlua.github.io/jest-lua/) handy for assertions, test hooks and other features you can use as your tests grow.
 
-`npm test` runs Jest specs from `tests` inside Roblox Studio, without playing the game. The starter already has one, `tests/Definitions.spec.luau`, which checks that no two Properties, Tags, Resources or Actions share an ID. It now covers everything you've added.
+## Test progression with two characters
 
-Rules that are plain functions are the easiest to test. That's one reason the realm numbers live in `src/shared/Realms.luau` instead of inside the Cultivation Controller. Add `tests/Realms.spec.luau`:
+We'll register two Actors and advance one of them through its Cultivation Controller. Using the game's real Property and Resource controllers will let us check the resulting Qi values too.
 
-```lua title="tests/Realms.spec.luau"
+Create `tests/Cultivation.spec.luau`:
+
+```lua title="tests/Cultivation.spec.luau"
+--!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local Realms = require(ReplicatedStorage.Shared.Realms)
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local Cultivation = require(ServerScriptService.Game.Controllers.Cultivation)
+local Properties = require(ServerScriptService.Game.Properties)
+local Resources = require(ServerScriptService.Game.Resources)
 
+local afterEach = JestGlobals.afterEach
+local beforeEach = JestGlobals.beforeEach
 local describe = JestGlobals.describe
 local expect = JestGlobals.expect
 local it = JestGlobals.it
 
-describe("Realms", function()
-	it("doubles maximum Qi with each realm", function()
-		expect(Realms.MaxQi(1)).toBe(100)
-		expect(Realms.MaxQi(2)).toBe(200)
-		expect(Realms.MaxQi(#Realms.NAMES)).toBe(800)
+local models: { Model } = {}
+
+local function registerCharacter(): KRF.Actor
+	local model: Model = Instance.new("Model")
+	model.Parent = workspace
+	table.insert(models, model)
+
+	return assert(KRF.ActorRuntime.RegisterActor(model))
+end
+
+describe("Cultivation", function()
+	beforeEach(function()
+		KRF.Server._ResetForTests()
+
+		local started: boolean, failure: KRF.ServerStartupFailure? = KRF.Server.Init({
+			properties = Properties,
+			resources = Resources,
+			controllers = { Cultivation },
+		})
+
+		expect(started).toBe(true)
+		expect(failure).toBeNil()
+	end)
+
+	afterEach(function()
+		for _, model: Model in models do
+			local actor: KRF.Actor? = KRF.ActorRegistry.GetActorByModel(model)
+
+			if actor ~= nil then
+				KRF.ActorRuntime.UnregisterActor(actor, "TestCleanup")
+			end
+
+			model:Destroy()
+		end
+
+		table.clear(models)
+		KRF.Server._ResetForTests()
+	end)
+
+	it("advances one character without refilling Qi or advancing another character", function()
+		local first: KRF.Actor = registerCharacter()
+		local second: KRF.Actor = registerCharacter()
+		local firstCultivation: Cultivation.Cultivation = first:GetController("Cultivation") :: Cultivation.Cultivation
+		local secondCultivation: Cultivation.Cultivation = second:GetController("Cultivation") :: Cultivation.Cultivation
+		local firstResources: KRF.ResourceController = first:GetController("ResourceController") :: KRF.ResourceController
+		local secondResources: KRF.ResourceController = second:GetController("ResourceController") :: KRF.ResourceController
+
+		assert(firstResources:SetCurrent("Qi", 40))
+
+		firstCultivation.Advance()
+
+		expect(firstCultivation.GetRealm()).toBe(2)
+		expect(firstResources:GetMax("Qi")).toBe(200)
+		expect(firstResources:GetCurrent("Qi")).toBe(40)
+		expect(secondCultivation.GetRealm()).toBe(1)
+		expect(secondResources:GetMax("Qi")).toBe(100)
+		expect(secondResources:GetCurrent("Qi")).toBe(0)
 	end)
 end)
 ```
+
+The first character will start with 40 Qi, then advance to realm 2. Its limit should become 200 while its current value stays at 40. The second character should remain at realm 1 with its original Qi values.
+
+The hooks will give each test fresh KRF registries and remove its Actors and Models afterward, even if an assertion fails. `_ResetForTests` is a test-only hook; keep it out of your game startup scripts.
+
+Run the tests from your generated project folder:
 
 ```bash
 npm test
 ```
 
-Jest prints each spec, and the command fails if any test fails.
+The command will run the Jest specs in `tests` inside Roblox Studio and report any failures in the terminal.
 
-## Check the code
+It will also run the starter's `tests/Definitions.spec.luau`. That spec checks that IDs are unique within each Property, Tag, Resource and Action catalog, including definitions we've added to those catalogs. It doesn't exercise the abilities themselves.
+
+## Check formatting and types
+
+The starter also has a command for catching formatting, lint and type errors:
 
 ```bash
 npm run check
 ```
 
-This checks formatting with StyLua, lints with Selene and type-checks everything in `src` with luau-lsp, without changing any files. `npm run format` fixes formatting. If you created the project with a GitHub Actions workflow, it runs `npm run check` and builds the place on every push.
+This will run StyLua, Selene and luau-lsp without changing your files. If formatting is the problem, `npm run format` will fix it. If you included the GitHub Actions workflow when creating the project, it will run the checks and build the place on each push.
 
-## Smoke-test in Studio
+## Check server and client startup
+
+Our progression test checks the server's state. To check whether the game starts correctly with players connected, run:
 
 ```bash
 npm run test:studio
 ```
 
-This builds a copy of the place, plays it in Studio with a server and two clients, and confirms that KRF starts and every player's character becomes an Actor. A broken definition fails here with the reason, the same way the game would fail to start.
+The smoke test will build a copy of the place and start a server with two clients. It will check that each character registers as an Actor and appears on its client as an ActorView. Startup failures will be reported in the command's output.
 
-None of these play the game. They don't hold F or break through, so a mistake in how an Action behaves still needs a playtest to find. What they catch quickly is a typo in a definition, a type error, or a rule that changed by accident.
+It won't press F, attempt a breakthrough or choose a sect. Keep using the earlier chapters' play steps to check those behaviors; the smoke test covers startup.
 
 ## Where to go from here
 
-The game uses most of what KRF offers today. It skipped these features.
+You can now gather Qi, advance through realms and choose a sect technique. If you'd like to build on the game, here are a few places to start:
 
-- Actions can take start and stop parameters, such as an aim direction, declared in their request entry and supplied by the input policy.
-- Inputs can recognize gestures such as a double tap or a long hold, and sequences such as X, Q, Z pressed in order. See [Action input](/Action/action-input).
-- A replication domain with `audience = "Owner"` sends private state only to the Actor's own player.
-- Hints carry disposable, cosmetic messages in either direction. See [Hints](/Networking/hints).
-- `ClientControls.Apply` changes keybinds, routes and the controlled Actor together in one step. See [Client controls](/Action/client-controls).
+- Add an aimed technique by declaring [Action request parameters](/Action/action-requests) and supplying them from an [input policy](/Action/action-input).
+- Try a double tap, long hold or key sequence using [Action input](/Action/action-input).
+- Keep a character's private progression visible only to its player with an [owner-only replication domain](/Networking/replication-domains).
+- Send disposable cosmetic messages with [Hints](/Networking/hints).
+- Let players change their controls with [Client controls](/Action/client-controls).
 
-[Resources](/reference/resources) covers the Resource system in full detail.
+For more ways to use Qi, including cooldowns and charges, see [Resources](/reference/resources).

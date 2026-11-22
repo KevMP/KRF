@@ -2,28 +2,51 @@
 title: Join a sect
 sidebar_label: 5. Join a sect
 sidebar_position: 6
-description: Let players join a sect with a Command, grant the sect's technique, and build techniques from stacking, ticking and toggled Tags.
+description: Let players choose a sect and unlock a technique with a server-authorized Command.
 ---
 
 # Join a sect
 
-Every cultivator so far cultivates the same way. In this chapter players join one of two sects by pressing 1 or 2. Joining is permanent and teaches the sect's technique, which goes on E:
+Let's give players a choice of technique. They'll be able to join the Flame sect by pressing 1 or the Frost sect by pressing 2, then use their sect's Action with E.
 
-- The Flame sect's Kindle costs 30 Qi and speeds up Qi regeneration for 20 seconds. Using it again stacks the effect, up to three times.
-- The Frost sect's Stillness is a stance you toggle on and off. While it's on, your Qi maximum is half again as large, but it costs 3 Qi every second.
+- The Flame sect will grant the Kindle Action. Each use will cost 30 Qi and add 3 Qi per second to regeneration for 20 seconds. Players will be able to stack that bonus up to three times.
+- The Frost sect will grant the Stillness Action. Players will be able to toggle it on and off. While active, it will increase their Qi limit by 50% and drain 3 Qi every second.
 
-## The techniques
+We'll remember the choice across respawns for the current session. Players will be able to choose again after leaving and rejoining.
 
-Each technique is an Action that applies a Tag. Generate the Tags first:
+## Give Kindle a stacking bonus
+
+We'll put Kindle's regeneration bonus on a Kindled Tag. Generate the Tag and the Action together:
 
 ```bash
 npm run createTag -- --name Kindled --duration 20 --duplicate-behavior Stack --max-stacks 3 --property QiRegen:add=3 --visibility ClientVisible
-npm run createTag -- --name StillMind --tick-interval 1 --property MaxQi:multiply=1.5 --visibility ClientVisible
+npm run createAction -- --name Kindle --requestable --cost Qi=30 --applied-tag Kindled
 ```
 
-Kindled stacks: each use adds an independent instance with its own 20-second timer, and each instance adds 3 to `QiRegen`. Once three are active, another use refreshes the one closest to running out instead of adding a fourth.
+Each application of Kindled will have its own 20-second timer and add 3 to `QiRegen`. With three stacks active, another application will refresh the stack closest to expiring.
 
-StillMind has no duration; it lasts as long as something holds it. Its `tickInterval` runs `onTick` every second, which is where the stance takes its cost. Give `src/server/Tags/StillMind.luau` its drain:
+The generated Kindle Action will include:
+
+```lua
+appliedTags = { "Kindled" },
+costs = { Qi = 30 },
+onStart = function(context: KRF.ActionExecutionContext): ()
+	context:End()
+end,
+```
+
+Kindle will apply the Tag and end immediately. Because it uses `appliedTags`, Kindled will keep running until its duration expires. Meditate used `activeTags`, which removes the Tag when the Action stops.
+
+## Make Stillness a toggle
+
+Stillness will keep its bonus active until the player turns it off. We'll use an active Tag named StillMind and the toggle Action recipe:
+
+```bash
+npm run createTag -- --name StillMind --tick-interval 1 --property MaxQi:multiply=1.5 --visibility ClientVisible
+npm run createAction -- --name Stillness --recipe toggle --requestable --active-tag StillMind
+```
+
+The multiplier will increase `MaxQi` by 50%. We also need to drain Qi while the Tag is active. Replace `src/server/Tags/StillMind.luau` with:
 
 ```lua title="src/server/Tags/StillMind.luau"
 --!strict
@@ -47,77 +70,29 @@ local StillMind: KRF.TagDefinition = {
 return StillMind
 ```
 
-KRF's declarative `costs` are paid once, when an Action starts. A cost that continues while something is active is game logic, and a ticking Tag is a good place for it.
+`tickInterval = 1` schedules a 3-Qi drain once per second. The `_deltaTime` argument is the controller's step time, normally 0.1 seconds, so it doesn't measure the time since this Tag last ticked.
 
-Now the Actions. Neither uses `--auto-grant`; nobody can use them until a sect grants one.
+An Action's `costs` are paid once when it starts, so we're using the Tag callback for this ongoing drain. `Drain` will stop at 0; reaching 0 won't end Stillness.
 
-```bash
-npm run createAction -- --name Kindle --requestable --cost Qi=30 --applied-tag Kindled
-npm run createAction -- --name Stillness --recipe toggle --requestable --active-tag StillMind
-```
-
-The generated Kindle needs no changes:
-
-```lua title="src/server/Actions/Kindle.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local KRF = require(ReplicatedStorage.Packages.KRF)
-
-local function Kindle(): KRF.ActionDefinition
-	return {
-		id = "Kindle",
-		visibility = "ClientVisible",
-		appliedTags = { "Kindled" },
-		costs = { Qi = 30 },
-		onStart = function(context: KRF.ActionExecutionContext): ()
-			context:End()
-		end,
-	}
-end
-
-return Kindle
-```
-
-`appliedTags` applies Kindled when the Action is accepted, and the Tag then outlives the Action, which ends at once. Meditate used `activeTags` instead, which removes the Tag when the Action stops. That is the main difference between the two techniques. Stillness holds StillMind as an `activeTags` entry, so the stance lasts exactly as long as the Action runs.
-
-Meditate and Breakthrough used the held recipe, which runs only while the key is down. Stillness uses the toggle recipe instead. Its request entry allows a Stop without requiring a key release:
+The toggle recipe will generate a shared Stop entry and a client input policy. You can see the difference from Meditate in these entries:
 
 ```lua title="src/shared/ActionRequests/Stillness.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local KRF = require(ReplicatedStorage.Packages.KRF)
-
-local Stillness: KRF.ActionRequestSchemas = {
-	Stillness = {
-		stop = {},
-	},
-}
-
-return Stillness
+Stillness = {
+	stop = {},
+},
 ```
-
-and its input policy uses `Toggle`:
 
 ```lua title="src/client/ActionInputPolicies/Stillness.luau"
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local KRF = require(ReplicatedStorage.Packages.KRF)
-
-local Stillness: KRF.ActionInputPolicies = {
-	Stillness = { activation = "Toggle" },
-}
-
-return Stillness
+Stillness = { activation = "Toggle" },
 ```
 
-With `Toggle`, the first press starts Stillness and the next press asks to stop it. The generated `onStopRequested` ends it, and the multiplier on `MaxQi` goes with the Tag. If Qi was above the normal maximum at that moment, it drops to the maximum.
+The first press of E will send Start; the next will send Stop. The generated `onStopRequested` callback will end Stillness and remove the StillMind Tag. If the current Qi value is above the restored maximum, KRF will clamp it to that maximum.
 
-## Grant a technique
+## Grant the chosen technique
 
-Whether a player may use an Action is a grant on their Actor. Grants have named sources, so the grant from a sect can be added and removed without touching grants from anywhere else. Keep each player's sect in a server module, `src/server/Sects.luau`:
+We left `autoGrant` disabled for both techniques, so creating the Actions hasn't given players access to them yet. We'll grant one when a player joins a sect.
+
+Create `src/server/Sects.luau` to store each player's choice and grant the matching Action:
 
 ```lua title="src/server/Sects.luau"
 --!strict
@@ -172,7 +147,19 @@ end)
 return Sects
 ```
 
-`Join` grants the technique under the source `"Sect"` and remembers the choice. A respawn creates a new Actor with no grants, so `Restore` grants the remembered technique again. Call it from `src/server/PlayerActors.luau` right after a character registers:
+`SetGrants("Sect", ...)` will keep this grant under a named source, separate from grants supplied by other gameplay systems. `Join` will reject a second choice during the same session.
+
+## Restore the technique after a respawn
+
+Respawning will create a new Actor, so we'll need to grant the technique again. The `chosen` table will still hold the player's sect until they leave the server.
+
+In `src/server/PlayerActors.luau`, add this require at the top:
+
+```lua
+local Sects = require(script.Parent.Sects)
+```
+
+Then call `Restore` after a character registers. Replace the existing `register` function with:
 
 ```lua
 local function register(player: Player, character: Model): ()
@@ -187,21 +174,15 @@ local function register(player: Player, character: Model): ()
 end
 ```
 
-and require `Sects` at the top of that file:
+## Accept the choice on the server
 
-```lua
-local Sects = require(script.Parent.Sects)
-```
-
-## The ChooseSect Command
-
-Joining a sect isn't an Action; it doesn't run over time or hold a lock. It's a one-off request from the client, which is what Commands are for. A Command declares what the client sends and what the server answers, and the server decides who may send it and what happens.
+The client will send a sect name to the server. We'll handle that with a ChooseSect Command, which will return either the learned technique or a reason the choice was rejected.
 
 ```bash
 npm run createCommand -- --name ChooseSect --request-field "Sect:Enum(Flame|Frost)" --result-field "Technique:Enum(Kindle|Stillness)" --authorize OwnerActor
 ```
 
-Fill in the handler in `src/server/Commands/ChooseSect.luau`:
+Replace the generated module in `src/server/Commands/ChooseSect.luau` with:
 
 ```lua title="src/server/Commands/ChooseSect.luau"
 --!strict
@@ -235,9 +216,11 @@ local ChooseSect: KRF.CommandDefinition = {
 return ChooseSect
 ```
 
-`target = "Actor"` means the client names an Actor with each request, and `OwnerActor` lets only the player whose character that Actor is send it. `handle` returns either an accepted result, which the client receives as `Technique`, or a rejection with a short reason.
+The Enum schema will restrict the choice to Flame or Frost before the handler runs. `OwnerActor` will require the targeted Actor to belong to the player sending the request.
 
-## Choose a sect
+The handler will call our `Sects.Join` function. On success, KRF will send the technique name back to the client so it can equip the Action.
+
+## Bind E to the technique
 
 Bind E to a third slot in `src/client/Controls/Keybinds.luau`:
 
@@ -252,13 +235,15 @@ AbilitySlot3 = {
 },
 ```
 
-and add the slot, empty, in `src/client/Controls/Loadout.luau`:
+Add the slot to `SLOTS` in `src/client/Controls/Loadout.luau`. Leave it out of `equipped` for now; the client will fill it after the server accepts a sect choice:
 
 ```lua
 local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2", "AbilitySlot3" }
 ```
 
-Then create `src/client/Sects.luau`, which sends the Command when the player presses 1 or 2 and equips the technique the server grants:
+## Send the sect choice
+
+We'll use 1 and 2 to choose a sect and print the result in the client's Output window. Create `src/client/Sects.luau`:
 
 ```lua title="src/client/Sects.luau"
 --!strict
@@ -266,7 +251,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local Hud = require(script.Parent.Hud)
 local Loadout = require(script.Parent.Controls.Loadout)
 local LocalCharacter = require(script.Parent.LocalCharacter)
 
@@ -277,19 +261,24 @@ local SECT_KEYS: { [Enum.KeyCode]: string } = {
 
 local Sects = {}
 
-function Sects.Start(): ()
-	KRF.CommandRuntime.OnCommandResult:Connect(function(outcome: KRF.CommandResult)
-		if outcome.commandId ~= "ChooseSect" then
-			return
-		end
+local function onResult(outcome: KRF.CommandResult): ()
+	if outcome.commandId ~= "ChooseSect" then
+		return
+	end
 
-		if outcome.status == "Accepted" then
-			Loadout.Equip("AbilitySlot3", outcome.result.Technique)
-			Hud.Announce(`You learned {outcome.result.Technique}. Press E to use it.`)
-		else
-			Hud.Announce(`You could not join: {outcome.reason}`)
-		end
-	end)
+	if outcome.status == "Accepted" then
+		Loadout.Equip("AbilitySlot3", outcome.result.Technique)
+		print(`You learned {outcome.result.Technique}. Press E to use it.`)
+	elseif outcome.status == "Rejected" then
+		warn(`You could not join: {outcome.reason}`)
+	else
+		warn("Your sect choice has no confirmed result yet. It may have been applied on the server.")
+	end
+end
+
+function Sects.Start(): ()
+	KRF.CommandRuntime.OnCommandResult:Connect(onResult)
+	KRF.CommandRuntime.OnCommandUncertain:Connect(onResult)
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
 		local sect: string? = SECT_KEYS[input.KeyCode]
@@ -299,26 +288,34 @@ function Sects.Start(): ()
 			return
 		end
 
-		KRF.CommandRuntime.Send("ChooseSect", view, { Sect = sect })
+		local requestId: number?, reason: string? = KRF.CommandRuntime.Send("ChooseSect", view, { Sect = sect })
+
+		if requestId == nil then
+			warn(`Could not send sect choice: {reason}`)
+		end
 	end)
 end
 
 return Sects
 ```
 
-`Send` only means the request left; the answer arrives later through `OnCommandResult`. If the connection drops before the answer, KRF reports the request through `OnCommandUncertain` instead, because it can't know whether the server ran it. Pressing the key again is safe here, since the server rejects a second sect.
+Getting a request ID from `Send` won't mean the server has accepted the choice. We'll wait for `OnCommandResult` before equipping the technique. If the result becomes uncertain, `OnCommandUncertain` will report that separately; the server may already have applied the choice.
 
-Start the module in `src/client/Startup.client.luau`:
+Add the require at the top of `src/client/Startup.client.luau`:
 
 ```lua
 local Sects = require(script.Parent.Sects)
 ```
 
+Then start it after the existing startup calls:
+
 ```lua
 Sects.Start()
 ```
 
-Finally, show the techniques' Tags in the HUD's `status` function. The TagsView reports each Tag's stack count:
+## Read the technique's Tags
+
+Let's use the existing label to see how the bonuses behave. In `src/client/Hud.luau`, add this before `return text` in `status`:
 
 ```lua
 local kindled: KRF.ActiveTagSnapshot? = view:GetTags():GetTag("Kindled")
@@ -326,20 +323,22 @@ local kindled: KRF.ActiveTagSnapshot? = view:GetTags():GetTag("Kindled")
 if kindled ~= nil then
 	text ..= ` · Kindled x{kindled.stackCount}`
 end
-```
 
-```lua
 if view:GetTags():HasTag("StillMind") then
 	text ..= " · Still mind"
 end
 ```
 
-## Checkpoint
+`GetTag` will give us Kindled's stack count. For StillMind, we only need `HasTag` to check whether the stance is active.
 
-Press 1. The announcement says you learned Kindle, and pressing 2 now reports `AlreadyInSect`. With at least 30 Qi, press E: Qi drops by 30, the HUD shows `Kindled x1`, and Qi climbs 3 per second faster. Use it twice more for `Kindled x3`. Reset your character and E still works.
+## Try it
 
-In a second session, press 2 instead. E toggles Stillness: the maximum grows by half, to 150 in the first realm, and Qi slowly drains. Press E again and the maximum returns to 100.
+Fill Qi, then press 1. Check client Output for the Kindle confirmation. Pressing 2 after that should report `AlreadyInSect`. Use E three times while you have enough Qi and watch the label reach `Kindled x3`. Each stack should add 3 to the regeneration rate and expire after 20 seconds.
+
+Reset your character and gather at least 30 Qi before trying E again. Kindle should still work because the server restored its grant on the new Actor.
+
+Start a fresh play session to try Frost. Gather some Qi, press 2, then press E. Stillness should raise the first realm's limit to 150. With Meditate off, you should see Qi drain over time. Press E again to end Stillness and return the limit to 100.
 
 ## Next
 
-[Test the game](./test-the-game) adds automated checks.
+In [Test the game](./test-the-game), we'll check that advancing one character updates its Qi limit without changing another character.

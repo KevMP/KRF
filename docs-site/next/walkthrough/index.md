@@ -3,22 +3,22 @@ title: Build a cultivation game
 sidebar_label: Introduction
 sidebar_position: 0
 slug: /
-description: Learn KRF by building a Chinese cultivation game in Roblox, one playable step at a time.
+description: Learn KRF by building a Chinese cultivation game.
 ---
 
 # Build a cultivation game
 
-This walkthrough builds a Chinese cultivation game with KRF. Players meditate to gather Qi, spend a full bar of Qi to break through to the next realm, and join a sect that teaches them a technique.
+In this tutorial, you'll build a Chinese cultivation game with KRF. Players will be able to gather Qi by meditating and spend it on attempts to reach a higher realm of cultivation. A successful breakthrough will increase how much Qi their character can hold.
 
-## What you'll build
+Players will also be able to join one of two sects. Each sect will grant a technique that changes how their character gains or uses Qi.
 
-| Chapter | The game gains | KRF you'll use |
-| --- | --- | --- |
-| [0. Create the project](./create-the-project) | The `create-krf` starter, running in Studio | Project layout, startup, Actors |
-| [1. Gather Qi](./gather-qi) | A Qi meter that fills over time | Resources, Properties |
-| [2. Meditate](./meditate) | Hold F to gather Qi faster | Actions, Tags, input routes and policies |
-| [3. Break through](./break-through) | Hold R with a full bar to reach the next realm | Action updates, costs, locks, game-owned Controllers |
-| [4. Show realms to everyone](./show-realms) | Everyone sees realms and breakthroughs | Replication domains, ActorViews |
-| [5. Join a sect](./join-a-sect) | Pick a sect and learn its technique | Commands, grants, stacking and ticking Tags, toggles |
-| [6. Test the game](./test-the-game) | Automated checks for the game | Jest specs, Studio smoke tests |
+## Chapters
+
+0. [Create a KRF project](./create-the-project)
+1. [Gather Qi](./gather-qi)
+2. [Meditate](./meditate)
+3. [Break through](./break-through)
+4. [Show realms to everyone](./show-realms)
+5. [Join a sect](./join-a-sect)
+6. [Test the game](./test-the-game)
 

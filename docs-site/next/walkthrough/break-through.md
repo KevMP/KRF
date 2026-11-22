@@ -7,11 +7,13 @@ description: Hold R with a full bar of Qi for five seconds to reach a higher rea
 
 # Break through
 
-Cultivators advance through realms. In this chapter a cultivator with a full bar of Qi can hold R to break through. The attempt spends all of their Qi; if they keep holding R for five seconds, they reach the next realm, whose Qi maximum is twice as large. Letting go early ends the attempt, and the Qi is lost.
+We've got a way to gather Qi. Now let's give players something to spend it on: a breakthrough to a higher realm of cultivation.
 
-## Realms
+Players will be able to attempt a breakthrough by holding R with full Qi. Starting the attempt will spend all of their Qi. If they hold R for five seconds, they'll reach the next realm and double their Qi limit. Releasing R early will cancel the attempt without a refund.
 
-The realm numbers are plain game rules that both server and client will need, so keep them in a shared module, `src/shared/Realms.luau`:
+## Define the realms
+
+We'll give players four realms to progress through. Both the server and client will need the realm names, so create `src/shared/Realms.luau`:
 
 ```lua title="src/shared/Realms.luau"
 --!strict
@@ -26,13 +28,19 @@ end
 return Realms
 ```
 
-Each cultivator's realm is game state KRF doesn't know about. Per-Actor game state belongs in a Controller, an object KRF creates for every Actor when it registers and destroys when it unregisters. KRF's own Resources, Tags and Actions are Controllers too, and yours sit alongside them:
+`MaxQi` will start at 100 and double with each realm: 200, 400, then 800.
+
+## Remember each character's realm
+
+Each character will need its own realm number. We'll keep it in a Cultivation Controller, an object KRF will create for each Actor and destroy when that Actor is unregistered.
+
+Generate the Controller:
 
 ```bash
 npm run createController -- --name Cultivation --depends-on PropertyController
 ```
 
-The generator writes `src/server/Controllers/Cultivation.luau` and adds a `controllers` catalog to `Server.Init`. Replace the module's contents:
+The generator will create `src/server/Controllers/Cultivation.luau` and connect its catalog to `Server.Init`. Replace the generated module with:
 
 ```lua title="src/server/Controllers/Cultivation.luau"
 --!strict
@@ -75,17 +83,21 @@ local Cultivation: KRF.ControllerDefinition = {
 return Cultivation
 ```
 
-`factory` runs once per Actor. `dependsOn` makes KRF create the Property Controller first, so the factory can look it up. The returned table needs a `Destroy` function; everything else on it is yours, and the exported `Cultivation` type lets other server code call it once it has the Controller from `actor:GetController("Cultivation")`.
+The `realm` variable lives inside `factory`, so every Actor will get its own value. We need the PropertyController to update `MaxQi`, so `dependsOn` will make KRF create that Controller first.
 
-`Advance` raises the realm and sets the Actor's base `MaxQi`, and the Qi Resource picks up the new maximum on its own. Raising a Resource's maximum never refills it, so a cultivator who just broke through starts the larger bar nearly empty.
+When we call `Advance`, it will raise the realm and update `MaxQi`. The Qi Resource will pick up the new limit automatically. Raising the limit won't refill Qi, so players will have to gather more after a breakthrough.
 
-## The Breakthrough Action
+The exported `Cultivation` type will let the Breakthrough Action call these methods. KRF also requires a `Destroy` method; ours has nothing to clean up yet.
+
+## Add the Breakthrough Action
+
+We'll use the held Action recipe again, just like Meditate. This time, we'll require full Qi and spend it when the Action starts:
 
 ```bash
 npm run createAction -- --name Breakthrough --recipe held --requestable --auto-grant --requirement Qi:minPercent=1 --cost Qi:percent=1 --lock Stance --hook onCanStart --hook onUpdate
 ```
 
-The held recipe generates what Meditate already has: a request entry that needs a real key release, a `WhileDown` input policy, and an `onStopRequested` that ends the Action. Fill in `src/server/Actions/Breakthrough.luau`:
+The generator will create the Action, its shared request entry and a `WhileDown` input policy. We'll keep the generated request and policy modules. Replace `src/server/Actions/Breakthrough.luau` with:
 
 ```lua title="src/server/Actions/Breakthrough.luau"
 --!strict
@@ -134,26 +146,26 @@ end
 return Breakthrough
 ```
 
-The requirement and cost together mean "only with a full bar, and spend all of it". KRF checks and pays them in one step when it accepts the request, so a cultivator who isn't full spends nothing.
+The requirement will reject attempts made before Qi is full. The cost will spend the full amount when KRF accepts the Action. Our `onCanStart` callback will also reject a breakthrough at the last realm, so a player at the peak won't lose Qi on another attempt.
 
-`onCanStart` runs after those checks and can refuse with a reason; here it stops cultivators at the last realm. `onUpdate` runs up to 20 times a second while the Action is active and receives the time since the last call. `elapsed` is safe as a factory local because each activation gets its own.
+Notice where `elapsed` is declared. KRF will call the Action's factory function for each activation, giving every attempt its own timer. While the Action runs, `onUpdate` will add the time since its last call. Once that reaches five seconds, we'll advance the realm and end the Action.
 
-Releasing R asks to stop, as it does for meditation, but this time `onStopRequested` interrupts the Action instead of ending it. KRF never refunds a cost, so letting go early loses the Qi; that's the price of a failed breakthrough. A successful attempt ends itself in `onUpdate`, so the release that follows has nothing left to stop.
+Releasing R early will send Stop to `onStopRequested`, where we'll interrupt the attempt. KRF won't refund the cost. After a successful breakthrough, the Action will already have ended when the player releases R.
 
-## One stance at a time
+## Prevent meditation during a breakthrough
 
-Meditating while breaking through makes no sense. Both Actions should hold the same lock, named `Stance`, and a breakthrough should be allowed to replace a meditation already in progress. In `src/server/Actions/Meditate.luau`, add:
+We don't want players to keep the meditation bonus during a breakthrough. Both Actions will use a lock named `Stance`, which will prevent them from running together. We've already added it to Breakthrough; add these fields to the Meditate Action in `src/server/Actions/Meditate.luau`:
 
 ```lua
 locks = { "Stance" },
 interruptibleBy = { "Breakthrough" },
 ```
 
-A lock is just a name; two Actions that hold it can't run at once. `interruptibleBy` lists the Actions allowed to take the lock from this one. Breakthrough lists nothing, so pressing F during a breakthrough does nothing, while holding R during a meditation ends the meditation and starts the breakthrough.
+`interruptibleBy` will let Breakthrough interrupt Meditate to acquire the lock. With full Qi, players will be able to go straight from holding F to holding R. Meditate won't be allowed to interrupt Breakthrough, so pressing F during an attempt won't start meditation.
 
 ## Bind R
 
-Add a second ability slot in `src/client/Controls/Keybinds.luau`, next to `AbilitySlot1`:
+In `src/client/Controls/Keybinds.luau`, add a second ability slot beside `AbilitySlot1`:
 
 ```lua
 AbilitySlot2 = {
@@ -166,7 +178,7 @@ AbilitySlot2 = {
 },
 ```
 
-and fill it in `src/client/Controls/Loadout.luau`:
+Then update `SLOTS` and `equipped` in `src/client/Controls/Loadout.luau`:
 
 ```lua
 local SLOTS: { string } = { "AbilitySlot1", "AbilitySlot2" }
@@ -179,7 +191,7 @@ local equipped: { [string]: string } = {
 }
 ```
 
-Show the attempt in the HUD's `status` function:
+Let's show when an attempt is running. In the `status` function in `src/client/Hud.luau`, replace the existing Meditate check with:
 
 ```lua
 if view:GetActions():IsActionActive("Breakthrough") then
@@ -189,12 +201,12 @@ elseif view:GetActions():IsActionActive("Meditate") then
 end
 ```
 
-## Checkpoint
+## Try it
 
-Hold F until Qi reads `100/100`, then hold R. Qi drops to 0 and the HUD shows `Breaking through`. Keep holding R for five seconds: the bar's maximum becomes 200, and it keeps filling from the few points it regenerated during the attempt. Holding R before the bar is full does nothing.
+Hold F until Qi reads `100/100`, then hold R. Qi should drop to 0 and the label should show `Breaking through`. Keep holding R for five seconds and watch the maximum change to 200. You'll still have the few points of Qi that regenerated during the attempt.
 
-Fill the bar again, hold R and let go after a second or two. The attempt ends, the Qi is gone, and the maximum stays at 200.
+Try R before Qi is full; it shouldn't start an attempt. Then refill Qi, hold R and release it after a second or two. The attempt should stop without raising the maximum or refunding the spent Qi.
 
 ## Next
 
-[Show realms to everyone](./show-realms) lets every player see each other's realm.
+Our Cultivation Controller now tracks the realm on the server. In [Show realms to everyone](./show-realms), we'll replicate it to clients.
