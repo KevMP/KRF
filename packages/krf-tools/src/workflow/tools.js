@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -15,6 +16,7 @@ export const SYSTEM = Object.freeze({
 	env: process.env,
 	spawn,
 	spawnSync,
+	watch: fs.watch,
 	onInterrupt(handler) {
 		process.on("SIGINT", handler);
 		process.on("SIGTERM", handler);
@@ -25,12 +27,17 @@ export const SYSTEM = Object.freeze({
 	},
 });
 
-export function runTool(system, command, args, { cwd, quiet = false }) {
-	const result = system.spawnSync(command, args, { cwd, env: toolEnvironment(system.env), encoding: "utf8", windowsHide: true });
+export function spawnTool(system, command, args, { cwd, env = {} }) {
+	const result = system.spawnSync(command, args, { cwd, env: { ...toolEnvironment(system.env), ...env }, encoding: "utf8", windowsHide: true });
 	if (result.error?.code === "ENOENT") {
 		throw new KrfToolError("ToolMissing", `${command} is not installed.`, { hint: "Run npm install in the project; it installs the tools pinned in rokit.toml." });
 	}
 	if (result.error) throw new KrfToolError("ToolFailed", `Could not run ${command}: ${result.error.message}`, { cause: result.error });
+	return result;
+}
+
+export function runTool(system, command, args, { cwd, quiet = false }) {
+	const result = spawnTool(system, command, args, { cwd });
 	if (result.status !== 0) {
 		const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
 		throw new KrfToolError("ToolFailed", `${command} ${args.join(" ")} failed${output ? `:\n${output}` : "."}`);

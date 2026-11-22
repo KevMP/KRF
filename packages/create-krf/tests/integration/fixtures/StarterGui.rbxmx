@@ -1,0 +1,25 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="ScreenGui" referent="RBX3C0A0000000000000000000000000001">
+		<Properties>
+			<string name="Name">Hud</string>
+			<bool name="ResetOnSpawn">false</bool>
+		</Properties>
+		<Item class="Frame" referent="RBX3C0A0000000000000000000000000002">
+			<Properties>
+				<string name="Name">Panel</string>
+				<UDim2 name="Size">
+					<XS>0</XS>
+					<XO>300</XO>
+					<YS>0</YS>
+					<YO>80</YO>
+				</UDim2>
+			</Properties>
+			<Item class="TextLabel" referent="RBX3C0A0000000000000000000000000003">
+				<Properties>
+					<string name="Name">Title</string>
+					<string name="Text">Cultivate</string>
+				</Properties>
+			</Item>
+		</Item>
+	</Item>
+</roblox>

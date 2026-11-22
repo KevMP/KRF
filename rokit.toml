@@ -4,7 +4,7 @@
 # New tools can be added by running `rokit add <tool>` in a terminal.
 
 [tools]
-rojo = "rojo-rbx/rojo@7.6.1"
+rojo = "rojo-rbx/rojo@7.7.1"
 selene = "Kampfkarren/selene@0.30.0"
 StyLua = "JohnnyMorganz/StyLua@2.3.1"
 breathers = "0hirume/breathers@0.6.3"

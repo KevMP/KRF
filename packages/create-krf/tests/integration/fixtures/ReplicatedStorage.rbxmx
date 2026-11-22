@@ -1,0 +1,13 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Folder" referent="RBX5C0A0000000000000000000000000001">
+		<Properties>
+			<string name="Name">Assets</string>
+		</Properties>
+		<Item class="Part" referent="RBX5C0A0000000000000000000000000002">
+			<Properties>
+				<string name="Name">Crate</string>
+				<bool name="Anchored">true</bool>
+			</Properties>
+		</Item>
+	</Item>
+</roblox>

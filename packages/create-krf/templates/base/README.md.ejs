@@ -10,16 +10,20 @@ npm run dev
 ```
 
 `npm run dev` opens `<%= name %>.rbxl` in Roblox Studio and serves the project with Rojo. Connect the Rojo plugin, then press Play. Commit `wally.lock`.
+<% if (options.mode === "full") { -%>
+
+While `npm run dev` runs, saving in Studio captures your world into `world/` and `default.project.json`. Review and commit those changes like code. See [World and assets](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets).
+<% } -%>
 <% if (options.mode === "hybrid") { -%>
 
-This is a Hybrid project: Rojo syncs `src` and `Packages`, and `<%= name %>.rbxl` owns the world. Save your world in it; `npm run dev` creates it once and never rebuilds it.
+This is a Hybrid project: Rojo syncs `src` and `Packages`, and `<%= name %>.rbxl` owns the world. Save your world in it; `npm run dev` creates it once and never rebuilds it. To keep part of the world in Git, [opt a folder in](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets#hybrid-projects).
 <% } -%>
 
 ## Scripts
 
 | Script | Does |
 | --- | --- |
-| `npm run dev` | Builds and opens the place in Studio and serves it with Rojo; `-- --no-open` only serves |
+| `npm run dev` | Builds and opens the place in Studio, serves it with Rojo and captures Studio saves; `-- --no-open` only serves, `-- --no-capture` skips captures |
 <% if (options.mode === "hybrid") { -%>
 | `npm run build` | Builds `build/<%= name %>.rbxl` from the starter world, without touching your place |
 <% } else { -%>
@@ -27,6 +31,8 @@ This is a Hybrid project: Rojo syncs `src` and `Packages`, and `<%= name %>.rbxl
 <% } -%>
 | `npm test` | Runs the Jest specs in `tests` inside Roblox Studio |
 | `npm run test:studio` | Plays the game in Studio with a server and two clients and checks that KRF starts |
+| `npm run assets:syncback` | Captures a saved place into source files once, without `dev`; `-- --input <place>` picks the place. See [World and assets](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets). |
+| `npm run assets:check` | Checks `assets/manifest.json`, when you have one; `-- --write` records hashes and regenerates `src/shared/GameAssets.luau` |
 | `npm run format` | Formats `src` and `tests` |
 | `npm run check` | Checks formatting, lints and type checks without changing files |
 | `npm run createAction`, `createTag`, `createResource`, `createProperty`, `createController`, `createCommand`, `createHint`, `createDomain` | Creates a definition. See [Generate a definition](https://kevmp.github.io/KRF/reference/getting-started/project-tools#generate-a-definition). |

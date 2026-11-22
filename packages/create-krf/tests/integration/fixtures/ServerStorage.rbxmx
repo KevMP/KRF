@@ -1,0 +1,17 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+	<Item class="Model" referent="RBX2C0A0000000000000000000000000001">
+		<Properties>
+			<string name="Name">Sword</string>
+		</Properties>
+		<Item class="Part" referent="RBX2C0A0000000000000000000000000002">
+			<Properties>
+				<string name="Name">Handle</string>
+				<Vector3 name="size">
+					<X>1</X>
+					<Y>4</Y>
+					<Z>1</Z>
+				</Vector3>
+			</Properties>
+		</Item>
+	</Item>
+</roblox>

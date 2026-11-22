@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,78 +7,14 @@ import test from "node:test";
 import { KRF_RUNTIME } from "krf-tools";
 
 import { createProject, generateDefinitions, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
+import { child, inspectBuild, serveTree, shape, walk } from "./Utils/place.js";
 
 const VARIANTS = [
 	{ mode: "full", flags: ["--ci"] },
 	{ mode: "hybrid", flags: ["--no-ci"] },
 ];
 
-const LEAKED_NAMES = /^(tests?|spec|jest|DevPackages|node_modules|package|krf-tools|coverage|\.github)$|\.spec$|\.test$/i;
-
-function readPlace(xml) {
-	const root = { className: "DataModel", name: "DataModel", children: [] };
-	const stack = [root];
-	const token = /<Item class="([^"]+)"[^>]*>|<\/Item>|<string name="Name">([^<]*)<\/string>|<(?:Protected)?[Ss]tring name="Source"><!\[CDATA\[([\s\S]*?)\]\]><\/(?:Protected)?[Ss]tring>/g;
-
-	for (const match of xml.matchAll(token)) {
-		const current = stack.at(-1);
-		if (match[1] !== undefined) {
-			const item = { className: match[1], name: undefined, children: [] };
-			current.children.push(item);
-			stack.push(item);
-		} else if (match[0] === "</Item>") {
-			stack.pop();
-		} else if (match[2] !== undefined && current.name === undefined) {
-			current.name = match[2];
-		} else if (match[3] !== undefined) {
-			current.source = match[3];
-		}
-	}
-	return root;
-}
-
-function child(node, name) {
-	const found = node.children.find((candidate) => candidate.name === name);
-	assert.ok(found, `${node.name} has no child ${name}; children: ${node.children.map((entry) => entry.name).join(", ")}`);
-	return found;
-}
-
-function shape(node) {
-	return Object.fromEntries(node.children.map((entry) => [entry.name, entry.className]));
-}
-
-function walk(node, visit) {
-	visit(node);
-	for (const entry of node.children) walk(entry, visit);
-}
-
-function inspectBuild(project, projectFile) {
-	const output = path.join(project, "build", "inspect.rbxlx");
-	fs.mkdirSync(path.dirname(output), { recursive: true });
-	run("rojo", ["build", projectFile, "--output", output], project);
-	return readPlace(fs.readFileSync(output, "utf8"));
-}
-
-async function serveTree(project) {
-	const port = 34000 + Math.floor(Math.random() * 1000);
-	const server = spawn("rojo", ["serve", "default.project.json", "--port", String(port)], { cwd: project, stdio: "ignore" });
-
-	try {
-		let info;
-		for (let attempt = 0; attempt < 100 && info === undefined; attempt++) {
-			await new Promise((resolve) => setTimeout(resolve, 200));
-			info = await fetch(`http://127.0.0.1:${port}/api/rojo`)
-				.then((response) => response.json())
-				.catch(() => undefined);
-		}
-		assert.ok(info, "rojo serve did not start");
-
-		const read = await fetch(`http://127.0.0.1:${port}/api/read/${info.rootInstanceId}`).then((response) => response.json());
-		return { rootId: info.rootInstanceId, instances: read.instances };
-	} finally {
-		server.kill();
-	}
-}
+const LEAKED_NAMES = /^(tests?|spec|jest|DevPackages|node_modules|package|krf-tools|coverage|.github)$|.spec$|.test$/i;
 
 test("packed create-krf projects install the published KRF, check and build in every mode", { timeout: 900000 }, async (t) => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "create-krf-pack-"));
@@ -118,7 +53,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 			run("npm", ["run", "build"], project);
 			assert.ok(fs.statSync(path.join(project, ...(variant.mode === "hybrid" ? ["build", `${name}.rbxl`] : [`${name}.rbxl`]))).size > 0);
 
-			const place = inspectBuild(project, startProject);
+			const place = inspectBuild(project, startProject).place;
 			const replicated = child(place, "ReplicatedStorage");
 			const packages = child(replicated, "Packages");
 			assert.equal(child(packages, "KRF").className, "ModuleScript");
@@ -166,11 +101,11 @@ test("packed create-krf projects install the published KRF, check and build in e
 
 			const energy = path.join(project, "src", "server", "Resources", "Energy.luau");
 			fs.writeFileSync(energy, fs.readFileSync(energy, "utf8").replace("max = { value = 100 }", "max = { value = 120 }"));
-			const rebuilt = inspectBuild(project, startProject);
+			const rebuilt = inspectBuild(project, startProject).place;
 			assert.match(child(child(child(child(rebuilt, "ServerScriptService"), "Game"), "Resources"), "Energy").source, /max = \{ value = 120 \}/);
 
 			if (variant.mode === "hybrid") {
-				const live = inspectBuild(project, "default.project.json");
+				const live = inspectBuild(project, "default.project.json").place;
 				assert.equal(live.children.some((node) => node.name === "Workspace"), false, "Hybrid live sync must not own the world");
 
 				const served = await serveTree(project);

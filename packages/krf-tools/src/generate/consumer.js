@@ -40,6 +40,8 @@ export function createConsumer(root) {
 
 	const read = (relative) => (stat(relative)?.isFile() ? fs.readFileSync(resolve(relative), "utf8") : undefined);
 
+	const readBytes = (relative) => (stat(relative)?.isFile() ? fs.readFileSync(resolve(relative)) : undefined);
+
 	const list = (relative) => (stat(relative)?.isDirectory() ? fs.readdirSync(resolve(relative), { withFileTypes: true }) : []);
 
 	function luauFiles(relative) {
@@ -52,7 +54,7 @@ export function createConsumer(root) {
 		return found.sort();
 	}
 
-	return Object.freeze({ root, stat, read, list, luauFiles });
+	return Object.freeze({ root, stat, read, readBytes, list, luauFiles });
 }
 
 export function readKrfDependency(consumer) {

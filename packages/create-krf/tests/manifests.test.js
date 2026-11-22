@@ -9,7 +9,7 @@ import { KRF_RUNTIME } from "krf-tools";
 
 import { ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
 import { buildProjectFiles } from "../src/create.js";
-import { wallyPackageName } from "../src/manifests.js";
+import { CAPTURED_SERVICES, wallyPackageName } from "../src/manifests.js";
 
 const MATRIX = [];
 for (const mode of ["full", "hybrid"])
@@ -34,20 +34,40 @@ function mappedPaths(node, found = []) {
 	return found;
 }
 
-test("Full maps code, packages and the starter world in one Rojo project", () => {
-	const project = JSON.parse(files({ mode: "full" }).get("default.project.json"));
+const CODE_TREES = ["ReplicatedStorage/Packages", "ReplicatedStorage/Shared", "ServerScriptService/Game", "StarterPlayer/StarterPlayerScripts/Game"];
+
+function starterWorldFiles(generated) {
+	return Object.fromEntries(
+		["Baseplate", "SpawnLocation"].map((name) => {
+			const model = JSON.parse(generated.get(`world/Workspace/${name}.model.json`));
+			return [name, { $className: model.className, $properties: model.properties }];
+		}),
+	);
+}
+
+test("Full maps code and packages, and captures the starter world from world/Workspace", () => {
+	const generated = files({ mode: "full" });
+	const project = JSON.parse(generated.get("default.project.json"));
 	assert.equal(project.name, "my-game");
 	assert.equal(project.tree.$className, "DataModel");
 	assert.equal(project.tree.ReplicatedStorage.Packages.$path, "Packages");
 	assert.equal(project.tree.ReplicatedStorage.Shared.$path, "src/shared");
 	assert.equal(project.tree.ServerScriptService.Game.$path, "src/server");
 	assert.equal(project.tree.StarterPlayer.StarterPlayerScripts.Game.$path, "src/client");
-	assert.equal(project.tree.Workspace.Baseplate.$className, "Part");
-	assert.equal(project.tree.Workspace.SpawnLocation.$className, "SpawnLocation");
-	assert.equal(files({ mode: "full" }).has("start-place.project.json"), false);
+	assert.deepEqual(project.tree.Workspace, { $className: "Workspace", $ignoreUnknownInstances: true, $path: "world/Workspace" });
+	for (const service of CAPTURED_SERVICES) {
+		const node = service.split("/").reduce((current, name) => current[name], project.tree);
+		assert.equal(node.$path, `world/${service}`, service);
+		assert.ok(generated.has(`world/${service}/.gitkeep`), `Git keeps world/${service} while it is empty`);
+	}
+	assert.deepEqual(Object.keys(project.tree.ReplicatedStorage), ["$className", "$ignoreUnknownInstances", "$path", "Packages", "Shared"]);
+	assert.equal(project.tree.StarterPlayer.$path, undefined, "StarterPlayer settings live in the project file");
+	assert.deepEqual(Object.keys(starterWorldFiles(generated)), ["Baseplate", "SpawnLocation"]);
+	assert.equal(generated.get("world/Workspace/.gitkeep"), "", "Git keeps world/Workspace when every starter part is removed");
+	assert.equal(generated.has("start-place.project.json"), false);
 });
 
-test("Hybrid live sync owns only code and packages; its start place adds the world", () => {
+test("Hybrid live sync owns only code and packages; its start place adds the same starter world", () => {
 	const generated = files({ mode: "hybrid" });
 	const live = JSON.parse(generated.get("default.project.json"));
 	const start = JSON.parse(generated.get("start-place.project.json"));
@@ -55,26 +75,53 @@ test("Hybrid live sync owns only code and packages; its start place adds the wor
 	assert.deepEqual(Object.keys(live.tree).sort(), ["$className", "ReplicatedStorage", "ServerScriptService", "StarterPlayer"]);
 	assert.equal(live.tree.Workspace, undefined);
 	assert.deepEqual(mappedPaths(live.tree).sort(), ["Packages", "src/client", "src/server", "src/shared"]);
+	assert.ok(![...generated.keys()].some((file) => file.startsWith("world/")), "Hybrid projects own no world folder until one is opted in");
 
 	const { Workspace, ...startCode } = start.tree;
 	assert.deepEqual(startCode, live.tree);
-	assert.deepEqual(Workspace, JSON.parse(files({ mode: "full" }).get("default.project.json")).tree.Workspace);
+	assert.equal(start.syncbackRules, undefined);
+	const { $className, ...world } = Workspace;
+	assert.equal($className, "Workspace");
+	assert.deepEqual(world, starterWorldFiles(files({ mode: "full" })));
 });
 
-test("Rojo projects map only game source and installed packages", () => {
+test("Rojo projects map only game source, installed packages and the captured world", () => {
 	for (const options of MATRIX) {
 		const generated = files(options);
 		for (const file of [...generated.keys()].filter((name) => name.endsWith(".project.json"))) {
 			const project = JSON.parse(generated.get(file));
+			const world = options.mode === "full" && file === "default.project.json" ? CAPTURED_SERVICES.map((service) => `world/${service}`) : [];
+			const allowed = ["Packages", "src/server", "src/client", "src/shared", ...world];
 			for (const mapped of mappedPaths(project.tree)) {
-				assert.ok(["Packages", "src/server", "src/client", "src/shared"].includes(mapped), `${file} maps ${mapped}`);
+				assert.ok(allowed.includes(mapped), `${file} maps ${mapped}`);
 				if (mapped !== "Packages") assert.ok([...generated.keys()].some((name) => name.startsWith(`${mapped}/`)), mapped);
 			}
-			for (const service of ["ServerScriptService", "StarterPlayer", "ReplicatedStorage", "Workspace"]) {
-				if (project.tree[service]) assert.equal(project.tree[service].$ignoreUnknownInstances, undefined, `${file} ${service}`);
+			for (const service of CAPTURED_SERVICES) {
+				const node = service.split("/").reduce((current, name) => current?.[name], project.tree);
+				if (node === undefined) continue;
+				assert.equal(node.$ignoreUnknownInstances, node.$path === undefined ? undefined : true, `${file} ${service}: live sync must keep Studio-made content`);
 			}
 		}
 	}
+});
+
+test("syncback never captures code, packages, terrain or Studio properties Rojo cannot recognize", () => {
+	for (const options of MATRIX) {
+		const project = JSON.parse(files(options).get("default.project.json"));
+		assert.deepEqual(project.syncbackRules.ignoreTrees, [...CODE_TREES, "Workspace/Terrain"], options.mode);
+		assert.deepEqual(project.syncbackRules.ignoreProperties.Instance, ["ExplorerIconContent", "SerializedOverrides"], "properties newer Studio builds save but Rojo 7.7.1 does not know");
+	}
+});
+
+test("the starter world is placed with CFrame, which Studio loads, not Position, which it drops", () => {
+	for (const options of MATRIX) {
+		for (const [file, contents] of files(options)) {
+			if (file.endsWith(".json")) assert.doesNotMatch(contents, /"Position"/, file);
+		}
+	}
+	const { Baseplate, SpawnLocation } = starterWorldFiles(files({}));
+	assert.deepEqual(Baseplate.$properties.CFrame, [0, -8, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+	assert.deepEqual(SpawnLocation.$properties.CFrame, [0, 0.5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
 });
 
 test("rokit.toml pins the toolchain KRF is built with", () => {

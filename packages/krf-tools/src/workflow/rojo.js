@@ -2,11 +2,26 @@ import net from "node:net";
 import path from "node:path";
 
 import { KrfToolError } from "../errors.js";
-import { toolEnvironment } from "./tools.js";
+import { runTool, toolEnvironment } from "./tools.js";
 
 export const DEFAULT_ROJO_PORT = 34872;
 const READY = /Port:\s*(\d+)/;
 const ANSI = /\x1b\[[0-9;]*m/g;
+const VERSION = /(\d+)\.(\d+)\.(\d+)/;
+
+export function readRojoVersion(system, project) {
+	const output = runTool(system, "rojo", ["--version"], { cwd: project.root });
+	const match = VERSION.exec(output);
+	if (match === null) throw new KrfToolError("RojoVersionUnknown", `Could not read the Rojo version from: ${output.trim() || "no output"}.`);
+	return match.slice(1).map(Number);
+}
+
+export function atLeast(version, minimum) {
+	for (let index = 0; index < minimum.length; index += 1) {
+		if (version[index] !== minimum[index]) return version[index] > minimum[index];
+	}
+	return true;
+}
 
 export function portAvailable(port) {
 	return new Promise((resolve) => {

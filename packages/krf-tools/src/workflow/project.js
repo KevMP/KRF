@@ -49,13 +49,14 @@ function rebasePaths(node, from, to) {
 	return copy;
 }
 
-export function deriveProject(project, directory, extend, source = project.codeProject) {
+export function deriveProject(project, directory, extend, source = project.codeProject, { fileName = "test.project.json", keep = [] } = {}) {
 	const base = readJson(source);
 	const tree = rebasePaths(base.tree, project.root, directory);
 	extend(tree);
-	const file = path.join(directory, "test.project.json");
+	const file = path.join(directory, fileName);
+	const settings = Object.fromEntries(keep.filter((key) => base[key] !== undefined).map((key) => [key, base[key]]));
 	fs.mkdirSync(directory, { recursive: true });
-	fs.writeFileSync(file, `${JSON.stringify({ name: base.name ?? project.name, tree }, null, 2)}\n`);
+	fs.writeFileSync(file, `${JSON.stringify({ name: base.name ?? project.name, tree, ...settings }, null, 2)}\n`);
 	return file;
 }
 

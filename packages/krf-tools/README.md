@@ -18,6 +18,7 @@ in `SUPPORTED_KRF_VERSIONS`.
 | --- | --- |
 | `runGenerator(argv, io)` | Runs `krf-tools create <kind>` and returns its exit code. |
 | `runWorkflow(argv, io)`, `WORKFLOW_COMMANDS` | Runs `krf-tools dev`, `test` or `test-studio` and returns its exit code. |
+| `runAssets(argv, io)`, `ASSETS_COMMAND`, `ASSET_SCRIPTS` | Runs `krf-tools assets syncback` or `assets check`, and the `assets:*` npm scripts a project declares. |
 | `DEFINITION_SCRIPTS` | The generator npm scripts a project declares, such as `createAction: "krf-tools create action"`. |
 | `KRF_RUNTIME`, `SUPPORTED_KRF_VERSIONS`, `TEST_PACKAGES`, `TOOLS_PACKAGE`, `TOOLS_VERSION` | The KRF release new projects install, the releases the generators support, the Jest Wally packages `npm test` runs, and this package's name and version. |
 | `projectOptionsSchema`, `PROJECT_OPTION_DEFAULTS` | The Zod schema and defaults for project options. |
@@ -39,3 +40,13 @@ The workflow lives in `src/workflow/`: `project.js` reads the project and derive
 `studio.js` finds Roblox Studio, opens places and runs Studio scripts, `dev.js` is `npm run dev`,
 `tests.js` is `npm test` and `npm run test:studio`, and `cli.js` parses their options. The Studio
 scripts they inject live in `templates/studio/`.
+
+The world and asset commands live in `src/assets/`: `scope.js` reads which project trees a capture
+may write and checks they never include code or packages, `capture.js` runs one `rojo syncback`
+against a derived project under `build/krf/`, skipping services the saved place leaves out, then
+normalizes the result, `declared.js` merges the settings Rojo records for declared instances into
+`default.project.json`, `normalize.js` and `json.js` keep captured JSON models stable between
+captures, `syncback.js` is `npm run assets:syncback` with its Git guard and report, `watch.js`
+captures each Studio save during `npm run dev`, `git.js` reads the working tree, `manifest.js` and
+`check.js` validate `assets/manifest.json` and generate `src/shared/GameAssets.luau`, and `cli.js`
+parses their options. See [World and assets](https://kevmp.github.io/KRF/reference/getting-started/world-and-assets).

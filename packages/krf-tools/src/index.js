@@ -6,3 +6,4 @@ export { applyProjectChanges, inspectTarget, writeNewDirectory } from "./files.j
 export { DEFINITION_SCRIPTS } from "./generate/catalogs.js";
 export { runGenerator } from "./generate/cli.js";
 export { WORKFLOW_COMMANDS, runWorkflow } from "./workflow/cli.js";
+export { ASSET_SCRIPTS, ASSETS_COMMAND, runAssets } from "./assets/cli.js";

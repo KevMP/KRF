@@ -215,3 +215,34 @@ test("npm run dev fails when rojo serve exits before it is ready", async (t) => 
 	assert.equal(await runWorkflow(["dev", "--no-open", "--port", String(port)], { cwd: project(t), ...io }, fake.system), ExitCode.failure);
 	assert.match(io.err, /rojo serve exited with code 1 before it was ready/);
 });
+
+test("npm run dev captures Studio saves of mapped world folders unless --no-capture is passed", async (t) => {
+	const tree = { $className: "DataModel", Workspace: { $className: "Workspace", $ignoreUnknownInstances: true, $path: "world/Workspace" } };
+	for (const [flags, expected] of [
+		[[], /Saving my-game\.rbxl in Studio captures world\/Workspace automatically/],
+		[["--no-capture"], undefined],
+	]) {
+		const root = project(t, { files: { "default.project.json": JSON.stringify({ name: "my-game", tree }), "world/Workspace/.gitkeep": "" } });
+		const port = await freePort();
+		const watched = [];
+		const fake = fakeSystem({ onSpawn: (command, args, child) => setImmediate(() => child.stdout.emit("data", Buffer.from(`Port: ${args[3]}\n`))) });
+		const spawnSync = fake.system.spawnSync;
+		fake.system.spawnSync = (command, args) => (args[0] === "--version" ? { status: 0, stdout: "Rojo 7.7.1\n", stderr: "" } : spawnSync(command, args));
+		fake.system.watch = (directory) => {
+			watched.push(directory);
+			return { close: () => watched.push("closed") };
+		};
+		const io = capture();
+		const running = runWorkflow(["dev", "--no-open", "--port", String(port), ...flags], { cwd: root, ...io }, fake.system);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		fake.interrupt();
+		assert.equal(await running, ExitCode.ok, io.err);
+		if (expected === undefined) {
+			assert.deepEqual(watched, []);
+			assert.doesNotMatch(io.out, /captures/);
+		} else {
+			assert.match(io.out, expected);
+			assert.deepEqual(watched, [root, "closed"]);
+		}
+	}
+});

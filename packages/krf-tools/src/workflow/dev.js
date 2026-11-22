@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { startAutoCapture } from "../assets/watch.js";
 import { ExitCode, KrfToolError } from "../errors.js";
 import { HYBRID_START_PROJECT_FILE, ROJO_PROJECT_FILE } from "./project.js";
 import { DEFAULT_ROJO_PORT, assertPortAvailable, startRojoServe } from "./rojo.js";
@@ -53,6 +54,7 @@ export async function runDev(system, project, options, io) {
 		serve.child.kill();
 	};
 	const removeInterrupt = system.onInterrupt(stop);
+	let autoCapture;
 
 	try {
 		const readyPort = await serve.ready;
@@ -71,8 +73,10 @@ export async function runDev(system, project, options, io) {
 			io.stdout(`Open ${relative(project, prepared.place)} in Roblox Studio.\n`);
 		}
 
+		if (options.capture) autoCapture = startAutoCapture(system, project, prepared.place, io, { watch: system.watch });
+
 		io.stdout(
-			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. Without the plugin, run rojo plugin install.\nPress Ctrl+C to stop Rojo; Studio stays open.\n`,
+			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. If the plugin is missing or older than Rojo 7.7, run rojo plugin install.\nPress Ctrl+C to stop Rojo; Studio stays open.\n`,
 		);
 
 		const code = await serve.exited;
@@ -82,6 +86,7 @@ export async function runDev(system, project, options, io) {
 		if (!stopping) serve.child.kill();
 		throw error;
 	} finally {
+		autoCapture?.stop();
 		removeInterrupt();
 	}
 }
