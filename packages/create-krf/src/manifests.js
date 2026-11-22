@@ -102,6 +102,12 @@ function capturedWorld() {
 	return { Workspace: { $className: "Workspace", $ignoreUnknownInstances: true, $path: WORLD_FOLDER } };
 }
 
+const STUDIO_PROPERTIES_UNKNOWN_TO_ROJO = Object.freeze({
+	Instance: ["ExplorerIconContent", "SerializedOverrides"],
+	StarterPlayer: ["UseImprovedCharacterEvents"],
+	Workspace: ["InputSinkEnabled", "NextGenerationPhysicsSolver", "ParticlesUseDynamicWind", "ReplicationFrequency", "ReplicationThroughput", "UseNewLuauTypeSolver"],
+});
+
 function syncbackRules() {
 	const trees = [];
 	const visit = (node, prefix) => {
@@ -113,7 +119,7 @@ function syncbackRules() {
 		}
 	};
 	visit(codeTree(), []);
-	return { ignoreTrees: [...trees, "Workspace/Terrain"] };
+	return { ignoreTrees: [...trees, "Workspace/Terrain"], ignoreProperties: STUDIO_PROPERTIES_UNKNOWN_TO_ROJO };
 }
 
 function rojoProject(name, tree, rules) {

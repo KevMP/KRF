@@ -70,12 +70,16 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		assert.equal(npm(project, "assets:syncback", ["--input", "build/built.rbxlx"]).out.trim().split("\n").at(-1), "No changes: the captured folders already match the saved place.");
 
 		const studio = saveStudioPlace(built.file, path.join(project, "build", "studio.rbxlx"), [fixtureItem("Arena.rbxmx")]);
+		fs.writeFileSync(studio, fs.readFileSync(studio, "utf8").replace('<string name="Name">Workspace</string>', '<string name="Name">Workspace</string>\n<float name="Gravity">50</float>'));
 		const source = readTree(path.join(project, "src"));
+		const projectFile = fs.readFileSync(path.join(project, "default.project.json"), "utf8");
 		const captured = npm(project, "assets:syncback", ["--input", "build/studio.rbxlx"]);
 		assert.equal(captured.status, 0, captured.err);
 		assert.match(captured.out, /Capturing build\/studio\.rbxlx into default\.project\.json \(Full project\)\.\nCaptured trees:\n {2}Workspace -> world\/Workspace\n/);
 		assert.match(captured.out, /Captured 1 file change:\n {2}created world\/Workspace\/Arena\.model\.json\n/);
 		assert.match(captured.out, /This project has no Git repository/);
+		assert.match(captured.out, /Not captured, because default\.project\.json declares these instances; their values stay only in the place file:\n {2}Workspace: Gravity\n/);
+		assert.equal(fs.readFileSync(path.join(project, "default.project.json"), "utf8"), projectFile, "the project file is never rewritten");
 		assert.doesNotMatch(captured.out, /git (status|diff)/);
 		assert.equal(fs.existsSync(path.join(project, ".git")), false, "capture never initializes Git");
 		assert.deepEqual(readTree(path.join(project, "src")), source, "capture never touches code");
@@ -83,6 +87,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		const arenaFile = fs.readFileSync(path.join(project, "world", "Workspace", "Arena.model.json"), "utf8");
 		assert.match(arenaFile, /"Rojo_Id": "Workspace\/Arena\/Floor"/);
 		assert.doesNotMatch(arenaFile, /[0-9a-f]{32}/, "references use stable names, not per-run ids");
+		assert.doesNotMatch(arenaFile, /SerializedOverrides/, "properties Rojo 7.7.1 does not know are ignored");
 
 		const world = capturedFiles(project, "world");
 		const again = npm(project, "assets:syncback", ["--input", "build/studio.rbxlx"]);

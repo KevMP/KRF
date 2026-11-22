@@ -2,12 +2,14 @@
 	<Item class="Model" referent="RBX6A1F0C2D9E8B4A7C9F3E2D1C0B4A5F01">
 		<Properties>
 			<string name="Name">Arena</string>
+			<BinaryString name="SerializedOverrides"></BinaryString>
 			<BinaryString name="AttributesSerialize">AwAAAAoAAABEaWZmaWN1bHR5BgAAAAAAAAhABQAAAFRoZW1lAgYAAABGb3Jlc3QDAAAATGl0AwE=</BinaryString>
 			<Ref name="PrimaryPart">RBX6A1F0C2D9E8B4A7C9F3E2D1C0B4A5F02</Ref>
 		</Properties>
 		<Item class="Part" referent="RBX6A1F0C2D9E8B4A7C9F3E2D1C0B4A5F02">
 			<Properties>
 				<string name="Name">Floor</string>
+				<BinaryString name="SerializedOverrides"></BinaryString>
 				<bool name="Anchored">true</bool>
 				<CoordinateFrame name="CFrame">
 					<X>0</X>

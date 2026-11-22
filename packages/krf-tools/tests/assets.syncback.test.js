@@ -182,8 +182,36 @@ test("a plan that reaches outside the captured folders writes nothing", async (t
 	const fake = fakeSystem(root, { plan: ["Writing world/Workspace/Arena.model.json", "Writing default.project.json", "Removing src\\server\\Startup.server.luau"] });
 	const result = await syncback(root, fake);
 	assert.equal(result.code, ExitCode.failure);
-	assert.match(result.err, /outside the captured folders:\n {2}default\.project\.json\n {2}src\/server\/Startup\.server\.luau\nNothing was written/);
+	assert.match(result.err, /outside the captured folders:\n {2}src\/server\/Startup\.server\.luau\nNothing was written/);
 	assert.equal(fake.syncbacks().length, 1);
+});
+
+test("values Rojo would store in the project file stay in the place, and the capture names them", async (t) => {
+	const root = project(t);
+	const original = read(root, "default.project.json");
+	const rewritten = structuredClone(FULL);
+	rewritten.tree.Workspace.$properties = { Gravity: 50 };
+	rewritten.tree.ServerScriptService.$attributes = { Owner: "Studio" };
+	const fake = fakeSystem(root, {
+		plan: ["Writing default.project.json", "Writing world/Workspace/Arena.model.json"],
+		write: (directory) => {
+			write("default.project.json", JSON.stringify(rewritten))(directory);
+			write("world/Workspace/Arena.model.json", ARENA(GENERATED))(directory);
+		},
+	});
+	const result = await syncback(root, fake);
+	assert.equal(result.code, ExitCode.ok, result.err);
+	assert.equal(read(root, "default.project.json"), original, "the project file is kept byte for byte");
+	assert.match(result.out, /created world\/Workspace\/Arena\.model\.json\n/);
+	assert.match(result.out, /Not captured, because default\.project\.json declares these instances; their values stay only in the place file:\n {2}ServerScriptService: attribute Owner\n {2}Workspace: Gravity\nSet them in default\.project\.json/);
+
+	const onlyDeclared = fakeSystem(root, { plan: ["Writing default.project.json"], write: write("default.project.json", JSON.stringify(rewritten)) });
+	const dryRun = await syncback(root, onlyDeclared, ["--dry-run"]);
+	assert.match(dryRun.out, /default\.project\.json would be kept as it is[\s\S]*Nothing in the captured folders would change\.\nNothing was written \(--dry-run\)\.\n$/);
+	const declaredOnly = await syncback(root, onlyDeclared);
+	assert.equal(declaredOnly.code, ExitCode.ok, declaredOnly.err);
+	assert.match(declaredOnly.out, /Workspace: Gravity\nSet them in default\.project\.json if they belong in source\.\nNo changes/);
+	assert.equal(read(root, "default.project.json"), original);
 });
 
 test("a failed syncback is reported as a failure with Rojo's reason", async (t) => {

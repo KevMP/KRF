@@ -128,3 +128,31 @@ export function readCaptureScope(project) {
 
 	return Object.freeze({ projectFile: file, roots: Object.freeze(roots), ignored: Object.freeze(ignored) });
 }
+
+function declaredValues(node, prefix, found) {
+	for (const [name, child] of Object.entries(node ?? {})) {
+		if (name.startsWith("$") || child === null || typeof child !== "object" || Array.isArray(child)) continue;
+		const tree = [...prefix, name].join("/");
+		found.set(tree, { ...(child.$properties ?? {}), ...Object.fromEntries(Object.entries(child.$attributes ?? {}).map(([key, value]) => [`attribute ${key}`, value])) });
+		declaredValues(child, [...prefix, name], found);
+	}
+	return found;
+}
+
+export function declaredChanges(beforeText, afterText) {
+	let before;
+	let after;
+	try {
+		before = declaredValues(JSON.parse(beforeText).tree, [], new Map());
+		after = declaredValues(JSON.parse(afterText).tree, [], new Map());
+	} catch {
+		return [];
+	}
+	const changes = [];
+	for (const [tree, values] of after) {
+		const previous = before.get(tree) ?? {};
+		const names = [...new Set([...Object.keys(values), ...Object.keys(previous)])].filter((name) => JSON.stringify(values[name]) !== JSON.stringify(previous[name]));
+		if (names.length > 0) changes.push({ tree, names: names.sort() });
+	}
+	return changes;
+}

@@ -96,10 +96,11 @@ test("Rojo projects map only game source, installed packages and the captured wo
 	}
 });
 
-test("syncback never captures code, packages or terrain", () => {
+test("syncback never captures code, packages, terrain or Studio properties Rojo cannot recognize", () => {
 	for (const options of MATRIX) {
 		const project = JSON.parse(files(options).get("default.project.json"));
-		assert.deepEqual(project.syncbackRules, { ignoreTrees: [...CODE_TREES, "Workspace/Terrain"] }, options.mode);
+		assert.deepEqual(project.syncbackRules.ignoreTrees, [...CODE_TREES, "Workspace/Terrain"], options.mode);
+		assert.deepEqual(project.syncbackRules.ignoreProperties.Instance, ["ExplorerIconContent", "SerializedOverrides"], "properties newer Studio builds save but Rojo 7.7.1 does not know");
 	}
 });
 

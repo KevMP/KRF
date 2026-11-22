@@ -42,7 +42,7 @@ New Parts, Models, lights, effects and GUIs are written as `.model.json` files, 
 
 Only instances under a tree that the project maps to a folder or model file are captured. Code and installed packages are listed in `syncbackRules.ignoreTrees` in `default.project.json`, so a capture never rewrites `src/` or `Packages/` from the copy inside a saved place, which may be older than your files. Workspace's Terrain is ignored too.
 
-Everything else in the place, such as Lighting settings, other services or the properties of Workspace itself, stays only in the place file. A fresh clone does not get it from `npm run build`. To keep more of the place in source, map it the same way Workspace is mapped and capture again; the tested baseline covers content inside Workspace.
+Everything else in the place, such as Lighting settings, other services or the properties of Workspace itself, stays only in the place file. A fresh clone does not get it from `npm run build`. Rojo would store the properties of services and other instances that `default.project.json` declares in that file, so the capture keeps the project file exactly as it was and lists those values instead, such as `Workspace: Gravity`. Set them in `default.project.json` yourself if they belong in source. To keep more of the place in source, map it the same way Workspace is mapped and capture again; the tested baseline covers content inside Workspace.
 
 `npm run dev` keeps live sync from deleting what you build in Studio before you capture it, because Workspace is marked `$ignoreUnknownInstances`. Instances you have already captured are owned by their files, though, so when the Rojo plugin reconnects it offers to reset changes made to them in Studio. Capture first, or reject that change in the plugin.
 
@@ -63,7 +63,7 @@ In `start-place.project.json`, Workspace already holds the starter Baseplate and
 
 Run `npm run dev` once so Rojo creates the empty Arenas folder in your place. Build your arena models inside it, save, and run `npm run assets:syncback -- --input <name>.rbxl`. Only what's inside Arenas is written; everything else in Workspace stays Studio-owned, and live sync leaves it alone. The command refuses to run if a captured tree is missing from `start-place.project.json`, because `npm run build` would then not include it.
 
-Keep the mapped folder itself plain. Rojo stores the attributes and properties of an instance the project file declares in the project file, so if you set an attribute on Arenas in Studio, the capture refuses rather than editing `default.project.json`. Put that data on the models inside it.
+Keep the mapped folder itself plain. Arenas is declared in the project file, so an attribute you set on it in Studio stays in the place, and the capture lists it as not captured. Put that data on the models inside it.
 
 ## When a capture refuses
 
@@ -77,9 +77,11 @@ The command checks everything it can before it writes, and a refusal leaves your
 | `which holds code or installed packages` | A tree maps into `src/`, `Packages/` or another tool folder without being listed in `syncbackRules.ignoreTrees`; add it there |
 | `which does not exist` | Create the mapped folder, or restore it; give an empty folder a `.gitkeep` file |
 | `uncommitted changes` | Commit or stash your work in the captured folders first. `--allow-dirty` captures anyway after copying the current files to `build/krf/` |
-| `outside the captured folders` | Studio changed a property or attribute of something `default.project.json` declares, such as a service or the mapped folder itself. Undo it in Studio or make it in the project file |
+| `outside the captured folders` | Rojo would write a file that isn't under a captured folder. Map that content to a folder under `world/`, and list any code it holds in `syncbackRules.ignoreTrees` |
 | `is duplicated in the place file` | Two siblings under a mapped tree share a name; rename one in Studio and save |
 | `present only in a project file` | The place lacks an instance the project declares. Check `--input`, or run `npm run dev` once so Rojo creates it |
+
+Newer Studio builds save properties that the pinned Rojo doesn't know, so Rojo can't tell they're at their defaults. New projects list the ones we've seen, such as `SerializedOverrides`, in `syncbackRules.ignoreProperties`. If a captured file gains a property you never set, add its name there under `Instance` or under its class, and capture again.
 
 A project without Git works too. The command copies the folders it is about to change to `build/krf/syncback-<time>/backup` first and lists every created, changed and removed file, so you can compare or restore them by hand. It never runs `git init`.
 
