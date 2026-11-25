@@ -116,6 +116,6 @@ A Controller lives on the server only. To show its state to clients, publish it 
 
 ## Related references
 
-- [tags-and-properties.md](tags-and-properties.md) and [resources.md](resources.md) for the state the built-in Controllers own.
+- [properties.md](properties.md), [tags.md](tags.md) and [resources.md](resources.md) for the state the built-in Controllers own.
 - [replication.md](replication.md) for publishing a game Controller's state.
 - [client-views.md](client-views.md) for what clients see of an Actor.

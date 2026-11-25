@@ -10,8 +10,8 @@ KRF is a Luau framework for server-authoritative gameplay in Roblox. Players and
 | Primitive | What it is | Reference |
 | --- | --- | --- |
 | Actors and Controllers | An Actor is one character's lifetime. Controllers hold that Actor's state, including state the game adds. | [actors-and-controllers.md](references/actors-and-controllers.md) |
-| Properties | Stats with a base value and the modified value gameplay reads. | [tags-and-properties.md](references/tags-and-properties.md) |
-| Tags | Statuses such as Stunned or Burning, with optional duration, stacks and Property modifiers. | [tags-and-properties.md](references/tags-and-properties.md) |
+| Properties | Stats with a base value and the modified value gameplay reads. | [properties.md](references/properties.md) |
+| Tags | Statuses such as Stunned or Burning, with optional duration, stacks and Property modifiers. | [tags.md](references/tags.md) |
 | Resources | Values that are spent and regained, with bounds and regeneration. | [resources.md](references/resources.md) |
 | Actions | Abilities with requirements, costs, locks against conflicting abilities, and a lifecycle that cleans up after itself. | [actions.md](references/actions.md) |
 | Action requests, input routes and controls | How a client asks the server to start or stop an Action, and how keys, buttons and gestures map to those requests. | [action-input.md](references/action-input.md) |
@@ -33,7 +33,7 @@ Take "a Fireball that fires where the player aims when they press Q, costs Mana,
 | The Fireball | Action | [actions.md](references/actions.md) |
 | Costs Mana | Resource | [resources.md](references/resources.md) |
 | Fires on Q, aimed with the mouse | Action request and input route | [action-input.md](references/action-input.md) |
-| Sets what it hits Burning | Tag | [tags-and-properties.md](references/tags-and-properties.md) |
+| Sets what it hits Burning | Tag | [tags.md](references/tags.md) |
 
 Those four references are all this feature needs. Showing the player's Mana bar would add [client-views.md](references/client-views.md).
 
