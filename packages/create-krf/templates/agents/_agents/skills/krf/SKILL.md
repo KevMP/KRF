@@ -1,6 +1,6 @@
 ---
 name: krf
-description: Build Roblox gameplay with KRF. Use for abilities, attacks, dashes, cooldowns, stats, buffs and debuffs, status effects, health, mana, stamina or other resources, player input and keybinds, showing game state in the client UI, client-to-server requests, and the build, test and deploy scripts of a KRF game.
+description: Build Roblox gameplay with KRF. Use for abilities, attacks, dashes, interactions such as doors and seats, cooldowns, stats, buffs and debuffs, status effects, health, mana, stamina or other resources, player input and keybinds, showing game state in the client UI, client-to-server requests, and the build, test and deploy scripts of a KRF game.
 ---
 
 # KRF
@@ -13,11 +13,11 @@ KRF is a Luau framework for server-authoritative gameplay in Roblox. Players and
 | Properties | Stats with a base value and the modified value gameplay reads. | [properties.md](references/properties.md) |
 | Tags | Statuses such as Stunned or Burning, with optional duration, stacks and Property modifiers. | [tags.md](references/tags.md) |
 | Resources | Values that are spent and regained, with bounds and regeneration. | [resources.md](references/resources.md) |
-| Actions | Abilities with requirements, costs, locks against conflicting abilities, and a lifecycle that cleans up after itself. | [actions.md](references/actions.md) |
+| Actions | Anything a character does, from a Fireball to opening a door or sitting down, with requirements, costs, locks against conflicting Actions, and a lifecycle that cleans up after itself. | [actions.md](references/actions.md) |
 | Action requests, input routes and controls | How a client asks the server to start or stop an Action, and how keys, buttons and gestures map to those requests. | [action-input.md](references/action-input.md) |
 | Client views | What a client can read of an Actor's Tags, Resources and running Actions. | [client-views.md](references/client-views.md) |
 | Replication domains and schemas | Publishing game-owned state to the clients allowed to see it. | [replication.md](references/replication.md) |
-| Commands | Authorized client-to-server operations that aren't abilities. | [commands.md](references/commands.md) |
+| Commands | Authorized client-to-server operations that aren't something a character does, such as buying an item or changing a setting. | [commands.md](references/commands.md) |
 | Hints | Missable cosmetic signals, such as hit sparks or camera shake. | [hints.md](references/hints.md) |
 
 Three more references cover the project rather than gameplay: [generators.md](references/generators.md) for creating definitions, [project.md](references/project.md) for the layout, startup, scripts and tests, and [world-and-deploy.md](references/world-and-deploy.md) for saving the Studio world into source and deploying.
