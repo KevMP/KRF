@@ -60,6 +60,61 @@ KRF resolves the attachment set before construction. It creates dependencies fir
 
 Cleanup has no reverse-dependency order guarantee. Release what the Controller owns without requiring another Controller to remain attached. A thrown Destroy error is warned and teardown continues with the remaining objects.
 
+## Give a Controller events
+
+Other server code may need to know when a character is promoted, such as a quest that unlocks at rank 3 or an announcement in chat. Give the Controller an event the same way KRF's own Controllers do: keep the Signal inside the factory, expose a read-only Event made from it, and destroy the Signals with the Controller.
+
+```lua
+export type RankController = KRF.Controller & {
+	GetRank: () -> number,
+	Promote: () -> (),
+	OnPromoted: KRF.Event<number, number>,
+}
+
+local Rank: KRF.ControllerDefinition = {
+	key = "Rank",
+	factory = function(_actor: KRF.Actor): KRF.Controller
+		local rank: number = 1
+		local promoted: KRF.Signal<number, number> = KRF.Signal.new()
+		local ownedSignals: KRF.OwnedSignals = KRF.OwnedSignals.new({ promoted })
+
+		local controller: RankController = {
+			GetRank = function(): number
+				return rank
+			end,
+			Promote = function(): ()
+				local previousRank: number = rank
+				rank += 1
+
+				ownedSignals:WithDeferredDestroy(function(): ()
+					promoted:Fire(previousRank, rank)
+				end)
+			end,
+			OnPromoted = KRF.Signal.wrapEvent(promoted),
+			Destroy = function(): ()
+				ownedSignals:Destroy()
+			end,
+		}
+
+		return controller
+	end,
+}
+```
+
+A listener receives the previous and new rank:
+
+```lua
+local ranks = actor:GetController("Rank") :: RankController
+
+ranks.OnPromoted:Connect(function(previousRank: number, newRank: number): ()
+	if previousRank < 3 and newRank >= 3 then
+		unlockQuest(actor, "Trial of Flame")
+	end
+end)
+```
+
+Update the state before firing, so a listener that calls `GetRank` sees the new rank. Firing inside `WithDeferredDestroy` matters when a listener ends the Actor's lifetime: teardown calls `Destroy` while the event is still being delivered, and the Signals wait until delivery finishes. Listeners subscribe through `OnPromoted` and can't fire it. See [Events and connections](../getting-started/events#own-events-in-game-code) for the Signal API.
+
 ## Publish selected state to clients
 
 A custom Controller remains server-owned. To expose its rank or score, define a [replication domain](../replication/guide) that takes a snapshot and observes committed changes. Client code reads a DomainView, not the server Controller.

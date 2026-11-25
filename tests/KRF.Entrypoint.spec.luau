@@ -13,6 +13,8 @@ local MEMBER_PATHS: { [string]: { string } } = {
 	Server = { "server" },
 	Client = { "client" },
 	Schema = { "shared", "Networking", "Schema" },
+	Signal = { "shared", "Signal", "SignalModule" },
+	OwnedSignals = { "shared", "Signal", "OwnedSignals" },
 	ActorRuntime = { "server", "Actor", "ActorRuntime" },
 	ActorRegistry = { "server", "Actor", "ActorRegistry" },
 	ControllerRegistry = { "server", "Controller", "ControllerRegistry" },
@@ -112,4 +114,34 @@ it("types definitions authored through the root module", function()
 
 	expect(tag.id).toBe("Status.Example")
 	expect(resource.id).toBe("Resource.Example")
+end)
+
+it("lets game code own Signals and expose read-only Events through the root module", function()
+	local rankChanged: KRF.Signal<number> = KRF.Signal.new()
+	local ownedSignals: KRF.OwnedSignals = KRF.OwnedSignals.new({ rankChanged })
+	local onRankChanged: KRF.Event<number> = KRF.Signal.wrapEvent(rankChanged)
+	local received: { number } = {}
+
+	local connection: KRF.Connection = onRankChanged:Connect(function(rank: number): ()
+		table.insert(received, rank)
+	end)
+
+	ownedSignals:WithDeferredDestroy(function(): ()
+		rankChanged:Fire(2)
+	end)
+
+	connection:Disconnect()
+	ownedSignals:Destroy()
+
+	local fireExposed: boolean = pcall(function(): ()
+		local _: any = (onRankChanged :: any).Fire
+	end)
+
+	local connectedAfterDestroy: boolean = pcall(function(): ()
+		onRankChanged:Connect(function(): () end)
+	end)
+
+	expect(received).toEqual({ 2 })
+	expect(fireExposed).toBe(false)
+	expect(connectedAfterDestroy).toBe(false)
 end)

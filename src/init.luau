@@ -24,6 +24,8 @@ local SignalTypes = require(script.shared.Signal.types)
 -- Signals
 export type Event<T...> = SignalTypes.Event<T...>
 export type Connection = SignalTypes.Connection
+export type Signal<T...> = SignalTypes.Signal<T...>
+export type OwnedSignals = SignalTypes.OwnedSignals
 
 -- Server startup and authoring
 export type ServerStartConfig = ServerTypes.ServerStartConfig
@@ -131,6 +133,8 @@ type KRF = {
 	read Server: typeof(require(script.server)),
 	read Client: typeof(require(script.client)),
 	read Schema: typeof(require(script.shared.Networking.Schema)),
+	read Signal: typeof(require(script.shared.Signal.SignalModule)),
+	read OwnedSignals: typeof(require(script.shared.Signal.OwnedSignals)),
 
 	read ActorRuntime: typeof(require(script.server.Actor.ActorRuntime)),
 	read ActorRegistry: typeof(require(script.server.Actor.ActorRegistry)),
@@ -158,6 +162,8 @@ local MEMBERS: { [string]: ModuleScript } = {
 	Server = script.server,
 	Client = script.client,
 	Schema = script.shared.Networking.Schema,
+	Signal = script.shared.Signal.SignalModule,
+	OwnedSignals = script.shared.Signal.OwnedSignals,
 
 	ActorRuntime = script.server.Actor.ActorRuntime,
 	ActorRegistry = script.server.Actor.ActorRegistry,
