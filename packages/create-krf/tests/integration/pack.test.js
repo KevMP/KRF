@@ -23,7 +23,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 	const packed = installPackedCreator(root);
 	assert.ok(packed.creator.files.includes("templates/base/_gitignore"), "npm must keep the gitignore template");
 	assert.ok(packed.creator.files.includes("templates/base/src/server/Startup.server.luau"));
-	assert.ok(packed.creator.files.includes("templates/base/_vscode/settings.json"));
+	assert.ok(packed.creator.files.includes("templates/base/_vscode/settings.json.ejs"));
 	assert.ok(!packed.creator.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(!packed.tooling.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(packed.tooling.files.includes("bin/krf-tools.js"), "the generator executable must ship");

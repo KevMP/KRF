@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { startAutoCapture } from "../src/assets/watch.js";
+import { startAutoCapture } from "../src/world/watch.js";
 import { readLocalProject } from "../src/workflow/project.js";
 
 const RULES = { ignoreTrees: ["ServerScriptService/Game"] };
@@ -80,7 +80,7 @@ function harness(root, { fail = false } = {}) {
 test("each Studio save is captured once, after the file settles", async (t) => {
 	const root = project(t);
 	const watcher = harness(root);
-	assert.match(watcher.io.out, /Saving my-game\.rbxl in Studio captures world\/Workspace automatically; npm run dev -- --no-capture turns this off/);
+	assert.match(watcher.io.out, /Saving my-game\.rbxl in Studio captures world\/Workspace automatically; npm run dev -- --no-syncback turns this off/);
 
 	await watcher.save("saved 1");
 	assert.equal(watcher.captures(), 1);
@@ -139,5 +139,5 @@ test("auto-capture stays off when nothing is mapped or Rojo cannot capture", asy
 	const old = project(t);
 	const oldIo = { out: "" };
 	startAutoCapture({ platform: "linux", env: {}, spawnSync: () => ({ status: 0, stdout: "Rojo 7.6.1", stderr: "" }) }, readLocalProject(old), path.join(old, "my-game.rbxl"), { stdout: (text) => (oldIo.out += text) }, { watch: () => assert.fail("must not watch") });
-	assert.match(oldIo.out, /does not capture the world: npm run assets:syncback needs Rojo 7\.7\.1 or newer/);
+	assert.match(oldIo.out, /does not capture the world: npm run world:syncback needs Rojo 7\.7\.1 or newer/);
 });

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { JsonNumber, parseJson, stringifyJson } from "../src/assets/json.js";
-import { instanceFile, normalizeCapture } from "../src/assets/normalize.js";
+import { JsonNumber, parseJson, stringifyJson } from "../src/world/json.js";
+import { instanceFile, normalizeCapture } from "../src/world/normalize.js";
 
 const ROOTS = [{ tree: "Workspace", path: "world/Workspace" }];
 const GENERATED = "4b14589832b6fd28caf1b59c00000000";

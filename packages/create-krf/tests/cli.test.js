@@ -75,16 +75,19 @@ const BOOLEAN_FLAG = (name, value) => (value ? `--${name}` : `--no-${name}`);
 const WIZARD_ANSWERS = (config) => ({
 	"Project name": "my-game",
 	"Project mode": config.mode,
+	"Place names (optional, comma-separated)": config.places ?? "",
 	"Add a GitHub Actions workflow that checks and builds on every push and pull request?": config.ci,
 });
 
 const MATRIX = [];
 for (const mode of ["full", "hybrid"]) for (const ci of [true, false]) MATRIX.push({ mode, ci });
+MATRIX.push({ mode: "full", ci: true, places: "lobby,dungeon" });
 
 const flagsFor = (config) => [
 	"--mode",
 	config.mode,
 	BOOLEAN_FLAG("ci", config.ci),
+	...(config.places ? ["--places", config.places] : []),
 	"--no-git",
 ];
 
@@ -93,8 +96,10 @@ test("--yes creates the default project without prompting", async (t) => {
 	assert.equal(result.code, 0, result.stderr);
 
 	assert.deepEqual(Object.keys(readTree(path.join(result.cwd, "my-game"))).sort(), [
-		".gitattributes",
 		".github/workflows/ci.yml",
+		".github/workflows/deploy.yml",
+		".github/workflows/release-pr.yml",
+		".github/workflows/release.yml",
 		".gitignore",
 		".vscode/extensions.json",
 		".vscode/settings.json",
@@ -167,8 +172,14 @@ test("the project's only npm dependency is the exact krf-tools release behind it
 		format: "stylua src tests",
 		check: manifest.scripts.check,
 		typecheck: manifest.scripts.typecheck,
-		"assets:syncback": "krf-tools assets syncback",
-		"assets:check": "krf-tools assets check",
+		"world:syncback": "krf-tools world syncback",
+		"env:list": "krf-tools env:list",
+		"deploy:dev": "krf-tools deploy:dev",
+		"open:dev": "krf-tools open:dev",
+		"deploy:qa": "krf-tools deploy:qa",
+		"deploy:prod": "krf-tools deploy:prod",
+		"release:pr": "krf-tools release:pr",
+		"release:tag": "krf-tools release:tag",
 		createAction: "krf-tools create action",
 		createTag: "krf-tools create tag",
 		createResource: "krf-tools create resource",
@@ -192,6 +203,9 @@ test("the wizard and explicit flags create identical projects for every option c
 		const flagTree = readTree(path.join(flags.cwd, "my-game"));
 		assert.deepEqual(readTree(path.join(wizard.cwd, "my-game")), flagTree, JSON.stringify(config));
 		assert.equal(".github/workflows/ci.yml" in flagTree, config.ci);
+		for (const workflow of ["deploy.yml", "release-pr.yml", "release.yml"]) {
+			assert.equal(`.github/workflows/${workflow}` in flagTree, config.ci && config.mode === "full");
+		}
 		assert.equal("start-place.project.json" in flagTree, config.mode === "hybrid");
 	}
 });
@@ -239,6 +253,10 @@ test("rejects invalid names, unsafe paths and bad values before writing", async 
 		["My Game", "--yes"],
 		["../escape", "--yes"],
 		["my-game", "--yes", "--mode", "studio"],
+		["my-game", "--yes", "--places", "lobby,lobby"],
+		["my-game", "--yes", "--places", "lobby,../dungeon"],
+		["my-game", "--yes", "--places", "lobby,con"],
+		["my-game", "--yes", "--mode", "hybrid", "--places", "lobby,dungeon"],
 		["my-game", "--yes", "--skip-install"],
 		["my-game", "--yes", "--tooling", "minimal"],
 		["my-game", "--yes", "--agents"],
@@ -292,7 +310,7 @@ test("documents and workflows mention only npm scripts the project has", async (
 		const result = await create(t, ["my-game", ...flagsFor(config)]);
 		const tree = readTree(path.join(result.cwd, "my-game"));
 		const scripts = Object.keys(JSON.parse(tree["package.json"]).scripts);
-		const documents = ["README.md", ...(config.ci ? [".github/workflows/ci.yml"] : [])];
+		const documents = ["README.md", ...Object.keys(tree).filter((file) => file.startsWith(".github/workflows/"))];
 
 		for (const document of documents) {
 			const mentioned = [...tree[document].matchAll(/npm run ([A-Za-z:]+)/g)].map((match) => match[1]);
@@ -302,7 +320,9 @@ test("documents and workflows mention only npm scripts the project has", async (
 				`${document} ${JSON.stringify(config)}`,
 			);
 			if (/\bnpm test\b/.test(tree[document])) assert.ok(scripts.includes("test"), `${document} mentions npm test`);
-			assert.doesNotMatch(tree[document], /npm ci\b|npm run packages:install|krf-tools|krf\.project\.json/, `${document} ${JSON.stringify(config)}`);
+			assert.doesNotMatch(tree[document], /npm run packages:install|krf-tools|krf\.project\.json/, `${document} ${JSON.stringify(config)}`);
+			if (document !== ".github/workflows/ci.yml" && document.startsWith(".github/workflows/")) assert.match(tree[document], /npm ci\b/);
+			else assert.doesNotMatch(tree[document], /npm ci\b/);
 		}
 
 		assert.match(tree["README.md"], new RegExp(`${KRF_RUNTIME.package}@${KRF_RUNTIME.version}`));

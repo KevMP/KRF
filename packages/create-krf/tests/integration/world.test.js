@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -88,7 +87,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		const built = inspectBuild(project, "default.project.json", "built.rbxlx");
 		assert.deepEqual(shape(child(built.place, "Workspace")), { Baseplate: "Part", SpawnLocation: "SpawnLocation" });
 		assert.deepEqual(numbers(descendant(built.place, "Workspace", "Baseplate").properties.CFrame).slice(0, 3), [0, -8, 0]);
-		assert.equal(npm(project, "assets:syncback", ["--input", "build/built.rbxlx"]).out.trim().split("\n").at(-1), "No changes: the captured folders already match the saved place.");
+		assert.equal(npm(project, "world:syncback", ["--input", "build/built.rbxlx"]).out.trim().split("\n").at(-1), "No changes: the captured folders already match the saved place.");
 
 		const studio = saveStudioPlace(built.file, path.join(project, "build", "studio.rbxlx"), [fixtureItem("Arena.rbxmx")]);
 		for (const service of ["Lighting", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterGui"]) saveStudioPlace(studio, studio, [fixtureItem(`${service}.rbxmx`)], [service]);
@@ -100,7 +99,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 				.replace('<string name="Name">Lighting</string>', '<string name="Name">Lighting</string>\n<float name="Brightness">3.5</float>'),
 		);
 		const source = readTree(path.join(project, "src"));
-		const captured = npm(project, "assets:syncback", ["--input", "build/studio.rbxlx"]);
+		const captured = npm(project, "world:syncback", ["--input", "build/studio.rbxlx"]);
 		assert.equal(captured.status, 0, captured.err);
 		assert.match(captured.out, /Capturing build\/studio\.rbxlx into default\.project\.json \(Full project\)\.\nCaptured trees:\n/);
 		assert.match(captured.out, /^ {2}Workspace -> world\/Workspace$/m);
@@ -132,7 +131,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		assert.doesNotMatch(arenaFile, /SerializedOverrides/, "properties Rojo 7.7.1 does not know are ignored");
 
 		const world = capturedFiles(project, "world");
-		const again = npm(project, "assets:syncback", ["--input", "build/studio.rbxlx"]);
+		const again = npm(project, "world:syncback", ["--input", "build/studio.rbxlx"]);
 		assert.equal(again.status, 0, again.err);
 		assert.match(again.out, /No changes: the captured folders already match the saved place\.\n$/);
 		assert.deepEqual(capturedFiles(project, "world"), world, "a second capture of the same place changes nothing");
@@ -150,29 +149,18 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		assert.equal(descendant(rebuilt, "ReplicatedStorage", "Assets", "Crate").className, "Part");
 		assert.deepEqual(Object.keys(shape(child(rebuilt, "ReplicatedStorage"))).sort(), ["Assets", "Packages", "Shared"], "captured assets sit next to KRF's code");
 
-		fs.mkdirSync(path.join(project, "assets", "animations"), { recursive: true });
-		fs.writeFileSync(path.join(project, "assets", "animations", "Cast.rbxm"), "animation");
-		fs.writeFileSync(path.join(project, "assets", "manifest.json"), `${JSON.stringify({ assets: [{ name: "FireballCast", kind: "Animation", id: 1234567890, source: "assets/animations/Cast.rbxm" }] }, null, 2)}\n`);
-		assert.notEqual(npm(project, "assets:check", [], { allowFailure: true }).status, 0);
-		const written = npm(project, "assets:check", ["--write"]);
-		assert.equal(written.status, 0, written.err);
-		assert.match(written.out, /Not checked: whether these IDs exist on Roblox/);
-		assert.equal(JSON.parse(fs.readFileSync(path.join(project, "assets", "manifest.json"), "utf8")).assets[0].sha256, createHash("sha256").update("animation").digest("hex"));
-		assert.match(fs.readFileSync(path.join(project, "src", "shared", "GameAssets.luau"), "utf8"), /^\tFireballCast = "rbxassetid:\/\/1234567890",$/m);
-		run("npm", ["run", "check"], project);
-		assert.equal(npm(project, "assets:check").status, 0);
 	});
 
 	await t.test("hybrid", async () => {
 		const project = createProject(packed, path.join(root, "work"), "hybrid-world", ["--mode", "hybrid", "--no-ci"]);
 		run("npm", ["install"], project);
 
-		const refused = npm(project, "assets:syncback", ["--input", "missing.rbxl"], { allowFailure: true });
+		const refused = npm(project, "world:syncback", ["--input", "missing.rbxl"], { allowFailure: true });
 		assert.notEqual(refused.status, 0);
 		assert.match(refused.err, /missing\.rbxl does not exist/);
 
 		inspectBuild(project, "start-place.project.json", "start.rbxlx");
-		const notOptedIn = npm(project, "assets:syncback", ["--input", "build/start.rbxlx"], { allowFailure: true });
+		const notOptedIn = npm(project, "world:syncback", ["--input", "build/start.rbxlx"], { allowFailure: true });
 		assert.notEqual(notOptedIn.status, 0);
 		assert.match(notOptedIn.err, /maps no world content, so there is nothing to capture\.\nOpt a subtree in/);
 
@@ -204,7 +192,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 		const studio = path.join(project, "hybrid-world.rbxlx");
 		saveStudioPlace(start.file, studio, [STUDIO_OWNED]);
 		saveStudioPlace(studio, studio, [fixtureItem("Arena.rbxmx")], ["Workspace", "Arenas"]);
-		const captured = npm(project, "assets:syncback", ["--input", "hybrid-world.rbxlx"]);
+		const captured = npm(project, "world:syncback", ["--input", "hybrid-world.rbxlx"]);
 		assert.equal(captured.status, 0, captured.err);
 		assert.match(captured.out, /Captured trees:\n {2}Workspace\/Arenas -> world\/Workspace\/Arenas\n/);
 		assert.match(captured.out, /Anything else in the place stays only in the place file/);
@@ -230,13 +218,13 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 
 		const moved = fs.readFileSync(studio, "utf8").replace("<X>40</X>", "<X>48</X>");
 		fs.writeFileSync(studio, moved);
-		const conflict = npm(project, "assets:syncback", ["--input", "hybrid-world.rbxlx"], { allowFailure: true });
+		const conflict = npm(project, "world:syncback", ["--input", "hybrid-world.rbxlx"], { allowFailure: true });
 		assert.notEqual(conflict.status, 0);
 		assert.match(conflict.err, /uncommitted changes, so a capture could overwrite them:\n {2}world\/Workspace\/Arenas\/Arena\.model\.json\n/);
 		assert.equal(fs.readFileSync(floorFile, "utf8"), localEdit, "a refused capture leaves local edits alone");
 
 		git(project, "checkout", "--", "world");
-		const reviewed = npm(project, "assets:syncback", ["--input", "hybrid-world.rbxlx"]);
+		const reviewed = npm(project, "world:syncback", ["--input", "hybrid-world.rbxlx"]);
 		assert.equal(reviewed.status, 0, reviewed.err);
 		assert.match(reviewed.out, /changed world\/Workspace\/Arenas\/Arena\.model\.json/);
 		assert.match(reviewed.out, /Review with git status -- world\/Workspace\/Arenas and git diff -- world\/Workspace\/Arenas, then commit\. Nothing was committed\./);

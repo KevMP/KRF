@@ -12,14 +12,13 @@ For creating the project itself, follow [Create a KRF project](/tutorial/create-
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Opens the place in Studio, serves source through Rojo, and captures each Studio save into source; see [World and assets](./world-and-assets) |
+| `npm run dev` | Opens the place in Studio, serves source through Rojo, and captures each Studio save into source; see [World](./world) |
 | `npm run build` | Builds a place file with Rojo |
 | `npm run check` | Checks formatting, lint and Luau types without formatting source; refreshes type-analysis artifacts |
 | `npm run format` | Formats source and tests |
 | `npm test` | Runs the game's Jest Lua specs in Studio |
 | `npm run test:studio` | Starts a server and clients to check KRF startup and character views |
-| `npm run assets:syncback` | Captures a place saved from Studio into source files; see [World and assets](./world-and-assets) |
-| `npm run assets:check` | Checks the hosted asset manifest and its generated Luau module; see [World and assets](./world-and-assets#reference-hosted-assets-by-name) |
+| `npm run world:syncback` | Syncs a place saved from Studio back into source files; see [World](./world) |
 
 `dev` stays attached while Rojo serves changes. Connect the Rojo plugin in Studio, then press Play. Ctrl+C stops the server started by the command; it leaves Studio open. If the place is already open, `dev` serves without rebuilding or reopening it.
 
@@ -30,7 +29,7 @@ Pass workflow options after `--`:
 | Option | Applies to |
 | --- | --- |
 | `--no-open` | `dev`: serve without opening Studio |
-| `--no-capture` | `dev`: don't capture Studio saves into source |
+| `--no-syncback` | `dev`: don't sync Studio saves back into source |
 | `--port <port>` | `dev`: integer from 1 to 65535; default 34872; a busy port fails rather than replacing another server |
 | `--place <file>` | Hybrid `dev`: select the world place |
 | `--studio-path <path>` | Studio workflows: explicit executable path |

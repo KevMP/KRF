@@ -1,0 +1,15 @@
+{
+  "luau-lsp.platform.type": "roblox",
+<% if (options.places) { -%>
+  "luau-lsp.sourcemap.generatorCommand": "npm run --silent sourcemap",
+  "luau-lsp.sourcemap.useVSCodeWatcher": true,
+<% } else { -%>
+  "luau-lsp.sourcemap.rojoProjectFile": "<%= rojoProjectFile %>",
+<% } -%>
+  "luau-lsp.fflags.enableNewSolver": true,
+  "luau-lsp.ignoreGlobs": ["Packages/**"],
+  "[luau]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  }
+}

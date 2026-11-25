@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+<% if (options.places) { -%>
+import { runWorkflow } from "krf-tools";
+<% } -%>
 
 const ROKIT_VERSION = "<%= rokitVersion %>";
 const ROKIT_TARGETS = {
@@ -62,7 +65,12 @@ try {
 
 	run("rokit", ["install", "--no-trust-check"]);
 	run("wally", ["install"]);
+<% if (options.places) { -%>
+	const status = await runWorkflow(["sourcemap"], { cwd: process.cwd(), stdout: console.log, stderr: console.error });
+	if (status !== 0) throw new Error("Could not generate the start place sourcemap");
+<% } else { -%>
 	run("rojo", ["sourcemap", "<%= rojoProjectFile %>", "--output", "sourcemap.json"]);
+<% } -%>
 	run("wally-package-types", ["--sourcemap", "sourcemap.json", "Packages/"]);
 
 	if (installedRokit) console.log("\nRokit is installed. Open a new terminal so npm scripts can find the Roblox tools.");

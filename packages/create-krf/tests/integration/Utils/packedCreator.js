@@ -8,7 +8,7 @@ export const PACKAGES = fileURLToPath(new URL("../../../../", import.meta.url));
 export const WINDOWS = process.platform === "win32";
 
 export function run(command, args, cwd, options = {}) {
-	const env = { ...process.env, npm_config_audit: "false", npm_config_fund: "false" };
+	const env = { ...process.env, npm_config_audit: "false", npm_config_fund: "false", ...options.env };
 	const result = WINDOWS
 		? spawnSync([command, ...args.map((arg) => `"${arg}"`)].join(" "), { cwd, encoding: "utf8", shell: true, env })
 		: spawnSync(command, args, { cwd, encoding: "utf8", env });

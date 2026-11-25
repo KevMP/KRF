@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci --ignore-scripts
+
+      - name: Tag the release and deploy it to QA
+        run: npm run release:tag
+        env:
+          KRF_GITHUB_TOKEN: ${{ github.token }}

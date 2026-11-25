@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runAssets } from "../src/assets/cli.js";
+import { runWorld } from "../src/world/cli.js";
 import { ExitCode } from "../src/errors.js";
 
 const CODE = {
@@ -85,7 +85,7 @@ function fakeSystem(root, { version = "Rojo 7.7.1", plan = [], write = () => {},
 
 async function syncback(root, fake, argv = []) {
 	const io = capture();
-	const code = await runAssets(["assets", "syncback", ...argv], { cwd: root, ...io }, fake.system);
+	const code = await runWorld(["world", "syncback", ...argv], { cwd: root, ...io }, fake.system);
 	return { code, ...io };
 }
 
@@ -178,6 +178,26 @@ test("a Hybrid project captures only opted-in trees that its start place also bu
 	assert.match(result.out, /Capturing my-game\.rbxl into default\.project\.json \(Hybrid project\)\.\nCaptured trees:\n {2}Workspace\/Arenas -> world\/Workspace\/Arenas\n/);
 	assert.match(result.out, /Anything else in the place stays only in the place file/);
 	assert.match(result.out, /created world\/Workspace\/Arenas\/Arena\.model\.json/);
+});
+
+test("syncback selects the named place's Studio file and world mapping together", async (t) => {
+	const files = { "package.json": JSON.stringify({ name: "my-game", krf: { startPlace: "lobby" } }) };
+	for (const name of ["lobby", "dungeon"]) {
+		const tree = structuredClone(FULL);
+		tree.tree.ReplicatedStorage.Packages.$path = "../Packages";
+		tree.tree.ReplicatedStorage.Shared.$path = "../src/shared";
+		tree.tree.ServerScriptService.Game.$path = "../src/server";
+		tree.tree.Workspace.$path = `../world/${name}/Workspace`;
+		files[`places/${name}.project.json`] = JSON.stringify(tree);
+		files[`world/${name}/Workspace/.gitkeep`] = "";
+		files[`build/krf/dev/${name}.rbxl`] = "place";
+	}
+	const root = project(t, { files });
+	fs.unlinkSync(path.join(root, "default.project.json"));
+	const result = await syncback(root, fakeSystem(root), ["--place", "dungeon", "--dry-run"]);
+	assert.equal(result.code, ExitCode.ok, result.err);
+	assert.match(result.out, /Capturing build\/krf\/dev\/dungeon\.rbxl into places\/dungeon\.project\.json/);
+	assert.match(result.out, /Workspace -> world\/dungeon\/Workspace/);
 });
 
 test("syncback runs the pinned Rojo noninteractively, writing new instances as JSON models", async (t) => {

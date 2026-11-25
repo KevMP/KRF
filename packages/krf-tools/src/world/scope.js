@@ -56,8 +56,9 @@ function nodeAt(tree, instancePath) {
 }
 
 function normalizeMapping(file, mapping) {
-	const normalized = path.posix.normalize(mapping.path.replace(/\\/g, "/")).replace(/\/+$/, "");
-	if (path.posix.isAbsolute(normalized) || path.win32.isAbsolute(mapping.path) || normalized === ".." || normalized.startsWith("../")) {
+	const mapped = mapping.path.replace(/\\/g, "/");
+	const normalized = path.posix.normalize(path.posix.join(path.posix.dirname(file), mapped)).replace(/\/+$/, "");
+	if (path.posix.isAbsolute(mapped) || path.win32.isAbsolute(mapping.path) || normalized === ".." || normalized.startsWith("../")) {
 		throw new KrfToolError("MappingOutsideProject", `${mapping.tree} in ${file} maps ${mapping.path}, which is outside the project.`, {
 			hint: "Captured content must live inside the project, for example under world/.",
 		});
@@ -75,7 +76,7 @@ export function topLevelPaths(roots) {
 }
 
 export function readCaptureScope(project) {
-	const file = path.basename(project.codeProject);
+	const file = path.relative(project.root, project.codeProject).split(path.sep).join("/");
 	const source = readProjectFile(project.codeProject);
 	const ignored = ignoredTrees(source, file);
 	const isIgnored = (tree) => ignored.some((entry) => tree === entry || tree.startsWith(`${entry}/`));
@@ -91,7 +92,7 @@ export function readCaptureScope(project) {
 			});
 		}
 		if (normalized.endsWith(".project.json")) {
-			throw new KrfToolError("UnsupportedMapping", `${mapping.tree} maps the nested project ${mapping.path}; npm run assets:syncback captures only folders and model files.`, {
+			throw new KrfToolError("UnsupportedMapping", `${mapping.tree} maps the nested project ${mapping.path}; npm run world:syncback captures only folders and model files.`, {
 				hint: `Map the folder that holds the content instead, or add "${mapping.tree}" to syncbackRules.ignoreTrees.`,
 			});
 		}

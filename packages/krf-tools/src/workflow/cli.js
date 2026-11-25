@@ -5,10 +5,11 @@ import { TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { runDev } from "./dev.js";
 import { readLocalProject } from "./project.js";
+import { runSourcemap } from "./sourcemap.js";
 import { runStudioSmoke, runTests } from "./tests.js";
 import { SYSTEM } from "./tools.js";
 
-export const WORKFLOW_COMMANDS = Object.freeze(["dev", "test", "test-studio"]);
+export const WORKFLOW_COMMANDS = Object.freeze(["dev", "test", "test-studio", "sourcemap"]);
 
 const integer = (minimum, maximum) => z.coerce.number().int().min(minimum).max(maximum);
 const STUDIO_PATH = ["--studio-path <path>", "the Roblox Studio executable, when it is not found automatically"];
@@ -17,19 +18,21 @@ const TIMEOUT = ["--timeout <seconds>", "how long Roblox Studio may run before t
 const OPTION_SCHEMAS = {
 	dev: z.object({
 		open: z.boolean(),
-		capture: z.boolean(),
+		syncback: z.boolean(),
 		studioPath: z.string().optional(),
 		port: integer(1, 65535).optional(),
 		place: z.string().optional(),
 	}),
 	test: z.object({ studioPath: z.string().optional(), timeout: integer(1, 3600) }),
 	"test-studio": z.object({ studioPath: z.string().optional(), timeout: integer(1, 3600), clients: integer(1, 8) }),
+	sourcemap: z.object({}),
 };
 
 const RUNNERS = {
 	dev: runDev,
 	test: runTests,
 	"test-studio": (system, project, options, io) => runStudioSmoke(system, project, { ...options, smokeTimeout: Math.max(1, Math.min(60, options.timeout - 30)) }, io),
+	sourcemap: runSourcemap,
 };
 
 function buildProgram(io, onSelect) {
@@ -42,10 +45,10 @@ function buildProgram(io, onSelect) {
 		.command("dev")
 		.description("Build the place, serve it with Rojo and open it in Roblox Studio")
 		.option("--no-open", "serve without opening Roblox Studio")
-		.option("--no-capture", "do not capture the world into source files when Studio saves the place")
+		.option("--no-syncback", "do not sync the world back into source files when Studio saves the place")
 		.option(...STUDIO_PATH)
 		.option("--port <port>", "the rojo serve port (default: 34872)")
-		.option("--place <file>", "Hybrid projects: the Studio place that holds your world (default: <name>.rbxl)")
+		.option("--place <place>", "a named Full place (default: krf.startPlace), or the Studio file for a Hybrid project")
 		.action((options) => onSelect("dev", options));
 
 	program
@@ -62,6 +65,11 @@ function buildProgram(io, onSelect) {
 		.option(...TIMEOUT)
 		.option("--clients <count>", "how many clients join", "2")
 		.action((options) => onSelect("test-studio", options));
+
+	program
+		.command("sourcemap")
+		.description("Generate sourcemap.json from the start place")
+		.action((options) => onSelect("sourcemap", options));
 
 	return program;
 }

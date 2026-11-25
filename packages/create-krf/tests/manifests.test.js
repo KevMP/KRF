@@ -67,6 +67,34 @@ test("Full maps code and packages, and captures the starter world from world/Wor
 	assert.equal(generated.has("start-place.project.json"), false);
 });
 
+test("the named Full template generates an independent starter world and Rojo input for every place", () => {
+	const generated = files({ places: ["lobby", "dungeon", "arena"] });
+	const { krf, scripts } = JSON.parse(generated.get("package.json"));
+	assert.equal(krf.startPlace, "lobby");
+	assert.equal(krf.placeProjects, undefined);
+	assert.equal(generated.has("default.project.json"), false);
+	const editor = JSON.parse(generated.get(".vscode/settings.json"));
+	assert.equal(editor["luau-lsp.sourcemap.generatorCommand"], "npm run --silent sourcemap");
+	assert.equal(editor["luau-lsp.sourcemap.useVSCodeWatcher"], true);
+	assert.equal(scripts.sourcemap, "krf-tools sourcemap");
+	assert.equal(scripts.build, "krf-tools build:places");
+	assert.match(scripts.typecheck, /^krf-tools sourcemap && /);
+	assert.ok(![...generated.keys()].some((file) => file.startsWith("world/Workspace/")));
+	for (const name of ["lobby", "dungeon", "arena"]) {
+		const rojo = JSON.parse(generated.get(`places/${name}.project.json`));
+		assert.equal(rojo.tree.ReplicatedStorage.Packages.$path, "../Packages");
+		assert.equal(rojo.tree.ServerScriptService.Game.$path, "../src/server");
+		for (const service of CAPTURED_SERVICES) {
+			const node = service.split("/").reduce((current, segment) => current[segment], rojo.tree);
+			assert.equal(node.$path, `../world/${name}/${service}`);
+			assert.ok(generated.has(`world/${name}/${service}/.gitkeep`));
+		}
+		for (const model of ["Baseplate", "SpawnLocation"]) assert.ok(generated.has(`world/${name}/Workspace/${model}.model.json`));
+	}
+	assert.match(generated.get(".github/workflows/ci.yml"), /run: npm run build$/m);
+	for (const workflow of ["deploy.yml", "release-pr.yml", "release.yml"]) assert.ok(generated.has(`.github/workflows/${workflow}`));
+});
+
 test("Hybrid live sync owns only code and packages; its start place adds the same starter world", () => {
 	const generated = files({ mode: "hybrid" });
 	const live = JSON.parse(generated.get("default.project.json"));

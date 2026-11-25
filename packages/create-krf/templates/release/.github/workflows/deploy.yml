@@ -1,0 +1,49 @@
+name: Deploy
+run-name: Deploy ${{ inputs.target }} ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        type: choice
+        options: [qa, prod]
+        default: qa
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rokit, Roblox tools and Wally packages
+        run: |
+          npm ci
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - name: Check formatting, lint and type check
+        run: npm run check
+
+      - name: Deploy
+        run: npm run "deploy:$TARGET"
+        env:
+          TARGET: ${{ inputs.target }}
+          KRF_GITHUB_TOKEN: ${{ github.token }}
+          KRF_ROBLOX_QA_KEY: ${{ inputs.target == 'qa' && secrets.KRF_ROBLOX_QA_KEY || '' }}
+          KRF_ROBLOX_PROD_KEY: ${{ inputs.target == 'prod' && secrets.KRF_ROBLOX_PROD_KEY || '' }}

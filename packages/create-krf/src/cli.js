@@ -24,6 +24,7 @@ function buildProgram(io) {
 		.description(`Create a KRF Roblox game project (KRF ${KRF_RUNTIME.package}@${KRF_RUNTIME.version}).`)
 		.argument("[project-name]", "directory to create; its name becomes the project name")
 		.addOption(new Option("--mode <mode>", "Rojo ownership: full or hybrid (default: full)"))
+		.option("--places <names>", "Full mode: comma-separated place names, starting with the start place")
 		.option("--ci", "add a GitHub Actions workflow that checks and builds (default)")
 		.option("--no-ci", "do not add a GitHub Actions workflow")
 		.option("--no-git", "do not initialize a Git repository")
@@ -35,7 +36,7 @@ function buildProgram(io) {
 		.configureOutput({ writeOut: io.stdout, writeErr: io.stderr })
 		.addHelpText(
 			"after",
-			"\nExamples:\n  npm create krf@latest\n  npm create krf@latest my-game -- --yes\n  npx create-krf@latest my-game --mode hybrid --no-ci\n",
+			"\nExamples:\n  npm create krf@latest\n  npm create krf@latest my-game -- --yes --places lobby,dungeon\n  npx create-krf@latest my-game --mode hybrid --no-ci\n",
 		);
 }
 
@@ -45,6 +46,7 @@ function inputFromFlags(projectPath, flags, program) {
 	return {
 		projectPath,
 		mode: flags.mode,
+		places: flags.places,
 		ci: given("ci") ? flags.ci : undefined,
 		git: given("git") ? flags.git : undefined,
 	};

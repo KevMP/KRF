@@ -51,7 +51,7 @@ function fakeChild() {
 	return child;
 }
 
-function fakeSystem({ onSpawn } = {}) {
+function fakeSystem({ onSpawn, onSync } = {}) {
 	const calls = { spawnSync: [], spawn: [] };
 	let interrupt;
 	const system = {
@@ -59,6 +59,7 @@ function fakeSystem({ onSpawn } = {}) {
 		env: {},
 		spawnSync(command, args) {
 			calls.spawnSync.push([command, ...args]);
+			if (onSync) return onSync(command, args);
 			if (command === "rojo" && args[0] === "build") fs.writeFileSync(args[3], "place");
 			return { status: 0, stdout: "", stderr: "" };
 		},
@@ -176,6 +177,100 @@ test("npm run dev builds a Full place, serves it and stops only Rojo on Ctrl+C",
 	assert.match(io.out, /Open my-game\.rbxl in Roblox Studio/);
 });
 
+function namedDevProject(t) {
+	const tree = { $className: "DataModel", Workspace: { $className: "Workspace", $path: "../world/Dungeon" } };
+	const root = project(t, { files: {
+		"package.json": JSON.stringify({ name: "my-game", krf: { startPlace: "lobby" } }),
+		"places/lobby.project.json": JSON.stringify({ name: "lobby", tree: { $className: "DataModel" } }),
+		"places/dungeon.project.json": JSON.stringify({ name: "dungeon", tree }),
+		"world/Dungeon/.gitkeep": "",
+	} });
+	fs.unlinkSync(path.join(root, "default.project.json"));
+	return root;
+}
+
+test("changing krf.startPlace selects the new Rojo file for single-place workflows", async (t) => {
+	const root = namedDevProject(t);
+	const packageFile = path.join(root, "package.json");
+	const manifest = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+	manifest.krf.startPlace = "dungeon";
+	fs.writeFileSync(packageFile, JSON.stringify(manifest));
+	const dungeon = path.join(root, "places", "dungeon.project.json");
+	const local = readLocalProject(root);
+	assert.equal(local.codeProject, dungeon);
+	assert.equal(local.placeProject, dungeon);
+	assert.equal(local.place, path.join(root, "build", "krf", "dev", "dungeon.rbxl"));
+	const fake = fakeSystem({
+		onSync(_command, args) {
+			fs.writeFileSync(args[3], JSON.stringify({ filePaths: ["dungeon.project.json"], children: [{ filePaths: ["../src/shared/Main.luau"] }] }));
+			return { status: 0, stdout: "" };
+		},
+	});
+	assert.equal(await runWorkflow(["sourcemap"], { cwd: root, ...capture() }, fake.system), ExitCode.ok);
+	assert.deepEqual(fake.calls.spawnSync[0].slice(0, 4), ["rojo", "sourcemap", dungeon, "--output"]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "sourcemap.json"), "utf8")), {
+		filePaths: ["places/dungeon.project.json"],
+		children: [{ filePaths: ["src/shared/Main.luau"] }],
+	});
+});
+
+test("npm run dev opens only the start place of a named set", async (t) => {
+	const root = namedDevProject(t);
+	const port = await freePort();
+	const studio = path.join(root, "Studio.exe");
+	fs.writeFileSync(studio, "");
+	const fake = fakeSystem({
+		onSpawn(command, args, child) {
+			if (command === "rojo") setImmediate(() => child.stdout.emit("data", Buffer.from(`Port: ${args[3]}
+`)));
+			else setImmediate(() => child.emit("exit", 0));
+		},
+	});
+	const io = capture();
+	const { promise, resolve } = Promise.withResolvers();
+	const stdout = io.stdout;
+	io.stdout = (text) => {
+		stdout(text);
+		if (text.includes("Press Ctrl+C")) resolve();
+	};
+	const running = runWorkflow(["dev", "--studio-path", studio, "--no-syncback", "--port", String(port)], { cwd: root, ...io }, fake.system);
+	await Promise.race([promise, running]);
+	fake.interrupt();
+	assert.equal(await running, ExitCode.ok);
+	assert.deepEqual(fake.calls.spawn, [
+		["rojo", "serve", path.join("places", "lobby.project.json"), "--port", String(port)],
+		[studio, "--task", "EditFile", "--localPlaceFile", path.join(root, "build", "krf", "dev", "lobby.rbxl")],
+	]);
+	assert.match(io.out, /Built build\/krf\/dev\/lobby\.rbxl from places\/lobby\.project\.json/);
+});
+
+test("npm run dev -- --place uses only that place and its mapped capture roots", async (t) => {
+	const root = namedDevProject(t);
+	const port = await freePort();
+	const fake = fakeSystem({ onSpawn(_command, args, child) { setImmediate(() => child.stdout.emit("data", Buffer.from(`Port: ${args[3]}\n`))); } });
+	const spawnSync = fake.system.spawnSync;
+	fake.system.spawnSync = (command, args) => args[0] === "--version" ? { status: 0, stdout: "Rojo 7.7.1" } : spawnSync(command, args);
+	const watched = [];
+	fake.system.watch = (directory) => {
+		watched.push(directory);
+		return { close: () => watched.push("closed") };
+	};
+	const io = capture();
+	const { promise, resolve } = Promise.withResolvers();
+	const stdout = io.stdout;
+	io.stdout = (text) => {
+		stdout(text);
+		if (text.includes("Press Ctrl+C")) resolve();
+	};
+	const running = runWorkflow(["dev", "--no-open", "--place", "dungeon", "--port", String(port)], { cwd: root, ...io }, fake.system);
+	await Promise.race([promise, running]);
+	assert.match(io.out, /Saving build\/krf\/dev\/dungeon\.rbxl in Studio captures world\/Dungeon/);
+	fake.interrupt();
+	assert.equal(await running, ExitCode.ok);
+	assert.deepEqual(fake.calls.spawn, [["rojo", "serve", path.join("places", "dungeon.project.json"), "--port", String(port)]]);
+	assert.deepEqual(watched, [path.join(root, "build", "krf", "dev"), "closed"]);
+});
+
 test("npm run dev creates a Hybrid place once and never rebuilds it", async (t) => {
 	const root = project(t, { hybrid: true });
 	const port = await freePort();
@@ -216,11 +311,11 @@ test("npm run dev fails when rojo serve exits before it is ready", async (t) => 
 	assert.match(io.err, /rojo serve exited with code 1 before it was ready/);
 });
 
-test("npm run dev captures Studio saves of mapped world folders unless --no-capture is passed", async (t) => {
+test("npm run dev captures Studio saves of mapped world folders unless --no-syncback is passed", async (t) => {
 	const tree = { $className: "DataModel", Workspace: { $className: "Workspace", $ignoreUnknownInstances: true, $path: "world/Workspace" } };
 	for (const [flags, expected] of [
 		[[], /Saving my-game\.rbxl in Studio captures world\/Workspace automatically/],
-		[["--no-capture"], undefined],
+		[["--no-syncback"], undefined],
 	]) {
 		const root = project(t, { files: { "default.project.json": JSON.stringify({ name: "my-game", tree }), "world/Workspace/.gitkeep": "" } });
 		const port = await freePort();

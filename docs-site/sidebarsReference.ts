@@ -12,7 +12,8 @@ const sidebars: SidebarsConfig = {
         'getting-started/initialization-api',
         'getting-started/events',
         'getting-started/project-tools',
-        'getting-started/world-and-assets',
+        'getting-started/world',
+        'getting-started/cloud-deployment',
       ],
     },
     {
