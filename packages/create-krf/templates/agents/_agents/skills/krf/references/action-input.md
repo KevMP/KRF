@@ -119,7 +119,7 @@ recognizers = {
 	Mash = {
 		inputs = { "Attack" },
 		maxWindowSeconds = 1,
-		onEvent = function(ctx, event)
+		onEvent = function(ctx: KRF.RecognizerContext, event: KRF.RecognizerEvent): KRF.CustomMatch?
 			if event.kind ~= "Pressed" then
 				return nil
 			end
@@ -133,7 +133,7 @@ recognizers = {
 },
 ```
 
-- Return `{}` (or `{ metadata = { ... } }`) for a match and `nil` otherwise.
+- Return `{}` (or `{ metadata = { ... } }`) for a match and `nil` otherwise. KRF exports the types for every part of an input source, such as `KRF.RecognizerDefinition`, `KRF.SequenceDefinition` and `KRF.GestureDefinitions`.
 - Keep state in `ctx:GetState` and `ctx:SetState`, not in locals outside the callback. KRF clears it when the window ends or controls are cancelled.
 - The window starts at the first watched event and never extends. Reset your state after a match if the next press should start over.
 - Never yield or error in a callback. Either one faults the recognizer, and it stops matching until its declaration is removed and added again. `KRF.InputRuntime.GetRecognizer(id)` reports a fault.

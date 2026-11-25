@@ -5,7 +5,7 @@ sidebar_label: API
 
 # InputRuntime API
 
-`KRF.InputRuntime` is a frozen client facade installed by `KRF.Client.Init`. Calls use dot syntax. Input declaration and snapshot shapes below are structural types; they are not all exported as `KRF` type aliases.
+`KRF.InputRuntime` is a frozen client facade installed by `KRF.Client.Init`. Calls use dot syntax. Input declarations, snapshots and events are exported from the package entrypoint under the names used below, such as `KRF.InputSourceDefinition`, `KRF.RecognizerContext` and `KRF.SequenceMatchEvent`.
 
 ## Source declarations
 
