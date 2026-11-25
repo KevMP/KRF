@@ -52,7 +52,11 @@ export function startRojoServe(system, project, projectFile, port) {
 		const collect = (chunk) => {
 			output += chunk.toString().replace(ANSI, "");
 			const match = READY.exec(output);
-			if (match !== null) resolve(Number(match[1]));
+			if (match !== null) {
+				child.stdout.removeListener("data", collect);
+				child.stderr.removeListener("data", collect);
+				resolve(Number(match[1]));
+			}
 		};
 		child.stdout.on("data", collect);
 		child.stderr.on("data", collect);

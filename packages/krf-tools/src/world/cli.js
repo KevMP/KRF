@@ -2,16 +2,14 @@ import { Command, CommanderError } from "commander";
 
 import { TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
-import { readLocalProject } from "../workflow/project.js";
+import { projectForPlace, readLocalProject } from "../workflow/project.js";
 import { SYSTEM } from "../workflow/tools.js";
-import { runAssetCheck } from "./check.js";
 import { runSyncback } from "./syncback.js";
 
-export const ASSETS_COMMAND = "assets";
+export const WORLD_COMMAND = "world";
 
-export const ASSET_SCRIPTS = Object.freeze({
-	"assets:syncback": `krf-tools ${ASSETS_COMMAND} syncback`,
-	"assets:check": `krf-tools ${ASSETS_COMMAND} check`,
+export const WORLD_SCRIPTS = Object.freeze({
+	"world:syncback": `krf-tools ${WORLD_COMMAND} syncback`,
 });
 
 function buildProgram(io, onSelect) {
@@ -20,26 +18,21 @@ function buildProgram(io, onSelect) {
 		.exitOverride()
 		.configureOutput({ writeOut: io.stdout, writeErr: io.stderr });
 
-	const assets = program.command(ASSETS_COMMAND).description("Capture Studio-authored world content and check hosted asset references");
+	const world = program.command(WORLD_COMMAND).description("Sync Studio-authored world content back into source");
 
-	assets
+	world
 		.command("syncback")
-		.description("Capture the project-mapped world trees of a saved Studio place into source files with rojo syncback")
-		.option("--input <place>", "the .rbxl or .rbxlx file saved from Roblox Studio (default: <name>.rbxl)")
+		.description("Sync the project-mapped world trees of a saved Studio place back into source files with rojo syncback")
+		.option("--place <name>", "the named Full place to capture (default: the start place)")
+		.option("--input <file>", "the .rbxl or .rbxlx file saved from Roblox Studio (default: the local Studio file for the selected place)")
 		.option("--dry-run", "report the files a capture would write or remove, without writing")
 		.option("--allow-dirty", "capture even when the captured folders have uncommitted Git changes; the current files are copied to build/krf first")
 		.action((options) => onSelect("syncback", options));
 
-	assets
-		.command("check")
-		.description("Validate assets/manifest.json, its source files and hashes, and the generated src/shared/GameAssets.luau")
-		.option("--write", "record missing source hashes and regenerate src/shared/GameAssets.luau")
-		.action((options) => onSelect("check", options));
-
 	return program;
 }
 
-export async function runAssets(argv, io, system = SYSTEM) {
+export async function runWorld(argv, io, system = SYSTEM) {
 	let selected;
 	const program = buildProgram(io, (command, options) => {
 		selected = { command, options };
@@ -51,9 +44,9 @@ export async function runAssets(argv, io, system = SYSTEM) {
 			program.commands[0].outputHelp();
 			return ExitCode.usage;
 		}
-		if (selected.command === "check") return await runAssetCheck(io.cwd, { write: selected.options.write === true }, io);
 		const options = { input: selected.options.input, dryRun: selected.options.dryRun === true, allowDirty: selected.options.allowDirty === true };
-		return await runSyncback(system, readLocalProject(io.cwd), options, io);
+		const project = readLocalProject(io.cwd);
+		return await runSyncback(system, selected.options.place === undefined ? project : projectForPlace(project, selected.options.place), options, io);
 	} catch (error) {
 		if (error instanceof CommanderError) {
 			return error.code === "commander.helpDisplayed" || error.code === "commander.version" ? ExitCode.ok : ExitCode.usage;

@@ -6,4 +6,5 @@ export { applyProjectChanges, inspectTarget, writeNewDirectory } from "./files.j
 export { DEFINITION_SCRIPTS } from "./generate/catalogs.js";
 export { runGenerator } from "./generate/cli.js";
 export { WORKFLOW_COMMANDS, runWorkflow } from "./workflow/cli.js";
-export { ASSET_SCRIPTS, ASSETS_COMMAND, runAssets } from "./assets/cli.js";
+export { WORLD_SCRIPTS, WORLD_COMMAND, runWorld } from "./world/cli.js";
+export { BUILD_PLACES_SCRIPT, DEPLOY_SCRIPTS, runDeployment } from "./deploy/cli.js";

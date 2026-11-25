@@ -1,4 +1,4 @@
-import { ASSET_SCRIPTS, DEFINITION_SCRIPTS, KRF_RUNTIME, TEST_PACKAGES } from "krf-tools";
+import { WORLD_SCRIPTS, BUILD_PLACES_SCRIPT, DEFINITION_SCRIPTS, DEPLOY_SCRIPTS, KRF_RUNTIME, TEST_PACKAGES } from "krf-tools";
 
 import { ROBLOX_DEFINITIONS_URL, TOOLCHAIN, WALLY_REGISTRY } from "./compatibility.js";
 import { TOOLS_DEPENDENCY } from "./tooling.js";
@@ -12,15 +12,18 @@ const DEFINITIONS_FILE = "build/globalTypes.d.luau";
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 export function projectScripts(config) {
-	const build =
-		config.options.mode === "hybrid" ? `rojo build ${HYBRID_START_PROJECT_FILE} --output build/${config.name}.rbxl` : `rojo build ${ROJO_PROJECT_FILE} --output ${config.name}.rbxl`;
-	const sourcemap = `rojo sourcemap ${ROJO_PROJECT_FILE} --output sourcemap.json`;
+	const named = config.options.places !== undefined;
+	const build = named ? BUILD_PLACES_SCRIPT
+		: config.options.mode === "hybrid" ? `rojo build ${HYBRID_START_PROJECT_FILE} --output build/${config.name}.rbxl`
+			: `rojo build ${ROJO_PROJECT_FILE} --output ${config.name}.rbxl`;
+	const sourcemap = named ? "krf-tools sourcemap" : `rojo sourcemap ${ROJO_PROJECT_FILE} --output sourcemap.json`;
 	return {
 		postinstall: "node scripts/setup.mjs",
 		dev: "krf-tools dev",
 		build,
 		test: "krf-tools test",
 		"test:studio": "krf-tools test-studio",
+		...(named ? { sourcemap } : {}),
 		format: "stylua src tests",
 		check: "stylua --check src tests && selene src tests && npm run typecheck",
 		typecheck: [
@@ -28,38 +31,41 @@ export function projectScripts(config) {
 			`curl -sSfL --create-dirs -o ${DEFINITIONS_FILE} ${ROBLOX_DEFINITIONS_URL}`,
 			`luau-lsp analyze --flag:LuauSolverV2=true --platform=roblox --no-strict-dm-types --definitions:@roblox=${DEFINITIONS_FILE} --sourcemap=sourcemap.json --ignore="Packages/**" src`,
 		].join(" && "),
-		...ASSET_SCRIPTS,
+		...WORLD_SCRIPTS,
+		...DEPLOY_SCRIPTS,
 		...DEFINITION_SCRIPTS,
 	};
 }
 
 export function packageManifest(config) {
+	const places = config.options.places;
 	return json({
 		name: config.name,
 		version: "0.0.0",
 		private: true,
 		description: "A Roblox game built with KRF.",
+		...(places === undefined ? {} : { krf: { startPlace: places[0] } }),
 		scripts: projectScripts(config),
 		devDependencies: TOOLS_DEPENDENCY,
 	});
 }
 
-function codeTree() {
+function codeTree(prefix = "") {
 	return {
 		ReplicatedStorage: {
 			$className: "ReplicatedStorage",
-			Packages: { $path: "Packages" },
-			Shared: { $path: "src/shared" },
+			Packages: { $path: `${prefix}Packages` },
+			Shared: { $path: `${prefix}src/shared` },
 		},
 		ServerScriptService: {
 			$className: "ServerScriptService",
-			Game: { $path: "src/server" },
+			Game: { $path: `${prefix}src/server` },
 		},
 		StarterPlayer: {
 			$className: "StarterPlayer",
 			StarterPlayerScripts: {
 				$className: "StarterPlayerScripts",
-				Game: { $path: "src/client" },
+				Game: { $path: `${prefix}src/client` },
 			},
 		},
 	};
@@ -115,8 +121,8 @@ export const CAPTURED_SERVICES = Object.freeze([
 	"TextChatService",
 ]);
 
-function capturedWorld() {
-	const code = codeTree();
+function capturedWorld(world = WORLD_FOLDER, prefix = "") {
+	const code = codeTree(prefix);
 	const tree = {};
 	for (const service of CAPTURED_SERVICES) {
 		const names = service.split("/");
@@ -128,7 +134,7 @@ function capturedWorld() {
 		}
 		const name = names.at(-1);
 		const children = Object.fromEntries(Object.entries(source?.[name] ?? {}).filter(([key]) => !key.startsWith("$")));
-		node[name] = { $className: name, $ignoreUnknownInstances: true, $path: `${WORLD_FOLDER}/${service}`, ...children };
+		node[name] = { $className: name, $ignoreUnknownInstances: true, $path: `${prefix}${world}/${service}`, ...children };
 	}
 	return tree;
 }
@@ -160,6 +166,13 @@ function rojoProject(name, tree, rules) {
 
 export function rojoProjects(config) {
 	if (config.options.mode === "full") {
+		const places = config.options.places;
+		if (places !== undefined) {
+			return new Map(places.map((name) => {
+				const tree = capturedWorld(`${WORLD_FOLDER}/${name}`, "../");
+				return [namedRojoProject(name), rojoProject(`${config.name}-${name}`, tree, syncbackRules())];
+			}));
+		}
 		return new Map([[ROJO_PROJECT_FILE, rojoProject(config.name, capturedWorld(), syncbackRules())]]);
 	}
 
@@ -167,6 +180,10 @@ export function rojoProjects(config) {
 		[ROJO_PROJECT_FILE, rojoProject(config.name, codeTree(), syncbackRules())],
 		[HYBRID_START_PROJECT_FILE, rojoProject(config.name, { ...codeTree(), ...starterWorld() })],
 	]);
+}
+
+function namedRojoProject(name) {
+	return `places/${name}.project.json`;
 }
 
 export function rokitManifest() {

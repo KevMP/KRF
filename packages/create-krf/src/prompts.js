@@ -1,7 +1,7 @@
 import * as clack from "@clack/prompts";
 import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, inspectTarget } from "krf-tools";
 
-import { resolveProjectPath } from "./options.js";
+import { normalizeConfig, resolveProjectPath } from "./options.js";
 
 function cancelled() {
 	return new KrfToolError("Cancelled", "Project creation cancelled. No files were written.", { exitCode: ExitCode.cancelled });
@@ -55,6 +55,23 @@ export async function promptForMissing(given, context) {
 				],
 			}),
 		);
+	}
+
+	if (answers.mode === "full" && answers.places === undefined) {
+		const places = await ask(prompts, prompts.text({
+			message: "Place names (optional, comma-separated)",
+			placeholder: "lobby,dungeon",
+			validate(value) {
+				if (!value?.trim()) return undefined;
+				try {
+					normalizeConfig({ ...answers, places: value }, context.cwd);
+					return undefined;
+				} catch (error) {
+					return error instanceof KrfToolError ? error.message : String(error);
+				}
+			},
+		}));
+		if (places.trim()) answers.places = places;
 	}
 
 	if (answers.ci === undefined) {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { ASSETS_COMMAND, runAssets } from "../src/assets/cli.js";
+import { WORLD_COMMAND, runWorld } from "../src/world/cli.js";
+import { DEPLOY_COMMANDS, runDeployment } from "../src/deploy/cli.js";
 import { runGenerator } from "../src/generate/cli.js";
 import { WORKFLOW_COMMANDS, runWorkflow } from "../src/workflow/cli.js";
 
@@ -11,8 +12,10 @@ const io = {
 	stderr: (text) => process.stderr.write(text),
 };
 
-process.exitCode = WORKFLOW_COMMANDS.includes(argv[0])
+process.exitCode = DEPLOY_COMMANDS.includes(argv[0])
+	? await runDeployment(argv, io)
+	: WORKFLOW_COMMANDS.includes(argv[0])
 	? await runWorkflow(argv, io)
-	: argv[0] === ASSETS_COMMAND
-		? await runAssets(argv, io)
+	: argv[0] === WORLD_COMMAND
+		? await runWorld(argv, io)
 		: await runGenerator(argv, io);

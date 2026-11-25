@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { startAutoCapture } from "../assets/watch.js";
+import { startAutoCapture } from "../world/watch.js";
 import { ExitCode, KrfToolError } from "../errors.js";
-import { HYBRID_START_PROJECT_FILE, ROJO_PROJECT_FILE } from "./project.js";
+import { readPlaceLayout } from "./place-layout.js";
+import { HYBRID_START_PROJECT_FILE, projectForPlace } from "./project.js";
 import { DEFAULT_ROJO_PORT, assertPortAvailable, startRojoServe } from "./rojo.js";
 import { openInStudio, placeOpenInStudio, resolveStudio } from "./studio.js";
 import { buildPlace } from "./tools.js";
@@ -14,13 +15,13 @@ function relative(project, file) {
 
 function preparePlace(system, project, options, io) {
 	if (project.mode === "full") {
-		if (options.place !== undefined) throw new KrfToolError("InvalidOption", "--place applies only to Hybrid projects; Full projects build their place from source.", { exitCode: ExitCode.usage });
 		if (placeOpenInStudio(system, project.place)) {
 			io.stdout(`Roblox Studio already has ${relative(project, project.place)} open, so it was not rebuilt.\n`);
 			return { place: project.place, open: false };
 		}
+		fs.mkdirSync(path.dirname(project.place), { recursive: true });
 		buildPlace(system, project, project.placeProject, project.place);
-		io.stdout(`Built ${relative(project, project.place)} from ${ROJO_PROJECT_FILE}.\n`);
+		io.stdout(`Built ${relative(project, project.place)} from ${relative(project, project.placeProject)}.\n`);
 		return { place: project.place, open: true };
 	}
 
@@ -41,7 +42,20 @@ function preparePlace(system, project, options, io) {
 	return { place, open: true };
 }
 
-export async function runDev(system, project, options, io) {
+function selectPlace(project, options) {
+	if (project.mode !== "full") return project;
+	const layout = readPlaceLayout(project);
+	if (!layout.placeProjects) {
+		if (options.place !== undefined) {
+			throw new KrfToolError("InvalidOption", "Add named Rojo projects in places/ and set krf.startPlace before using --place.", { exitCode: ExitCode.usage });
+		}
+		return project;
+	}
+	return projectForPlace(project, options.place ?? layout.startPlace, layout);
+}
+
+export async function runDev(system, base, options, io) {
+	const project = selectPlace(base, options);
 	const port = options.port ?? DEFAULT_ROJO_PORT;
 	await assertPortAvailable(port, options.port !== undefined);
 	const studio = options.open ? resolveStudio(system, options.studioPath) : undefined;
@@ -58,25 +72,31 @@ export async function runDev(system, project, options, io) {
 
 	try {
 		const readyPort = await serve.ready;
-		io.stdout(`Rojo is serving ${ROJO_PROJECT_FILE} on localhost:${readyPort}.\n`);
+		io.stdout(`Rojo is serving ${relative(project, project.codeProject)} on localhost:${readyPort}.
+`);
 		serve.child.stdout.on("data", (chunk) => io.stdout(chunk.toString()));
 		serve.child.stderr.on("data", (chunk) => io.stderr(chunk.toString()));
 
 		if (studio !== undefined && prepared.open) {
 			const opened = await openInStudio(system, studio, prepared.place);
 			if (!opened.ok) {
-				io.stderr(`Roblox Studio did not open ${relative(project, prepared.place)}: ${opened.detail}. Open it yourself.\n`);
+				io.stderr(`Roblox Studio did not open ${relative(project, prepared.place)}: ${opened.detail}. Open it yourself.
+`);
 			} else {
-				io.stdout(`Opened ${relative(project, prepared.place)} in Roblox Studio.\n`);
+				io.stdout(`Opened ${relative(project, prepared.place)} in Roblox Studio.
+`);
 			}
 		} else if (prepared.open) {
-			io.stdout(`Open ${relative(project, prepared.place)} in Roblox Studio.\n`);
+			io.stdout(`Open ${relative(project, prepared.place)} in Roblox Studio.
+`);
 		}
 
-		if (options.capture) autoCapture = startAutoCapture(system, project, prepared.place, io, { watch: system.watch });
+		if (options.syncback) autoCapture = startAutoCapture(system, project, prepared.place, io, { watch: system.watch });
 
 		io.stdout(
-			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. If the plugin is missing or older than Rojo 7.7, run rojo plugin install.\nPress Ctrl+C to stop Rojo; Studio stays open.\n`,
+			`In Studio, open the Rojo plugin, connect to localhost:${readyPort}, then press Play. If the plugin is missing or older than Rojo 7.7, run rojo plugin install.
+Press Ctrl+C to stop Rojo; Studio stays open.
+`,
 		);
 
 		const code = await serve.exited;

@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { KrfToolError } from "../errors.js";
+import { ExitCode, KrfToolError } from "../errors.js";
 import { findProjectRoot } from "../generate/consumer.js";
+import { readPlaceLayout, resolvePlaceProject } from "./place-layout.js";
 
 export const ROJO_PROJECT_FILE = "default.project.json";
 export const HYBRID_START_PROJECT_FILE = "start-place.project.json";
@@ -20,15 +21,16 @@ function readJson(file) {
 export function readLocalProject(cwd) {
 	const root = findProjectRoot(cwd);
 	const manifest = readJson(path.join(root, "package.json"));
-	const projectFile = path.join(root, ROJO_PROJECT_FILE);
+	const startProject = path.join(root, HYBRID_START_PROJECT_FILE);
+	const hybrid = fs.existsSync(startProject);
+	const { startPlace, placeProjects } = hybrid ? {} : readPlaceLayout({ root }, manifest.krf ?? {});
+	const projectFile = placeProjects ? resolvePlaceProject(root, placeProjects[startPlace]) : path.join(root, ROJO_PROJECT_FILE);
 	if (!fs.existsSync(projectFile)) {
 		throw new KrfToolError("RojoProjectMissing", `${ROJO_PROJECT_FILE} is missing from ${root}.`, {
 			hint: "KRF projects map their source with default.project.json; restore it from version control.",
 		});
 	}
 
-	const startProject = path.join(root, HYBRID_START_PROJECT_FILE);
-	const hybrid = fs.existsSync(startProject);
 	const name = typeof manifest.name === "string" && manifest.name !== "" ? manifest.name : path.basename(root);
 	return Object.freeze({
 		root,
@@ -36,8 +38,23 @@ export function readLocalProject(cwd) {
 		mode: hybrid ? "hybrid" : "full",
 		codeProject: projectFile,
 		placeProject: hybrid ? startProject : projectFile,
-		place: path.join(root, `${name}.rbxl`),
+		place: startPlace === undefined ? path.join(root, `${name}.rbxl`) : devPlaceFile(root, startPlace),
 	});
+}
+
+function devPlaceFile(root, name) {
+	return path.join(root, "build", "krf", "dev", `${name}.rbxl`);
+}
+
+export function projectForPlace(project, name, { placeProjects } = readPlaceLayout(project)) {
+	if (project.mode !== "full" || !placeProjects) {
+		throw new KrfToolError("InvalidOption", "--place requires a Full project with named places.", { exitCode: ExitCode.usage });
+	}
+	if (!Object.hasOwn(placeProjects, name)) {
+		throw new KrfToolError("InvalidOption", `Unknown place "${name}". Available places are ${Object.keys(placeProjects).join(", ")}.`, { exitCode: ExitCode.usage });
+	}
+	const file = resolvePlaceProject(project.root, placeProjects[name]);
+	return { ...project, codeProject: file, placeProject: file, place: devPlaceFile(project.root, name) };
 }
 
 function rebasePaths(node, from, to) {
@@ -51,7 +68,7 @@ function rebasePaths(node, from, to) {
 
 export function deriveProject(project, directory, extend, source = project.codeProject, { fileName = "test.project.json", keep = [] } = {}) {
 	const base = readJson(source);
-	const tree = rebasePaths(base.tree, project.root, directory);
+	const tree = rebasePaths(base.tree, path.dirname(source), directory);
 	extend(tree);
 	const file = path.join(directory, fileName);
 	const settings = Object.fromEntries(keep.filter((key) => base[key] !== undefined).map((key) => [key, base[key]]));

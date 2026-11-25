@@ -107,7 +107,7 @@ export function startAutoCapture(system, project, place, io, { settleMs = SAVE_S
 	const watcher = watch(path.dirname(place), (event, file) => {
 		if (file === null || file === undefined || path.basename(String(file)) === path.basename(place)) schedule();
 	});
-	io.stdout(`Saving ${input.shown} in Studio captures ${topLevelPaths(scope.roots).length === 1 ? topLevelPaths(scope.roots)[0] : "the mapped world folders"} automatically; npm run dev -- --no-capture turns this off.\n`);
+	io.stdout(`Saving ${input.shown} in Studio captures ${topLevelPaths(scope.roots).length === 1 ? topLevelPaths(scope.roots)[0] : "the mapped world folders"} automatically; npm run dev -- --no-syncback turns this off.\n`);
 
 	return {
 		stop() {

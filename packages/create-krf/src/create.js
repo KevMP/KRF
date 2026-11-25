@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { KRF_RUNTIME, KrfToolError, renderTemplates, writeNewDirectory } from "krf-tools";
 
 import { CREATOR_VERSION, ROKIT_VERSION } from "./compatibility.js";
-import { HYBRID_START_PROJECT_FILE, ROJO_PROJECT_FILE, generatedManifests } from "./manifests.js";
+import { ROJO_PROJECT_FILE, generatedManifests } from "./manifests.js";
 
 const TEMPLATES = fileURLToPath(new URL("../templates/", import.meta.url));
 
@@ -13,6 +13,7 @@ export function templateRoots(config) {
 	const roots = [path.join(TEMPLATES, "base")];
 	if (config.options.mode === "full") roots.push(path.join(TEMPLATES, "full"));
 	if (config.options.ci) roots.push(path.join(TEMPLATES, "ci"));
+	if (config.options.ci && config.options.mode === "full") roots.push(path.join(TEMPLATES, "release"));
 	return roots;
 }
 
@@ -21,15 +22,18 @@ export function templateRoots(config) {
  * @returns {Map<string, Buffer>}
  */
 export function buildProjectFiles(config) {
-	const rendered = renderTemplates(templateRoots(config), {
+	const places = config.options.places;
+	const templates = renderTemplates(templateRoots(config), {
 		name: config.name,
 		options: config.options,
 		runtime: KRF_RUNTIME,
 		creatorVersion: CREATOR_VERSION,
 		rokitVersion: ROKIT_VERSION,
 		rojoProjectFile: ROJO_PROJECT_FILE,
-		startProjectFile: HYBRID_START_PROJECT_FILE,
 	});
+	const rendered = places === undefined ? templates : new Map([...templates].flatMap(([file, contents]) => (
+		file.startsWith("world/") ? places.map((name) => [`world/${name}/${file.slice("world/".length)}`, contents]) : [[file, contents]]
+	)));
 
 	for (const [file, contents] of generatedManifests(config)) {
 		if (rendered.has(file)) throw new Error(`Template and generated manifest both produce ${file}`);

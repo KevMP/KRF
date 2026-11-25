@@ -35,7 +35,7 @@ export function assertRojoSupportsSyncback(system, project) {
 	const version = readRojoVersion(system, project);
 	if (atLeast(version, MINIMUM_ROJO_VERSION)) return;
 	const minimum = MINIMUM_ROJO_VERSION.join(".");
-	throw new KrfToolError("RojoTooOld", `npm run assets:syncback needs Rojo ${minimum} or newer, but this project runs Rojo ${version.join(".")}.`, {
+	throw new KrfToolError("RojoTooOld", `npm run world:syncback needs Rojo ${minimum} or newer, but this project runs Rojo ${version.join(".")}.`, {
 		hint: `Set rojo = "rojo-rbx/rojo@${minimum}" in rokit.toml, then run npm install.`,
 	});
 }

@@ -66,7 +66,7 @@ export const creatorConfigSchema = z.strictObject({
 });
 
 /**
- * @typedef {{ projectPath?: string, mode?: string, ci?: boolean, git?: boolean }} CreatorInput
+ * @typedef {{ projectPath?: string, mode?: string, places?: string, ci?: boolean, git?: boolean }} CreatorInput
  * @typedef {z.infer<typeof creatorConfigSchema>} CreatorConfig
  */
 
@@ -84,6 +84,7 @@ export function normalizeConfig(input, cwd) {
 		options: {
 			mode: input.mode ?? PROJECT_OPTION_DEFAULTS.mode,
 			ci: input.ci ?? PROJECT_OPTION_DEFAULTS.ci,
+			...(input.places === undefined ? {} : { places: input.places.split(",").map((name) => name.trim()) }),
 		},
 		git: input.git ?? SETUP_DEFAULTS.git,
 	};
@@ -91,7 +92,7 @@ export function normalizeConfig(input, cwd) {
 	const result = creatorConfigSchema.safeParse(candidate);
 	if (!result.success) {
 		const issue = result.error.issues[0];
-		const field = issue.path.at(-1);
+		const field = issue.path[1] ?? issue.path.at(-1);
 		throw new KrfToolError("InvalidOption", `Invalid --${String(field)}: ${issue.message}.`, {
 			hint: "Run create-krf --help for supported values.",
 			exitCode: ExitCode.usage,
