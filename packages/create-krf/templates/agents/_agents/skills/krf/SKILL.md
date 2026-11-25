@@ -1,0 +1,60 @@
+---
+name: krf
+description: Build Roblox gameplay with KRF. Use for abilities, attacks, dashes, cooldowns, stats, buffs and debuffs, status effects, health, mana, stamina or other resources, player input and keybinds, showing game state in the client UI, client-to-server requests, and the build, test and deploy scripts of a KRF game.
+---
+
+# KRF
+
+KRF is a Luau framework for server-authoritative gameplay in Roblox. Players and NPCs share one model: each character is an Actor, and everything about it is built from a small set of primitives. Each primitive has a reference that explains when to use it, who owns its state, the rules it enforces and the mistakes to avoid.
+
+| Primitive | What it is | Reference |
+| --- | --- | --- |
+| Actors and Controllers | An Actor is one character's lifetime. Controllers hold that Actor's state, including state the game adds. | [actors-and-controllers.md](references/actors-and-controllers.md) |
+| Properties | Stats with a base value and the modified value gameplay reads. | [tags-and-properties.md](references/tags-and-properties.md) |
+| Tags | Statuses such as Stunned or Burning, with optional duration, stacks and Property modifiers. | [tags-and-properties.md](references/tags-and-properties.md) |
+| Resources | Values that are spent and regained, with bounds and regeneration. | [resources.md](references/resources.md) |
+| Actions | Abilities with requirements, costs, locks against conflicting abilities, and a lifecycle that cleans up after itself. | [actions.md](references/actions.md) |
+| Action requests, input routes and controls | How a client asks the server to start or stop an Action, and how keys, buttons and gestures map to those requests. | [action-input.md](references/action-input.md) |
+| Client views | What a client can read of an Actor's Tags, Resources and running Actions. | [client-views.md](references/client-views.md) |
+| Replication domains and schemas | Publishing game-owned state to the clients allowed to see it. | [replication.md](references/replication.md) |
+| Commands | Authorized client-to-server operations that aren't abilities. | [commands.md](references/commands.md) |
+| Hints | Missable cosmetic signals, such as hit sparks or camera shake. | [hints.md](references/hints.md) |
+
+Three more references cover the project rather than gameplay: [generators.md](references/generators.md) for creating definitions, [project.md](references/project.md) for the layout, startup, scripts and tests, and [world-and-deploy.md](references/world-and-deploy.md) for saving the Studio world into source and deploying.
+
+## Design with the primitives
+
+Before writing code, work out which primitives a feature is made of. Most gameplay ideas are one or two of them combined: a cooldown is a Resource that regenerates to full, a slow is a Tag with a speed modifier, and a channel that ends when the player lets go is an Action on a WhileDown input route.
+
+Take "a Fireball that fires where the player aims when they press Q, costs Mana, and sets whatever it hits Burning":
+
+| Part of the feature | Primitive | Reference |
+| --- | --- | --- |
+| The Fireball | Action | [actions.md](references/actions.md) |
+| Costs Mana | Resource | [resources.md](references/resources.md) |
+| Fires on Q, aimed with the mouse | Action request and input route | [action-input.md](references/action-input.md) |
+| Sets what it hits Burning | Tag | [tags-and-properties.md](references/tags-and-properties.md) |
+
+Those four references are all this feature needs. Showing the player's Mana bar would add [client-views.md](references/client-views.md).
+
+When a feature seems to need a custom timer, stat table or remote, look again for a primitive that covers it. Write a custom Controller only for state that none of them describes, and publish it with a replication domain if clients need it. If a feature truly falls outside every primitive, it's ordinary game code: write it in the game, and use KRF only where it fits.
+
+## Before you start
+
+These references describe KRF 0.1.0. Check the `KRF` entry in the game's `wally.toml`. If it pins a different version, the references may be out of date: check every API you use against the installed package's types in `Packages/_Index/`, and trust those types over the references.
+
+## How to work
+
+1. Work out which primitives the feature uses, and open only their references.
+2. When a reference points into `references/docs/` for exact fields, signatures or error codes, open that page and read only the section you need.
+3. Never create a KRF definition by hand. Run its generator with every flag the definition needs, then edit the file it writes. See [generators.md](references/generators.md).
+4. Use only public KRF APIs from the references and docs. If something you need isn't there, say so instead of reaching into KRF internals.
+5. Run `npm run check`. If Roblox Studio is installed, also run `npm test`. Report what passed, what failed and what you could not verify.
+
+## Rules that always apply
+
+- The server decides gameplay. Clients send requests and read views; they never change Tags, Resources, Properties or Actions directly.
+- Anything a client sends, such as aim, a target or a position, is a claim. Schemas check its shape; the server checks whether it makes sense.
+- State belongs to an Actor. Register a character's Model as an Actor before it gains Tags, Resources or Actions.
+- Definitions describe shared rules. Per-character values live in Controllers, never in definition tables.
+- KRF has no UI. The game builds its own UI and reads state from client views.
