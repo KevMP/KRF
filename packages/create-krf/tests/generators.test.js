@@ -31,7 +31,7 @@ function newProject(t, mode = "full") {
 	const parent = fs.mkdtempSync(path.join(os.tmpdir(), "krf-generate-"));
 	t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
 	const root = path.join(parent, "my-game");
-	writeNewDirectory(root, buildProjectFiles({ target: root, name: "my-game", options: { mode, ci: false }, git: false }));
+	writeNewDirectory(root, buildProjectFiles({ target: root, name: "my-game", options: { mode, ci: false, agents: false }, git: false }));
 	return root;
 }
 

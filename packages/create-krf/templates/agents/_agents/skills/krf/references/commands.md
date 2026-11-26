@@ -96,7 +96,7 @@ local function onOutcome(outcome: KRF.CommandResult): ()
 	buyButton.Active = true
 
 	if outcome.status == "Rejected" then
-		showError(outcome.reason)
+		showError(outcome.reason or "Rejected")
 	end
 end
 

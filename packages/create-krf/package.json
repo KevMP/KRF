@@ -27,6 +27,8 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepack": "node scripts/skill-docs.js",
+    "postpack": "node scripts/skill-docs.js --clean",
     "test": "node --test \"tests/*.test.js\"",
     "test:integration": "node --test --test-concurrency=1 \"tests/integration/*.test.js\""
   },

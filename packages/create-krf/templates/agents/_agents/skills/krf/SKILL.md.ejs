@@ -1,6 +1,6 @@
 ---
 name: krf
-description: Build Roblox gameplay with KRF. Use for abilities, attacks, dashes, interactions such as doors and seats, cooldowns, stats, buffs and debuffs, status effects, health, mana, stamina or other resources, player input and keybinds, showing game state in the client UI, client-to-server requests, and the build, test and deploy scripts of a KRF game.
+description: Build Roblox gameplay with KRF. Use for abilities, attacks, dashes, interactions such as doors and seats, cooldowns, stats, buffs and debuffs, status effects, health, mana, stamina or other resources, player input and keybinds, showing game state in the client UI, client-to-server requests, and creating definitions with the game's generators.
 ---
 
 # KRF
@@ -20,7 +20,7 @@ KRF is a Luau framework for server-authoritative gameplay in Roblox. Players and
 | Commands | Authorized client-to-server operations that aren't something a character does, such as buying an item or changing a setting. | [commands.md](references/commands.md) |
 | Hints | Missable cosmetic signals, such as hit sparks or camera shake. | [hints.md](references/hints.md) |
 
-Three more references cover the project rather than gameplay: [generators.md](references/generators.md) for creating definitions, [project.md](references/project.md) for the layout, startup, scripts and tests, and [world-and-deploy.md](references/world-and-deploy.md) for saving the Studio world into source and deploying.
+[generators.md](references/generators.md) covers creating every kind of definition, with each generator's flags and how to read its result.
 
 ## Design with the primitives
 
@@ -41,7 +41,7 @@ When a feature seems to need a custom timer, stat table or remote, look again fo
 
 ## Before you start
 
-These references describe KRF 0.1.0. Check the `KRF` entry in the game's `wally.toml`. If it pins a different version, the references may be out of date: check every API you use against the installed package's types in `Packages/_Index/`, and trust those types over the references.
+These references describe KRF <%= runtime.version %>. Check the `KRF` entry in the game's `wally.toml`. If it pins a different version, the references may be out of date: check every API you use against the installed package's types in `Packages/_Index/`, and trust those types over the references.
 
 ## How to work
 

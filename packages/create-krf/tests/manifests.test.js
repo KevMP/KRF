@@ -18,7 +18,7 @@ for (const mode of ["full", "hybrid"])
 const config = (options, name = "my-game") => ({
 	target: `/projects/${name}`,
 	name,
-	options: { mode: "full", ci: true, ...options },
+	options: { mode: "full", ci: true, agents: false, ...options },
 	git: false,
 });
 

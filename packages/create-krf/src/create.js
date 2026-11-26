@@ -14,6 +14,7 @@ export function templateRoots(config) {
 	if (config.options.mode === "full") roots.push(path.join(TEMPLATES, "full"));
 	if (config.options.ci) roots.push(path.join(TEMPLATES, "ci"));
 	if (config.options.ci && config.options.mode === "full") roots.push(path.join(TEMPLATES, "release"));
+	if (config.options.agents) roots.push(path.join(TEMPLATES, "agents"));
 	return roots;
 }
 

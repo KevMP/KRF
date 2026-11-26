@@ -77,16 +77,18 @@ const WIZARD_ANSWERS = (config) => ({
 	"Project mode": config.mode,
 	"Place names (optional, comma-separated)": config.places ?? "",
 	"Add a GitHub Actions workflow that checks and builds on every push and pull request?": config.ci,
+	"Add AGENTS.md and the KRF skill so coding agents such as Codex and Claude Code can work on the game?": config.agents,
 });
 
 const MATRIX = [];
-for (const mode of ["full", "hybrid"]) for (const ci of [true, false]) MATRIX.push({ mode, ci });
-MATRIX.push({ mode: "full", ci: true, places: "lobby,dungeon" });
+for (const mode of ["full", "hybrid"]) for (const ci of [true, false]) MATRIX.push({ mode, ci, agents: ci });
+MATRIX.push({ mode: "full", ci: true, agents: true, places: "lobby,dungeon" });
 
 const flagsFor = (config) => [
 	"--mode",
 	config.mode,
 	BOOLEAN_FLAG("ci", config.ci),
+	BOOLEAN_FLAG("agents", config.agents),
 	...(config.places ? ["--places", config.places] : []),
 	"--no-git",
 ];
@@ -96,6 +98,18 @@ test("--yes creates the default project without prompting", async (t) => {
 	assert.equal(result.code, 0, result.stderr);
 
 	assert.deepEqual(Object.keys(readTree(path.join(result.cwd, "my-game"))).sort(), [
+		".agents/skills/krf/SKILL.md",
+		".agents/skills/krf/references/action-input.md",
+		".agents/skills/krf/references/actions.md",
+		".agents/skills/krf/references/actors-and-controllers.md",
+		".agents/skills/krf/references/client-views.md",
+		".agents/skills/krf/references/commands.md",
+		".agents/skills/krf/references/generators.md",
+		".agents/skills/krf/references/hints.md",
+		".agents/skills/krf/references/properties.md",
+		".agents/skills/krf/references/replication.md",
+		".agents/skills/krf/references/resources.md",
+		".agents/skills/krf/references/tags.md",
 		".github/workflows/ci.yml",
 		".github/workflows/deploy.yml",
 		".github/workflows/release-pr.yml",
@@ -103,6 +117,7 @@ test("--yes creates the default project without prompting", async (t) => {
 		".gitignore",
 		".vscode/extensions.json",
 		".vscode/settings.json",
+		"AGENTS.md",
 		"README.md",
 		"default.project.json",
 		"package.json",
@@ -207,12 +222,14 @@ test("the wizard and explicit flags create identical projects for every option c
 			assert.equal(`.github/workflows/${workflow}` in flagTree, config.ci && config.mode === "full");
 		}
 		assert.equal("start-place.project.json" in flagTree, config.mode === "hybrid");
+		assert.equal("AGENTS.md" in flagTree, config.agents);
+		assert.equal(".agents/skills/krf/SKILL.md" in flagTree, config.agents);
 	}
 });
 
 test("the wizard asks only for values the command line did not supply", async (t) => {
 	const { prompts, asked } = scriptedPrompts({ "Project mode": "hybrid" });
-	const result = await create(t, ["arena", "--no-ci", "--no-git"], { prompts });
+	const result = await create(t, ["arena", "--no-ci", "--no-agents", "--no-git"], { prompts });
 	assert.equal(result.code, 0, result.stderr);
 	assert.deepEqual(asked, ["Project mode"]);
 
@@ -259,7 +276,6 @@ test("rejects invalid names, unsafe paths and bad values before writing", async 
 		["my-game", "--yes", "--mode", "hybrid", "--places", "lobby,dungeon"],
 		["my-game", "--yes", "--skip-install"],
 		["my-game", "--yes", "--tooling", "minimal"],
-		["my-game", "--yes", "--agents"],
 		["my-game", "--yes", "--unknown"],
 	]) {
 		const result = await create(t, argv);
@@ -332,7 +348,7 @@ test("documents and workflows mention only npm scripts the project has", async (
 test("--help documents the flags and --version prints the creator version", async (t) => {
 	const help = await create(t, ["--help"]);
 	assert.equal(help.code, 0);
-	for (const flag of ["--mode", "--no-ci", "--no-git", "--yes"]) {
+	for (const flag of ["--mode", "--no-ci", "--no-agents", "--no-git", "--yes"]) {
 		assert.match(help.stdout, new RegExp(flag));
 	}
 	assert.doesNotMatch(help.stdout, /install/);

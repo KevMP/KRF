@@ -84,5 +84,15 @@ export async function promptForMissing(given, context) {
 		);
 	}
 
+	if (answers.agents === undefined) {
+		answers.agents = await ask(
+			prompts,
+			prompts.confirm({
+				message: "Add AGENTS.md and the KRF skill so coding agents such as Codex and Claude Code can work on the game?",
+				initialValue: PROJECT_OPTION_DEFAULTS.agents,
+			}),
+		);
+	}
+
 	return answers;
 }

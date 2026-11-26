@@ -2,9 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const cp = require("child_process");
 
+const { prepareSkillExamples } = require("./skill-examples.cjs");
+
 const TEMP_DIR = ".typecheck";
 const DEFINITIONS_PATH = path.join(TEMP_DIR, "globalTypes.PluginSecurity.d.luau");
 const DEFINITIONS_URL = "https://luau-lsp.pages.dev/type-definitions/globalTypes.PluginSecurity.d.luau";
+const SKILL_EXAMPLES = path.join(TEMP_DIR, "skill-examples");
 
 async function downloadRobloxDefinitions() {
 	const response = await fetch(DEFINITIONS_URL);
@@ -22,6 +25,32 @@ function runTool(command, args) {
 	return result.status ?? 1;
 }
 
+function analyze(sourcemap, inputs) {
+	return runTool("luau-lsp", [
+		"analyze",
+		"--flag:LuauSolverV2=true",
+		"--platform",
+		"roblox",
+		"--no-strict-dm-types",
+		`--definitions:@roblox=${DEFINITIONS_PATH}`,
+		"--sourcemap",
+		sourcemap,
+		"--formatter",
+		"gnu",
+		"--ignore",
+		"DevPackages/**",
+		"--ignore",
+		"**/_Index/**",
+		...inputs,
+	]);
+}
+
+function analyzeSkillExamples() {
+	const examples = prepareSkillExamples(SKILL_EXAMPLES);
+	const exitCode = runTool("rojo", ["sourcemap", "--absolute", examples.project, "--output", examples.sourcemap]);
+	return exitCode === 0 ? analyze(examples.sourcemap, [SKILL_EXAMPLES]) : exitCode;
+}
+
 async function main() {
 	let exitCode = 1;
 
@@ -37,24 +66,11 @@ async function main() {
 		]);
 
 		if (exitCode === 0) {
-			exitCode = runTool("luau-lsp", [
-				"analyze",
-				"--flag:LuauSolverV2=true",
-				"--platform",
-				"roblox",
-				"--no-strict-dm-types",
-				`--definitions:@roblox=${DEFINITIONS_PATH}`,
-				"--sourcemap",
-				"sourcemap.json",
-				"--formatter",
-				"gnu",
-				"--ignore",
-				"DevPackages/**",
-				"--ignore",
-				"**/_Index/**",
-				"src",
-				"tests",
-			]);
+			exitCode = analyze("sourcemap.json", ["src", "tests"]);
+		}
+
+		if (exitCode === 0) {
+			exitCode = analyzeSkillExamples();
 		}
 	} finally {
 		fs.rmSync(TEMP_DIR, { recursive: true, force: true });

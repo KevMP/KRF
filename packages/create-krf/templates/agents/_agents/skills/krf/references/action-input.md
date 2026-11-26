@@ -166,12 +166,12 @@ For every field type and request flag, see [generators.md](generators.md#createa
 
 ## Check the claim on the server
 
-The schema checks the payload's shape. It can't tell whether the aim makes sense. Check that in `onCanStart`, so a bad claim is rejected before KRF spends anything:
+The schema checks the payload's shape. It can't tell whether the aim makes sense. Check that in `onCanStart`, so a bad claim is rejected before KRF spends anything. Write the check in the Action's module and set `onCanStart = targetInRange` in its definition:
 
 ```lua
 local MAX_RANGE: number = 120
 
-onCanStart = function(context: KRF.ActionStartContext): (boolean, string?)
+local function targetInRange(context: KRF.ActionStartContext): (boolean, string?)
 	local target: { number } = (context.parameters :: { Target: { number } }).Target
 	local model: Model? = context.actor.model
 	local root: BasePart? = if model ~= nil then model.PrimaryPart else nil
@@ -187,7 +187,7 @@ onCanStart = function(context: KRF.ActionStartContext): (boolean, string?)
 	end
 
 	return true, nil
-end,
+end
 ```
 
 Then work from the server's own state in `onStart`. Aim from the caster's position on the server, not one the client sent, and run hit detection on the server.

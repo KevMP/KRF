@@ -21,6 +21,9 @@ sourcemap.json
 
 DevPackages
 
+# Reference docs copied into the create-krf skill when it is packed
+/packages/create-krf/templates/agents/_agents/skills/krf/references/docs/
+
 # NPM
 node_modules
 coverage

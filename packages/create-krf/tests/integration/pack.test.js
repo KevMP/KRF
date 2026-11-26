@@ -6,12 +6,12 @@ import test from "node:test";
 
 import { KRF_RUNTIME } from "krf-tools";
 
-import { createProject, generateDefinitions, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
+import { PACKAGES, createProject, generateDefinitions, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
 import { child, inspectBuild, serveTree, shape, walk } from "./Utils/place.js";
 
 const VARIANTS = [
-	{ mode: "full", flags: ["--ci"] },
-	{ mode: "hybrid", flags: ["--no-ci"] },
+	{ mode: "full", flags: ["--ci"], agents: true },
+	{ mode: "hybrid", flags: ["--no-ci", "--no-agents"], agents: false },
 ];
 
 const LEAKED_NAMES = /^(tests?|spec|jest|DevPackages|node_modules|package|krf-tools|coverage|.github)$|.spec$|.test$/i;
@@ -24,6 +24,10 @@ test("packed create-krf projects install the published KRF, check and build in e
 	assert.ok(packed.creator.files.includes("templates/base/_gitignore"), "npm must keep the gitignore template");
 	assert.ok(packed.creator.files.includes("templates/base/src/server/Startup.server.luau"));
 	assert.ok(packed.creator.files.includes("templates/base/_vscode/settings.json.ejs"));
+	assert.ok(packed.creator.files.includes("templates/agents/_agents/skills/krf/SKILL.md.ejs"));
+	assert.ok(packed.creator.files.includes("templates/agents/_agents/skills/krf/references/docs/actions/guide.md"), "the skill must ship the reference docs");
+	assert.equal(fs.existsSync(path.join(PACKAGES, "create-krf", "templates", "agents", "_agents", "skills", "krf", "references", "docs")), false, "packing must not leave the copied docs behind");
+	assert.ok(!packed.creator.files.some((file) => file.startsWith("scripts/")), "pack scripts must not ship");
 	assert.ok(!packed.creator.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(!packed.tooling.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(packed.tooling.files.includes("bin/krf-tools.js"), "the generator executable must ship");
@@ -38,6 +42,9 @@ test("packed create-krf projects install the published KRF, check and build in e
 			const manifest = JSON.parse(generated["package.json"]);
 			assert.deepEqual(manifest.devDependencies, { "krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` }, "the project installs the krf-tools tarball the creator came from");
 			assert.equal(fs.existsSync(path.join(project, "node_modules")), false);
+			assert.equal("AGENTS.md" in generated, variant.agents);
+			assert.equal(".agents/skills/krf/references/docs/actions/guide.md" in generated, variant.agents);
+			assert.equal(Object.keys(generated).some((file) => file.startsWith(".agents/")), variant.agents);
 
 			run("npm", ["install"], project);
 			assert.equal(generated["wally.lock"], undefined, "Wally writes the lockfile, not the creator");
