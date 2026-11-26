@@ -2,6 +2,8 @@ import packageJson from "../package.json" with { type: "json" };
 
 export const TOOLS_PACKAGE = packageJson.name;
 
+export const TOOLS_COMMAND = Object.keys(packageJson.bin)[0];
+
 export const TOOLS_VERSION = packageJson.version;
 
 export const KRF_RUNTIME = Object.freeze({ package: "kevmp/krf", version: "0.2.1" });

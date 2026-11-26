@@ -1,7 +1,7 @@
 // `npm create krf@latest [project-name] -- [options]`: the wizard and flags share one config.
 import path from "node:path";
 import { Command, CommanderError, Option } from "commander";
-import { ExitCode, KRF_RUNTIME, KrfToolError, formatError } from "krf-tools";
+import { ExitCode, KRF_RUNTIME, KrfToolError, formatError } from "@kevmp/krf-tools";
 
 import { CREATOR_VERSION } from "./compatibility.js";
 import { assertSetupSucceeded, createProject } from "./create.js";

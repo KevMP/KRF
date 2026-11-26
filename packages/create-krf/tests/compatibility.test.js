@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { KRF_RUNTIME } from "krf-tools";
+import { KRF_RUNTIME } from "@kevmp/krf-tools";
 
 import { CREATOR_VERSION } from "../src/compatibility.js";
 
@@ -17,7 +17,7 @@ test("pins exact creator and runtime versions", () => {
 });
 
 test("depends on the krf-tools version in this repository", () => {
-	assert.equal(creatorPackage.dependencies["krf-tools"], toolingPackage.version);
+	assert.equal(creatorPackage.dependencies[toolingPackage.name], toolingPackage.version);
 });
 
 test("publishes the executable, source and bundled templates", () => {

@@ -5,8 +5,8 @@ const { checkNpmVersion, checkReleaseVersions, classifyRegistryLookup, decidePub
 
 const INTEGRITY = "sha512-tested==";
 
-const tooling = (version = "0.1.0") => ({ name: "krf-tools", version });
-const creator = (pinned = "0.1.0", version = "0.1.0") => ({ name: "create-krf", version, dependencies: { "krf-tools": pinned, zod: "4.6.7" } });
+const tooling = (version = "0.1.0") => ({ name: "@kevmp/krf-tools", version });
+const creator = (pinned = "0.1.0", version = "0.1.0") => ({ name: "create-krf", version, dependencies: { "@kevmp/krf-tools": pinned, zod: "4.6.7" } });
 
 test("checkReleaseVersions accepts release versions with an exact krf-tools pin", () => {
 	assert.deepEqual(checkReleaseVersions({ tooling: tooling(), creator: creator() }), { ok: true });
@@ -17,7 +17,7 @@ test("checkReleaseVersions rejects a creator that doesn't pin the krf-tools bein
 	for (const pinned of ["0.0.9", "^0.1.0", "~0.1.0", "file:../krf-tools"]) {
 		const result = checkReleaseVersions({ tooling: tooling(), creator: creator(pinned) });
 		assert.equal(result.ok, false, pinned);
-		assert.match(result.reason, /must pin krf-tools 0\.1\.0 exactly/);
+		assert.match(result.reason, /must pin @kevmp\/krf-tools 0\.1\.0 exactly/);
 	}
 
 	const missing = checkReleaseVersions({ tooling: tooling(), creator: { name: "create-krf", version: "0.1.0" } });

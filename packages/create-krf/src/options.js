@@ -1,7 +1,7 @@
 // One normalized configuration for the wizard, `--yes` and explicit flags.
 import path from "node:path";
 import { z } from "zod";
-import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, projectOptionsSchema } from "krf-tools";
+import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, projectOptionsSchema } from "@kevmp/krf-tools";
 
 /** Defaults for steps that run after the files are written. */
 export const SETUP_DEFAULTS = Object.freeze({ git: true });

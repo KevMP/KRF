@@ -1,5 +1,5 @@
 import * as clack from "@clack/prompts";
-import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, inspectTarget } from "krf-tools";
+import { ExitCode, KrfToolError, PROJECT_OPTION_DEFAULTS, inspectTarget } from "@kevmp/krf-tools";
 
 import { normalizeConfig, resolveProjectPath } from "./options.js";
 

@@ -1,4 +1,4 @@
-export { KRF_RUNTIME, SUPPORTED_KRF_VERSIONS, TEST_PACKAGES, TOOLS_PACKAGE, TOOLS_VERSION } from "./compatibility.js";
+export { KRF_RUNTIME, SUPPORTED_KRF_VERSIONS, TEST_PACKAGES, TOOLS_COMMAND, TOOLS_PACKAGE, TOOLS_VERSION } from "./compatibility.js";
 export { ExitCode, KrfToolError, formatError } from "./errors.js";
 export { PROJECT_OPTION_DEFAULTS, projectOptionsSchema } from "./project.js";
 export { outputPath, renderTemplate, renderTemplates } from "./render.js";

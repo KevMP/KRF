@@ -80,7 +80,7 @@ jobs:
           name: npm-tarballs
           path: build/npm
 
-      - name: Publish krf-tools, then create-krf
+      - name: Publish @kevmp/krf-tools, then create-krf
         run: node scripts/release-npm.cjs publish --from build/npm
 
   verify:

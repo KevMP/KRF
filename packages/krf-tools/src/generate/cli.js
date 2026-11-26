@@ -1,6 +1,6 @@
 import { Command, CommanderError, Option } from "commander";
 
-import { TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
+import { TOOLS_COMMAND, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { applyProjectChanges } from "../files.js";
 import { CATALOGS, KINDS } from "./catalogs.js";
@@ -97,7 +97,7 @@ const EXAMPLES = {
 const collect = (value, previous = []) => [...previous, value];
 
 function buildProgram(io, onSelect) {
-	const program = new Command(TOOLS_PACKAGE)
+	const program = new Command(TOOLS_COMMAND)
 		.description("KRF project tools. Run them through the project's npm scripts.")
 		.version(TOOLS_VERSION, "-v, --version")
 		.helpOption("-h, --help")

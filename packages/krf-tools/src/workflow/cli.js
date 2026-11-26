@@ -1,7 +1,7 @@
 import { Command, CommanderError } from "commander";
 import { z } from "zod";
 
-import { TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
+import { TOOLS_COMMAND, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { runDev } from "./dev.js";
 import { readLocalProject } from "./project.js";
@@ -36,7 +36,7 @@ const RUNNERS = {
 };
 
 function buildProgram(io, onSelect) {
-	const program = new Command(TOOLS_PACKAGE)
+	const program = new Command(TOOLS_COMMAND)
 		.version(TOOLS_VERSION, "-v, --version")
 		.exitOverride()
 		.configureOutput({ writeOut: io.stdout, writeErr: io.stderr });

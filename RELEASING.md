@@ -77,10 +77,11 @@ version and note the problem in the earlier GitHub Release.
 
 ## npm packages
 
-[`create-krf`](./packages/create-krf) and [`krf-tools`](./packages/krf-tools) are published to npm
+[`create-krf`](./packages/create-krf) and [`@kevmp/krf-tools`](./packages/krf-tools) are published to npm
 by [`release-npm.yml`](./.github/workflows/release-npm.yml), which a maintainer starts by hand. They
-version independently of the runtime, and every generated project depends on the exact `krf-tools`
-release its creator pinned, so `krf-tools` is always published first.
+version independently of the runtime, and every generated project depends on the exact `@kevmp/krf-tools`
+release its creator pinned, so `@kevmp/krf-tools` is always published first. Its executable is
+still called `krf-tools`, which is what generated projects' npm scripts run.
 
 `create-krf` records the KRF runtime version its templates target in
 [`krf-tools/src/compatibility.js`](./packages/krf-tools/src/compatibility.js) as `KRF_RUNTIME`.
@@ -89,7 +90,7 @@ It must name a verified Wally release, and `SUPPORTED_KRF_VERSIONS` lists every 
 ### Bump the versions
 
 In a pull request, set `version` in both packages' `package.json`, and set `create-krf`'s
-`krf-tools` dependency to the new `krf-tools` version exactly. Then run `npm install` so
+`@kevmp/krf-tools` dependency to the new `@kevmp/krf-tools` version exactly. Then run `npm install` so
 `package-lock.json` follows. Both versions must be new on npm, even when only one package changed,
 because the creator pins the tools it was tested with. Prereleases aren't supported.
 
@@ -107,8 +108,8 @@ GitHub Actions. It has three jobs:
 
 | Job | What it does |
 | --- | --- |
-| `preflight` | Refuses to continue unless the commit is on `main`, CI passed on it, both versions are release versions that npm doesn't have, `create-krf` pins the `krf-tools` version being published, and `KRF_RUNTIME` has a GitHub Release. Then it packs both tarballs, creates every configuration from those exact files, and uploads them. |
-| `publish` | Runs in the `npm-release` environment and publishes the uploaded tarballs with npm trusted publishing: `krf-tools`, then `create-krf`. Provenance is attached automatically. A version npm already has with the same integrity is skipped, so re-running the job after a partial publish finishes it. |
+| `preflight` | Refuses to continue unless the commit is on `main`, CI passed on it, both versions are release versions that npm doesn't have, `create-krf` pins the `@kevmp/krf-tools` version being published, and `KRF_RUNTIME` has a GitHub Release. Then it packs both tarballs, creates every configuration from those exact files, and uploads them. |
+| `publish` | Runs in the `npm-release` environment and publishes the uploaded tarballs with npm trusted publishing: `@kevmp/krf-tools`, then `create-krf`. Provenance is attached automatically. A version npm already has with the same integrity is skipped, so re-running the job after a partial publish finishes it. |
 | `verify` | Waits until npm serves both versions with the tested integrity, runs `npx create-krf@<version> smoke --yes` in a clean directory with an empty npm cache, then installs and builds that project. |
 
 ### Recovery
@@ -116,8 +117,8 @@ GitHub Actions. It has three jobs:
 | Failure | Recovery |
 | --- | --- |
 | `preflight` fails | Nothing was published. Fix the cause in a pull request and run the workflow again on the new `main` commit. |
-| `publish` fails before npm accepts `krf-tools` | Nothing was published. Fix the cause, for example the trusted publisher settings, then choose **Re-run failed jobs**. |
-| `publish` fails after `krf-tools` is published | Choose **Re-run failed jobs**. The job skips `krf-tools` because npm has the same tarball, then publishes `create-krf`. Don't start a new run: its preflight stops because `krf-tools` already exists. |
+| `publish` fails before npm accepts `@kevmp/krf-tools` | Nothing was published. Fix the cause, for example the trusted publisher settings, then choose **Re-run failed jobs**. |
+| `publish` fails after `@kevmp/krf-tools` is published | Choose **Re-run failed jobs**. The job skips `@kevmp/krf-tools` because npm has the same tarball, then publishes `create-krf`. Don't start a new run: its preflight stops because `@kevmp/krf-tools` already exists. |
 | npm has a version with other contents | Someone published that version outside the workflow. Don't overwrite it: bump both versions and release again. |
 | `verify` fails | npm has already accepted both versions, and the workflow never republishes. Re-run `verify` if the failure was a registry delay or network error. Otherwise fix the problem, bump both versions, and release again; deprecate the broken versions with `npm deprecate <package>@<version> "<reason>"`. |
 
@@ -131,7 +132,7 @@ authentication.
 1. In the repository settings, create an environment named `npm-release`, and limit its deployment
    branches to `main`.
 2. Publish a placeholder for each package. In an empty directory, create a `package.json` like this
-   one, then run `npm publish --access public`. Repeat for `krf-tools`.
+   one, then run `npm publish --access public`. Repeat with the name `@kevmp/krf-tools`.
 
    ```json
    {
@@ -145,9 +146,9 @@ authentication.
 3. Link each package to the workflow, then deprecate its placeholder:
 
    ```bash
-   npm trust github krf-tools --file release-npm.yml --repo KevMP/KRF --env npm-release --allow-publish
+   npm trust github @kevmp/krf-tools --file release-npm.yml --repo KevMP/KRF --env npm-release --allow-publish
    npm trust github create-krf --file release-npm.yml --repo KevMP/KRF --env npm-release --allow-publish
-   npm deprecate krf-tools@0.0.0 "Placeholder. Install a later version."
+   npm deprecate @kevmp/krf-tools@0.0.0 "Placeholder. Install a later version."
    npm deprecate create-krf@0.0.0 "Placeholder. Install a later version."
    ```
 

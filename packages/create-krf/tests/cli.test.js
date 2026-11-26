@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME, TOOLS_VERSION } from "krf-tools";
+import { KRF_RUNTIME, TOOLS_VERSION } from "@kevmp/krf-tools";
 
 import { runCreator } from "../src/cli.js";
 import { CREATOR_VERSION } from "../src/compatibility.js";
@@ -192,7 +192,7 @@ test("the project's only npm dependency is the exact krf-tools release behind it
 	const manifest = JSON.parse(fs.readFileSync(path.join(result.cwd, "my-game", "package.json"), "utf8"));
 	assert.equal(manifest.private, true);
 	assert.equal(manifest.dependencies, undefined);
-	assert.deepEqual(manifest.devDependencies, { "krf-tools": TOOLS_VERSION });
+	assert.deepEqual(manifest.devDependencies, { "@kevmp/krf-tools": TOOLS_VERSION });
 	assert.deepEqual(manifest.scripts, {
 		postinstall: "node scripts/setup.mjs",
 		dev: "krf-tools dev",

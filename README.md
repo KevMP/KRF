@@ -61,8 +61,8 @@ Run these commands from the repository root:
 | `npm run test:integration:n5` | Native two-client ActorView lifecycle and recovery coverage |
 | `npm run test:integration:n6` | Native two-client Tags replication and TagsView coverage |
 | `npm run test:integration:n7` | Native two-client Resources replication, interpolation, recovery, and teardown coverage |
-| `npm run test:packages` | Unit tests for the `create-krf` and `krf-tools` npm packages in `packages/` |
-| `npm run test:packages:integration` | Create both project modes from packed `create-krf` and `krf-tools` tarballs, run every definition generator through npm scripts, then check and build |
+| `npm run test:packages` | Unit tests for the `create-krf` and `@kevmp/krf-tools` npm packages in `packages/` |
+| `npm run test:packages:integration` | Create both project modes from packed `create-krf` and `@kevmp/krf-tools` tarballs, run every definition generator through npm scripts, then check and build |
 | `npm run test:packages:configurations` | Create, install, build and check every supported creator configuration from packed tarballs |
 | `npm run test:integration:starter` | Play generated starter projects in Studio with one server and two clients |
 

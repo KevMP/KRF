@@ -17,7 +17,7 @@ function npm(project, script, args = [], options = {}) {
 }
 
 function startDev(project, args) {
-	const bin = path.join(project, "node_modules", "krf-tools", "bin", "krf-tools.js");
+	const bin = path.join(project, "node_modules", "@kevmp", "krf-tools", "bin", "krf-tools.js");
 	const child = spawn(process.execPath, [bin, "dev", "--no-open", ...args], { cwd: project, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
 	let output = "";
 	child.stdout.on("data", (chunk) => (output += chunk));

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME } from "krf-tools";
+import { KRF_RUNTIME } from "@kevmp/krf-tools";
 
 import { ROKIT_VERSION, TOOLCHAIN } from "../src/compatibility.js";
 import { buildProjectFiles } from "../src/create.js";

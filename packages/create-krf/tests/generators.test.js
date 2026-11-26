@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runGenerator, writeNewDirectory } from "krf-tools";
+import { runGenerator, writeNewDirectory } from "@kevmp/krf-tools";
 
 import { buildProjectFiles } from "../src/create.js";
 
