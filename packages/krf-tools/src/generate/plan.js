@@ -9,8 +9,6 @@ import {
 	KINDS,
 	LOADOUT_FILE,
 	REQUIRE_DESCENDANTS_FILE,
-	SERVER_SOURCE,
-	STARTUP_FILE,
 } from "./catalogs.js";
 import { assertPathAvailable, definitionId, findDefinition } from "./consumer.js";
 import { actionPolicyEntry, actionRequestEntry, mapEntryLines, needsInputPolicy, renderDefinition, renderLoader, renderMapModule } from "./modules.js";
@@ -28,22 +26,25 @@ function loaderState(consumer, folder, pattern = CATALOG_LOADER) {
 	return consumer.list(folder).some((entry) => /^init\./.test(entry.name)) ? "custom" : "missing";
 }
 
-function catalogFolders(startup) {
-	return new Map(
-		KINDS.map((kind) => {
-			const wiring = wiringOf(startup, CATALOGS[kind].field);
-			return [kind, { wiring, folder: wiring.folder ?? CATALOGS[kind].defaultFolder }];
-		}),
-	);
+function catalogFolders(consumer) {
+	const startups = new Map();
+
+	return new Map(KINDS.map((kind) => {
+		const catalog = CATALOGS[kind];
+		const target = catalog.startup;
+		if (!startups.has(target)) {
+			const source = consumer.read(target.file);
+			startups.set(target, source === undefined ? undefined : readStartup(source, target));
+		}
+
+		const startup = startups.get(target);
+		const wiring = wiringOf(startup, catalog.field);
+		return [kind, { startup, wiring, folder: wiring.folder ?? catalog.defaultFolder }];
+	}));
 }
 
 function definedIds(consumer, folder) {
 	return new Set(consumer.luauFiles(folder).map((file) => definitionId(consumer.read(file) ?? "")));
-}
-
-function readStartupOf(consumer) {
-	const source = consumer.read(STARTUP_FILE);
-	return source === undefined ? undefined : readStartup(source);
 }
 
 function matchesIn(consumer, folder, pattern) {
@@ -55,7 +56,7 @@ function matchesIn(consumer, folder, pattern) {
 }
 
 export function projectCatalog(consumer) {
-	const folders = catalogFolders(readStartupOf(consumer));
+	const folders = catalogFolders(consumer);
 	const folder = (kind) => folders.get(kind).folder;
 	const ids = (kind) => [...definedIds(consumer, folder(kind))].filter(Boolean).sort();
 
@@ -135,6 +136,8 @@ function nextSteps(request, file) {
 			return options.direction === "ClientToServer"
 				? [options.authorize === "deny" ? `${id} rejects every client send until you implement authorize and receive in ${file}.` : `Implement receive in ${file}.`]
 				: [];
+		case "presentation":
+			return [`Implement create in ${file} and register cleanup with context:Own().`];
 		case "domain":
 			return [
 				`Return the Actor's current state from snapshot in ${file}.`,
@@ -205,8 +208,10 @@ function loaderManual(consumer, request, own, alias, plan) {
 	});
 }
 
-function wireCatalog(consumer, request, own, startup, alias, plan) {
+function wireCatalog(consumer, request, own, alias, plan) {
 	const catalog = CATALOGS[request.kind];
+	const { startup } = own;
+	const target = catalog.startup;
 	const loader = loaderState(consumer, own.folder);
 
 	if (own.wiring.state === "wired") {
@@ -216,9 +221,9 @@ function wireCatalog(consumer, request, own, startup, alias, plan) {
 
 	if (own.wiring.state === "custom") {
 		plan.manual.push({
-			file: STARTUP_FILE,
-			instruction: `${catalog.field} in KRF.Server.Init is customized, so the generator cannot tell where that list is built. Require the module with the other requires, then add ${request.name} to the list you pass as ${catalog.field}.`,
-			lines: [`local ${request.name} = require(${instancePath("script.Parent", SERVER_SOURCE, plan.file)})`],
+			file: target.file,
+			instruction: `${catalog.field} in KRF.${target.side}.Init is customized, so the generator cannot tell where that list is built. Require the module with the other requires, then add ${request.name} to the list you pass as ${catalog.field}.`,
+			lines: [`local ${request.name} = require(${instancePath("script.Parent", target.source, plan.file)})`],
 		});
 		return;
 	}
@@ -231,12 +236,12 @@ function wireCatalog(consumer, request, own, startup, alias, plan) {
 
 	const edited = addCatalog(startup, catalog);
 	if (edited !== undefined) {
-		plan.changes.push({ kind: "edit", path: STARTUP_FILE, before: startup.source, after: edited });
+		plan.changes.push({ kind: "edit", path: target.file, before: startup.source, after: edited });
 	} else {
 		const lines = startupLines(catalog);
 		plan.manual.push({
-			file: STARTUP_FILE,
-			instruction: `Require the ${catalog.folder} loader with the other requires and pass it to KRF.Server.Init as ${catalog.field}.`,
+			file: target.file,
+			instruction: `Require the ${catalog.folder} loader with the other requires and pass it to KRF.${target.side}.Init as ${catalog.field}.`,
 			lines: [lines.require, lines.field],
 		});
 	}
@@ -244,9 +249,7 @@ function wireCatalog(consumer, request, own, startup, alias, plan) {
 
 export function planGeneration(consumer, request, alias) {
 	const catalog = CATALOGS[request.kind];
-	const startupSource = consumer.read(STARTUP_FILE);
-	const startup = startupSource === undefined ? undefined : readStartup(startupSource);
-	const folders = catalogFolders(startup);
+	const folders = catalogFolders(consumer);
 	const own = folders.get(request.kind);
 	const file = request.output ?? [own.folder, ...request.namespace, `${request.name}.luau`].join("/");
 	const plan = { kind: request.kind, name: request.name, id: request.id, file, status: "created", changes: [], manual: [], next: [], warnings: [] };
@@ -278,11 +281,11 @@ export function planGeneration(consumer, request, alias) {
 	plan.warnings.push(...referenceWarnings(consumer, request, folders));
 
 	if (isInside(file, own.folder)) {
-		wireCatalog(consumer, request, own, startup, alias, plan);
+		wireCatalog(consumer, request, own, alias, plan);
 		plan.status = plan.manual.length === 0 ? "created" : "manual-wiring-required";
 	} else {
 		plan.status = "created-not-loaded";
-		plan.next.push(`Nothing loads ${file}. ${STARTUP_FILE} loads ${catalog.field} from ${own.folder}; move the module under that folder.`);
+		plan.next.push(`Nothing loads ${file}. ${catalog.startup.file} loads ${catalog.field} from ${own.folder}; move the module under that folder.`);
 	}
 
 	if (request.kind === "action" && request.options.requestable) {

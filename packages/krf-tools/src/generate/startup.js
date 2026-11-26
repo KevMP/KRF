@@ -1,14 +1,14 @@
-import { SERVER_SOURCE, SERVER_START_FIELDS } from "./catalogs.js";
+import { SERVER_STARTUP } from "./catalogs.js";
 import { splitLines } from "./luau.js";
 
 const REQUIRE = /^local ([A-Za-z_][A-Za-z0-9_]*) = require\((.+)\)$/;
 const SCRIPT_PARENT = /^script\.Parent((?:\.[A-Za-z_][A-Za-z0-9_]*)+)$/;
-const INIT_CALL = /\bServer\.Init\b/;
-const INIT_OPEN = /\bServer\.Init\(\{$/;
 const FIELD = /^\t([A-Za-z_][A-Za-z0-9_]*) = ([A-Za-z_][A-Za-z0-9_]*),$/;
 const ANY_FIELD = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/;
 
-export function readStartup(source) {
+export function readStartup(source, target = SERVER_STARTUP) {
+	const initCall = new RegExp(`\\b${target.side}\\.Init\\b`);
+	const initOpen = new RegExp(`\\b${target.side}\\.Init\\(\\{$`);
 	const { lines, eol } = splitLines(source);
 	const requires = new Map();
 	lines.forEach((line, index) => {
@@ -16,12 +16,12 @@ export function readStartup(source) {
 		if (match && !requires.has(match[1])) requires.set(match[1], { index, target: match[2] });
 	});
 
-	const opens = lines.flatMap((line, index) => (INIT_CALL.test(line) ? [index] : []));
-	if (opens.length !== 1 || !INIT_OPEN.test(lines[opens[0]])) return { source, lines, eol, requires, init: undefined };
+	const opens = lines.flatMap((line, index) => (initCall.test(line) ? [index] : []));
+	if (opens.length !== 1 || !initOpen.test(lines[opens[0]])) return { source, lines, eol, requires, target, init: undefined };
 
 	const open = opens[0];
 	const close = lines.findIndex((line, index) => index > open && line.startsWith("})"));
-	if (close === -1) return { source, lines, eol, requires, init: undefined };
+	if (close === -1) return { source, lines, eol, requires, target, init: undefined };
 
 	const fields = new Map();
 	const present = new Set();
@@ -31,16 +31,16 @@ export function readStartup(source) {
 		const field = FIELD.exec(line);
 		const any = ANY_FIELD.exec(line);
 		if (any && /^\t[A-Za-z_]/.test(line)) present.add(any[1]);
-		if (field && SERVER_START_FIELDS.includes(field[1])) fields.set(field[1], { local: field[2], index });
+		if (field && target.fields.includes(field[1])) fields.set(field[1], { local: field[2], index });
 		else if (line.trim() !== "") simple = false;
 	}
 
-	return { source, lines, eol, requires, init: { open, close, fields, present, simple } };
+	return { source, lines, eol, requires, target, init: { open, close, fields, present, simple } };
 }
 
-function folderOfRequire(target) {
+function folderOfRequire(source, target) {
 	const match = SCRIPT_PARENT.exec(target);
-	return match ? `${SERVER_SOURCE}${match[1].replace(/\./g, "/")}` : undefined;
+	return match ? `${source}${match[1].replace(/\./g, "/")}` : undefined;
 }
 
 export function wiringOf(startup, field) {
@@ -48,7 +48,7 @@ export function wiringOf(startup, field) {
 	if (!startup.init.present.has(field)) return { state: "unwired" };
 
 	const local = startup.init.fields.get(field)?.local;
-	const folder = local === undefined ? undefined : folderOfRequire(startup.requires.get(local)?.target ?? "");
+	const folder = local === undefined ? undefined : folderOfRequire(startup.target.source, startup.requires.get(local)?.target ?? "");
 	return folder === undefined ? { state: "custom" } : { state: "wired", folder };
 }
 
@@ -72,11 +72,12 @@ export function addCatalog(startup, catalog) {
 	const { require, field } = startupLines(catalog);
 	const lines = [...startup.lines];
 
-	const fieldOrder = SERVER_START_FIELDS.indexOf(catalog.field);
-	const after = [...init.fields.entries()].filter(([name]) => SERVER_START_FIELDS.indexOf(name) > fieldOrder).map(([, entry]) => entry.index);
+	const orderedFields = startup.target.fields;
+	const fieldOrder = orderedFields.indexOf(catalog.field);
+	const after = [...init.fields.entries()].filter(([name]) => orderedFields.indexOf(name) > fieldOrder).map(([, entry]) => entry.index);
 	lines.splice(after.length > 0 ? Math.min(...after) : init.close, 0, field);
 
-	const siblings = [...startup.requires.entries()].filter(([, entry]) => folderOfRequire(entry.target) !== undefined);
+	const siblings = [...startup.requires.entries()].filter(([, entry]) => folderOfRequire(startup.target.source, entry.target) !== undefined);
 	const later = siblings.filter(([name]) => name > catalog.folder).map(([, entry]) => entry.index);
 	const requireAt = later.length > 0 ? Math.min(...later) : (siblings.length > 0 ? Math.max(...siblings.map(([, entry]) => entry.index)) : requireIndices.at(-1)) + 1;
 	lines.splice(requireAt, 0, require);

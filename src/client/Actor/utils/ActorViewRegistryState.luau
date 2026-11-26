@@ -12,6 +12,9 @@ local retired: { [Types.ActorView]: boolean } = setmetatable({}, { __mode = "k" 
 local invalidations: Observers.Registry<(Types.ActorView, string) -> ()> =
 	Observers.new(64, "ActorInvalidationObserverLimitExceeded") :: Observers.Registry<(Types.ActorView, string) -> ()>
 
+local installations: Observers.Registry<(Types.ActorView) -> ()> =
+	Observers.new(64, "ActorInstallationObserverLimitExceeded") :: Observers.Registry<(Types.ActorView) -> ()>
+
 local resetting: boolean = false
 local invalidationDepth: number = 0
 local afterInvalidation: { () -> () } = {}
@@ -65,6 +68,7 @@ local owner: Types.ActorViewRegistryOwner = {
 	IsInvalidating = function(view: Types.ActorView): boolean
 		return retired[view] == true
 	end,
+	ObserveInstallation = installations.Add,
 	ObserveInvalidation = invalidations.Add,
 	IsCurrent = function(view: Types.ActorView): boolean
 		return identities[view] == true
@@ -104,6 +108,12 @@ local owner: Types.ActorViewRegistryOwner = {
 		if model ~= nil then
 			byModel[model] = view
 			models[view] = model
+		end
+
+		for _, entry in installations.Snapshot() do
+			if entry.active then
+				Observers.Run(entry.callback, view)
+			end
 		end
 
 		return true, nil

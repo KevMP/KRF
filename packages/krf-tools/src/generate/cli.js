@@ -3,8 +3,8 @@ import { Command, CommanderError, Option } from "commander";
 import { TOOLS_COMMAND, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { applyProjectChanges } from "../files.js";
-import { CATALOGS, KINDS } from "./catalogs.js";
-import { createConsumer, findProjectRoot, readKrfDependency } from "./consumer.js";
+import { CATALOGS, KINDS, PRESENTATION_EVENTS } from "./catalogs.js";
+import { assertPresentationSupport, createConsumer, findProjectRoot, readKrfDependency } from "./consumer.js";
 import { planGeneration, projectCatalog } from "./plan.js";
 import { promptForMissing } from "./prompts.js";
 import { errorResult, exitCodeOf, formatResult, resultOf } from "./report.js";
@@ -75,6 +75,10 @@ const KIND_OPTIONS = {
 		field("--payload-field <Name:Type>", "payload", "payloadFields"),
 		{ ...AUTHORIZE, description: `${AUTHORIZE.description}; ClientToServer only` },
 	],
+	presentation: [
+		{ flags: "--event <event>", description: `${PRESENTATION_EVENTS.join(", ")} (default: Action.Started)`, key: "event" },
+		{ flags: "--source-id <id>", description: "required exact Action, Tag, Resource or Hint ID to observe", key: "sourceId" },
+	],
 	domain: [
 		{ flags: "--audience <audience>", description: "Owner or All (default: Owner)", key: "audience" },
 		field("--state-field <Name:Type>", "replicated state", "stateFields"),
@@ -91,6 +95,7 @@ const EXAMPLES = {
 	controller: "--name Cooldowns --depends-on ResourceController --yes",
 	command: "--name CastSpell --request-field Slot:U8 --authorize OwnerActor --yes",
 	hint: "--name ImpactFx --payload-field Position:Array(F32,3) --yes",
+	presentation: "--name SwingHighlight --event Action.Started --source-id Sword.Swing --yes",
 	domain: '--name ComboState --state-field Count:U8 --event "Finisher(Damage:U16)" --yes',
 };
 
@@ -111,7 +116,7 @@ function buildProgram(io, onSelect) {
 		const catalog = CATALOGS[kind];
 		const command = create
 			.command(kind)
-			.description(`Create a ${catalog.label} module in ${catalog.defaultFolder}, which Startup.server.luau passes to KRF.Server.Init as ${catalog.field}.`)
+			.description(`Create a ${catalog.label} module in ${catalog.defaultFolder}, which ${catalog.startup.file.split("/").at(-1)} passes to KRF.${catalog.startup.side}.Init as ${catalog.field}.`)
 			.option("--name <Name>", "PascalCase module name; also the ID unless --id is given")
 			.option("--id <id>", `${catalog.idField === "key" ? "controller key" : "ID"}; may be namespaced, such as Combat.Example`)
 			.option("--output <path>", "module path relative to the project root");
@@ -168,6 +173,7 @@ export async function runGenerator(argv, io) {
 		if (io.interactive && !flags.yes && !flags.json) input = await promptForMissing(kind, input, { prompts: io.prompts, known: projectCatalog(consumer) });
 
 		const request = normalizeRequest(kind, input);
+		if (kind === "presentation") assertPresentationSupport(consumer, krf.version);
 		const plan = planGeneration(consumer, request, krf.alias);
 		if (!flags.dryRun && plan.status !== "already-exists") applyProjectChanges(root, plan.changes);
 

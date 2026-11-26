@@ -1,12 +1,10 @@
-export const SERVER_SOURCE = "src/server";
-export const STARTUP_FILE = "src/server/Startup.server.luau";
 export const REQUIRE_DESCENDANTS_FILE = "src/shared/RequireDescendants.luau";
 export const ACTION_REQUESTS_FOLDER = "src/shared/ActionRequests";
 export const ACTION_INPUT_POLICIES_FOLDER = "src/client/ActionInputPolicies";
 export const LOADOUT_FILE = "src/client/Controls/Loadout.luau";
 export const KEYBINDS_FILE = "src/client/Controls/Keybinds.luau";
 
-export const SERVER_START_FIELDS = Object.freeze([
+const SERVER_START_FIELDS = Object.freeze([
 	"hints",
 	"commands",
 	"controllers",
@@ -19,7 +17,34 @@ export const SERVER_START_FIELDS = Object.freeze([
 	"actionControlAuthority",
 ]);
 
-const catalog = (entry) => Object.freeze({ idField: "id", ...entry, defaultFolder: `${SERVER_SOURCE}/${entry.folder}` });
+export const SERVER_STARTUP = Object.freeze({
+	side: "Server",
+	source: "src/server",
+	file: "src/server/Startup.server.luau",
+	fields: SERVER_START_FIELDS,
+});
+
+const CLIENT_STARTUP = Object.freeze({
+	side: "Client",
+	source: "src/client",
+	file: "src/client/Startup.client.luau",
+	fields: Object.freeze(["actionRequestSchemas", "actionInputPolicies", "presentations"]),
+});
+
+export const PRESENTATION_EVENTS = Object.freeze([
+	"Action.Started",
+	"Action.Ended",
+	"Action.Interrupted",
+	"Tag.Added",
+	"Tag.Refreshed",
+	"Tag.Removed",
+	"Tag.Expired",
+	"Resource.Changed",
+	"Hint.Received",
+]);
+
+const catalog = (entry, startup = SERVER_STARTUP) =>
+	Object.freeze({ idField: "id", ...entry, startup, defaultFolder: `${startup.source}/${entry.folder}` });
 
 export const CATALOGS = Object.freeze({
 	action: catalog({ kind: "action", script: "createAction", label: "Action", field: "actions", folder: "Actions", type: "ActionFactory", variable: "actions" }),
@@ -63,6 +88,18 @@ export const CATALOGS = Object.freeze({
 		type: "ReplicationDomainDefinition",
 		variable: "replicationDomains",
 	}),
+	presentation: catalog(
+		{
+			kind: "presentation",
+			script: "createPresentation",
+			label: "Presentation",
+			field: "presentations",
+			folder: "Presentations",
+			type: "PresentationDefinition",
+			variable: "presentations",
+		},
+		CLIENT_STARTUP,
+	),
 });
 
 export const KINDS = Object.freeze(Object.keys(CATALOGS));

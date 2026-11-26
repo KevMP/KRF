@@ -2,6 +2,7 @@
 local Types = require(script.Parent.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 local Signal = require(script.Parent.Parent.Parent.shared.Signal.SignalModule)
+local DomainBinding = require(script.Parent.utils.TypedDomainBinding)
 local OwnedSignals = require(script.Parent.Parent.Parent.shared.Signal.OwnedSignals)
 
 local ResourcesView = {} :: Types.ResourcesViewModule
@@ -77,8 +78,6 @@ function ResourcesView.new(getDomain: () -> Types.DomainView?, serverTimeNow: ((
 		return if entries ~= nil then entries[id] else nil
 	end
 
-	local domain: Types.DomainView? = getDomain()
-
 	local function onDomainChanged(change: Types.DomainChange): ()
 		if destroyed then
 			return
@@ -134,7 +133,16 @@ function ResourcesView.new(getDomain: () -> Types.DomainView?, serverTimeNow: ((
 		end)
 	end
 
-	local connection: SignalTypes.Connection? = if domain ~= nil then domain.OnChanged:Connect(onDomainChanged) else nil
+	local bindDomain, disconnectDomain = DomainBinding.new(getDomain, function(domain, isCurrent, connections)
+		table.insert(
+			connections,
+			domain.OnChanged:Connect(function(change: Types.DomainChange)
+				if isCurrent() then
+					onDomainChanged(change)
+				end
+			end)
+		)
+	end)
 
 	local view: Types.ResourcesView = table.freeze({
 		HasResource = function(_self: Types.ResourcesView, resourceId: string): boolean
@@ -188,6 +196,9 @@ function ResourcesView.new(getDomain: () -> Types.DomainView?, serverTimeNow: ((
 
 	return {
 		view = view,
+		BindDomain = function(_self: Types.ResourcesViewOwner): ()
+			bindDomain()
+		end,
 		Destroy = function(_self: Types.ResourcesViewOwner): ()
 			if destroyed then
 				return
@@ -195,9 +206,7 @@ function ResourcesView.new(getDomain: () -> Types.DomainView?, serverTimeNow: ((
 
 			destroyed = true
 
-			if connection ~= nil then
-				connection:Disconnect()
-			end
+			disconnectDomain()
 
 			owned:Destroy()
 		end,

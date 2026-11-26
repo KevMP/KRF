@@ -2,6 +2,7 @@
 local SharedNetworkingTypes = require(script.Parent.Parent.shared.Networking.types)
 local ActionRequestTypes = require(script.Parent.Parent.shared.ActionRequest.types)
 local ActionTypes = require(script.Parent.Action.types)
+local PresentationTypes = require(script.Parent.Presentation.types)
 local NetworkingTypes = require(script.Parent.Networking.types)
 
 local types = {}
@@ -13,6 +14,7 @@ export type StartupFailure = { system: string, reason: string }
 export type ClientInitConfig = {
 	actionRequestSchemas: ActionRequestTypes.ActionRequestSchemas?,
 	actionInputPolicies: ActionTypes.ActionInputPolicies?,
+	presentations: { PresentationTypes.PresentationDefinition }?,
 }
 
 export type ClientUnreliableObserver = NetworkingTypes.ClientUnreliableObserver

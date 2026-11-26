@@ -23,6 +23,7 @@ $suites = @{
     n7 = @{ Project = 'n7-resources-view'; TestName = 'KRFN7ResourcesView'; Place = 'ResourcesView' }
     n8 = @{ Project = 'n8-actions-view'; TestName = 'KRFN8ActionsView'; Place = 'ActionsView' }
     n9 = @{ Project = 'n9-command'; TestName = 'KRFN9Commands'; Place = 'Commands' }
+    presentation = @{ Project = 'presentation'; TestName = 'KRFPresentation'; Place = 'Presentation' }
     networking = @{ Project = 'networking'; TestName = 'KRFNetworking'; Place = 'Networking' }
 }
 

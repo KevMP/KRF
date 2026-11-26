@@ -48,16 +48,17 @@ npm run createAction -- --name Meditate --recipe held --requestable --auto-grant
 
 The generator writes a typed `--!strict` module. Catalog loaders discover generated modules on the next build. For a catalog not present in the starter, it can create the loader and wire it into startup while that script retains the structure the generator recognizes.
 
-| Script | Catalog folder under `src/server` | Startup field |
+| Script | Catalog folder | Startup field |
 | --- | --- | --- |
-| `createAction` | `Actions` | `actions` |
-| `createTag` | `Tags` | `tags` |
-| `createResource` | `Resources` | `resources` |
-| `createProperty` | `Properties` | `properties` |
-| `createController` | `Controllers` | `controllers` |
-| `createDomain` | `ReplicationDomains` | `replicationDomains` |
-| `createCommand` | `Commands` | `commands` |
-| `createHint` | `Hints` | `hints` |
+| `createAction` | `src/server/Actions` | `actions` |
+| `createTag` | `src/server/Tags` | `tags` |
+| `createResource` | `src/server/Resources` | `resources` |
+| `createProperty` | `src/server/Properties` | `properties` |
+| `createController` | `src/server/Controllers` | `controllers` |
+| `createDomain` | `src/server/ReplicationDomains` | `replicationDomains` |
+| `createCommand` | `src/server/Commands` | `commands` |
+| `createHint` | `src/server/Hints` | `hints` |
+| `createPresentation` | `src/client/Presentations` | `presentations` |
 
 If startup already supplies a catalog from a different folder, generation follows that folder where it can recognize the wiring. A generated definition still needs authored behavior and valid references. Resolve warnings about unknown Tags, Resources, Properties or Actions before starting the game.
 
@@ -76,6 +77,14 @@ Generator defaults are template choices. `createResource` enables automatic assi
 | `--help` | The selected generator's complete option list |
 
 Without `--yes`, a terminal wizard asks for missing choices. Noninteractive and JSON calls use defaults. For machine-readable output, suppress npm's own banner with `npm run --silent createTag -- --name Winded --yes --json`.
+
+### Presentation entries
+
+```bash
+npm run createPresentation -- --name SwingHighlight --event Action.Started --source-id Sword.Swing --yes
+```
+
+Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--event` defaults to `Action.Started`. On first use the generator wires the Presentation catalog into client startup. Open the generated ModuleScript and replace its `create` stub with your visual code. The [Presentation guide](../presentation/guide) lists all entry events and shows how to own a visual's cleanup.
 
 ### Action recipes and client requests
 

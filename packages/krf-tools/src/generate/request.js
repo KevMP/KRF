@@ -2,7 +2,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { ExitCode, KrfToolError } from "../errors.js";
-import { BUILT_IN_CONTROLLER_KEYS, CATALOGS } from "./catalogs.js";
+import { BUILT_IN_CONTROLLER_KEYS, CATALOGS, PRESENTATION_EVENTS } from "./catalogs.js";
 import { parseEvent, parseFields, splitTopLevel } from "./schema.js";
 
 const NAME = /^[A-Z][A-Za-z0-9]*$/;
@@ -189,6 +189,7 @@ export const OPTION_DEFAULTS = Object.freeze({
 	command: Object.freeze({ target: "Actor", authorize: "deny" }),
 	hint: Object.freeze({ direction: "ServerToClient", target: "Actor", mode: "Pulse", authorize: "deny" }),
 	domain: Object.freeze({ audience: "Owner", observe: false }),
+	presentation: Object.freeze({ event: "Action.Started" }),
 });
 
 const visibility = z.enum(["ServerOnly", "ClientVisible"]);
@@ -255,6 +256,10 @@ const OPTION_SCHEMAS = {
 		mode: z.enum(["Pulse", "Latest"]).default(OPTION_DEFAULTS.hint.mode),
 		payloadFields: fieldList,
 		authorize: AUTHORIZATION.default(OPTION_DEFAULTS.hint.authorize),
+	}),
+	presentation: z.strictObject({
+		event: z.enum(PRESENTATION_EVENTS).default(OPTION_DEFAULTS.presentation.event),
+		sourceId: z.string().refine((value) => value.trim() !== "" && !/[\u0000-\u001f]/.test(value), "enter an exact source ID without control characters"),
 	}),
 	domain: z.strictObject({
 		audience: z.enum(["Owner", "All"]).default(OPTION_DEFAULTS.domain.audience),

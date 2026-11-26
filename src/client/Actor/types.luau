@@ -18,7 +18,12 @@ export type ActionsView = {
 	read OnStateChanged: SignalTypes.Event<DomainChangeSource>,
 }
 
-export type ActionsViewOwner = { read view: ActionsView, Destroy: (self: ActionsViewOwner) -> () }
+export type ActionsViewOwner = {
+	read view: ActionsView,
+	BindDomain: (self: ActionsViewOwner) -> (),
+	Destroy: (self: ActionsViewOwner) -> (),
+}
+
 export type ActionsViewModule = { new: (getDomain: () -> DomainView?) -> ActionsViewOwner }
 export type ActiveTagSnapshot = { read tagId: string, read stackCount: number, read remainingDuration: number? }
 
@@ -33,7 +38,11 @@ export type TagsView = {
 	read OnStateChanged: SignalTypes.Event<DomainChangeSource>,
 }
 
-export type TagsViewOwner = { read view: TagsView, Destroy: (self: TagsViewOwner) -> () }
+export type TagsViewOwner = {
+	read view: TagsView,
+	BindDomain: (self: TagsViewOwner) -> (),
+	Destroy: (self: TagsViewOwner) -> (),
+}
 
 export type TagsViewModule = {
 	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> TagsViewOwner,
@@ -65,7 +74,11 @@ export type ResourcesView = {
 	read OnResourceChanged: SignalTypes.Event<ResourceViewChange>,
 }
 
-export type ResourcesViewOwner = { read view: ResourcesView, Destroy: (self: ResourcesViewOwner) -> () }
+export type ResourcesViewOwner = {
+	read view: ResourcesView,
+	BindDomain: (self: ResourcesViewOwner) -> (),
+	Destroy: (self: ResourcesViewOwner) -> (),
+}
 
 export type ResourcesViewModule = {
 	new: (getDomain: () -> DomainView?, serverTimeNow: (() -> number)?) -> ResourcesViewOwner,
@@ -135,6 +148,7 @@ export type ActorViewRegistryOwner = {
 	AfterInvalidation: (callback: () -> ()) -> (),
 	Invalidate: (view: ActorView, reason: string) -> (),
 	IsInvalidating: (view: ActorView) -> boolean,
+	ObserveInstallation: (callback: (ActorView) -> ()) -> () -> (),
 	ObserveInvalidation: (callback: (ActorView, string) -> ()) -> () -> (),
 	IsCurrent: (view: ActorView) -> boolean,
 	GetActorViewById: (actorId: string) -> ActorView?,

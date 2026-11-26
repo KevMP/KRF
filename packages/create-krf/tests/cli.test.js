@@ -218,6 +218,7 @@ test("the project's only npm dependency is the exact krf-tools release behind it
 		createCommand: "krf-tools create command",
 		createHint: "krf-tools create hint",
 		createDomain: "krf-tools create domain",
+		createPresentation: "krf-tools create presentation",
 	});
 	assert.doesNotMatch(JSON.stringify(manifest.scripts), /npx/);
 });

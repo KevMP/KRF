@@ -347,3 +347,69 @@ it("retires its owner idempotently and ignores a previously scheduled domain cha
 	expect(subscribable).toBe(false)
 	domain:Destroy()
 end)
+
+it("keeps semantic listeners when a later baseline first installs the Actions domain", function()
+	ActorUtils.baseline(fixture, nil, nil, nil, {})
+	local actor: Types.ActorView = ActorUtils.view(fixture)
+	local actions: Types.ActionsView = actor:GetActions()
+	local started: { Types.ActionSnapshot } = {}
+
+	actions.OnActionStarted:Connect(function(snapshot: Types.ActionSnapshot)
+		table.insert(started, snapshot)
+	end)
+
+	fixture.runtime.consumer.OnBaselineReady(ActorUtils.actor(fixture), 10, TestUtils.truth({ [1] = "Action.A" }))
+	expect(actions:GetAction(1)).toEqual({ actionId = "Action.A", sequenceId = 1 })
+	expect(started).toEqual({})
+
+	ActorUtils.commit(
+		fixture,
+		11,
+		{ TestUtils.patch({ [2] = "Action.B" }, {}) },
+		{ TestUtils.event("Started", "Action.B", 2) }
+	)
+
+	expect(started).toEqual({ { actionId = "Action.B", sequenceId = 2 } })
+end)
+
+it("keeps a stable typed event and rejects a queued callback from a removed domain", function()
+	local firstDomain: Types.DomainViewOwner = assert(
+		DomainView.new("KRF.Actions", {}, { "Started", "Ended", "Interrupted" }),
+		"Expected original Actions domain"
+	)
+
+	local replacement: Types.DomainViewOwner = assert(
+		DomainView.new("KRF.Actions", {}, { "Started", "Ended", "Interrupted" }),
+		"Expected replacement Actions domain"
+	)
+
+	local domain: Types.DomainView? = firstDomain.view
+	local queued: { (Types.ActionSnapshot) -> () } = {}
+
+	GoodSignal.Connect = function(self: any, callback: any): any
+		table.insert(queued, callback)
+
+		return originalConnect(self, callback)
+	end
+
+	local owner: Types.ActionsViewOwner = ActionsView.new(function(): Types.DomainView?
+		return domain
+	end)
+
+	GoodSignal.Connect = originalConnect
+
+	local started: { Types.ActionSnapshot } = {}
+
+	owner.view.OnActionStarted:Connect(function(snapshot: Types.ActionSnapshot)
+		table.insert(started, snapshot)
+	end)
+
+	domain = replacement.view
+	owner:BindDomain()
+	queued[1]({ actionId = "Action.A", sequenceId = 1 })
+	replacement:FireEvent("Started", { actionId = "Action.B", sequenceId = 2 })
+	expect(started).toEqual({ { actionId = "Action.B", sequenceId = 2 } })
+	owner:Destroy()
+	firstDomain:Destroy()
+	replacement:Destroy()
+end)

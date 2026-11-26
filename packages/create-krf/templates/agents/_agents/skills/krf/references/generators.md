@@ -29,13 +29,14 @@ Use `--dry-run` with `--json` to see the files a command would create or edit wi
 
 ## Generate in dependency order
 
-A definition that names another one, such as an Action with a Mana cost or a Tag that modifies WalkSpeed, needs that one to exist. The generator warns when it doesn't, and KRF rejects startup until it does. Create them in this order:
+Gameplay definitions can depend on one another. An Action with a Mana cost needs that Resource, and a Tag that modifies WalkSpeed needs that Property. KRF rejects startup when a required dependency is missing. Create them in this order:
 
 1. Properties.
 2. Resources and Tags, which read Properties.
 3. Controllers, which can depend on each other.
 4. Actions, which reference Tags, Resources, Properties and other Actions.
 5. Replication domains, Commands and Hints, which usually read Controllers.
+6. Presentations, which listen for events from client-visible Actions, Tags, Resources or incoming Hints.
 
 The built-in Properties `WalkSpeed` and `JumpPower`, and the built-in Controllers `TagController`, `PropertyController`, `ResourceController` and `ActionController`, already exist.
 
@@ -226,3 +227,13 @@ Generate the closest definition, then edit the module for the rest, such as a ne
 ## Exact APIs
 
 - [Project tools](docs/getting-started/project-tools.md#generate-a-definition): generator behavior, catalog folders, startup wiring and version checks.
+
+## createPresentation
+
+```bash
+npm run createPresentation -- --name SwingHighlight --event Action.Started --source-id Sword.Swing --yes --json
+```
+
+`--source-id` selects the exact game-defined ID. `--event` defaults to `Action.Started`. Other entries are `Action.Ended`, `Action.Interrupted`, `Tag.Added`, `Tag.Refreshed`, `Tag.Removed`, `Tag.Expired`, `Resource.Changed` and `Hint.Received`.
+
+The generator writes a `KRF.PresentationDefinition` under `src/client/Presentations`. On first use it adds the descendant loader and passes it to `KRF.Client.Init` through `presentations`. Edit `create(context)` in the module to add the visual. Register cleanup with `context:Own` and call `context:Finish()` when the visual is done.

@@ -2,6 +2,7 @@
 local Types = require(script.Parent.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 local Signal = require(script.Parent.Parent.Parent.shared.Signal.SignalModule)
+local DomainBinding = require(script.Parent.utils.TypedDomainBinding)
 local OwnedSignals = require(script.Parent.Parent.Parent.shared.Signal.OwnedSignals)
 
 local ActionsView = {} :: Types.ActionsViewModule
@@ -13,38 +14,28 @@ end
 
 function ActionsView.new(getDomain: () -> Types.DomainView?): Types.ActionsViewOwner
 	local destroyed: boolean = false
-	local domain: Types.DomainView? = getDomain()
 	local changed: SignalTypes.Signal<Types.DomainChangeSource> = Signal.new()
-	local signals: { OwnedSignals.OwnedSignal } = { changed }
+	local started: SignalTypes.Signal<Types.ActionSnapshot> = Signal.new()
+	local ended: SignalTypes.Signal<Types.ActionSnapshot> = Signal.new()
+	local interrupted: SignalTypes.Signal<Types.ActionSnapshot> = Signal.new()
+	local owned: SignalTypes.OwnedSignals = OwnedSignals.new({ changed, started, ended, interrupted })
 
-	local function semanticEvent(id: string): SignalTypes.Event<Types.ActionSnapshot>
-		if domain ~= nil then
-			local event: SignalTypes.Event<Types.ActionSnapshot>? = domain:GetEvent(id)
-			assert(event ~= nil, "ActionsViewMissingDomainEvent:" .. id)
+	local bindDomain, disconnectDomain = DomainBinding.new(getDomain, function(domain, isCurrent, connections)
+		DomainBinding.Relay(domain, "Started", started, isCurrent, connections, owned)
+		DomainBinding.Relay(domain, "Ended", ended, isCurrent, connections, owned)
+		DomainBinding.Relay(domain, "Interrupted", interrupted, isCurrent, connections, owned)
 
-			return event
-		end
-
-		local signal: SignalTypes.Signal<Types.ActionSnapshot> = Signal.new()
-		table.insert(signals, signal)
-
-		return Signal.wrapEvent(signal)
-	end
-
-	local started: SignalTypes.Event<Types.ActionSnapshot> = semanticEvent("Started")
-	local ended: SignalTypes.Event<Types.ActionSnapshot> = semanticEvent("Ended")
-	local interrupted: SignalTypes.Event<Types.ActionSnapshot> = semanticEvent("Interrupted")
-	local owned: SignalTypes.OwnedSignals = OwnedSignals.new(signals)
-
-	local connection: SignalTypes.Connection? = if domain ~= nil
-		then domain.OnChanged:Connect(function(change: Types.DomainChange): ()
-			if not destroyed then
-				owned:WithDeferredDestroy(function(): ()
-					changed:Fire(change.source)
-				end)
-			end
-		end)
-		else nil
+		table.insert(
+			connections,
+			domain.OnChanged:Connect(function(change: Types.DomainChange)
+				if isCurrent() then
+					owned:WithDeferredDestroy(function()
+						changed:Fire(change.source)
+					end)
+				end
+			end)
+		)
+	end)
 
 	local function state(): State?
 		if destroyed then
@@ -92,14 +83,17 @@ function ActionsView.new(getDomain: () -> Types.DomainView?): Types.ActionsViewO
 
 			return table.freeze(snapshots)
 		end,
-		OnActionStarted = started,
-		OnActionEnded = ended,
-		OnActionInterrupted = interrupted,
+		OnActionStarted = Signal.wrapEvent(started),
+		OnActionEnded = Signal.wrapEvent(ended),
+		OnActionInterrupted = Signal.wrapEvent(interrupted),
 		OnStateChanged = Signal.wrapEvent(changed),
 	})
 
 	return {
 		view = view,
+		BindDomain = function(_self: Types.ActionsViewOwner): ()
+			bindDomain()
+		end,
 		Destroy = function(_self: Types.ActionsViewOwner): ()
 			if destroyed then
 				return
@@ -107,9 +101,7 @@ function ActionsView.new(getDomain: () -> Types.DomainView?): Types.ActionsViewO
 
 			destroyed = true
 
-			if connection ~= nil then
-				connection:Disconnect()
-			end
+			disconnectDomain()
 
 			owned:Destroy()
 		end,
