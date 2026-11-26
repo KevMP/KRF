@@ -27,6 +27,8 @@ Declare the rest with flags, too:
 
 Pass `--requestable` when players trigger the Action. See [action-input.md](action-input.md) for the request, its payload and its input binding.
 
+For every flag, its syntax and default, and how to read the result, see [generators.md](generators.md#createaction).
+
 ## Fill in the callbacks
 
 The generated module is a factory. KRF calls it once for each activation, so locals inside the factory belong to that one use of the Action:

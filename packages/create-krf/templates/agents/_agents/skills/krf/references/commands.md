@@ -26,7 +26,7 @@ The generator writes the Command to `src/server/Commands` and adds it to `Server
 - `--request-field` declares what the client sends, and `--result-field` declares what an accepted request returns. Leave the result out when the client can read the outcome from state it already sees.
 - `--authorize` defaults to `deny`, which rejects every request until you write your own `authorize`.
 
-Run `npm run createCommand -- --help` for every field type.
+For every flag and how to read the result, see [generators.md](generators.md#createcommand).
 
 ## Decide who may send it
 

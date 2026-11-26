@@ -29,7 +29,7 @@ The generator writes the domain to `src/server/ReplicationDomains` and adds it t
 - `snapshot` returns the Actor's current state in the shape of `state`.
 - `observe` tells KRF when that state changes, so it can take a new snapshot.
 
-The generator defaults `--audience` to `Owner`. Pass `--audience All` for state every client should see. Run `npm run createDomain -- --help` for every field type.
+The generator defaults `--audience` to `Owner`. Pass `--audience All` for state every client should see. For every flag and how to read the result, see [generators.md](generators.md#createdomain).
 
 ## Choose the audience
 

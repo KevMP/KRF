@@ -14,6 +14,8 @@ npm run --silent createResource -- --name Stamina --max MaxStamina --regen Stami
 - **Visibility:** `ClientVisible` sends the value to every client, including other players. `ServerOnly` sends it to no client, not even its owner. Choose `ClientVisible` whenever the player's UI shows it.
 - **Assignment:** the generator gives the Resource to every Actor. Pass `--no-auto-assign` for one an Actor has to earn.
 
+For every flag and how to read the result, see [generators.md](generators.md#createresource).
+
 ## Give it to an Actor later
 
 For an earned Resource, assign it when the Actor unlocks it:

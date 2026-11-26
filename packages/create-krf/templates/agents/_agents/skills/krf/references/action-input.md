@@ -162,7 +162,7 @@ end,
 
 Send the smallest claim the server can check, such as the point the player aimed at, rather than a result the server should work out itself, such as what was hit.
 
-Run `npm run createAction -- --help` for every field type.
+For every field type and request flag, see [generators.md](generators.md#createaction).
 
 ## Check the claim on the server
 

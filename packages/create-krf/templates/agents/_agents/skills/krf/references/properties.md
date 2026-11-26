@@ -12,6 +12,8 @@ npm run --silent createProperty -- --name Defense --default 10 --auto-assign --y
 
 KRF already defines `WalkSpeed` (16) and `JumpPower` (50) for every Actor.
 
+For every flag and how to read the result, see [generators.md](generators.md#createproperty).
+
 ## Read the resolved value
 
 ```lua

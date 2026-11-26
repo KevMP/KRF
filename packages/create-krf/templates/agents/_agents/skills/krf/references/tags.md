@@ -17,6 +17,8 @@ npm run --silent createTag -- --name Slowed --duration 3 --duplicate-behavior Re
   - `Stack` adds an independent instance with its own timer and its own modifier contribution. Use `--max-stacks` to cap it.
 - **Visibility:** `ClientVisible` sends the Tag to every client, and `ServerOnly` keeps it on the server. Choose `ClientVisible` when the player's UI or effects need to know about it.
 
+For every flag and how to read the result, see [generators.md](generators.md#createtag).
+
 ## Modify Properties
 
 Each `--property` adds one modifier. Repeat the flag for more, and combine operations with commas: `--property WalkSpeed:multiply=0.5,min=4`. Every Property a modifier names must already be defined. See [properties.md](properties.md).
