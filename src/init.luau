@@ -15,6 +15,7 @@ local ActionRequestTypes = require(script.server.ActionRequest.types)
 local SharedNetworkingTypes = require(script.shared.Networking.types)
 local SharedActionRequestTypes = require(script.shared.ActionRequest.types)
 local ClientTypes = require(script.client.types)
+local PresentationTypes = require(script.client.Presentation.types)
 local ViewTypes = require(script.client.Actor.types)
 local ClientActionTypes = require(script.client.Action.types)
 local ClientNetworkingTypes = require(script.client.Networking.types)
@@ -100,6 +101,11 @@ export type SchemaDefinition = SharedNetworkingTypes.SchemaDefinition
 -- Client startup and views
 export type ClientInitConfig = ClientTypes.ClientInitConfig
 export type ClientStartupFailure = ClientTypes.StartupFailure
+export type PresentationDefinition = PresentationTypes.PresentationDefinition
+export type PresentationEntryBinding = PresentationTypes.PresentationEntryBinding
+export type PresentationEntryEvent = PresentationTypes.PresentationEntryEvent
+export type PresentationEventDescriptor = PresentationTypes.PresentationEventDescriptor
+export type PresentationContext = PresentationTypes.PresentationContext
 export type ActorView = ViewTypes.ActorView
 export type ActorViewRegistry = ViewTypes.ActorViewRegistry
 export type DomainView = ViewTypes.DomainView
@@ -181,6 +187,7 @@ type KRF = {
 	read HintAuthorization: typeof(require(script.server.Networking.HintAuthorization)),
 	read ServerHintRuntime: typeof(require(script.server.Networking.HintRuntime)),
 
+	read PresentationEvents: typeof(require(script.client.Presentation.PresentationEvents)),
 	read ActorViewRegistry: typeof(require(script.client.Actor.ActorViewRegistry)),
 	read ClientActionRuntime: typeof(require(script.client.Action.ClientActionRuntime)),
 	read ClientControls: typeof(require(script.client.Controls.ClientControls)),
@@ -210,6 +217,7 @@ local MEMBERS: { [string]: ModuleScript } = {
 	HintAuthorization = script.server.Networking.HintAuthorization,
 	ServerHintRuntime = script.server.Networking.HintRuntime,
 
+	PresentationEvents = script.client.Presentation.PresentationEvents,
 	ActorViewRegistry = script.client.Actor.ActorViewRegistry,
 	ClientActionRuntime = script.client.Action.ClientActionRuntime,
 	ClientControls = script.client.Controls.ClientControls,

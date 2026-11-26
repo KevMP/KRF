@@ -3,21 +3,16 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local packages: Folder = ReplicatedStorage:WaitForChild("Packages") :: Folder
 packages:WaitForChild("KRF")
-local KRF = ReplicatedStorage.Packages.KRF
-local ActorTypes = require(KRF.client.Actor.types)
-local Types = require(KRF.client.Presentation.types)
-local Events = require(KRF.client.Presentation.PresentationEvents)
-local Registry = require(KRF.client.Actor.ActorViewRegistry)
-local Client = require(KRF.client)
+local KRF = require(ReplicatedStorage.Packages.KRF)
 
 local control: RemoteEvent = ReplicatedStorage:WaitForChild("PresentationTestControl") :: RemoteEvent
 local player: Player = Players.LocalPlayer
 local started: { number } = {}
-local active: { Types.PresentationContext } = {}
+local active: { KRF.PresentationContext } = {}
 local highlights: { Highlight } = {}
-local worldHint: Types.PresentationContext? = nil
-local actorHint: Types.PresentationContext? = nil
-local initial: ActorTypes.ActorView? = nil
+local worldHint: KRF.PresentationContext? = nil
+local actorHint: KRF.PresentationContext? = nil
+local initial: KRF.ActorView? = nil
 
 local function waitFor(predicate: () -> boolean, reason: string): ()
 	local deadline: number = os.clock() + 12
@@ -28,14 +23,14 @@ local function waitFor(predicate: () -> boolean, reason: string): ()
 	end
 end
 
-local swordHighlight: Types.PresentationDefinition = {
+local swordHighlight: KRF.PresentationDefinition = {
 	id = "Sword.Swing.Highlight",
-	entry = { event = Events.Action.Started, id = "Sword.Swing" },
-	create = function(context: Types.PresentationContext)
-		local observation: Types.PresentationEntryEvent = context.entry
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Sword.Swing" },
+	create = function(context: KRF.PresentationContext)
+		local observation: KRF.PresentationEntryEvent = context.entry
 		assert(observation.source == "Action", "Expected Action entry")
 		table.insert(started, observation.action.sequenceId)
-		local actor: ActorTypes.ActorView = assert(context.actor, "Expected Action origin")
+		local actor: KRF.ActorView = assert(context.actor, "Expected Action origin")
 		local model: Model = assert(actor:GetModel(), "Expected streamed native Model")
 
 		local highlight: Highlight = Instance.new("Highlight")
@@ -51,11 +46,11 @@ local swordHighlight: Types.PresentationDefinition = {
 	end,
 }
 
-local worldImpact: Types.PresentationDefinition = {
+local worldImpact: KRF.PresentationDefinition = {
 	id = "WorldImpact",
-	entry = { event = Events.Hint.Received, id = "Impact.World" },
-	create = function(context: Types.PresentationContext)
-		local observation: Types.PresentationEntryEvent = context.entry
+	entry = { event = KRF.PresentationEvents.Hint.Received, id = "Impact.World" },
+	create = function(context: KRF.PresentationContext)
+		local observation: KRF.PresentationEntryEvent = context.entry
 
 		assert(
 			observation.source == "Hint" and observation.payload == 21 and context.actor == nil,
@@ -70,11 +65,11 @@ local worldImpact: Types.PresentationDefinition = {
 	end,
 }
 
-local actorImpact: Types.PresentationDefinition = {
+local actorImpact: KRF.PresentationDefinition = {
 	id = "ActorImpact",
-	entry = { event = Events.Hint.Received, id = "Impact.Actor" },
-	create = function(context: Types.PresentationContext)
-		local observation: Types.PresentationEntryEvent = context.entry
+	entry = { event = KRF.PresentationEvents.Hint.Received, id = "Impact.Actor" },
+	create = function(context: KRF.PresentationContext)
+		local observation: KRF.PresentationEntryEvent = context.entry
 
 		assert(
 			observation.source == "Hint" and observation.payload == 22 and observation.actor == initial,
@@ -88,19 +83,22 @@ local actorImpact: Types.PresentationDefinition = {
 local function run(phase: string, actorId: string): ()
 	if phase == "Initial" then
 		waitFor(function()
-			local view: ActorTypes.ActorView? = Registry.GetActorViewById(actorId)
+			local view: KRF.ActorView? = KRF.ActorViewRegistry.GetActorViewById(actorId)
 
 			return view ~= nil and view:GetModel() ~= nil
 		end, "Initial native actor baseline missing")
 
-		initial = assert(Registry.GetActorViewById(actorId), "Expected registered ActorView")
+		initial = assert(KRF.ActorViewRegistry.GetActorViewById(actorId), "Expected registered ActorView")
 		assert(initial:GetDomain("KRF.Actions") == nil and #started == 0, "Initial baseline should omit Actions")
 	elseif phase == "Replacement" then
 		waitFor(function()
 			return initial ~= nil and initial:GetActions():GetAction(1) ~= nil
 		end, "Replacement baseline did not add Actions")
 
-		assert(Registry.GetActorViewById(actorId) == initial and #started == 0, "Recovery replayed the active Action")
+		assert(
+			KRF.ActorViewRegistry.GetActorViewById(actorId) == initial and #started == 0,
+			"Recovery replayed the active Action"
+		)
 	elseif phase == "Live" then
 		waitFor(function()
 			return #highlights >= 2 and worldHint ~= nil and actorHint ~= nil
@@ -132,7 +130,7 @@ local function run(phase: string, actorId: string): ()
 			"Expected only Actor-less instance to survive Actor removal"
 		)
 
-		Client._ResetForTests()
+		KRF.Client._ResetForTests()
 		assert(not worldHint:IsActive(), "Reset left Actor-less Hint active")
 	end
 end
@@ -147,20 +145,20 @@ waitFor(function()
 end, "Native role was not assigned")
 
 if player:GetAttribute("ValidPresentationCatalog") == true then
-	local initialized, failure = Client.Init({ presentations = { swordHighlight, worldImpact, actorImpact } })
+	local initialized, failure = KRF.Client.Init({ presentations = { swordHighlight, worldImpact, actorImpact } })
 
 	control:FireServer(
 		"Ready",
 		if initialized then nil else if failure ~= nil then failure.reason else "Client.Init failed"
 	)
 else
-	local initialized, failure = Client.Init({ presentations = { swordHighlight, swordHighlight } })
+	local initialized, failure = KRF.Client.Init({ presentations = { swordHighlight, swordHighlight } })
 
 	local passed: boolean = not initialized
 		and failure ~= nil
 		and failure.system == "Presentation"
 		and failure.reason == "PresentationIdDuplicate"
-		and #Registry.GetAllActorViews() == 0
+		and #KRF.ActorViewRegistry.GetAllActorViews() == 0
 
 	control:FireServer("Invalid", if passed then nil else "Invalid Presentation startup was not atomic")
 end

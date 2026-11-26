@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { KRF_RUNTIME, SUPPORTED_KRF_VERSIONS, TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
+import { KRF_RUNTIME, KRF_VERSIONS_BEFORE_PRESENTATION, SUPPORTED_KRF_VERSIONS, TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
 import { KrfToolError } from "../errors.js";
 import { isIdentifier } from "./luau.js";
 
@@ -94,6 +94,18 @@ export function readKrfDependency(consumer) {
 	}
 
 	return { alias, version };
+}
+
+export function assertPresentationSupport(consumer, version) {
+	if (!KRF_VERSIONS_BEFORE_PRESENTATION.includes(version)) return;
+
+	// A checkout can be installed in Wally's package tree before its version is bumped.
+	const events = `Packages/_Index/kevmp_krf@${version}/krf/src/client/Presentation/PresentationEvents.luau`;
+	if (consumer.stat(events)?.isFile()) return;
+
+	throw new KrfToolError("PresentationRuntimeUnsupported", `KRF ${version} does not include Presentation.`, {
+		hint: "Install a KRF release with Presentation support and update wally.lock before running createPresentation.",
+	});
 }
 
 export function definitionId(source) {

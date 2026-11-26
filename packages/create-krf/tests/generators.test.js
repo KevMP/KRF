@@ -3,13 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runGenerator, writeNewDirectory } from "@kevmp/krf-tools";
+import { KRF_RUNTIME, runGenerator, writeNewDirectory } from "@kevmp/krf-tools";
 
 import { buildProjectFiles } from "../src/create.js";
 
 const CANCEL = Symbol("cancel");
 
 const STARTUP = "src/server/Startup.server.luau";
+const CLIENT_STARTUP = "src/client/Startup.client.luau";
 const REQUESTS = "src/shared/ActionRequests";
 const POLICIES = "src/client/ActionInputPolicies";
 
@@ -25,6 +26,7 @@ const EVERY_KIND = [
 	["hint", "--name", "ImpactFx"],
 	["hint", "--name", "Ping", "--direction", "ClientToServer"],
 	["domain", "--name", "ComboState"],
+	["presentation", "--name", "FireballFlash", "--source-id", "Fireball"],
 ];
 
 function newProject(t, mode = "full") {
@@ -33,6 +35,12 @@ function newProject(t, mode = "full") {
 	const root = path.join(parent, "my-game");
 	writeNewDirectory(root, buildProjectFiles({ target: root, name: "my-game", options: { mode, ci: false, agents: false }, git: false }));
 	return root;
+}
+
+function installLocalPresentationRuntime(root) {
+	const folder = path.join(root, "Packages", "_Index", `kevmp_krf@${KRF_RUNTIME.version}`, "krf", "src", "client", "Presentation");
+	fs.mkdirSync(folder, { recursive: true });
+	fs.copyFileSync(new URL("../../../src/client/Presentation/PresentationEvents.luau", import.meta.url), path.join(folder, "PresentationEvents.luau"));
 }
 
 function readTree(root) {
@@ -117,6 +125,7 @@ return Fireball
 
 test("first use of each catalog creates its loader and wires Startup once; later definitions only add a file", async (t) => {
 	const root = newProject(t);
+	installLocalPresentationRuntime(root);
 	for (const argv of EVERY_KIND) {
 		const result = await generate(root, [...argv, "--yes"]);
 		assert.equal(result.code, 0, `${argv.join(" ")}\n${result.stdout}${result.stderr}`);
@@ -144,9 +153,74 @@ test("first use of each catalog creates its loader and wires Startup once; later
 	assert.equal(readTree(root)[STARTUP], startupBefore);
 });
 
+test("createPresentation installs the client catalog once and loads later definitions from the same folder", async (t) => {
+	const root = newProject(t);
+	installLocalPresentationRuntime(root);
+	const before = readTree(root);
+	const argv = ["presentation", "--name", "SwingHighlight", "--id", "Combat.SwingHighlight", "--source-id", "Sword.Swing", "--yes", "--json"];
+	const preview = await generate(root, [...argv, "--dry-run"]);
+	assert.equal(preview.code, 0, preview.stderr);
+	assert.deepEqual(readTree(root), before);
+
+	const result = await generate(root, argv);
+	assert.equal(result.code, 0, result.stderr);
+	assert.equal(result.json.status, "created");
+
+	const after = readTree(root);
+	assert.deepEqual(changedFiles(before, after), ["src/client/Presentations/Combat/SwingHighlight.luau", "src/client/Presentations/init.luau", CLIENT_STARTUP]);
+	assert.match(after["src/client/Presentations/init.luau"], /: \{ KRF\.PresentationDefinition \} = requireDescendants\(script\)/);
+	assert.match(after["src/client/Presentations/Combat/SwingHighlight.luau"], /local SwingHighlight: KRF\.PresentationDefinition = /);
+	assert.match(after["src/client/Presentations/Combat/SwingHighlight.luau"], /entry = \{ event = KRF\.PresentationEvents\.Action\.Started, id = "Sword\.Swing" \}/);
+	assert.match(after["src/client/Presentations/Combat/SwingHighlight.luau"], /create = function\(context: KRF\.PresentationContext\): \(\)[\s\S]*context:Finish\(\)/);
+	assert.match(after[CLIENT_STARTUP], /local Presentations = require\(script\.Parent\.Presentations\)/);
+	assert.match(after[CLIENT_STARTUP], /KRF\.Client\.Init\(\{[\s\S]*\tpresentations = Presentations,/);
+
+	const next = await generate(root, ["presentation", "--name", "WorldBurst", "--event", "Hint.Received", "--source-id", "World.Impact", "--yes"]);
+	assert.equal(next.code, 0, next.stderr);
+	const final = readTree(root);
+	assert.deepEqual(changedFiles(after, final), ["src/client/Presentations/WorldBurst.luau"]);
+	assert.match(final["src/client/Presentations/WorldBurst.luau"], /KRF\.PresentationEvents\.Hint\.Received/);
+});
+
+test("createPresentation leaves a custom client startup alone and reports where to wire it", async (t) => {
+	const root = newProject(t);
+	installLocalPresentationRuntime(root);
+	const startup = readTree(root)[CLIENT_STARTUP].replace("KRF.Client.Init({", "KRF.Client.Init(table.freeze({").replace("\n})", "\n}))");
+	fs.writeFileSync(path.join(root, CLIENT_STARTUP), startup);
+
+	const result = await generate(root, ["presentation", "--name", "StatusGlow", "--event", "Tag.Added", "--source-id", "Blocking", "--yes", "--json"]);
+	assert.equal(result.code, 5, result.stderr);
+	assert.equal(result.json.status, "manual-wiring-required");
+	assert.equal(readTree(root)[CLIENT_STARTUP], startup);
+	assert.match(JSON.stringify(result.json.manual), /KRF\.Client\.Init/);
+});
+
+test("createPresentation rejects an invalid event or missing selector before writing", async (t) => {
+	const root = newProject(t);
+	const before = readTree(root);
+	for (const options of [["--event", "Action.Unknown", "--source-id", "Swing"], []]) {
+		const result = await generate(root, ["presentation", "--name", "Highlight", ...options, "--yes", "--json"]);
+		assert.notEqual(result.code, 0);
+		assert.equal(result.json.error.code, "InvalidOption");
+		assert.deepEqual(readTree(root), before);
+	}
+});
+
+
+test("createPresentation refuses a published runtime without Presentation before editing startup", async (t) => {
+	const root = newProject(t);
+	const before = readTree(root);
+	const result = await generate(root, ["presentation", "--name", "SwingHighlight", "--source-id", "Sword.Swing", "--yes", "--json"]);
+	assert.notEqual(result.code, 0);
+	assert.equal(result.json.error.code, "PresentationRuntimeUnsupported");
+	assert.deepEqual(readTree(root), before);
+});
+
 test("Full and Hybrid projects get identical generated source", async (t) => {
 	const full = newProject(t, "full");
 	const hybrid = newProject(t, "hybrid");
+	installLocalPresentationRuntime(full);
+	installLocalPresentationRuntime(hybrid);
 	for (const argv of EVERY_KIND) {
 		await generate(full, [...argv, "--yes"]);
 		await generate(hybrid, [...argv, "--yes"]);
@@ -157,6 +231,8 @@ test("Full and Hybrid projects get identical generated source", async (t) => {
 test("the same request produces the same bytes in every fresh project", async (t) => {
 	const first = newProject(t);
 	const second = newProject(t);
+	installLocalPresentationRuntime(first);
+	installLocalPresentationRuntime(second);
 	for (const argv of EVERY_KIND) {
 		await generate(first, [...argv, "--yes"]);
 		await generate(second, [...argv, "--yes"]);

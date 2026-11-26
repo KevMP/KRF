@@ -8,18 +8,23 @@ Register a client Presentation to start your own visual code when KRF delivers a
 
 ## Highlight an Actor when an Action starts
 
-Put this in the LocalScript that calls Client.Init. The server must already register a client-visible Action with ID `Sword.Swing` and publish the Actor that starts it. The example uses KRF for entry and lifetime and uses Roblox's native `Highlight` for the visual.
+With a KRF runtime and generator that include Presentation, scaffold a definition for a client-visible Action. This example listens for `Sword.Swing` on any Actor whose Action events reach the client.
+
+```bash
+npm run createPresentation -- --name SwingHighlight --id Sword.Swing.Highlight --event Action.Started --source-id Sword.Swing --yes
+```
+
+Open `src/client/Presentations/Sword/Swing/SwingHighlight.luau` and give its `create` function a Roblox `Highlight`. The server needs a [client-visible Action](../actions/guide) with the matching ID.
 
 ```luau
 --!strict
-local KRF = game:GetService("ReplicatedStorage").Packages.KRF
-local Client = require(KRF.client)
-local Events = require(KRF.client.Presentation.PresentationEvents)
-local Types = require(KRF.client.Presentation.types)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local swordHighlight: Types.PresentationDefinition = {
+local KRF = require(ReplicatedStorage.Packages.KRF)
+
+local SwingHighlight: KRF.PresentationDefinition = {
 	id = "Sword.Swing.Highlight",
-	entry = { event = Events.Action.Started, id = "Sword.Swing" },
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Sword.Swing" },
 	create = function(ctx)
 		local actor = ctx.actor
 		local model = if actor ~= nil then actor:GetModel() else nil
@@ -44,21 +49,22 @@ local swordHighlight: Types.PresentationDefinition = {
 	end,
 }
 
-local ok, failure = Client.Init({ presentations = { swordHighlight } })
-assert(ok, if failure ~= nil then failure.system .. ": " .. failure.reason else "Client startup failed")
+return SwingHighlight
 ```
 
-The effect can overlap with another swing, even on the same Actor. `Finish` retires just that instance. An Action end or interruption leaves existing instances active until they finish or their ActorView retires. If you want a visual to start on an Action end, register a definition for `Events.Action.Ended`.
+The effect can overlap with another swing, even on the same Actor. `Finish` retires just that instance. An Action end or interruption leaves existing instances active until they finish or their ActorView retires. If you want a visual to start on an Action end, register a definition for `KRF.PresentationEvents.Action.Ended`.
 
 ## Register definitions
 
-`Client.Init({ presentations = { ... } })` accepts a dense array of definition tables. An empty array and omitted configuration are valid. Each definition has a unique, nonempty string `id`, one `entry` binding and one `create(ctx)` function. The binding has two fields, an exported `PresentationEvents` descriptor and the exact, nonempty game source `id`. The two IDs serve different purposes. In the example, `Sword.Swing.Highlight` names the visual definition and `Sword.Swing` selects an Action.
+The first generated Presentation adds `src/client/Presentations/init.luau` and wires that catalog into `Startup.client.luau`. The loader collects the definitions under `Presentations`, including namespaced subfolders. Add future definitions as ModuleScripts in that folder. If you maintain a custom startup, require the catalog and pass it as `presentations` in your existing `KRF.Client.Init` call.
+
+`KRF.Client.Init({ presentations = { ... } })` accepts a dense array of definition tables. An empty array and omitted configuration are valid. Each definition has a unique, nonempty string `id`, one `entry` binding and one `create(ctx)` function. The binding has two fields, an exported `PresentationEvents` descriptor and the exact, nonempty game source `id`. The two IDs serve different purposes. In the example, `Sword.Swing.Highlight` names the visual definition and `Sword.Swing` selects an Action.
 
 Load the full catalog in the startup call. KRF validates the entire array before connecting to transport and attaches the entries only when client startup succeeds. Startup owns a copy of the IDs and binding and keeps the original function reference. It does not call `create` during validation. A malformed member fails startup under the `Presentation` system with a stable reason. See the [initialization API](../getting-started/initialization-api#clientinit).
 
 ## Pick an entry event
 
-Require `KRF.client.Presentation.PresentationEvents` and use these frozen values in `entry.event`. Every selector matches one existing source ID exactly.
+Use these frozen values from `KRF.PresentationEvents` in `entry.event`. Every selector matches one existing source ID exactly.
 
 | Descriptor | Source signal | Select by |
 | --- | --- | --- |

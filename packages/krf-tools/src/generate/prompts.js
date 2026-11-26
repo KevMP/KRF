@@ -1,7 +1,7 @@
 import * as clack from "@clack/prompts";
 
 import { ExitCode, KrfToolError } from "../errors.js";
-import { CATALOGS } from "./catalogs.js";
+import { CATALOGS, PRESENTATION_EVENTS } from "./catalogs.js";
 import { isIdentifier } from "./luau.js";
 import { ENTRY_PROBLEMS, OPTION_DEFAULTS, nameProblem } from "./request.js";
 
@@ -387,6 +387,18 @@ const FLOWS = {
 		if (need("payloadFields")) set("payloadFields", await asker.fields("payload", "data the Hint carries"));
 		if (need("authorize") && options.direction === "ClientToServer") {
 			set("authorize", await asker.select("authorize (which players may send the Hint)", AUTHORIZATION.filter((policy) => policy.value !== "OwnerActor" || options.target === "Actor"), "deny"));
+		}
+	},
+
+	async presentation(asker, need, set) {
+		if (need("event")) {
+			const events = PRESENTATION_EVENTS.map((event) => ({ value: event, label: event }));
+			set("event", await asker.select("event (which occurrence starts the Presentation)", events, OPTION_DEFAULTS.presentation.event));
+		}
+		if (need("sourceId")) {
+			set("sourceId", await asker.text("sourceId (the exact Action, Tag, Resource or Hint ID)", {
+				validate: (value) => (value?.trim() ? undefined : "Enter a source ID."),
+			}));
 		}
 	},
 
