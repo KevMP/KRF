@@ -209,6 +209,8 @@ test("createPresentation rejects an invalid event or missing selector before wri
 
 test("createPresentation refuses a published runtime without Presentation before editing startup", async (t) => {
 	const root = newProject(t);
+	const manifest = path.join(root, "wally.toml");
+	fs.writeFileSync(manifest, fs.readFileSync(manifest, "utf8").replace(`kevmp/krf@=${KRF_RUNTIME.version}`, "kevmp/krf@=0.2.1"));
 	const before = readTree(root);
 	const result = await generate(root, ["presentation", "--name", "SwingHighlight", "--source-id", "Sword.Swing", "--yes", "--json"]);
 	assert.notEqual(result.code, 0);
