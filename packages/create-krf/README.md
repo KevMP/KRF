@@ -1,6 +1,6 @@
 # create-krf
 
-Creates a Roblox game project that uses [KRF](https://kevmp.github.io/KRF/) `kevmp/krf@0.2.0`.
+Creates a Roblox game project that uses [KRF](https://kevmp.github.io/KRF/) `kevmp/krf@0.2.1`.
 
 ```bash
 npm create krf@latest
