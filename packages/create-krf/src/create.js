@@ -7,6 +7,8 @@ import { CREATOR_VERSION, ROKIT_VERSION } from "./compatibility.js";
 import { ROJO_PROJECT_FILE, generatedManifests } from "./manifests.js";
 
 const TEMPLATES = fileURLToPath(new URL("../templates/", import.meta.url));
+const SKILLS = ".agents/skills/";
+const SKILL_COPIES = [SKILLS, ".claude/skills/"];
 
 /** @param {import("./options.js").CreatorConfig} config */
 export function templateRoots(config) {
@@ -32,9 +34,11 @@ export function buildProjectFiles(config) {
 		rokitVersion: ROKIT_VERSION,
 		rojoProjectFile: ROJO_PROJECT_FILE,
 	});
-	const rendered = places === undefined ? templates : new Map([...templates].flatMap(([file, contents]) => (
-		file.startsWith("world/") ? places.map((name) => [`world/${name}/${file.slice("world/".length)}`, contents]) : [[file, contents]]
-	)));
+	const rendered = new Map([...templates].flatMap(([file, contents]) => {
+		if (file.startsWith("world/") && places !== undefined) return places.map((name) => [`world/${name}/${file.slice("world/".length)}`, contents]);
+		if (file.startsWith(SKILLS)) return SKILL_COPIES.map((folder) => [`${folder}${file.slice(SKILLS.length)}`, contents]);
+		return [[file, contents]];
+	}));
 
 	for (const [file, contents] of generatedManifests(config)) {
 		if (rendered.has(file)) throw new Error(`Template and generated manifest both produce ${file}`);

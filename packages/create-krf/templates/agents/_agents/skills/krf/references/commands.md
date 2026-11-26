@@ -17,7 +17,7 @@ A Command answers one request. If the client needs to keep seeing what changed, 
 ## Generate it
 
 ```bash
-npm run --silent createCommand -- --name BuyItem --target Actor --request-field "ItemId:String(32)" --authorize OwnerActor --yes --json
+npm run createCommand -- --name BuyItem --target Actor --request-field "ItemId:String(32)" --authorize OwnerActor --yes --json
 ```
 
 The generator writes the Command to `src/server/Commands` and adds it to `Server.Init`. Until you fill in `handle`, it rejects every request with `NotImplemented`.

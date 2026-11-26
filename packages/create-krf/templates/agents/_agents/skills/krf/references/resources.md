@@ -5,7 +5,7 @@ A Resource is a value an Actor spends and regains, such as Health, Mana, Stamina
 ## Define a meter
 
 ```bash
-npm run --silent createResource -- --name Stamina --max MaxStamina --regen StaminaRegen --visibility ClientVisible --yes --json
+npm run createResource -- --name Stamina --max MaxStamina --regen StaminaRegen --visibility ClientVisible --yes --json
 ```
 
 - **Bounds:** `--max` and `--min` take a number or a Property ID. The defaults are 100 and 0. A Property ID makes the bound follow that Actor's resolved stat, so a Tag that raises MaxStamina raises the meter. Generate the Property first. See [properties.md](properties.md).
@@ -32,7 +32,7 @@ The second argument overrides the starting value. A Resource stays until the Act
 An Action's price belongs on the Action, not in code that calls `Spend`:
 
 ```bash
-npm run --silent createAction -- --name Fireball --cost Mana=20 --requirement Mana:minPercent=0.5 --requestable --yes --json
+npm run createAction -- --name Fireball --cost Mana=20 --requirement Mana:minPercent=0.5 --requestable --yes --json
 ```
 
 KRF checks requirements and costs before the Action starts, and spends only if it accepts the request. Costs across several Resources are paid together. Nothing is refunded when the Action ends or is interrupted. Calling `Spend` yourself before a request can charge for a request the server then rejects. See [actions.md](actions.md).
@@ -56,7 +56,7 @@ Each returns `(boolean, string?)`. Check the result when it matters.
 A cooldown is a Resource, not a timer:
 
 ```bash
-npm run --silent createResource -- --name FireballCooldown --max 1 --regen 0.25 --visibility ClientVisible --yes --json
+npm run createResource -- --name FireballCooldown --max 1 --regen 0.25 --visibility ClientVisible --yes --json
 ```
 
 Then give the Action `--requirement FireballCooldown:minPercent=1 --cost FireballCooldown=1`. The Resource starts full, so the ability is ready at first. Each use empties it, and it refills in `1 / regen` seconds, which is four seconds here.

@@ -7,10 +7,9 @@ This file is the full reference for every generator. The other references show o
 ## Run a generator
 
 ```bash
-npm run --silent createAction -- --name Dash --recipe instant --cost Stamina=15 --requestable --yes --json
+npm run createAction -- --name Dash --recipe instant --cost Stamina=15 --requestable --yes --json
 ```
 
-- `--silent` keeps npm's banner out of the JSON.
 - `--yes` uses the defaults for anything you don't pass, and never prompts. Without it, a terminal wizard asks for each missing value.
 - `--json` prints one result object to stdout. Diagnostics go to stderr.
 - Quote any value with parentheses, `|` or spaces, such as `"Target:Array(F32,3)"` or `"Mode:Enum(Solo|Group)"`.
@@ -90,7 +89,7 @@ Flags can't declare a nested record. For one, generate the closest shape and edi
 | `--auto-assign` | off | Give it to every Actor |
 
 ```bash
-npm run --silent createProperty -- --name MaxStamina --default 100 --auto-assign --yes --json
+npm run createProperty -- --name MaxStamina --default 100 --auto-assign --yes --json
 ```
 
 Without `--auto-assign`, `next` tells you how to give it to an Actor. See [properties.md](properties.md).
@@ -107,7 +106,7 @@ Without `--auto-assign`, `next` tells you how to give it to an Actor. See [prope
 | `--no-auto-assign` | Assigned | Don't give it to every Actor |
 
 ```bash
-npm run --silent createResource -- --name Stamina --max MaxStamina --regen 5 --visibility ClientVisible --yes --json
+npm run createResource -- --name Stamina --max MaxStamina --regen 5 --visibility ClientVisible --yes --json
 ```
 
 The generator assigns Resources to every Actor unless you pass `--no-auto-assign`, although a hand-written definition defaults to not assigned. See [resources.md](resources.md), including cooldowns and charges.
@@ -124,7 +123,7 @@ The generator assigns Resources to every Actor unless you pass `--no-auto-assign
 | `--visibility <visibility>` | `ServerOnly` | `ClientVisible` to show it to clients |
 
 ```bash
-npm run --silent createTag -- --name Slowed --duration 3 --duplicate-behavior Refresh --property WalkSpeed:multiply=0.5 --visibility ClientVisible --yes --json
+npm run createTag -- --name Slowed --duration 3 --duplicate-behavior Refresh --property WalkSpeed:multiply=0.5 --visibility ClientVisible --yes --json
 ```
 
 See [tags.md](tags.md).
@@ -137,7 +136,7 @@ See [tags.md](tags.md).
 | `--no-auto-attach` | Attached | Don't attach it to every Actor |
 
 ```bash
-npm run --silent createController -- --name Inventory --depends-on ResourceController --yes --json
+npm run createController -- --name Inventory --depends-on ResourceController --yes --json
 ```
 
 See [actors-and-controllers.md](actors-and-controllers.md).
@@ -167,7 +166,7 @@ See [actors-and-controllers.md](actors-and-controllers.md).
 | `--on-disconnect <policy>` | `Keep` | `Keep` or `Interrupt` when the player leaves. `held` always interrupts |
 
 ```bash
-npm run --silent createAction -- --name Fireball --recipe channel --duration 1.5 --cost Mana=20 --blocked-tag Stunned --active-tag Casting --lock Cast --requestable --start-field "Target:Array(F32,3)" --yes --json
+npm run createAction -- --name Fireball --recipe channel --duration 1.5 --cost Mana=20 --blocked-tag Stunned --active-tag Casting --lock Cast --requestable --start-field "Target:Array(F32,3)" --yes --json
 ```
 
 `--start-field`, `--stop-field`, `--client-stop`, `--allow-input-interrupt` and `--on-disconnect` describe the client request, so they need `--requestable`. An `instant` Action can't take a Stop, so it rejects `--client-stop` and `--stop-field`.
@@ -184,7 +183,7 @@ The generator never binds a key. Follow `next`, and see [action-input.md](action
 | `--observe` | off | Add the `observe` stub without declaring an event |
 
 ```bash
-npm run --silent createDomain -- --name Inventory --audience Owner --state-field "Items:Map(String(32),U16,40)" --event "ItemAdded(ItemId:String(32),Count:U16)" --yes --json
+npm run createDomain -- --name Inventory --audience Owner --state-field "Items:Map(String(32),U16,40)" --event "ItemAdded(ItemId:String(32),Count:U16)" --yes --json
 ```
 
 The generator defaults to `Owner`, although a hand-written domain without an audience is `All`. See [replication.md](replication.md).
@@ -199,7 +198,7 @@ The generator defaults to `Owner`, although a hand-written domain without an aud
 | `--authorize <policy>` | `deny` | `deny`, `OwnerActor` or `AnyReadyClient` |
 
 ```bash
-npm run --silent createCommand -- --name BuyItem --request-field "ItemId:String(32)" --authorize OwnerActor --yes --json
+npm run createCommand -- --name BuyItem --request-field "ItemId:String(32)" --authorize OwnerActor --yes --json
 ```
 
 The generated `handle` rejects every request with `NotImplemented`, and so does `authorize` with `deny`, until you write them. See [commands.md](commands.md).
@@ -215,7 +214,7 @@ The generated `handle` rejects every request with `NotImplemented`, and so does 
 | `--authorize <policy>` | `deny` | `deny`, `OwnerActor` or `AnyReadyClient`. `ClientToServer` only |
 
 ```bash
-npm run --silent createHint -- --name ImpactEffect --target None --payload-field "Position:Array(F32,3)" --yes --json
+npm run createHint -- --name ImpactEffect --target None --payload-field "Position:Array(F32,3)" --yes --json
 ```
 
 A `ClientToServer` Hint also gets a `receive` stub. See [hints.md](hints.md).

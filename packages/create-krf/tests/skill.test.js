@@ -10,7 +10,8 @@ import { copySkillDocs, rewriteDocument, rewriteLink } from "../scripts/skill-do
 import { buildProjectFiles } from "../src/create.js";
 
 const SKILL = ".agents/skills/krf";
-const AGENT_FILES = (file) => file === "AGENTS.md" || file.startsWith(".agents/");
+const CLAUDE_SKILL = ".claude/skills/krf";
+const AGENT_FILES = (file) => ["AGENTS.md", "CLAUDE.md"].includes(file) || file.startsWith(".agents/") || file.startsWith(".claude/");
 const FENCE = /^\s*(```|~~~)/;
 
 const config = (options) => ({ target: "/projects/my-game", name: "my-game", options: { mode: "full", ci: true, agents: true, ...options }, git: false });
@@ -110,8 +111,19 @@ test("--agents adds AGENTS.md and the skill, and --no-agents changes nothing els
 	for (const [file, contents] of withoutAgents) {
 		if (file !== "README.md") assert.equal(withAgents.get(file), contents, file);
 	}
-	assert.match(withAgents.get("README.md"), /`AGENTS\.md` and the KRF skill in `\.agents\/skills\/krf\/`/);
-	assert.doesNotMatch(withoutAgents.get("README.md"), /AGENTS\.md|\.agents/);
+	assert.match(withAgents.get("README.md"), /`\.agents\/skills\/krf\/` for Codex and `\.claude\/skills\/krf\/` for Claude Code/);
+	assert.doesNotMatch(withoutAgents.get("README.md"), /AGENTS\.md|CLAUDE\.md|\.agents|\.claude/);
+});
+
+test("Claude Code gets the same skill and imports AGENTS.md", () => {
+	const files = text(buildProjectFiles(config({})));
+	const skill = [...files.keys()].filter((file) => file.startsWith(`${SKILL}/`));
+	const claudeSkill = [...files.keys()].filter((file) => file.startsWith(`${CLAUDE_SKILL}/`));
+
+	assert.ok(skill.length > 0);
+	assert.deepEqual(claudeSkill, skill.map((file) => `${CLAUDE_SKILL}/${file.slice(`${SKILL}/`.length)}`));
+	for (const file of skill) assert.equal(files.get(`${CLAUDE_SKILL}/${file.slice(`${SKILL}/`.length)}`), files.get(file), file);
+	assert.equal(files.get("CLAUDE.md"), "@AGENTS.md\n");
 });
 
 test("the skill's frontmatter names it and says when to use it", () => {
@@ -187,7 +199,7 @@ test("agent files mention only npm scripts the project has", () => {
 
 		for (const [file, contents] of files) {
 			if (!AGENT_FILES(file) || !file.endsWith(".md")) continue;
-			const mentioned = [...contents.matchAll(/npm run (?:--silent )?([A-Za-z:]+)/g)].map((match) => match[1]);
+			const mentioned = [...contents.matchAll(/npm run ([A-Za-z:]+)/g)].map((match) => match[1]);
 			assert.deepEqual(mentioned.filter((script) => !scripts.includes(script)), [], `${file} ${JSON.stringify(options)}`);
 			if (/\bnpm test\b/.test(contents)) assert.ok(scripts.includes("test"), `${file} mentions npm test`);
 		}

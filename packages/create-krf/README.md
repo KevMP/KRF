@@ -40,7 +40,7 @@ given as flags. With `--yes`, or without a terminal, missing values use the defa
 | `--mode` | `full`: code and world live in the repository, and `npm run dev` builds the whole place. `hybrid`: only code and packages live in the repository; you build the world in Studio and keep the place file | `full` |
 | `--places` | Full mode only. Comma-separated names such as `lobby,dungeon`, with the start place first | One unnamed starter place |
 | `--ci` / `--no-ci` | A GitHub Actions workflow that checks and builds on every push and pull request | `--ci` |
-| `--agents` / `--no-agents` | `AGENTS.md` and the KRF skill in `.agents/skills/krf/`, so coding agents can build the game with KRF | `--agents` |
+| `--agents` / `--no-agents` | `AGENTS.md`, a `CLAUDE.md` that imports it, and the KRF skill in both `.agents/skills/krf/` (Codex) and `.claude/skills/krf/` (Claude Code), so coding agents can build the game with KRF | `--agents` |
 | `--no-git` | Skip `git init`, which otherwise runs unless the target is already inside a repository | |
 | `-y`, `--yes` | Use defaults for every missing value; never prompt | |
 
@@ -88,7 +88,7 @@ saves the scene in `tests/integration/fixtures/Arena.rbxmx` into a place, captur
 in both modes, rebuilds it, and checks hierarchy, properties, attributes and references. The starter test plays generated projects in Studio with one server and two clients;
 see [test workflows](../../tests/README.md#starter-project).
 
-Templates live in `templates/`: `base`, plus `full` for the Full starter world, and `ci` and `agents` when selected. Packing copies
+Templates live in `templates/`: `base`, plus `full` for the Full starter world, and `ci` and `agents` when selected. The skill template is in `_agents/skills/krf/`, and the creator writes a copy of it to `.claude/skills/krf/` as well, since Claude Code doesn't read `.agents/skills`. Packing copies
 the reference docs from `docs-site/docs/reference` into the skill's `references/docs/`, rewriting their links so they resolve
 inside the skill; the copy is removed after packing. `npm run typecheck` checks every Luau example in the skill references
 against `src`: each reference has a small game tree under `tests/fixtures/skill-examples/<reference>/`, and a

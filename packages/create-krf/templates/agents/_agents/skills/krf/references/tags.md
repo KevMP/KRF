@@ -7,7 +7,7 @@ A Tag is a status on an Actor, such as Stunned, Burning or Blocking. A Tag can l
 Pass the duration, duplicate behavior, visibility and modifiers to the generator:
 
 ```bash
-npm run --silent createTag -- --name Slowed --duration 3 --duplicate-behavior Refresh --visibility ClientVisible --property WalkSpeed:multiply=0.5 --yes --json
+npm run createTag -- --name Slowed --duration 3 --duplicate-behavior Refresh --visibility ClientVisible --property WalkSpeed:multiply=0.5 --yes --json
 ```
 
 - **Duration:** omit `--duration` for a Tag that lasts until something removes it, such as Blocking.

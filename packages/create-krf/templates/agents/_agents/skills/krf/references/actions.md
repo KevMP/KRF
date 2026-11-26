@@ -14,7 +14,7 @@ Pick the recipe that matches how the Action ends:
 | `toggle` | When the player presses the input again | Sitting in a seat, a stance |
 
 ```bash
-npm run --silent createAction -- --name Fireball --recipe instant --cost Mana=20 --requestable --yes --json
+npm run createAction -- --name Fireball --recipe instant --cost Mana=20 --requestable --yes --json
 ```
 
 Declare the rest with flags, too:
@@ -81,7 +81,7 @@ Gates are checked only at the start. If the caster gets Stunned while channeling
 Actions that share a lock name can't run at the same time:
 
 ```bash
-npm run --silent createAction -- --name Guard --recipe held --lock Stance --active-tag Blocking --interruptible-by Dodge --requestable --yes --json
+npm run createAction -- --name Guard --recipe held --lock Stance --active-tag Blocking --interruptible-by Dodge --requestable --yes --json
 ```
 
 A Dodge holding the `Stance` lock can now interrupt Guard, because Guard lists it in `--interruptible-by`. Without that, Dodge would be rejected while Guard runs.

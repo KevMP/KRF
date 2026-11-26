@@ -44,6 +44,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 			assert.equal(fs.existsSync(path.join(project, "node_modules")), false);
 			assert.equal("AGENTS.md" in generated, variant.agents);
 			assert.equal(".agents/skills/krf/references/docs/actions/guide.md" in generated, variant.agents);
+			assert.equal(".claude/skills/krf/references/docs/actions/guide.md" in generated, variant.agents);
 			assert.equal(Object.keys(generated).some((file) => file.startsWith(".agents/")), variant.agents);
 
 			run("npm", ["install"], project);

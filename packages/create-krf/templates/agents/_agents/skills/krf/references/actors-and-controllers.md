@@ -50,7 +50,7 @@ Write a Controller only for per-character state that no primitive describes, suc
 ### Generate it
 
 ```bash
-npm run --silent createController -- --name Rank --yes --json
+npm run createController -- --name Rank --yes --json
 ```
 
 Pass `--depends-on <key>` once for each Controller the factory uses, and `--no-auto-attach` when only some Actors should get it. See [generators.md](generators.md#createcontroller).

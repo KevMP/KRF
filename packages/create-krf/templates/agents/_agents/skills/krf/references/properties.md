@@ -5,7 +5,7 @@ A Property is a number on an Actor, such as Defense, MaxHealth or WalkSpeed. Eac
 ## Define a stat
 
 ```bash
-npm run --silent createProperty -- --name Defense --default 10 --auto-assign --yes --json
+npm run createProperty -- --name Defense --default 10 --auto-assign --yes --json
 ```
 
 `--auto-assign` gives the Property to every Actor at its default. Leave it off for a stat only some Actors have. Then assign it when you register the Actor with `properties = { Defense = 25 }`, or with the first `SetBaseProperty` call. An unassigned Property reads as `nil`.

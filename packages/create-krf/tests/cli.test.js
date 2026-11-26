@@ -104,12 +104,26 @@ test("--yes creates the default project without prompting", async (t) => {
 		".agents/skills/krf/references/actors-and-controllers.md",
 		".agents/skills/krf/references/client-views.md",
 		".agents/skills/krf/references/commands.md",
+		".agents/skills/krf/references/deployment.md",
 		".agents/skills/krf/references/generators.md",
 		".agents/skills/krf/references/hints.md",
 		".agents/skills/krf/references/properties.md",
 		".agents/skills/krf/references/replication.md",
 		".agents/skills/krf/references/resources.md",
 		".agents/skills/krf/references/tags.md",
+		".claude/skills/krf/SKILL.md",
+		".claude/skills/krf/references/action-input.md",
+		".claude/skills/krf/references/actions.md",
+		".claude/skills/krf/references/actors-and-controllers.md",
+		".claude/skills/krf/references/client-views.md",
+		".claude/skills/krf/references/commands.md",
+		".claude/skills/krf/references/deployment.md",
+		".claude/skills/krf/references/generators.md",
+		".claude/skills/krf/references/hints.md",
+		".claude/skills/krf/references/properties.md",
+		".claude/skills/krf/references/replication.md",
+		".claude/skills/krf/references/resources.md",
+		".claude/skills/krf/references/tags.md",
 		".github/workflows/ci.yml",
 		".github/workflows/deploy.yml",
 		".github/workflows/release-pr.yml",
@@ -118,6 +132,7 @@ test("--yes creates the default project without prompting", async (t) => {
 		".vscode/extensions.json",
 		".vscode/settings.json",
 		"AGENTS.md",
+		"CLAUDE.md",
 		"README.md",
 		"default.project.json",
 		"package.json",
@@ -224,6 +239,8 @@ test("the wizard and explicit flags create identical projects for every option c
 		assert.equal("start-place.project.json" in flagTree, config.mode === "hybrid");
 		assert.equal("AGENTS.md" in flagTree, config.agents);
 		assert.equal(".agents/skills/krf/SKILL.md" in flagTree, config.agents);
+		assert.equal("CLAUDE.md" in flagTree, config.agents);
+		assert.equal(".claude/skills/krf/SKILL.md" in flagTree, config.agents);
 	}
 });
 

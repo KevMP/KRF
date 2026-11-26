@@ -21,7 +21,7 @@ Write a domain only when none of them fits: state that a Controller of yours own
 ## Generate it
 
 ```bash
-npm run --silent createDomain -- --name Inventory --audience Owner --state-field "Items:Map(String(32),U16,40)" --event "ItemAdded(ItemId:String(32),Count:U16)" --yes --json
+npm run createDomain -- --name Inventory --audience Owner --state-field "Items:Map(String(32),U16,40)" --event "ItemAdded(ItemId:String(32),Count:U16)" --yes --json
 ```
 
 The generator writes the domain to `src/server/ReplicationDomains` and adds it to `Server.Init`. Then fill in two callbacks:

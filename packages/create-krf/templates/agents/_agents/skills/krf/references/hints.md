@@ -28,7 +28,7 @@ For every flag and how to read the result, see [generators.md](generators.md#cre
 ## Send an effect to clients
 
 ```bash
-npm run --silent createHint -- --name ImpactEffect --target None --payload-field "Position:Array(F32,3)" --yes --json
+npm run createHint -- --name ImpactEffect --target None --payload-field "Position:Array(F32,3)" --yes --json
 ```
 
 The server picks every recipient itself. There's no broadcast, so loop over the players:
@@ -63,8 +63,8 @@ For an `Actor` target, pass the Actor to `SendTo` and read `receipt.actorView` o
 A client-to-server Hint needs `authorize` and `receive`. This one lets a player share where they're aiming so the server can show it to everyone else:
 
 ```bash
-npm run --silent createHint -- --name AimSample --direction ClientToServer --mode Latest --payload-field "Direction:Array(F32,3)" --authorize OwnerActor --yes --json
-npm run --silent createHint -- --name AimPresentation --mode Latest --payload-field "Direction:Array(F32,3)" --yes --json
+npm run createHint -- --name AimSample --direction ClientToServer --mode Latest --payload-field "Direction:Array(F32,3)" --authorize OwnerActor --yes --json
+npm run createHint -- --name AimPresentation --mode Latest --payload-field "Direction:Array(F32,3)" --yes --json
 ```
 
 There's no relay, so `receive` forwards the sample to the other players itself:

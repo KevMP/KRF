@@ -13,7 +13,7 @@ A request never grants the Action or skips its costs, Tags, locks or `onCanStart
 Pass `--requestable` with the recipe that matches the input:
 
 ```bash
-npm run --silent createAction -- --name Guard --recipe held --lock Stance --active-tag Blocking --requestable --yes --json
+npm run createAction -- --name Guard --recipe held --lock Stance --active-tag Blocking --requestable --yes --json
 ```
 
 The generator writes up to three files. Read its result for the exact paths:
@@ -144,7 +144,7 @@ recognizers = {
 Declare each field the client sends with `--start-field`, or `--stop-field` for data sent on release:
 
 ```bash
-npm run --silent createAction -- --name Fireball --cost Mana=20 --requestable --start-field "Target:Array(F32,3)" --yes --json
+npm run createAction -- --name Fireball --cost Mana=20 --requestable --start-field "Target:Array(F32,3)" --yes --json
 ```
 
 The generator adds the field to the request entry's schema and writes a `startParameters` producer in the input policy that returns a placeholder. Replace the placeholder with the real value. For aim, cast from the camera through the mouse:
