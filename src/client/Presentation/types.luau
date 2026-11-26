@@ -1,5 +1,6 @@
 --!strict
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 export type ActionEventKind = "Started" | "Ended" | "Interrupted"
 export type TagEventKind = "Added" | "Refreshed" | "Removed" | "Expired"
@@ -46,12 +47,37 @@ export type HintEntryEvent = {
 
 export type PresentationEntryEvent = ActionEntryEvent | TagEntryEvent | ResourceEntryEvent | HintEntryEvent
 
+export type ActorScopedId = { read id: string, read actor: ActorTypes.ActorView }
+export type AnyHintId = { read id: string, read scope: "Any" }
+export type ActionListener = (ActionEntryEvent) -> ()
+export type TagListener = (TagEntryEvent) -> ()
+export type ResourceListener = (ResourceEntryEvent) -> ()
+export type HintListener = (HintEntryEvent) -> ()
+
+-- Factor equivalent explicit-id forms to keep overload normalization bounded.
+-- These signatures accept the same thirteen forms, with source-specific callbacks.
+export type PresentationOn =
+	((PresentationContext, ActionEventDescriptor, ActionListener) -> SignalTypes.Connection)
+	& ((PresentationContext, ActionEventDescriptor, string | ActorScopedId, ActionListener) -> SignalTypes.Connection)
+	& ((PresentationContext, TagEventDescriptor, TagListener) -> SignalTypes.Connection)
+	& ((PresentationContext, TagEventDescriptor, string | ActorScopedId, TagListener) -> SignalTypes.Connection)
+	& ((PresentationContext, ResourceEventDescriptor, ResourceListener) -> SignalTypes.Connection)
+	& ((PresentationContext, ResourceEventDescriptor, string | ActorScopedId, ResourceListener) -> SignalTypes.Connection)
+	& ((PresentationContext, HintEventDescriptor, HintListener) -> SignalTypes.Connection)
+	& ((
+		PresentationContext,
+		HintEventDescriptor,
+		string | ActorScopedId | AnyHintId,
+		HintListener
+	) -> SignalTypes.Connection)
+
 export type PresentationContext = {
 	read entry: PresentationEntryEvent,
 	read actor: ActorTypes.ActorView?,
 	read Own: (self: PresentationContext, cleanup: () -> ()) -> (),
 	read Finish: (self: PresentationContext) -> (),
 	read IsActive: (self: PresentationContext) -> boolean,
+	read On: PresentationOn,
 }
 
 export type PresentationEntryBinding = {
@@ -66,5 +92,24 @@ export type PresentationDefinition = {
 }
 
 export type PresentationCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
+
+-- Framework-private instance state. Matching reads the current association,
+-- independently of the immutable entry, so later adoption can replace it.
+export type PresentationActionAssociation = {
+	read actor: ActorTypes.ActorView,
+	read actionId: string,
+	read sequenceId: number?,
+}
+
+export type PresentationSubscriptionEnvironment = {
+	read IsEligible: (ActorTypes.ActorView) -> boolean,
+	read TrackActor: (ActorTypes.ActorView, () -> ()) -> () -> (),
+}
+
+export type PresentationSubscriptionHost = {
+	read IsActive: () -> boolean,
+	read GetActionAssociation: () -> PresentationActionAssociation?,
+	read Fail: (PresentationEntryEvent, string) -> (),
+}
 
 return {}

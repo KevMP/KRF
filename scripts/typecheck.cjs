@@ -25,8 +25,8 @@ function runTool(command, args) {
 	return result.status ?? 1;
 }
 
-function analyze(sourcemap, inputs) {
-	return runTool("luau-lsp", [
+function analyze(sourcemap, inputs, expectedErrors) {
+	const args = [
 		"analyze",
 		"--flag:LuauSolverV2=true",
 		"--platform",
@@ -42,7 +42,55 @@ function analyze(sourcemap, inputs) {
 		"--ignore",
 		"**/_Index/**",
 		...inputs,
-	]);
+	];
+	if (!expectedErrors) return runTool("luau-lsp", args);
+
+	const executable = process.platform === "win32" ? "luau-lsp.exe" : "luau-lsp";
+	const result = cp.spawnSync(executable, args, { encoding: "utf8" });
+	const output = (result.stdout ?? "") + (result.stderr ?? "");
+	const diagnostics = output.split(/\r?\n/).filter((line) => /(?:Type|Syntax)Error:/.test(line));
+	const actual = new Set();
+	let unexpected = result.status !== 1;
+	for (const diagnostic of diagnostics) {
+		const match = /:(\d+)\.\d+(?:-\d+\.\d+)?: TypeError:/.exec(diagnostic);
+		if (!diagnostic.includes(expectedErrors.file) || !match || /too complex|Unknown require|Unknown type/.test(diagnostic)) {
+			unexpected = true;
+		} else {
+			actual.add(Number(match[1]));
+		}
+	}
+	if (unexpected || actual.size !== expectedErrors.lines.size || [...actual].some((line) => !expectedErrors.lines.has(line))) {
+		console.error(output);
+		console.error(`Presentation negative fixture: expected errors on lines ${[...expectedErrors.lines]}, got ${[...actual]}`);
+		return 1;
+	}
+	console.log(`Presentation overloads: rejected ${actual.size} invalid calls/payloads with LuauSolverV2`);
+	return 0;
+}
+
+function analyzePresentationTypes() {
+	const directory = path.join(TEMP_DIR, "presentation");
+	fs.mkdirSync(directory, { recursive: true });
+	const fixtures = ["positive", "negative"];
+	for (const fixture of fixtures) {
+		fs.copyFileSync(path.join("tests/typecheck", `PresentationOn.${fixture}.luau.txt`), path.join(directory, `${fixture}.luau`));
+	}
+	const project = path.join(directory, "presentation.project.json");
+	const sourcemap = path.join(directory, "sourcemap.json");
+	fs.writeFileSync(project, JSON.stringify({ name: "PresentationTypes", tree: {
+		$className: "DataModel", ReplicatedStorage: {
+			$className: "ReplicatedStorage", Packages: { $className: "Folder", KRF: { $path: path.resolve("src") } },
+			Positive: { $path: "positive.luau" }, Negative: { $path: "negative.luau" },
+		},
+	} }));
+	fs.writeFileSync(path.join(directory, ".luaurc"), JSON.stringify({ languageMode: "strict", lint: { "*": false } }));
+	let status = runTool("rojo", ["sourcemap", "--absolute", project, "--output", sourcemap]);
+	if (status !== 0) return status;
+	status = analyze(sourcemap, [path.join(directory, "positive.luau")]);
+	if (status !== 0) return status;
+	const lines = new Set(fs.readFileSync(path.join(directory, "negative.luau"), "utf8").split(/\r?\n/)
+		.flatMap((line, index) => line.includes("-- expect-error") ? [index + 1] : []));
+	return analyze(sourcemap, [path.join(directory, "negative.luau")], { file: "negative.luau", lines });
 }
 
 function analyzeSkillExamples() {
@@ -64,6 +112,10 @@ async function main() {
 			"--output",
 			"sourcemap.json",
 		]);
+
+		if (exitCode === 0) {
+			exitCode = analyzePresentationTypes();
+		}
 
 		if (exitCode === 0) {
 			exitCode = analyze("sourcemap.json", ["src", "tests"]);

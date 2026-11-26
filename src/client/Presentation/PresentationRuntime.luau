@@ -3,7 +3,7 @@ local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
 local Actors: ActorTypes.ActorViewRegistryOwner = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
-local EntrySources = require(script.Parent.utils.PresentationEntrySources)
+local Sources = require(script.Parent.utils.PresentationSources)
 local Instances = require(script.Parent.utils.PresentationInstance)
 
 type InstanceSet = { [Types.PresentationContext]: boolean }
@@ -31,11 +31,32 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 	local actors: { [ActorTypes.ActorView]: ActorEntries } = {}
 	local stopAdded: (() -> ())? = nil
 	local stopInvalidation: (() -> ())? = nil
-	local hints: SignalTypes.Connection? = nil
+	local hints: { SignalTypes.Connection } = {}
+	local observed: { [ActorTypes.ActorView]: { [() -> ()]: boolean } } = {}
 
 	local function isEligible(actor: ActorTypes.ActorView): boolean
 		return Actors.IsCurrent(actor) and not Actors.IsInvalidating(actor) and actor:IsAvailable()
 	end
+
+	local environment: Types.PresentationSubscriptionEnvironment = {
+		IsEligible = function(actor: ActorTypes.ActorView): boolean
+			return active and isEligible(actor)
+		end,
+		TrackActor = function(actor: ActorTypes.ActorView, disconnect: () -> ()): () -> ()
+			local listeners: { [() -> ()]: boolean } = observed[actor] or {}
+
+			observed[actor] = listeners
+			listeners[disconnect] = true
+
+			return function(): ()
+				listeners[disconnect] = nil
+
+				if next(listeners) == nil then
+					observed[actor] = nil
+				end
+			end
+		end,
+	}
 
 	local function deliver(
 		descriptor: Types.PresentationEventDescriptor,
@@ -43,6 +64,10 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 		entry: Types.PresentationEntryEvent
 	): ()
 		if not active then
+			return
+		end
+
+		if entry.source == "Resource" and entry.change.source ~= "Commit" then
 			return
 		end
 
@@ -72,7 +97,7 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			else
 				local context: Types.PresentationContext
 
-				context = Instances.New(definition, entry, function()
+				context = Instances.New(definition, entry, environment, function()
 					instances[context] = nil
 					count -= 1
 				end)
@@ -88,11 +113,29 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			local entries: ActorEntries = { instances = {}, connections = {} }
 
 			actors[actor] = entries
-			EntrySources.ConnectActor(catalog, actor, deliver, entries.connections)
+
+			for descriptor: Types.PresentationEventDescriptor in catalog do
+				if descriptor.source ~= "Hint" then
+					table.insert(
+						entries.connections,
+						Sources.Connect(descriptor, actor, function(id, entry)
+							deliver(descriptor, id, entry)
+						end)
+					)
+				end
+			end
 		end
 	end
 
 	local function detach(actor: ActorTypes.ActorView): ()
+		local listeners: { [() -> ()]: boolean }? = observed[actor]
+
+		if listeners ~= nil then
+			for disconnect: () -> () in listeners do
+				disconnect()
+			end
+		end
+
 		local entries: ActorEntries? = actors[actor]
 
 		if entries ~= nil then
@@ -121,8 +164,8 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			stopInvalidation()
 		end
 
-		if hints ~= nil then
-			hints:Disconnect()
+		for _, connection in hints do
+			connection:Disconnect()
 		end
 
 		for actor: ActorTypes.ActorView in actors do
@@ -147,7 +190,16 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			attach(actor)
 		end
 
-		hints = EntrySources.ConnectHints(catalog, deliver)
+		for descriptor: Types.PresentationEventDescriptor in catalog do
+			if descriptor.source == "Hint" then
+				table.insert(
+					hints,
+					Sources.Connect(descriptor, nil, function(id, entry)
+						deliver(descriptor, id, entry)
+					end)
+				)
+			end
+		end
 	end)
 
 	if not success then

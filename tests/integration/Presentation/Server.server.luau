@@ -7,6 +7,8 @@ local Server = require(KRF.server)
 local ActorRuntime = require(KRF.server.Actor.ActorRuntime)
 local ActorTypes = require(KRF.server.Actor.types)
 local ActionTypes = require(KRF.server.Action.types)
+local TagTypes = require(KRF.server.Tags.types)
+local ResourceTypes = require(KRF.server.Resource.types)
 local NetworkingTypes = require(KRF.server.Networking.types)
 local WireTypes = require(KRF.shared.Networking.types)
 local Schema = require(KRF.shared.Networking.Schema)
@@ -70,6 +72,20 @@ for _, player: Player in Players:GetPlayers() do
 end
 
 local initialized, failure = Server.Init({
+	tags = {
+		{ id = "Charging", duplicateBehavior = "Ignore", visibility = "ClientVisible" },
+		{ id = "Private.Hidden", duplicateBehavior = "Ignore", visibility = "ServerOnly" },
+	},
+	resources = {
+		{ id = "Mana", max = { value = 100 }, initialValue = 100, visibility = "ClientVisible", autoAssign = true },
+		{
+			id = "Private.Mana",
+			max = { value = 100 },
+			initialValue = 100,
+			visibility = "ServerOnly",
+			autoAssign = true,
+		},
+	},
 	actions = {
 		function(): ActionTypes.ActionDefinition
 			return { id = "Sword.Swing", visibility = "ClientVisible", autoGrant = true }
@@ -164,6 +180,34 @@ control.OnServerEvent:Connect(function(player: Player, report: string, clientFai
 					end
 				end)
 			elseif phase == "Live" then
+				local tags: TagTypes.TagController = actor:GetController("TagController") :: TagTypes.TagController
+
+				local resources: ResourceTypes.ResourceController =
+					actor:GetController("ResourceController") :: ResourceTypes.ResourceController
+
+				assert(tags:AddTag("Charging"))
+				assert(tags:AddTag("Private.Hidden"))
+				assert(resources:SetCurrent("Mana", 80))
+				assert(resources:SetCurrent("Private.Mana", 80))
+				send(player, "Followups")
+
+				task.spawn(function()
+					for _ = 1, 10 do
+						if phase ~= "Followups" or finished then
+							break
+						end
+
+						assert(Hints.SendTo(player, "Impact.Actor", actor, 22))
+						task.wait(0.1)
+					end
+				end)
+			elseif phase == "Followups" then
+				assert(controller:EndAction(2))
+				send(player, "EndedFirst")
+			elseif phase == "EndedFirst" then
+				assert(controller:InterruptAction(3, "NativePresentationTest"))
+				send(player, "Interrupted")
+			elseif phase == "Interrupted" then
 				assert(ActorRuntime.UnregisterActor(actor), "Expected native Actor retirement")
 				send(player, "Removed")
 			elseif phase == "Removed" then

@@ -1,22 +1,52 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
+local Subscriptions = require(script.Parent.PresentationSubscriptions)
 
 local PresentationInstance = {}
 
 function PresentationInstance.Report(id: string, entry: Types.PresentationEntryEvent, reason: string): ()
 	local actorId: string = if entry.actor ~= nil then entry.actor:GetId() else "(none)"
-	warn(("[Presentation] id=%s source=%s actor=%s reason=%s"):format(id, entry.source, actorId, reason))
+
+	warn(
+		("[Presentation] id=%s source=%s event=%s actor=%s reason=%s"):format(
+			id,
+			entry.source,
+			entry.event,
+			actorId,
+			reason
+		)
+	)
 end
 
 function PresentationInstance.New(
 	definition: Types.PresentationDefinition,
 	entry: Types.PresentationEntryEvent,
+	environment: Types.PresentationSubscriptionEnvironment,
 	release: () -> ()
 ): Types.PresentationContext
 	local active: boolean = true
 	local onFinished: (() -> ())? = release
 	local cleanups: { () -> () } = {}
+
+	local association: Types.PresentationActionAssociation? = if entry.source == "Action"
+		then { actor = entry.actor, actionId = entry.action.actionId, sequenceId = entry.action.sequenceId }
+		else nil
+
+	local context: Types.PresentationContext
+
+	local on, disconnectSubscriptions = Subscriptions.New(definition.id, entry, {
+		IsActive = function(): boolean
+			return active
+		end,
+		GetActionAssociation = function(): Types.PresentationActionAssociation?
+			return association
+		end,
+		Fail = function(observation: Types.PresentationEntryEvent, reason: string): ()
+			context:Finish()
+			PresentationInstance.Report(definition.id, observation, reason)
+		end,
+	}, environment)
 
 	local function runCleanup(cleanup: () -> ()): ()
 		local success: boolean, reason: string? = Observers.Run(cleanup)
@@ -26,9 +56,10 @@ function PresentationInstance.New(
 		end
 	end
 
-	local context: Types.PresentationContext = table.freeze({
+	context = table.freeze({
 		entry = entry,
 		actor = entry.actor,
+		On = on,
 		IsActive = function(_self: Types.PresentationContext): boolean
 			return active
 		end,
@@ -47,6 +78,7 @@ function PresentationInstance.New(
 			end
 
 			active = false
+			disconnectSubscriptions()
 			local finished: () -> () = assert(onFinished, "Active presentation must own a release callback")
 			onFinished = nil
 			finished()
