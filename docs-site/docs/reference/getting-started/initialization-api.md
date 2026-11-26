@@ -53,6 +53,7 @@ Discovers server transport, reconstructs its schema metadata, installs client co
 | --- | --- | --- |
 | `actionRequestSchemas` | `KRF.ActionRequestSchemas` | No client Action requests |
 | `actionInputPolicies` | `KRF.ActionInputPolicies` | Default policy for each declared Action, where permitted |
+| `presentations` | `{ PresentationDefinition }` | No Presentation instances |
 
 Configuration is validated before transport discovery. Unknown config fields are rejected. Invalid client policies fail under `ActionInput`; a release-required Action needs an explicit `WhileDown` policy.
 
@@ -61,6 +62,8 @@ Configuration is validated before transport discovery. Unknown config fields are
 | `ClientInitAlreadyAttempted` / `Client` | Init was already called, successfully or otherwise |
 | `ClientConfigInvalid`, `ClientConfigFieldUnknown` / `Client` | Invalid config table or unknown field |
 | `ActionRequestCommandsUnavailable`, `ActionRequestCommandsIncompatible` / `ActionRequest` | Server lacks the required outer Action Command contracts |
+| `PresentationCatalogInvalid`, `PresentationDefinitionInvalid`, `PresentationDefinitionFieldUnknown`, `PresentationIdInvalid`, `PresentationIdDuplicate`, `PresentationCreateInvalid`, `PresentationEntryInvalid`, `PresentationEntryFieldUnknown`, `PresentationEntryEventInvalid`, `PresentationEntryIdInvalid` / `Presentation` | Invalid [Presentation catalog](../presentation/guide#register-definitions) |
+| `PresentationInstallationFailed` / `Presentation` | Presentation could not attach its source listeners during startup |
 | `TransportUnavailable`, `HandshakeTimeout` / `Networking` | Discovery or readiness could not finish |
 | `ProtocolMismatch`, `UnsupportedSchema`, `BootstrapTooLarge`, `MalformedBootstrap`, `ReadyRejected` / `Networking` | Invalid or incompatible server handshake |
 | `InternalConsumerInitializationFailed`, `StartupInternalFailure:<detail>` / `Networking` | Consumer installation or another protected startup operation failed |

@@ -19,6 +19,10 @@ local PolicyValidator = require(script.Action.ActionInputPolicyValidator)
 local ActionRequestInstallation = require(script.ActionRequest.utils.ClientActionRequestInstallation)
 local ObservationInstallation = require(script.Action.utils.ActionObservationInstallation)
 
+local PresentationTypes = require(script.Presentation.types)
+local PresentationRegistry = require(script.Presentation.PresentationRegistry)
+local PresentationRuntime = require(script.Presentation.PresentationRuntime)
+
 export type StartupFailure = ClientTypes.StartupFailure
 
 local Client = {} :: ClientTypes.Client
@@ -28,23 +32,27 @@ local readyProtocol: SharedNetworkingTypes.ClientProtocol? = nil
 local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
 
-local CONFIG_FIELDS: { [string]: boolean } = { actionRequestSchemas = true, actionInputPolicies = true }
+local CONFIG_FIELDS: { [string]: boolean } =
+	{ actionRequestSchemas = true, actionInputPolicies = true, presentations = true }
 
 table.freeze(CONFIG_FIELDS)
 
 -- Configuration is validated and compiled before any transport or diagnostics work.
-local function prepare(
-	config: any
-): (ActionRequestTypes.ActionRequestCatalog?, ActionTypes.ActionInputCatalog?, StartupFailure?)
+local function prepare(config: any): (
+	ActionRequestTypes.ActionRequestCatalog?,
+	ActionTypes.ActionInputCatalog?,
+	PresentationTypes.PresentationCatalog?,
+	StartupFailure?
+)
 	if config == nil then
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	elseif type(config) ~= "table" then
-		return nil, nil, { system = "Client", reason = "ClientConfigInvalid" }
+		return nil, nil, nil, { system = "Client", reason = "ClientConfigInvalid" }
 	end
 
 	for field: any in next, config do
 		if type(field) ~= "string" or not CONFIG_FIELDS[field] then
-			return nil, nil, { system = "Client", reason = "ClientConfigFieldUnknown" }
+			return nil, nil, nil, { system = "Client", reason = "ClientConfigFieldUnknown" }
 		end
 	end
 
@@ -57,7 +65,7 @@ local function prepare(
 		catalog, reason = ActionRequestCatalog.Compile(schemas)
 
 		if catalog == nil then
-			return nil, nil, { system = "ActionRequest", reason = reason :: string }
+			return nil, nil, nil, { system = "ActionRequest", reason = reason :: string }
 		end
 	end
 
@@ -65,10 +73,22 @@ local function prepare(
 		PolicyValidator.Compile(rawget(config, "actionInputPolicies"), catalog)
 
 	if policies == nil then
-		return nil, nil, { system = "ActionInput", reason = policyReason :: string }
+		return nil, nil, nil, { system = "ActionInput", reason = policyReason :: string }
 	end
 
-	return catalog, policies, nil
+	local presentations: PresentationTypes.PresentationCatalog? = nil
+	local rawPresentations: any = rawget(config, "presentations")
+
+	if rawPresentations ~= nil then
+		local reason: string?
+		presentations, reason = PresentationRegistry.Prepare(rawPresentations)
+
+		if presentations == nil then
+			return nil, nil, nil, { system = "Presentation", reason = reason :: string }
+		end
+	end
+
+	return catalog, policies, presentations, nil
 end
 
 local function dispose(callback: (() -> ())?): ()
@@ -90,7 +110,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 
 	attempted = true
 
-	local requestCatalog: ActionRequestTypes.ActionRequestCatalog?, inputPolicies: ActionTypes.ActionInputCatalog?, configFailure: StartupFailure? =
+	local requestCatalog: ActionRequestTypes.ActionRequestCatalog?, inputPolicies: ActionTypes.ActionInputCatalog?, presentations: PresentationTypes.PresentationCatalog?, configFailure: StartupFailure? =
 		prepare(config)
 
 	if configFailure ~= nil then
@@ -109,6 +129,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	local waitingThread: thread? = nil
 	local disconnect: (() -> ())? = nil
 	local cancelTimeout: (() -> ())? = nil
+	local cleanupPresentation: (() -> ())? = nil
 	local cleanupConsumers: (() -> ())? = nil
 	local cleanupInput: (() -> ())? = nil
 	local cleanupActions: (() -> ())? = nil
@@ -128,6 +149,9 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 	end
 
 	local function cleanup(): ()
+		local stopPresentation: (() -> ())? = cleanupPresentation
+		cleanupPresentation = nil
+		dispose(stopPresentation)
 		local stopControls: (() -> ())? = cleanupControls
 		cleanupControls = nil
 		dispose(stopControls)
@@ -261,6 +285,20 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 				if state ~= "AwaitAck" then
 					finish(false, "ReadyRejected")
 				else
+					-- All other installation steps and the handshake have succeeded.
+					if presentations ~= nil then
+						local stopPresentation: (() -> ())?, presentationReason: string? =
+							PresentationRuntime.Install(presentations)
+
+						if stopPresentation == nil then
+							finish(false, presentationReason, "Presentation")
+
+							return
+						end
+
+						cleanupPresentation = stopPresentation
+					end
+
 					finish(true, nil)
 				end
 			elseif message.kind == "Bootstrap" and state == "AwaitBootstrap" then

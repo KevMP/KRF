@@ -117,6 +117,9 @@ function ActorView.new(
 			end
 
 			currentDomains = table.clone(nextDomains)
+			tags:BindDomain()
+			resources:BindDomain()
+			actions:BindDomain()
 			updateDomainIds()
 
 			if #added == 0 and #removed == 0 then

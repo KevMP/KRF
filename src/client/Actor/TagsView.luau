@@ -2,6 +2,7 @@
 local Types = require(script.Parent.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 local Signal = require(script.Parent.Parent.Parent.shared.Signal.SignalModule)
+local DomainBinding = require(script.Parent.utils.TypedDomainBinding)
 local OwnedSignals = require(script.Parent.Parent.Parent.shared.Signal.OwnedSignals)
 
 local TagsView = {} :: Types.TagsViewModule
@@ -12,44 +13,35 @@ type ReplicatedTagsState = { [string]: ReplicatedTagState }
 
 function TagsView.new(getDomain: () -> Types.DomainView?, serverTimeNow: (() -> number)?): Types.TagsViewOwner
 	local destroyed: boolean = false
-	local domain: Types.DomainView? = getDomain()
 
 	local now: () -> number = serverTimeNow or function(): number
 		return Workspace:GetServerTimeNow()
 	end
 
 	local changed: SignalTypes.Signal<Types.DomainChangeSource> = Signal.new()
-	local signals: { OwnedSignals.OwnedSignal } = { changed }
+	local added: SignalTypes.Signal<string> = Signal.new()
+	local refreshed: SignalTypes.Signal<string> = Signal.new()
+	local removed: SignalTypes.Signal<string> = Signal.new()
+	local expired: SignalTypes.Signal<string> = Signal.new()
+	local owned: SignalTypes.OwnedSignals = OwnedSignals.new({ changed, added, refreshed, removed, expired })
 
-	local function semanticEvent(id: string): SignalTypes.Event<string>
-		if domain ~= nil then
-			local event: SignalTypes.Event<string>? = domain:GetEvent(id)
-			assert(event ~= nil, "TagsViewMissingDomainEvent:" .. id)
+	local bindDomain, disconnectDomain = DomainBinding.new(getDomain, function(domain, isCurrent, connections)
+		DomainBinding.Relay(domain, "Added", added, isCurrent, connections, owned)
+		DomainBinding.Relay(domain, "Refreshed", refreshed, isCurrent, connections, owned)
+		DomainBinding.Relay(domain, "Removed", removed, isCurrent, connections, owned)
+		DomainBinding.Relay(domain, "Expired", expired, isCurrent, connections, owned)
 
-			return event
-		end
-
-		local signal: SignalTypes.Signal<string> = Signal.new()
-		table.insert(signals, signal)
-
-		return Signal.wrapEvent(signal)
-	end
-
-	local added: SignalTypes.Event<string> = semanticEvent("Added")
-	local refreshed: SignalTypes.Event<string> = semanticEvent("Refreshed")
-	local removed: SignalTypes.Event<string> = semanticEvent("Removed")
-	local expired: SignalTypes.Event<string> = semanticEvent("Expired")
-	local owned: SignalTypes.OwnedSignals = OwnedSignals.new(signals)
-
-	local connection: SignalTypes.Connection? = if domain ~= nil
-		then domain.OnChanged:Connect(function(change: Types.DomainChange)
-			if not destroyed then
-				owned:WithDeferredDestroy(function(): ()
-					changed:Fire(change.source)
-				end)
-			end
-		end)
-		else nil
+		table.insert(
+			connections,
+			domain.OnChanged:Connect(function(change: Types.DomainChange)
+				if isCurrent() then
+					owned:WithDeferredDestroy(function()
+						changed:Fire(change.source)
+					end)
+				end
+			end)
+		)
+	end)
 
 	local function state(): ReplicatedTagsState?
 		if destroyed then
@@ -104,15 +96,18 @@ function TagsView.new(getDomain: () -> Types.DomainView?, serverTimeNow: (() -> 
 
 			return table.freeze(snapshots)
 		end,
-		OnTagAdded = added,
-		OnTagRefreshed = refreshed,
-		OnTagRemoved = removed,
-		OnTagExpired = expired,
+		OnTagAdded = Signal.wrapEvent(added),
+		OnTagRefreshed = Signal.wrapEvent(refreshed),
+		OnTagRemoved = Signal.wrapEvent(removed),
+		OnTagExpired = Signal.wrapEvent(expired),
 		OnStateChanged = Signal.wrapEvent(changed),
 	})
 
 	return {
 		view = view,
+		BindDomain = function(_self: Types.TagsViewOwner): ()
+			bindDomain()
+		end,
 		Destroy = function(_self: Types.TagsViewOwner): ()
 			if destroyed then
 				return
@@ -120,9 +115,7 @@ function TagsView.new(getDomain: () -> Types.DomainView?, serverTimeNow: (() -> 
 
 			destroyed = true
 
-			if connection ~= nil then
-				connection:Disconnect()
-			end
+			disconnectDomain()
 
 			owned:Destroy()
 		end,
