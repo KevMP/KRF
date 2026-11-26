@@ -242,6 +242,9 @@ it("disconnects an observed retired Actor without finishing the origin and rejec
 	task.wait()
 	assert(context ~= nil, "Expected Actor-scoped context")
 	tags:FireEvent("Added", "Charging")
+	task.wait()
+	expect(received).toEqual({ "Charging" })
+	tags:FireEvent("Added", "Charging")
 	Actors.Remove(other.view)
 	expect(context:IsActive()).toBe(true)
 	local replacement: ActorTypes.ActorViewOwner = actor("Other")
@@ -256,7 +259,7 @@ it("disconnects an observed retired Actor without finishing the origin and rejec
 	Hints.Notify({ hintId = "Follow", actorView = replacement.view })
 	Hints.Notify({ hintId = "Follow", actorView = origin.view })
 	task.wait()
-	expect(received).toEqual({ "Hint" })
+	expect(received).toEqual({ "Charging", "Hint" })
 	local model: Model = Instance.new("Model")
 	origin:InstallModel(model)
 	origin:InstallModel(nil)
@@ -266,7 +269,49 @@ it("disconnects an observed retired Actor without finishing the origin and rejec
 	Actors.Invalidate(origin.view, "ActorRemoved")
 	expect(context:IsActive()).toBe(false)
 	task.wait()
-	expect(received).toEqual({ "Hint" })
+	expect(received).toEqual({ "Charging", "Hint" })
+end)
+
+it("retires origin instances and observed-Actor subscriptions when the registry resets", function()
+	local origin: ActorTypes.ActorViewOwner = actor("Origin")
+	local other: ActorTypes.ActorViewOwner = actor("Other")
+
+	local tags: ActorTypes.DomainViewOwner =
+		assert(DomainView.new("KRF.Tags", {}, { "Added", "Refreshed", "Removed", "Expired" }))
+
+	other:InstallDomains({ ["KRF.Tags"] = tags })
+	local context: Types.PresentationContext? = nil
+	local received: { string } = {}
+	local cleaned: number = 0
+
+	install(function(current: Types.PresentationContext)
+		context = current
+
+		current:Own(function()
+			cleaned += 1
+		end)
+
+		current:On(Events.Tag.Added, { id = "Charging", actor = other.view }, function(event: Types.TagEntryEvent)
+			table.insert(received, event.tagId)
+		end)
+
+		current:On(Events.Hint.Received, "Follow", function(_event: Types.HintEntryEvent)
+			table.insert(received, "Hint")
+		end)
+	end)
+
+	Hints.Notify({ hintId = "Origin", actorView = origin.view })
+	task.wait()
+	assert(context ~= nil, "Expected Actor-scoped context")
+	tags:FireEvent("Added", "Charging")
+	Hints.Notify({ hintId = "Follow", actorView = origin.view })
+	Actors.Reset()
+	expect(context:IsActive()).toBe(false)
+	tags:FireEvent("Added", "Charging")
+	Hints.Notify({ hintId = "Follow", actorView = origin.view })
+	task.wait()
+	expect(received).toEqual({})
+	expect(cleaned).toBe(1)
 end)
 
 it("uses late Resource domains for implicit and exact ids and preserves Commit and Baseline observations", function()

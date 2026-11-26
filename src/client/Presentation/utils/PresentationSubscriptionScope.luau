@@ -49,8 +49,6 @@ function Scope.Resolve(
 
 	if arity == 1 then
 		if descriptor.source == "Action" then
-			-- Association is owned by the instance, independently of its entry.
-
 			if association == nil then
 				misuse("OriginActionMissing: supply an explicit id")
 			end

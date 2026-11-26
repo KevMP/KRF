@@ -54,8 +54,6 @@ export type TagListener = (TagEntryEvent) -> ()
 export type ResourceListener = (ResourceEntryEvent) -> ()
 export type HintListener = (HintEntryEvent) -> ()
 
--- Factor equivalent explicit-id forms to keep overload normalization bounded.
--- These signatures accept the same thirteen forms, with source-specific callbacks.
 export type PresentationOn =
 	((PresentationContext, ActionEventDescriptor, ActionListener) -> SignalTypes.Connection)
 	& ((PresentationContext, ActionEventDescriptor, string | ActorScopedId, ActionListener) -> SignalTypes.Connection)
@@ -93,8 +91,6 @@ export type PresentationDefinition = {
 
 export type PresentationCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
 
--- Framework-private instance state. Matching reads the current association,
--- independently of the immutable entry, so later adoption can replace it.
 export type PresentationActionAssociation = {
 	read actor: ActorTypes.ActorView,
 	read actionId: string,

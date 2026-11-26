@@ -3,8 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = ReplicatedStorage.Packages.KRF
 local Types = require(KRF.client.Presentation.types)
 local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
 
-return function(ctx: Types.PresentationContext): ()
+return function(ctx: Types.PresentationContext, actor: ActorTypes.ActorView): ()
 	ctx:On(Events.Action.Ended, function(_event: Types.TagEntryEvent) end) -- expect-error
 	ctx:On(Events.Tag.Added, "Charging", function(_event: Types.ActionEntryEvent) end) -- expect-error
 	ctx:On(Events.Resource.Changed, function(_event: Types.HintEntryEvent) end) -- expect-error
@@ -15,7 +16,7 @@ return function(ctx: Types.PresentationContext): ()
 	ctx:On(Events.Hint.Received) -- expect-error
 	ctx:On(Events.Hint.Received, "Impact") -- expect-error
 	ctx:On(Events.Hint.Received, "Impact", function(_event) end, "extra") -- expect-error
-	ctx:On(Events.Tag.Added, { actor = ctx.actor }, function(_event) end) -- expect-error
+	ctx:On(Events.Tag.Added, { actor = actor }, function(_event) end) -- expect-error
 	ctx:On(Events.Tag.Added, 7, function(_event) end) -- expect-error
 	ctx:On("Tag.Added", "Charging", function(_event) end) -- expect-error
 	ctx:On(Events.Action.Ended, function(event: Types.ActionEntryEvent)

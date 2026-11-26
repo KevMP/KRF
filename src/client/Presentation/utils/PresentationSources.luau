@@ -24,8 +24,6 @@ function Sources.IsKnown(descriptor: any): boolean
 	return type(descriptor) == "table" and known[descriptor] == true
 end
 
--- Capture only framework metadata here. Entry and follow-up owners decide
--- eligibility and schedule author execution after the source has returned.
 function Sources.Connect(
 	descriptor: Types.PresentationEventDescriptor,
 	actor: ActorTypes.ActorView?,

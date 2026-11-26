@@ -22,9 +22,6 @@ function Subscriptions.New(
 		error(("[Presentation] id=%s On: %s"):format(definitionId, reason), 3)
 	end
 
-	-- One validated dispatcher implements the public family-specific overloads.
-	-- Only this boundary erases callback parameters; exported callers keep their
-	-- descriptor-specific observation type, verified by the typecheck fixtures.
 	local function on(_self: Types.PresentationContext, descriptor: any, ...: any): SignalTypes.Connection
 		if not host.IsActive() then
 			return { Disconnect = function(): () end }
@@ -43,8 +40,6 @@ function Subscriptions.New(
 		local source: SignalTypes.Connection? = nil
 		local untrack: (() -> ())? = nil
 
-		-- Automatic ownership keeps this private function, never a public handle's
-		-- writable Disconnect field. Invalidation must run only framework code.
 		local function disconnect(): ()
 			if not connected then
 				return
@@ -92,9 +87,6 @@ function Subscriptions.New(
 			return sourceId == scope.id
 		end
 
-		connections[disconnect] = true
-		count += 1
-
 		source = Sources.Connect(
 			scope.descriptor,
 			actor,
@@ -119,6 +111,9 @@ function Subscriptions.New(
 				end)
 			end
 		)
+
+		connections[disconnect] = true
+		count += 1
 
 		if actor ~= nil then
 			untrack = environment.TrackActor(actor, disconnect)

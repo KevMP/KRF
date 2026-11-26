@@ -137,7 +137,7 @@ local Charge: KRF.PresentationDefinition = {
 	create = function(ctx)
 		local actor = ctx.actor
 		local model = if actor ~= nil then actor:GetModel() else nil
-		if model == nil then
+		if actor == nil or model == nil then
 			ctx:Finish()
 			return
 		end
@@ -161,11 +161,18 @@ local Charge: KRF.PresentationDefinition = {
 		ctx:On(Events.Action.Interrupted, function(event: KRF.ActionEntryEvent)
 			ctx:Finish()
 		end)
+
+		local entry = ctx.entry
+		if entry.source == "Action" and actor:GetActions():GetAction(entry.action.sequenceId) == nil then
+			ctx:Finish()
+		end
 	end,
 }
 
 return Charge
 ```
+
+The last check covers an Action that ended before `create` subscribed. A short Action can start and end in the same update, and `ctx:On` never replays that earlier end, so the example looks the activation up once its listeners are in place.
 
 The no-ID Action listeners match the associated activation, so another concurrent `Sword.Charge` activation cannot finish this instance. Games do not supply a sequence ID. The runtime reads a private instance-owned association separately from the original entry; later predicted adoption can update that association without rewriting `ctx.entry` or replacing authored subscriptions. Prediction and adoption are not implemented by these subscriptions.
 
