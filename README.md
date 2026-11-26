@@ -16,7 +16,7 @@ Add KRF to a game's `wally.toml` and run `wally install`:
 
 ```toml
 [dependencies]
-KRF = "kevmp/krf@0.2.0"
+KRF = "kevmp/krf@0.2.1"
 ```
 
 Mount Wally's `Packages` folder at `ReplicatedStorage.Packages`, then import KRF through its

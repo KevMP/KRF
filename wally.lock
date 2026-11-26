@@ -244,7 +244,7 @@ dependencies = [["collections", "jsdotlua/collections@1.2.7"]]
 
 [[package]]
 name = "kevmp/krf"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [["Jest", "jsdotlua/jest@3.10.0"], ["JestGlobals", "jsdotlua/jest-globals@3.10.0"], ["roblox-coverage", "kevmp/roblox-coverage@0.1.3"]]
 
 [[package]]
