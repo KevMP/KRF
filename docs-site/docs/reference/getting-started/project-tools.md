@@ -6,7 +6,7 @@ title: Project tools
 
 Projects created with `create-krf` include npm scripts for local development and definition generation. Run them from the generated game's root. They use the pinned `krf-tools` package and Roblox tools in that project, so a global generator install is unnecessary.
 
-For creating the project itself, follow [Create a KRF project](/tutorial/create-the-project). The commands here describe a generated game; the framework repository has its own contributor commands in its README.
+To create the project itself, run `npm create krf@latest`, or follow [Create a KRF project](/tutorial/create-the-project) for a walkthrough. The commands here describe a generated game; the framework repository has its own contributor commands in its README.
 
 ## Work on the game
 

@@ -67,6 +67,10 @@ npm run test:packages:integration
 ```
 
 ```bash
+npm run test:packages:configurations
+```
+
+```bash
 npm run test:integration:starter
 ```
 
@@ -80,6 +84,11 @@ npm pack --pack-destination build/tarballs --workspace krf-tools --workspace cre
 ```bash
 npx --yes --package <repo>/build/tarballs/krf-tools-0.1.0.tgz --package <repo>/build/tarballs/create-krf-0.1.0.tgz create-krf
 ```
+
+The configuration test creates a project from the packed tarballs for every combination of options
+the creator accepts, then installs, builds and checks each one. It reads the options from the creator's
+schema, so a new option fails it until `FLAGS` in `tests/configurations/configurations.test.js` covers
+it. [RELEASING.md](../../RELEASING.md#npm-packages) explains how the packages are published.
 
 The integration test creates both modes from packed tarballs, installs the packed `krf-tools` and
 the published KRF, runs every definition generator through the project's npm scripts, checks,

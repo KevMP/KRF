@@ -209,7 +209,7 @@ test("check never changes files, format is the only formatter, and CI runs check
 
 test("Full builds the place at the root; Hybrid builds into build/ and never touches the Studio-owned place", () => {
 	assert.equal(JSON.parse(files({}).get("package.json")).scripts.build, "rojo build default.project.json --output my-game.rbxl");
-	assert.equal(JSON.parse(files({ mode: "hybrid" }).get("package.json")).scripts.build, "rojo build start-place.project.json --output build/my-game.rbxl");
+	assert.equal(JSON.parse(files({ mode: "hybrid" }).get("package.json")).scripts.build, `node -e "require('node:fs').mkdirSync('build', { recursive: true })" && rojo build start-place.project.json --output build/my-game.rbxl`);
 });
 
 test("Jest is a Wally dev dependency and the starter ships a Jest config and spec", () => {

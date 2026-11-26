@@ -8,13 +8,14 @@ export const HYBRID_START_PROJECT_FILE = "start-place.project.json";
 export const WORLD_FOLDER = "world";
 
 const DEFINITIONS_FILE = "build/globalTypes.d.luau";
+const CREATE_BUILD_FOLDER = `node -e "require('node:fs').mkdirSync('build', { recursive: true })"`;
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 export function projectScripts(config) {
 	const named = config.options.places !== undefined;
 	const build = named ? BUILD_PLACES_SCRIPT
-		: config.options.mode === "hybrid" ? `rojo build ${HYBRID_START_PROJECT_FILE} --output build/${config.name}.rbxl`
+		: config.options.mode === "hybrid" ? `${CREATE_BUILD_FOLDER} && rojo build ${HYBRID_START_PROJECT_FILE} --output build/${config.name}.rbxl`
 			: `rojo build ${ROJO_PROJECT_FILE} --output ${config.name}.rbxl`;
 	const sourcemap = named ? "krf-tools sourcemap" : `rojo sourcemap ${ROJO_PROJECT_FILE} --output sourcemap.json`;
 	return {

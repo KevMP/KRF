@@ -77,17 +77,82 @@ version and note the problem in the earlier GitHub Release.
 
 ## npm packages
 
-[`create-krf`](./packages/create-krf) and [`krf-tools`](./packages/krf-tools) version
-independently of the runtime and of each other. `create-krf` pins an exact `krf-tools` version,
-so publish `krf-tools` first and confirm it installs from the public registry in a clean
-directory. Generated projects do not depend on either package.
+[`create-krf`](./packages/create-krf) and [`krf-tools`](./packages/krf-tools) are published to npm
+by [`release-npm.yml`](./.github/workflows/release-npm.yml), which a maintainer starts by hand. They
+version independently of the runtime, and every generated project depends on the exact `krf-tools`
+release its creator pinned, so `krf-tools` is always published first.
 
 `create-krf` records the KRF runtime version its templates target in
-[`src/compatibility.js`](./packages/create-krf/src/compatibility.js); it must name a verified
-Wally release. Public npm publication is gated on the full generated-project test matrix and is not
-automated yet. Before publication, `npm run test:packages:integration` proves the packed tarballs
-create projects that install the published KRF release and build without workspace links, and
-`npm run test:integration:starter` plays the generated starter in Studio.
+[`krf-tools/src/compatibility.js`](./packages/krf-tools/src/compatibility.js) as `KRF_RUNTIME`.
+It must name a verified Wally release, and `SUPPORTED_KRF_VERSIONS` lists every runtime the tools accept.
+
+### Bump the versions
+
+In a pull request, set `version` in both packages' `package.json`, and set `create-krf`'s
+`krf-tools` dependency to the new `krf-tools` version exactly. Then run `npm install` so
+`package-lock.json` follows. Both versions must be new on npm, even when only one package changed,
+because the creator pins the tools it was tested with. Prereleases aren't supported.
+
+CI on that pull request creates a project from the packed tarballs for every configuration the
+creator accepts: each mode and place layout, with and without CI, agent files and Git. Each project
+is installed, built and checked. The list comes from the creator's option schema, so a new creator
+option fails the `configurations` job until
+[`tests/configurations/configurations.test.js`](./packages/create-krf/tests/configurations/configurations.test.js)
+has a flag for it. Run it locally with `npm run test:packages:configurations`.
+
+### Publish
+
+After the pull request is merged and CI has passed on `main`, run **Release (npm)** from `main` in
+GitHub Actions. It has three jobs:
+
+| Job | What it does |
+| --- | --- |
+| `preflight` | Refuses to continue unless the commit is on `main`, CI passed on it, both versions are release versions that npm doesn't have, `create-krf` pins the `krf-tools` version being published, and `KRF_RUNTIME` has a GitHub Release. Then it packs both tarballs, creates every configuration from those exact files, and uploads them. |
+| `publish` | Runs in the `npm-release` environment and publishes the uploaded tarballs with npm trusted publishing: `krf-tools`, then `create-krf`. Provenance is attached automatically. A version npm already has with the same integrity is skipped, so re-running the job after a partial publish finishes it. |
+| `verify` | Waits until npm serves both versions with the tested integrity, runs `npx create-krf@<version> smoke --yes` in a clean directory with an empty npm cache, then installs and builds that project. |
+
+### Recovery
+
+| Failure | Recovery |
+| --- | --- |
+| `preflight` fails | Nothing was published. Fix the cause in a pull request and run the workflow again on the new `main` commit. |
+| `publish` fails before npm accepts `krf-tools` | Nothing was published. Fix the cause, for example the trusted publisher settings, then choose **Re-run failed jobs**. |
+| `publish` fails after `krf-tools` is published | Choose **Re-run failed jobs**. The job skips `krf-tools` because npm has the same tarball, then publishes `create-krf`. Don't start a new run: its preflight stops because `krf-tools` already exists. |
+| npm has a version with other contents | Someone published that version outside the workflow. Don't overwrite it: bump both versions and release again. |
+| `verify` fails | npm has already accepted both versions, and the workflow never republishes. Re-run `verify` if the failure was a registry delay or network error. Otherwise fix the problem, bump both versions, and release again; deprecate the broken versions with `npm deprecate <package>@<version> "<reason>"`. |
+
+### First-time setup
+
+npm sets up trusted publishing only for a package that already exists. So before the first
+release, a maintainer publishes a placeholder of each package from their own machine and then links
+it to the workflow. These steps need npm 11.15 or later and an npm account with two-factor
+authentication.
+
+1. In the repository settings, create an environment named `npm-release`, and limit its deployment
+   branches to `main`.
+2. Publish a placeholder for each package. In an empty directory, create a `package.json` like this
+   one, then run `npm publish --access public`. Repeat for `krf-tools`.
+
+   ```json
+   {
+     "name": "create-krf",
+     "version": "0.0.0",
+     "description": "Placeholder. Install a later version.",
+     "repository": { "type": "git", "url": "git+https://github.com/KevMP/KRF.git" }
+   }
+   ```
+
+3. Link each package to the workflow, then deprecate its placeholder:
+
+   ```bash
+   npm trust github krf-tools --file release-npm.yml --repo KevMP/KRF --env npm-release --allow-publish
+   npm trust github create-krf --file release-npm.yml --repo KevMP/KRF --env npm-release --allow-publish
+   npm deprecate krf-tools@0.0.0 "Placeholder. Install a later version."
+   npm deprecate create-krf@0.0.0 "Placeholder. Install a later version."
+   ```
+
+4. Run **Release (npm)** within two days. npm discards a trusted publisher whose first publish
+   doesn't happen within that time, and you'd have to run `npm trust` again.
 
 ## Release status
 

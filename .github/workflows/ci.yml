@@ -82,3 +82,32 @@ jobs:
 
       - name: Start KRF from the packaged archive
         run: python3 -u scripts/upload_and_run_task.py "${{ steps.consumer.outputs.place }}" tests/consumer/Smoke.luau --no-coverage
+
+  configurations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-configurations-${{ runner.os }}-${{ hashFiles('rokit.toml', 'packages/create-krf/src/compatibility.js', 'packages/create-krf/src/manifests.js') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Create every configuration from packed npm tarballs
+        run: npm run test:packages:configurations

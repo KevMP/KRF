@@ -13,8 +13,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawnSync } = require("node:child_process");
 
+const { ReleaseError, REPO_ROOT, parseOptions, run, runChecked, setOutput, writeSummary } = require("./release/cli.cjs");
 const { parseReleaseTag, readPackageManifest, checkTagMatchesManifest, decideRelease } = require("./release/manifest.cjs");
 const { nextVersion, applyVersionBump, releasePullRequest } = require("./release/bump.cjs");
 const { validatePackageListing, checkArchiveSize, hashTree, compareTrees } = require("./release/archive.cjs");
@@ -22,51 +22,11 @@ const { createRegistry } = require("./release/registry.cjs");
 const { classifyPublishResult, describeRejection } = require("./release/publish.cjs");
 const { deriveReleaseStatus, renderReleaseStatus, STATES } = require("./release/status.cjs");
 
-const REPO_ROOT = path.resolve(__dirname, "..");
 const WORK_DIR = path.join(REPO_ROOT, "build", "release");
 const ARCHIVE_PATH = path.join(WORK_DIR, "krf.zip");
 const SMOKE_TASK = path.join(REPO_ROOT, "tests", "consumer", "Smoke.luau");
 // Pages whose install snippet names the current runtime version; release PRs update them.
 const INSTALL_DOCS = ["README.md", "docs-site/docs/reference/getting-started/initialization.md"];
-
-class ReleaseError extends Error {}
-
-function run(command, args, options = {}) {
-	const result = spawnSync(command, args, { cwd: REPO_ROOT, encoding: "utf8", ...options });
-	if (result.error) throw new ReleaseError(`${command} could not start: ${result.error.message}`);
-	return { exitCode: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
-}
-
-function runChecked(command, args, options = {}) {
-	const result = run(command, args, options);
-	if (result.exitCode !== 0) {
-		throw new ReleaseError(`${command} ${args.join(" ")} failed (${result.exitCode}):\n${result.stderr || result.stdout}`);
-	}
-	return result.stdout;
-}
-
-function parseOptions(args) {
-	const options = {};
-	for (let index = 0; index < args.length; index += 1) {
-		const key = args[index];
-		if (!key.startsWith("--")) throw new ReleaseError(`Unexpected argument '${key}'`);
-		const value = args[index + 1];
-		if (value === undefined || value.startsWith("--")) throw new ReleaseError(`${key} requires a value`);
-		options[key.slice(2)] = value;
-		index += 1;
-	}
-	return options;
-}
-
-function setOutput(name, value) {
-	if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
-	console.log(`${name}=${value}`);
-}
-
-function writeSummary(markdown) {
-	if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown);
-	console.log(markdown);
-}
 
 /** Returns the commit a tag names, or null when the tag does not exist. */
 function tagCommit(tag) {

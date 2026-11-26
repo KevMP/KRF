@@ -11,7 +11,7 @@ test("packed Full no-CI project builds locally and publishes to a mocked assigne
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "create-krf-deploy-"));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const packed = installPackedCreator(root);
-	const project = createProject(packed, root, "full-no-ci", ["--mode", "full", "--no-ci"]);
+	const project = createProject(packed, root, "full-no-ci", ["--mode", "full", "--no-ci", "--no-git"]);
 	assert.equal(fs.existsSync(path.join(project, ".github")), false);
 	run("npm", ["install"], project);
 	run("npm", ["run", "build"], project);
@@ -59,7 +59,7 @@ test("packed Full no-CI project builds locally and publishes to a mocked assigne
 	assert.equal(npm("deploy:prod", [], true).code, "github-required");
 	assert.equal(npm("release:tag", [], true).code, "github-required");
 
-	const multiProject = createProject(packed, root, "multi-no-ci", ["--mode", "full", "--no-ci", "--places", "lobby,dungeon"]);
+	const multiProject = createProject(packed, root, "multi-no-ci", ["--mode", "full", "--no-ci", "--places", "lobby,dungeon", "--no-git"]);
 	const multiPackage = path.join(multiProject, "package.json");
 	const multiManifest = JSON.parse(fs.readFileSync(multiPackage, "utf8"));
 	assert.equal(multiManifest.krf.startPlace, "lobby");
@@ -90,7 +90,7 @@ test("packed Full no-CI project builds locally and publishes to a mocked assigne
 	assert.equal(multi.places.dungeon.placeSha256, local.places.dungeon.placeSha256);
 	assert.equal(fs.readFileSync(path.join(multiProject, "build", "multi-place-uploads.log"), "utf8"), "3104\n3101\n");
 
-	const hybrid = createProject(packed, root, "hybrid-no-ci", ["--mode", "hybrid", "--no-ci"]);
+	const hybrid = createProject(packed, root, "hybrid-no-ci", ["--mode", "hybrid", "--no-ci", "--no-git"]);
 	run("npm", ["install", "--ignore-scripts"], hybrid);
 	const refused = run("npm", ["run", "--silent", "deploy:dev", "--", "--json"], hybrid, { env, allowFailure: true });
 	assert.notEqual(refused.status, 0);
