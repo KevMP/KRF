@@ -37,7 +37,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 	for (const variant of VARIANTS) {
 		await t.test(variant.mode, async () => {
 			const name = variant.mode;
-			const project = createProject(packed, path.join(root, "work"), name, ["--mode", variant.mode, ...variant.flags]);
+			const project = createProject(packed, path.join(root, "work"), name, ["--mode", variant.mode, "--no-git", ...variant.flags]);
 			const generated = readTree(project);
 			const manifest = JSON.parse(generated["package.json"]);
 			assert.deepEqual(manifest.devDependencies, { "krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` }, "the project installs the krf-tools tarball the creator came from");

@@ -1,0 +1,109 @@
+name: Release (npm)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Cache Rokit
+        uses: actions/cache@v4
+        with:
+          path: ~/.rokit
+          key: rokit-configurations-${{ runner.os }}-${{ hashFiles('rokit.toml', 'packages/create-krf/src/compatibility.js', 'packages/create-krf/src/manifests.js') }}
+
+      - name: Install tools (Rokit)
+        run: |
+          rokit install --no-trust-check
+          echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Check versions, pins and CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-npm.cjs preflight
+
+      - name: Pack
+        run: node scripts/release-npm.cjs pack --out build/npm
+
+      - name: Create every configuration from the packed tarballs
+        env:
+          KRF_NPM_TARBALLS: ${{ github.workspace }}/build/npm
+        run: npm run test:packages:configurations
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: build/npm
+          if-no-files-found: error
+
+  publish:
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: build/npm
+
+      - name: Publish krf-tools, then create-krf
+        run: node scripts/release-npm.cjs publish --from build/npm
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.1.2
+
+      - name: Add Rokit to PATH
+        run: echo "$HOME/.rokit/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: build/npm
+
+      - name: Create and build a project from the published creator
+        run: node scripts/release-npm.cjs verify --from build/npm

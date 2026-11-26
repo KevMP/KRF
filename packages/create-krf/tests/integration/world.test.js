@@ -80,7 +80,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 	assert.ok(packed.creator.files.includes("templates/full/world/Workspace/_gitkeep"), "npm must keep the world folder placeholder");
 
 	await t.test("full", async () => {
-		const project = createProject(packed, path.join(root, "work"), "full-world", ["--mode", "full", "--no-ci"]);
+		const project = createProject(packed, path.join(root, "work"), "full-world", ["--mode", "full", "--no-ci", "--no-git"]);
 		run("npm", ["install"], project);
 		assert.match(run("rojo", ["--version"], project).stdout, /Rojo 7\.7\.1/);
 
@@ -152,7 +152,7 @@ test("a saved Studio place is captured into source and rebuilt from it in both m
 	});
 
 	await t.test("hybrid", async () => {
-		const project = createProject(packed, path.join(root, "work"), "hybrid-world", ["--mode", "hybrid", "--no-ci"]);
+		const project = createProject(packed, path.join(root, "work"), "hybrid-world", ["--mode", "hybrid", "--no-ci", "--no-git"]);
 		run("npm", ["install"], project);
 
 		const refused = npm(project, "world:syncback", ["--input", "missing.rbxl"], { allowFailure: true });

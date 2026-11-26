@@ -131,7 +131,7 @@ async function main() {
 
 	const failures = [];
 	for (const scenario of scenarios) {
-		const project = createProject(packed, path.join(root, "work"), `starter-${scenario}`, ["--mode", "full", "--no-ci"]);
+		const project = createProject(packed, path.join(root, "work"), `starter-${scenario}`, ["--mode", "full", "--no-ci", "--no-git"]);
 		run("npm", ["install"], project);
 		generateDefinitions(project);
 		SCENARIOS[scenario](project);

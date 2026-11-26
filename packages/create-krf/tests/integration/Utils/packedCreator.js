@@ -23,12 +23,22 @@ function pack(packageDir, destination) {
 	return { file: path.join(destination, output[0].filename), files: output[0].files.map((entry) => entry.path).sort() };
 }
 
-export function installPackedCreator(root) {
-	const tarballs = path.join(root, "tarballs");
-	fs.mkdirSync(tarballs, { recursive: true });
-	const tooling = pack(path.join(PACKAGES, "krf-tools"), tarballs);
-	const creator = pack(path.join(PACKAGES, "create-krf"), tarballs);
+export function packTarballs(destination) {
+	fs.mkdirSync(destination, { recursive: true });
+	return { tooling: pack(path.join(PACKAGES, "krf-tools"), destination), creator: pack(path.join(PACKAGES, "create-krf"), destination) };
+}
 
+export function tarballsIn(directory) {
+	const find = (name) => {
+		const matches = fs.readdirSync(directory).filter((file) => file.startsWith(`${name}-`) && file.endsWith(".tgz"));
+		assert.equal(matches.length, 1, `${directory} must hold exactly one ${name} tarball, found ${JSON.stringify(matches)}`);
+		return { file: path.resolve(directory, matches[0]) };
+	};
+	return { tooling: find("krf-tools"), creator: find("create-krf") };
+}
+
+export function installPackedCreator(root, tarballs = packTarballs(path.join(root, "tarballs"))) {
+	const { tooling, creator } = tarballs;
 	const installRoot = path.join(root, "creator");
 	fs.mkdirSync(installRoot);
 	run("npm", ["init", "--yes"], installRoot);
@@ -44,7 +54,7 @@ export function installPackedCreator(root) {
 
 export function createProject(packed, work, name, flags) {
 	fs.mkdirSync(work, { recursive: true });
-	const created = run(packed.bin, [name, "--yes", "--no-git", ...flags], work).stdout;
+	const created = run(packed.bin, [name, "--yes", ...flags], work).stdout;
 	assert.match(created, new RegExp(`Created ${name}`));
 
 	return path.join(work, name);
