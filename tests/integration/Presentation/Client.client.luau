@@ -14,6 +14,18 @@ local worldHint: KRF.PresentationContext? = nil
 local actorHint: KRF.PresentationContext? = nil
 local initial: KRF.ActorView? = nil
 
+type Followup = {
+	context: KRF.PresentationContext,
+	highlight: Highlight,
+	tags: number,
+	resources: number,
+	hints: number,
+	resumedInactive: boolean,
+}
+
+local followups: { [number]: Followup } = {}
+local terminal: { string } = {}
+
 local function waitFor(predicate: () -> boolean, reason: string): ()
 	local deadline: number = os.clock() + 12
 
@@ -80,6 +92,74 @@ local actorImpact: KRF.PresentationDefinition = {
 	end,
 }
 
+local charge: KRF.PresentationDefinition = {
+	id = "Sword.Swing.Followups",
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Sword.Swing" },
+	create = function(context: KRF.PresentationContext)
+		local entry: KRF.PresentationEntryEvent = context.entry
+		assert(entry.source == "Action", "Expected Action origin")
+
+		local highlight: Highlight = Instance.new("Highlight")
+		highlight.Adornee = assert(context.actor, "Expected originating ActorView"):GetModel()
+		highlight.Parent = highlight.Adornee
+
+		context:Own(function(): ()
+			highlight:Destroy()
+		end)
+
+		local record: Followup =
+			{ context = context, highlight = highlight, tags = 0, resources = 0, hints = 0, resumedInactive = false }
+
+		followups[entry.action.sequenceId] = record
+
+		context:On(KRF.PresentationEvents.Tag.Added, "Charging", function(event: KRF.TagEntryEvent)
+			assert(event.actor == context.actor and event.tagId == "Charging", "Incorrect scoped Tag observation")
+			record.tags += 1
+			highlight.FillColor = Color3.fromRGB(80, 160, 255)
+		end)
+
+		context:On(KRF.PresentationEvents.Resource.Changed, "Mana", function(event: KRF.ResourceEntryEvent)
+			assert(
+				event.change.source == "Commit" and event.change.current ~= nil and event.change.current.current == 80,
+				"Incorrect scoped Resource observation"
+			)
+
+			record.resources += 1
+
+			waitFor(function(): boolean
+				return not context:IsActive()
+			end, "Yielding callback did not observe terminal retirement")
+
+			record.resumedInactive = not context:IsActive()
+		end)
+
+		context:On(KRF.PresentationEvents.Hint.Received, "Impact.Actor", function(event: KRF.HintEntryEvent)
+			assert(event.actor == context.actor and event.payload == 22, "Incorrect scoped Hint observation")
+			record.hints += 1
+		end)
+
+		context:On(KRF.PresentationEvents.Tag.Added, "Private.Hidden", function(): ()
+			error("Private Tag leaked")
+		end)
+
+		context:On(KRF.PresentationEvents.Resource.Changed, "Private.Mana", function(): ()
+			error("Private Resource leaked")
+		end)
+
+		context:On(KRF.PresentationEvents.Action.Ended, function(event: KRF.ActionEntryEvent)
+			assert(event.action.sequenceId == entry.action.sequenceId, "Action End matched another activation")
+			table.insert(terminal, "Ended")
+			context:Finish()
+		end)
+
+		context:On(KRF.PresentationEvents.Action.Interrupted, function(event: KRF.ActionEntryEvent)
+			assert(event.action.sequenceId == entry.action.sequenceId, "Action interruption matched another activation")
+			table.insert(terminal, "Interrupted")
+			context:Finish()
+		end)
+	end,
+}
+
 local function run(phase: string, actorId: string): ()
 	if phase == "Initial" then
 		waitFor(function()
@@ -101,7 +181,11 @@ local function run(phase: string, actorId: string): ()
 		)
 	elseif phase == "Live" then
 		waitFor(function()
-			return #highlights >= 2 and worldHint ~= nil and actorHint ~= nil
+			return #highlights >= 2
+				and worldHint ~= nil
+				and actorHint ~= nil
+				and followups[2] ~= nil
+				and followups[3] ~= nil
 		end, "Presentation missed native Action commits or Hint receipts after recovery")
 
 		assert(#highlights == 2 and active[1] ~= active[2], "Expected two independent instances")
@@ -120,6 +204,36 @@ local function run(phase: string, actorId: string): ()
 		end, "Explicit Finish did not destroy the Highlight")
 
 		assert(active[2]:IsActive() and highlights[2].Parent ~= nil, "Finish affected the second instance")
+	elseif phase == "Followups" then
+		waitFor(function()
+			return followups[2].tags == 1
+				and followups[3].tags == 1
+				and followups[2].resources == 1
+				and followups[3].resources == 1
+				and followups[2].hints > 0
+				and followups[3].hints > 0
+		end, "Native follow-up sources did not progress while a callback yielded")
+
+		assert(followups[2].context:IsActive() and followups[3].context:IsActive(), "Follow-up callback failed")
+	elseif phase == "EndedFirst" then
+		waitFor(function(): boolean
+			return followups[2].highlight.Parent == nil
+		end, "Action End did not clean its own effect")
+
+		assert(
+			followups[3].context:IsActive() and followups[3].highlight.Parent ~= nil,
+			"Another activation ended the second effect"
+		)
+
+		assert(#terminal == 1 and terminal[1] == "Ended", "Action End scope was incorrect")
+	elseif phase == "Interrupted" then
+		waitFor(function(): boolean
+			return followups[3].highlight.Parent == nil
+				and followups[2].resumedInactive
+				and followups[3].resumedInactive
+		end, "Interruption or cooperative callback continuation failed")
+
+		assert(#terminal == 2 and terminal[2] == "Interrupted", "Interruption scope was incorrect")
 	elseif phase == "Removed" then
 		waitFor(function()
 			return highlights[2].Parent == nil and actorHint ~= nil and not actorHint:IsActive()
@@ -145,7 +259,8 @@ waitFor(function()
 end, "Native role was not assigned")
 
 if player:GetAttribute("ValidPresentationCatalog") == true then
-	local initialized, failure = KRF.Client.Init({ presentations = { swordHighlight, worldImpact, actorImpact } })
+	local initialized, failure =
+		KRF.Client.Init({ presentations = { swordHighlight, worldImpact, actorImpact, charge } })
 
 	control:FireServer(
 		"Ready",

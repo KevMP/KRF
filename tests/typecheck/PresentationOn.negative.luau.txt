@@ -1,0 +1,41 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
+
+return function(ctx: Types.PresentationContext, actor: ActorTypes.ActorView): ()
+	ctx:On(Events.Action.Ended, function(_event: Types.TagEntryEvent) end) -- expect-error
+	ctx:On(Events.Tag.Added, "Charging", function(_event: Types.ActionEntryEvent) end) -- expect-error
+	ctx:On(Events.Resource.Changed, function(_event: Types.HintEntryEvent) end) -- expect-error
+	ctx:On(Events.Hint.Received, { id = "Impact", scope = "Any" }, function(_event: Types.ResourceEntryEvent) end) -- expect-error
+	ctx:On(Events.Action.Ended, { id = "Swing", scope = "Any" }, function(_event) end) -- expect-error
+	ctx:On(Events.Tag.Added, { id = "Charging", scope = "Any" }, function(_event) end) -- expect-error
+	ctx:On(Events.Resource.Changed, { id = "Mana", scope = "Any" }, function(_event) end) -- expect-error
+	ctx:On(Events.Hint.Received) -- expect-error
+	ctx:On(Events.Hint.Received, "Impact") -- expect-error
+	ctx:On(Events.Hint.Received, "Impact", function(_event) end, "extra") -- expect-error
+	ctx:On(Events.Tag.Added, { actor = actor }, function(_event) end) -- expect-error
+	ctx:On(Events.Tag.Added, 7, function(_event) end) -- expect-error
+	ctx:On("Tag.Added", "Charging", function(_event) end) -- expect-error
+	ctx:On(Events.Action.Ended, function(event: Types.ActionEntryEvent)
+		local wrong: string = event.action.sequenceId -- expect-error
+		assert(wrong ~= "")
+	end)
+	ctx:On(Events.Tag.Added, "Charging", function(event: Types.TagEntryEvent)
+		local wrong: number = event.tagId -- expect-error
+		assert(wrong > 0)
+	end)
+	ctx:On(Events.Resource.Changed, "Mana", function(event: Types.ResourceEntryEvent)
+		local wrong: string = event.change.current -- expect-error
+		assert(wrong ~= "")
+	end)
+	ctx:On(Events.Hint.Received, "Impact", function(event: Types.HintEntryEvent)
+		local wrong: number = event.hintId -- expect-error
+		assert(wrong > 0)
+	end)
+	ctx:On(Events.Tag.Added, "Charging", function(event: Types.TagEntryEvent)
+		event.tagId = "Mutated" -- expect-error
+	end)
+end

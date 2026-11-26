@@ -1,19 +1,7 @@
 --!strict
 local Types = require(script.Parent.types)
-local Events = require(script.Parent.PresentationEvents)
+local Sources = require(script.Parent.utils.PresentationSources)
 local Collections = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
-
-local knownEvents: { [Types.PresentationEventDescriptor]: boolean } = table.freeze({
-	[Events.Action.Started] = true,
-	[Events.Action.Ended] = true,
-	[Events.Action.Interrupted] = true,
-	[Events.Tag.Added] = true,
-	[Events.Tag.Refreshed] = true,
-	[Events.Tag.Removed] = true,
-	[Events.Tag.Expired] = true,
-	[Events.Resource.Changed] = true,
-	[Events.Hint.Received] = true,
-})
 
 local PresentationRegistry = {}
 
@@ -63,7 +51,7 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 		local event: any = binding.event
 		local sourceId: any = binding.id
 
-		if type(event) ~= "table" or not knownEvents[event] then
+		if not Sources.IsKnown(event) then
 			return nil, "PresentationEntryEventInvalid"
 		elseif type(sourceId) ~= "string" or sourceId == "" then
 			return nil, "PresentationEntryIdInvalid"

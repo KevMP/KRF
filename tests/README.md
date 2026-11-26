@@ -13,6 +13,12 @@ per-file coverage gates. Use `npm run test:unit` for focused test work. Specs li
 under `tests/server`, `tests/client`, and `tests/shared`; injected integration
 specs exercise cross-system contracts without replacing native fixtures.
 
+`npm run typecheck` also compiles the Presentation `On` fixtures under
+`tests/typecheck`. Positive fixtures exercise the supported call forms; negative
+fixtures must produce errors at each `-- expect-error` marker and nowhere else.
+They use the same pinned LuauSolverV2 checker and Roblox definitions as source
+analysis. Generated fixture modules stay under ignored `.typecheck/`.
+
 `test.project.json` mounts source, tests, and Wally dependencies for
 `tests/run-tests.luau`. CI builds that same project and uses
 `scripts/upload_and_run_task.py` and `scripts/luau_execution_task.py` to run it
@@ -31,7 +37,7 @@ These fixtures run real server/client sessions separately from `npm test`:
 | `npm run test:integration:n5` | Normal startup and consumer installation, ActorViews, live commits, rate-limited recovery, Owner privacy, terminal halt, removal, respawn, and reset |
 | `npm run test:integration:n6` | Normal startup, visible/private Tags, typed views and events, replacement, expiry, removal, respawn, and reset |
 | `npm run test:integration:n7` | Normal two-client startup, visible/private Resources, local regeneration without recurring packets, assignment and rate changes, replacement, removal, respawn, and reset |
-| `npm run test:integration:presentation` | Native catalog startup and rollback, late Actions domain membership, live Highlight instances, Hint receipts, and teardown |
+| `npm run test:integration:presentation` | Native catalog startup and rollback, late Actions domain membership, Highlight instances, activation-scoped end/interruption, Tag/Resource/Hint follow-ups, privacy, yielding callbacks, and teardown |
 | `npm run test:integration:networking-baseline` | Two-client delivery, privacy, and teardown under representative gameplay workloads |
 | `npm run test:integration:n4-performance` | Native sustained publication load with two clients |
 | `npm run test:integration:tags-load` | Native Tags delivery at multiple Actor populations |

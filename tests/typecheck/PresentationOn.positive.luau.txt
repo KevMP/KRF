@@ -1,0 +1,73 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+
+return function(ctx: Types.PresentationContext, actor: ActorTypes.ActorView): { SignalTypes.Connection }
+	return {
+		ctx:On(Events.Action.Started, function(event: Types.ActionEntryEvent)
+			local action: ActorTypes.ActionSnapshot = event.action
+			local source: "Action" = event.source
+			assert(action.sequenceId > 0 and source == "Action")
+		end),
+		ctx:On(Events.Action.Ended, "Swing", function(event: Types.ActionEntryEvent)
+			local id: string = event.action.actionId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Action.Interrupted, { id = "Swing", actor = actor }, function(event: Types.ActionEntryEvent)
+			local view: ActorTypes.ActorView = event.actor
+			assert(view == actor)
+		end),
+		ctx:On(Events.Tag.Added, function(event: Types.TagEntryEvent)
+			local tagId: string = event.tagId
+			local source: "Tag" = event.source
+			assert(tagId ~= "" and source == "Tag")
+		end),
+		ctx:On(Events.Tag.Removed, "Charging", function(event: Types.TagEntryEvent)
+			local id: string = event.tagId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Tag.Refreshed, { id = "Charging", actor = actor }, function(event: Types.TagEntryEvent)
+			local id: string = event.tagId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Tag.Expired, "Charging", function(event: Types.TagEntryEvent)
+			local id: string = event.tagId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Resource.Changed, function(event: Types.ResourceEntryEvent)
+			local change: ActorTypes.ResourceViewChange = event.change
+			local source: "Resource" = event.source
+			assert(change.resourceId ~= "" and source == "Resource")
+		end),
+		ctx:On(Events.Resource.Changed, "Mana", function(event: Types.ResourceEntryEvent)
+			local source: "Commit" | "Baseline" = event.change.source
+			assert(source ~= nil)
+		end),
+		ctx:On(Events.Resource.Changed, { id = "Mana", actor = actor }, function(event: Types.ResourceEntryEvent)
+			local id: string = event.change.resourceId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Hint.Received, function(event: Types.HintEntryEvent)
+			local id: string = event.hintId
+			local source: "Hint" = event.source
+			local view: ActorTypes.ActorView? = event.actor
+			assert(id ~= "" and source == "Hint" and view == ctx.actor)
+		end),
+		ctx:On(Events.Hint.Received, "Impact", function(event: Types.HintEntryEvent)
+			local id: string = event.hintId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Hint.Received, { id = "Impact", actor = actor }, function(event: Types.HintEntryEvent)
+			local id: string = event.hintId
+			assert(id ~= "")
+		end),
+		ctx:On(Events.Hint.Received, { id = "Impact", scope = "Any" }, function(event: Types.HintEntryEvent)
+			local id: string = event.hintId
+			assert(id ~= "")
+		end),
+	}
+end
