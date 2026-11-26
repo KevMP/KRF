@@ -149,13 +149,20 @@ Declare each field the client sends with `--start-field`, or `--stop-field` for 
 npm run createAction -- --name Fireball --cost Mana=20 --requestable --start-field "Target:Array(F32,3)" --yes --json
 ```
 
-The generator adds the field to the request entry's schema and writes a `startParameters` producer in the input policy that returns a placeholder. Replace the placeholder with the real value. For aim, cast from the camera through the mouse:
+The generator adds the field to the request entry's schema and writes a `startParameters` producer in the input policy that returns a placeholder. Replace the placeholder with the real value. For aim, cast from the camera through the mouse, skipping the player's own character. On the client, `context.actor` is an ActorView, so its Model comes from `GetModel()`:
 
 ```lua
-startParameters = function(_context: KRF.ActionInputContext): { Target: { number } }
+startParameters = function(context: KRF.ActionInputContext): { Target: { number } }
 	local location: Vector2 = UserInputService:GetMouseLocation()
 	local ray: Ray = workspace.CurrentCamera:ViewportPointToRay(location.X, location.Y)
-	local hit: RaycastResult? = workspace:Raycast(ray.Origin, ray.Direction * 500)
+	local params: RaycastParams = RaycastParams.new()
+	local character: Model? = context.actor:GetModel()
+
+	if character ~= nil then
+		params.FilterDescendantsInstances = { character }
+	end
+
+	local hit: RaycastResult? = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
 	local target: Vector3 = if hit ~= nil then hit.Position else ray.Origin + ray.Direction * 500
 
 	return { Target = { target.X, target.Y, target.Z } }
@@ -202,7 +209,13 @@ For a UI button or any request that isn't a key binding, call ClientActionRuntim
 local requestId: number?, reason: string? = KRF.ClientActionRuntime.RequestAction(actorView, "Fireball", { Target = { 0, 5, 0 } })
 ```
 
-The returned ID means the client accepted the request locally, not that the server started the Action. Keep the ID to send a stop later with `RequestStop(requestId)`.
+The returned ID means the client accepted the request locally, not that the server started the Action. Keep the ID to send a stop later. `RequestStop` returns two values in the same way: the stop's own request ID, or `nil` and the reason it wasn't sent.
+
+```lua
+if requestId ~= nil then
+	local stopId: number?, stopReason: string? = KRF.ClientActionRuntime.RequestStop(requestId)
+end
+```
 
 `ClientActionRuntime.OnActionRequest` reports what happened: accepted with the server's sequence ID, rejected with a reason, or `Unknown`. `Unknown` doesn't mean rejected. Never send the request again because of it, or the Action may run twice.
 

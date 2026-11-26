@@ -169,7 +169,7 @@ if not result.accepted then
 end
 ```
 
-`result.sequenceId` identifies that one activation for `RequestStop`, `EndAction` or `InterruptAction`.
+`result.sequenceId` identifies that one activation for `RequestStop`, `EndAction` or `InterruptAction`. Each of those returns `(boolean, string?)`: success, or `false` and a reason such as `ActionInstanceNotActive`. In a spec, wrap the call in parentheses to assert on the first value alone: `expect((actions:RequestStop(sequenceId))).toBe(true)`.
 
 ## React to Actions
 
