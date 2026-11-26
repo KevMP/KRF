@@ -8,6 +8,17 @@ local types = {}
 export type ClientUnreliableObserver = (callback: (any, ...any) -> ()) -> () -> ()
 export type ClientStepObserver = (callback: () -> ()) -> () -> ()
 
+export type ActorViewStateReadiness = "Stale" | "Ready"
+export type ActorViewStateReadinessObserver = (PublicTypes.ActorView, ActorViewStateReadiness) -> ()
+
+export type ActorViewStateReadinessSource = {
+	read IsStateReady: (self: ActorViewStateReadinessSource, actor: PublicTypes.ActorView) -> boolean,
+	read ObserveStateReadiness: (
+		self: ActorViewStateReadinessSource,
+		callback: ActorViewStateReadinessObserver
+	) -> () -> (),
+}
+
 export type ClientConsumerInstallationOptions = {
 	Now: () -> number,
 	ScheduleTimeout: (number, () -> ()) -> () -> (),
@@ -18,6 +29,7 @@ export type ClientConsumerInstallationOptions = {
 	onTerminalFailure: (() -> ())?,
 	sendUnreliable: ((buffer) -> ())?,
 	connectUnreliable: ClientUnreliableObserver?,
+	installReadiness: ((ActorViewStateReadinessSource) -> ())?,
 }
 
 -- Private local introspection; absent outside the owning runtime lifetime.
@@ -204,6 +216,8 @@ export type ActorViewDiagnostics = {
 export type ActorViewRuntime = {
 	read consumer: ActorStreamConsumer,
 	read registry: PublicTypes.ActorViewRegistry,
+	IsStateReady: (self: ActorViewRuntime, actor: PublicTypes.ActorView) -> boolean,
+	ObserveStateReadiness: (self: ActorViewRuntime, callback: ActorViewStateReadinessObserver) -> () -> (),
 	_InspectForTests: (self: ActorViewRuntime, handle: number) -> ActorViewDiagnostics?,
 	Destroy: (self: ActorViewRuntime) -> (),
 }

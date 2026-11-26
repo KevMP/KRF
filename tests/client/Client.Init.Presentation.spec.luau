@@ -10,9 +10,14 @@ local Client: ClientTypes.Client = require(KRF.client)
 local Events = require(KRF.client.Presentation.PresentationEvents)
 local Types = require(KRF.client.Presentation.types)
 local Registry = require(KRF.client.Actor.utils.ActorViewRegistryState)
+local States = require(KRF.client.Presentation.PresentationStates)
+local PresentationRegistry = require(KRF.client.Presentation.PresentationRegistry)
 local PresentationRuntime = require(KRF.client.Presentation.PresentationRuntime)
 local HintState = require(KRF.client.Networking.utils.HintRuntimeState)
+local SharedNetworkingTypes = require(KRF.shared.Networking.types)
+local NetworkingTypes = require(KRF.client.Networking.types)
 local ClientUtils = require(script.Parent.Utils.ClientTestUtils)
+local StateUtils = require(script.Parent.Utils.PresentationStateTestUtils)
 
 local disconnects: { () -> () } = {}
 
@@ -23,6 +28,7 @@ afterEach(function()
 
 	table.clear(disconnects)
 	Client._ResetForTests()
+	StateUtils.reset()
 end)
 
 it("rejects a malformed catalog before it listens for bootstrap", function()
@@ -184,7 +190,7 @@ it("rolls back the client and releases the installer when source attachment fail
 	expect(Client._IsInitialized()).toBe(false)
 
 	-- The failed installation must not retain a singleton or its partial observer.
-	local stop, reason = PresentationRuntime.Install({})
+	local stop, reason = PresentationRuntime.Install(assert(PresentationRegistry.Prepare({})))
 	expect(reason).toBeNil()
 	assert(stop ~= nil, "Presentation installer remained claimed after rollback")
 	stop()
@@ -197,7 +203,58 @@ it("refuses a second framework installation while the client owns Presentation",
 	ClientUtils.bootstrap(fixture)
 	ClientUtils.acknowledge(fixture)
 
-	local stop, reason = PresentationRuntime.Install({})
+	local stop, reason = PresentationRuntime.Install(assert(PresentationRegistry.Prepare({})))
 	expect(stop).toBeNil()
 	expect(reason).toBe("PresentationAlreadyInstalled")
+end)
+
+it("passes the consumer installation's private readiness source to Presentation and releases it on reset", function()
+	local actor: StateUtils.Actor = StateUtils.actor("Burner", { Burning = { stackCount = 1 } })
+
+	local readiness: StateUtils.Readiness = StateUtils.readiness()
+	readiness.ready[actor.view] = true
+
+	local fixture: ClientUtils.Fixture = ClientUtils.new()
+	local contexts: { Types.PresentationContext } = {}
+
+	fixture.dependencies.InstallConsumers = function(
+		_protocol: SharedNetworkingTypes.ClientProtocol,
+		_manifest: SharedNetworkingTypes.ProtocolManifest?,
+		_installActorReceiver: (((any) -> ()) -> ())?,
+		_sendReliable: ((buffer) -> ())?,
+		_isReady: (() -> boolean)?,
+		_onTerminalFailure: (() -> ())?,
+		_sendUnreliable: ((buffer) -> ())?,
+		_connectUnreliable: NetworkingTypes.ClientUnreliableObserver?,
+		installReadiness: ((NetworkingTypes.ActorViewStateReadinessSource) -> ())?
+	): (boolean, string?, (() -> ())?)
+		assert(installReadiness, "Expected a private readiness installer")(readiness.source)
+
+		return true, nil, function() end
+	end
+
+	ClientUtils.start(fixture, {
+		presentations = {
+			{
+				id = "Aura",
+				entry = { state = States.Tag.Active, id = "Burning" },
+				create = function(context: Types.PresentationContext)
+					table.insert(contexts, context)
+				end,
+			},
+		},
+	})
+
+	ClientUtils.bootstrap(fixture)
+	task.wait()
+	expect(#contexts).toBe(0)
+	expect((next(readiness.observers))).toBeNil()
+	ClientUtils.acknowledge(fixture)
+	expect(fixture.result).toEqual({ success = true })
+	task.wait()
+	expect(#contexts).toBe(1)
+	expect((next(readiness.observers))).never.toBeNil()
+	Client._ResetForTests()
+	expect(contexts[1]:IsActive()).toBe(false)
+	expect((next(readiness.observers))).toBeNil()
 end)

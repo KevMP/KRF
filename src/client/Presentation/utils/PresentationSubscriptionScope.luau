@@ -13,9 +13,23 @@ export type Scope = {
 
 local Scope = {}
 
+local function originId(entry: Types.PresentationEntry, family: string): string?
+	if entry.source == "State" then
+		return if entry.kind == "Tag" and family == "Tag" then entry.tagId else nil
+	elseif entry.source == "Tag" and family == "Tag" then
+		return entry.tagId
+	elseif entry.source == "Resource" and family == "Resource" then
+		return entry.change.resourceId
+	elseif entry.source == "Hint" and family == "Hint" then
+		return entry.hintId
+	end
+
+	return nil
+end
+
 function Scope.Resolve(
 	definitionId: string,
-	entry: Types.PresentationEntryEvent,
+	entry: Types.PresentationEntry,
 	association: Types.PresentationActionAssociation?,
 	isEligible: (ActorTypes.ActorView) -> boolean,
 	descriptor: any,
@@ -55,14 +69,12 @@ function Scope.Resolve(
 
 			activation = true
 			actor = assert(association).actor
-		elseif descriptor.source ~= entry.source then
-			misuse("OriginIdMissing: supply an explicit id for this source family")
-		elseif entry.source == "Tag" then
-			id = entry.tagId
-		elseif entry.source == "Resource" then
-			id = entry.change.resourceId
-		elseif entry.source == "Hint" then
-			id = entry.hintId
+		else
+			id = originId(entry, descriptor.source)
+
+			if id == nil then
+				misuse("OriginIdMissing: supply an explicit id for this source family")
+			end
 		end
 	elseif type(filter) == "string" then
 		id = filter

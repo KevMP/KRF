@@ -16,6 +16,9 @@ local CommandState = require(KRF.client.Networking.utils.CommandRuntimeState)
 local Hints = require(KRF.client.Networking.HintRuntime)
 local HintState = require(KRF.client.Networking.utils.HintRuntimeState)
 local Diagnostics = require(KRF.client.Networking.utils.NetworkingDiagnosticsState)
+local Consumer = require(KRF.client.Networking.utils.ActorStreamConsumer)
+local ClientNetworkingTypes = require(KRF.client.Networking.types)
+local PublicTypes = require(KRF.client.Actor.types)
 local StreamUtils = require(script.Parent.Utils.ActorStreamTestUtils)
 local Clock = require(script.Parent.Parent.shared.Utils.TestClock)
 local cleanup: (() -> ())? = nil
@@ -120,4 +123,107 @@ it("releases an undriven send-only Hint installation once and revokes retained s
 	expect(owner:Snapshot().gauges.hintSendRecords.current).toBe(0)
 	expect(owner:Snapshot().gauges.hintLatestKeys.current).toBe(0)
 	expect(sends).toBe(0)
+end)
+
+it("supplies one private readiness source backed by the created ActorView runtime and revokes it on cleanup", function()
+	local manifest: SharedTypes.ProtocolManifest = { version = Constants.PROTOCOL_VERSION, domains = {} }
+	local protocol = assert(Compiler.Reconstruct(manifest))
+	local clock = Clock.new()
+	local sources: { ClientNetworkingTypes.ActorViewStateReadinessSource } = {}
+
+	local accepted, _reason, stop = Consumers.Install(protocol, manifest, {
+		Now = clock.Now,
+		ScheduleTimeout = clock.Schedule,
+		installActorReceiver = function(): () end,
+		sendReliable = function(): () end,
+		installReadiness = function(source: ClientNetworkingTypes.ActorViewStateReadinessSource): ()
+			table.insert(sources, source)
+		end,
+	})
+
+	cleanup = stop
+	expect(accepted).toBe(true)
+	expect(#sources).toBe(1)
+	local source: ClientNetworkingTypes.ActorViewStateReadinessSource = sources[1]
+	expect(table.isfrozen(source)).toBe(true)
+	expect(source:IsStateReady(table.freeze({}) :: any)).toBe(false)
+	local notified: number = 0
+
+	local unobserve: () -> () = source:ObserveStateReadiness(
+		function(_actor: PublicTypes.ActorView, _readiness: ClientNetworkingTypes.ActorViewStateReadiness)
+			notified += 1
+		end
+	)
+
+	unobserve()
+	assert(stop, "Expected consumer cleanup")()
+	local inert: () -> () = source:ObserveStateReadiness(function() end)
+	inert()
+	expect(notified).toBe(0)
+end)
+
+it("supplies no readiness source when an isolated test consumer replaces the ActorView runtime", function()
+	local manifest: SharedTypes.ProtocolManifest = { version = Constants.PROTOCOL_VERSION, domains = {} }
+	local protocol = assert(Compiler.Reconstruct(manifest))
+	local clock = Clock.new()
+	local supplied: number = 0
+
+	Consumer.Install({
+		OnBaselineReady = function() end,
+		OnCommitReady = function() end,
+		OnActorHalted = function() end,
+		OnActorFault = function() end,
+		OnActorRemoved = function() end,
+		OnModelBound = function() end,
+		OnModelUnbound = function() end,
+	})
+
+	local accepted, _reason, stop = Consumers.Install(protocol, manifest, {
+		Now = clock.Now,
+		ScheduleTimeout = clock.Schedule,
+		installActorReceiver = function(): () end,
+		sendReliable = function(): () end,
+		installReadiness = function(): ()
+			supplied += 1
+		end,
+	})
+
+	cleanup = stop
+	Consumer.Install(nil)
+	expect(accepted).toBe(true)
+	expect(supplied).toBe(0)
+end)
+
+it("leaves a supplied readiness source inert when a later installation step fails", function()
+	local manifest: SharedTypes.ProtocolManifest = { version = Constants.PROTOCOL_VERSION, domains = {} }
+	local protocol = assert(Compiler.Reconstruct(manifest))
+	local clock = Clock.new()
+	local sources: { ClientNetworkingTypes.ActorViewStateReadinessSource } = {}
+
+	local installed: boolean, failure: any = pcall(function()
+		return Consumers.Install(protocol, manifest, {
+			Now = clock.Now,
+			ScheduleTimeout = clock.Schedule,
+			installActorReceiver = function(): ()
+				error("ExpectedReceiverFailure", 0)
+			end,
+			sendReliable = function(): () end,
+			installReadiness = function(source: ClientNetworkingTypes.ActorViewStateReadinessSource): ()
+				table.insert(sources, source)
+			end,
+		})
+	end)
+
+	expect(installed).toBe(false)
+	expect(failure).toBe("ExpectedReceiverFailure")
+	expect(#sources).toBe(1)
+	local notified: number = 0
+
+	local inert: () -> () = sources[1]:ObserveStateReadiness(function()
+		notified += 1
+	end)
+
+	inert()
+	expect(sources[1]:IsStateReady(table.freeze({}) :: any)).toBe(false)
+	expect(notified).toBe(0)
 end)

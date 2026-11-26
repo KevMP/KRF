@@ -1,6 +1,7 @@
 --!strict
 local SharedNetworkingTypes = require(script.Parent.Parent.Parent.Parent.shared.Networking.types)
 local Types = require(script.Parent.Parent.types)
+local PublicTypes = require(script.Parent.Parent.Parent.Actor.types)
 local Stream = require(script.Parent.Parent.ActorStreamRuntime)
 local Views = require(script.Parent.Parent.ActorViewRuntime)
 local Discovery = require(script.Parent.ActorModelDiscovery)
@@ -101,6 +102,23 @@ function Installation.Install(
 
 			views = created
 			consumer = created.consumer
+
+			if options.installReadiness ~= nil then
+				options.installReadiness(table.freeze({
+					IsStateReady = function(
+						_self: Types.ActorViewStateReadinessSource,
+						actor: PublicTypes.ActorView
+					): boolean
+						return created:IsStateReady(actor)
+					end,
+					ObserveStateReadiness = function(
+						_self: Types.ActorViewStateReadinessSource,
+						callback: Types.ActorViewStateReadinessObserver
+					): () -> ()
+						return created:ObserveStateReadiness(callback)
+					end,
+				}))
+			end
 		end
 
 		local created: Types.ActorStreamRuntime = Stream.new(codec, consumer, discovery, {

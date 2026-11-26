@@ -19,6 +19,7 @@ export type ClientInitConfig = {
 
 export type ClientUnreliableObserver = NetworkingTypes.ClientUnreliableObserver
 export type ClientStepObserver = NetworkingTypes.ClientStepObserver
+export type ActorViewStateReadinessSource = NetworkingTypes.ActorViewStateReadinessSource
 
 export type ClientTransport = {
 	ConnectReliable: (callback: (any, ...any) -> ()) -> () -> (),
@@ -42,7 +43,8 @@ export type Dependencies = {
 		isReady: (() -> boolean)?,
 		onTerminalFailure: (() -> ())?,
 		sendUnreliable: ((buffer) -> ())?,
-		connectUnreliable: ClientUnreliableObserver?
+		connectUnreliable: ClientUnreliableObserver?,
+		installReadiness: ((ActorViewStateReadinessSource) -> ())?
 	) -> (boolean, string?, (() -> ())?),
 }
 

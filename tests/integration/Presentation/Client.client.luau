@@ -25,6 +25,12 @@ type Followup = {
 
 local followups: { [number]: Followup } = {}
 local terminal: { string } = {}
+local auras: { KRF.PresentationContext } = {}
+local auraHighlights: { Highlight } = {}
+local loops: { [number]: KRF.PresentationContext } = {}
+local bursts: { [string]: number } = { Burning = 0, Charging = 0 }
+local loopCreates: { [number]: number } = {}
+local hiddenCreates: number = 0
 
 local function waitFor(predicate: () -> boolean, reason: string): ()
 	local deadline: number = os.clock() + 12
@@ -39,7 +45,7 @@ local swordHighlight: KRF.PresentationDefinition = {
 	id = "Sword.Swing.Highlight",
 	entry = { event = KRF.PresentationEvents.Action.Started, id = "Sword.Swing" },
 	create = function(context: KRF.PresentationContext)
-		local observation: KRF.PresentationEntryEvent = context.entry
+		local observation: KRF.PresentationEntry = context.entry
 		assert(observation.source == "Action", "Expected Action entry")
 		table.insert(started, observation.action.sequenceId)
 		local actor: KRF.ActorView = assert(context.actor, "Expected Action origin")
@@ -62,7 +68,7 @@ local worldImpact: KRF.PresentationDefinition = {
 	id = "WorldImpact",
 	entry = { event = KRF.PresentationEvents.Hint.Received, id = "Impact.World" },
 	create = function(context: KRF.PresentationContext)
-		local observation: KRF.PresentationEntryEvent = context.entry
+		local observation: KRF.PresentationEntry = context.entry
 
 		assert(
 			observation.source == "Hint" and observation.payload == 21 and context.actor == nil,
@@ -81,7 +87,7 @@ local actorImpact: KRF.PresentationDefinition = {
 	id = "ActorImpact",
 	entry = { event = KRF.PresentationEvents.Hint.Received, id = "Impact.Actor" },
 	create = function(context: KRF.PresentationContext)
-		local observation: KRF.PresentationEntryEvent = context.entry
+		local observation: KRF.PresentationEntry = context.entry
 
 		assert(
 			observation.source == "Hint" and observation.payload == 22 and observation.actor == initial,
@@ -96,7 +102,7 @@ local charge: KRF.PresentationDefinition = {
 	id = "Sword.Swing.Followups",
 	entry = { event = KRF.PresentationEvents.Action.Started, id = "Sword.Swing" },
 	create = function(context: KRF.PresentationContext)
-		local entry: KRF.PresentationEntryEvent = context.entry
+		local entry: KRF.PresentationEntry = context.entry
 		assert(entry.source == "Action", "Expected Action origin")
 
 		local highlight: Highlight = Instance.new("Highlight")
@@ -160,6 +166,72 @@ local charge: KRF.PresentationDefinition = {
 	end,
 }
 
+local burningAura: KRF.PresentationDefinition = {
+	id = "Status.Burning.Aura",
+	entry = { state = KRF.PresentationStates.Tag.Active, id = "Burning" },
+	create = function(context: KRF.PresentationContext)
+		local entry: KRF.PresentationEntry = context.entry
+		assert(entry.source == "State" and entry.kind == "Tag" and entry.tag.stackCount == 1, "Expected Tag state")
+		table.insert(auras, context)
+		local previous: Highlight? = nil
+
+		local function detach(): ()
+			if previous ~= nil then
+				previous:Destroy()
+				previous = nil
+			end
+		end
+
+		context:Own(detach)
+
+		context:Watch(KRF.PresentationStates.Actor.Model, function(model: Model?)
+			detach()
+
+			if not context:IsActive() or model == nil then
+				return
+			end
+
+			local highlight: Highlight = Instance.new("Highlight")
+			highlight.Adornee = model
+			highlight.Parent = model
+			previous = highlight
+			table.insert(auraHighlights, highlight)
+		end)
+	end,
+}
+
+local swingLoop: KRF.PresentationDefinition = {
+	id = "Sword.Swing.Loop",
+	entry = { state = KRF.PresentationStates.Action.Active, id = "Sword.Swing" },
+	create = function(context: KRF.PresentationContext)
+		local entry: KRF.PresentationEntry = context.entry
+		assert(entry.source == "State" and entry.kind == "Action", "Expected Action state")
+		local sequenceId: number = entry.action.sequenceId
+
+		loopCreates[sequenceId] = (loopCreates[sequenceId] or 0) + 1
+		loops[sequenceId] = context
+	end,
+}
+
+local hiddenAura: KRF.PresentationDefinition = {
+	id = "Private.Hidden.Aura",
+	entry = { state = KRF.PresentationStates.Tag.Active, id = "Private.Hidden" },
+	create = function(): ()
+		hiddenCreates += 1
+	end,
+}
+
+local function burst(tagId: string): KRF.PresentationDefinition
+	return {
+		id = "Status." .. tagId .. ".Burst",
+		entry = { event = KRF.PresentationEvents.Tag.Added, id = tagId },
+		create = function(context: KRF.PresentationContext)
+			bursts[tagId] += 1
+			context:Finish()
+		end,
+	}
+end
+
 local function run(phase: string, actorId: string): ()
 	if phase == "Initial" then
 		waitFor(function()
@@ -170,6 +242,14 @@ local function run(phase: string, actorId: string): ()
 
 		initial = assert(KRF.ActorViewRegistry.GetActorViewById(actorId), "Expected registered ActorView")
 		assert(initial:GetDomain("KRF.Actions") == nil and #started == 0, "Initial baseline should omit Actions")
+
+		waitFor(function()
+			return #auraHighlights == 1
+		end, "Current Tag state did not restore its aura")
+
+		assert(#auras == 1 and auras[1].actor == initial, "Expected one aura for the initial ActorView")
+		assert(auraHighlights[1].Adornee == initial:GetModel(), "Aura did not attach through its Model Watch")
+		assert(bursts.Burning == 0, "Baseline Tag state replayed a live Added burst")
 	elseif phase == "Replacement" then
 		waitFor(function()
 			return initial ~= nil and initial:GetActions():GetAction(1) ~= nil
@@ -179,6 +259,12 @@ local function run(phase: string, actorId: string): ()
 			KRF.ActorViewRegistry.GetActorViewById(actorId) == initial and #started == 0,
 			"Recovery replayed the active Action"
 		)
+
+		waitFor(function()
+			return loops[1] ~= nil
+		end, "Replacement baseline did not restore the active Action state")
+
+		assert(#auras == 1 and auras[1]:IsActive(), "Replacement baseline restarted the unchanged aura")
 	elseif phase == "Live" then
 		waitFor(function()
 			return #highlights >= 2
@@ -189,6 +275,11 @@ local function run(phase: string, actorId: string): ()
 		end, "Presentation missed native Action commits or Hint receipts after recovery")
 
 		assert(#highlights == 2 and active[1] ~= active[2], "Expected two independent instances")
+
+		waitFor(function()
+			return loops[2] ~= nil and loops[3] ~= nil
+		end, "Live Actions did not create per-activation state instances")
+
 		table.sort(started)
 		assert(#started == 2 and started[1] == 2 and started[2] == 3, "Expected live starts only")
 
@@ -215,6 +306,10 @@ local function run(phase: string, actorId: string): ()
 		end, "Native follow-up sources did not progress while a callback yielded")
 
 		assert(followups[2].context:IsActive() and followups[3].context:IsActive(), "Follow-up callback failed")
+
+		waitFor(function()
+			return bursts.Charging == 1
+		end, "Live Tag addition did not start its one-off burst")
 	elseif phase == "EndedFirst" then
 		waitFor(function(): boolean
 			return followups[2].highlight.Parent == nil
@@ -226,6 +321,13 @@ local function run(phase: string, actorId: string): ()
 		)
 
 		assert(#terminal == 1 and terminal[1] == "Ended", "Action End scope was incorrect")
+
+		waitFor(function(): boolean
+			return not loops[2]:IsActive() and not auras[1]:IsActive() and auraHighlights[1].Parent == nil
+		end, "Absent Action or Tag state did not retire its persistent instance")
+
+		assert(loops[1]:IsActive() and loops[3]:IsActive(), "Another activation retired a state instance")
+		assert(#auras == 1 and bursts.Burning == 0, "Tag removal recreated the aura or replayed a burst")
 	elseif phase == "Interrupted" then
 		waitFor(function(): boolean
 			return followups[3].highlight.Parent == nil
@@ -234,9 +336,25 @@ local function run(phase: string, actorId: string): ()
 		end, "Interruption or cooperative callback continuation failed")
 
 		assert(#terminal == 2 and terminal[2] == "Interrupted", "Interruption scope was incorrect")
+
+		waitFor(function(): boolean
+			return not loops[3]:IsActive()
+		end, "Interruption did not retire its state instance")
+
+		assert(loops[1]:IsActive(), "Interruption retired another activation")
+
+		assert(
+			loopCreates[1] == 1 and loopCreates[2] == 1 and loopCreates[3] == 1,
+			"Duplicated a state-backed Action instance"
+		)
+
+		assert(hiddenCreates == 0, "Private Tag state leaked")
 	elseif phase == "Removed" then
 		waitFor(function()
-			return highlights[2].Parent == nil and actorHint ~= nil and not actorHint:IsActive()
+			return highlights[2].Parent == nil
+				and actorHint ~= nil
+				and not actorHint:IsActive()
+				and not loops[1]:IsActive()
 		end, "Actor retirement retained native Highlight or targeted Hint")
 
 		assert(
@@ -259,8 +377,19 @@ waitFor(function()
 end, "Native role was not assigned")
 
 if player:GetAttribute("ValidPresentationCatalog") == true then
-	local initialized, failure =
-		KRF.Client.Init({ presentations = { swordHighlight, worldImpact, actorImpact, charge } })
+	local initialized, failure = KRF.Client.Init({
+		presentations = {
+			swordHighlight,
+			worldImpact,
+			actorImpact,
+			charge,
+			burningAura,
+			swingLoop,
+			hiddenAura,
+			burst("Burning"),
+			burst("Charging"),
+		},
+	})
 
 	control:FireServer(
 		"Ready",

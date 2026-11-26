@@ -1,13 +1,22 @@
 --!strict
 local Types = require(script.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local NetworkingTypes = require(script.Parent.Parent.Networking.types)
 local Actors: ActorTypes.ActorViewRegistryOwner = require(script.Parent.Parent.Actor.utils.ActorViewRegistryState)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 local Sources = require(script.Parent.utils.PresentationSources)
+local StateSources = require(script.Parent.utils.PresentationStateSources)
+local StateEntries = require(script.Parent.utils.PresentationStateEntries)
 local Instances = require(script.Parent.utils.PresentationInstance)
 
 type InstanceSet = { [Types.PresentationContext]: boolean }
-type ActorEntries = { instances: InstanceSet, connections: { SignalTypes.Connection } }
+type ListenerSet = { [() -> ()]: boolean }
+
+type ActorEntries = {
+	instances: InstanceSet,
+	connections: { SignalTypes.Connection },
+	states: StateEntries.StateEntries?,
+}
 
 local MAX_ACTIVE_INSTANCES: number = 256
 local PresentationRuntime = {}
@@ -19,7 +28,29 @@ local function retire(instances: InstanceSet): ()
 	end
 end
 
-function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -> ())?, string?)
+local function track(
+	index: { [ActorTypes.ActorView]: ListenerSet },
+	actor: ActorTypes.ActorView,
+	listener: () -> ()
+): () -> ()
+	local listeners: ListenerSet = index[actor] or {}
+
+	index[actor] = listeners
+	listeners[listener] = true
+
+	return function(): ()
+		listeners[listener] = nil
+
+		if next(listeners) == nil and index[actor] == listeners then
+			index[actor] = nil
+		end
+	end
+end
+
+function PresentationRuntime.Install(
+	catalog: Types.PresentationCatalog,
+	readiness: NetworkingTypes.ActorViewStateReadinessSource?
+): ((() -> ())?, string?)
 	if installed then
 		return nil, "PresentationAlreadyInstalled"
 	end
@@ -31,11 +62,17 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 	local actors: { [ActorTypes.ActorView]: ActorEntries } = {}
 	local stopAdded: (() -> ())? = nil
 	local stopInvalidation: (() -> ())? = nil
+	local stopReadiness: (() -> ())? = nil
 	local hints: { SignalTypes.Connection } = {}
-	local observed: { [ActorTypes.ActorView]: { [() -> ()]: boolean } } = {}
+	local observed: { [ActorTypes.ActorView]: ListenerSet } = {}
+	local readinessListeners: { [ActorTypes.ActorView]: ListenerSet } = {}
 
 	local function isEligible(actor: ActorTypes.ActorView): boolean
 		return Actors.IsCurrent(actor) and not Actors.IsInvalidating(actor) and actor:IsAvailable()
+	end
+
+	local function isStateReady(actor: ActorTypes.ActorView): boolean
+		return active and readiness ~= nil and isEligible(actor) and readiness:IsStateReady(actor)
 	end
 
 	local environment: Types.PresentationSubscriptionEnvironment = {
@@ -43,20 +80,38 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			return active and isEligible(actor)
 		end,
 		TrackActor = function(actor: ActorTypes.ActorView, disconnect: () -> ()): () -> ()
-			local listeners: { [() -> ()]: boolean } = observed[actor] or {}
-
-			observed[actor] = listeners
-			listeners[disconnect] = true
-
-			return function(): ()
-				listeners[disconnect] = nil
-
-				if next(listeners) == nil then
-					observed[actor] = nil
-				end
-			end
+			return track(observed, actor, disconnect)
+		end,
+		IsStateReady = isStateReady,
+		ObserveReadiness = function(actor: ActorTypes.ActorView, listener: () -> ()): () -> ()
+			return track(readinessListeners, actor, listener)
 		end,
 	}
+
+	local function start(
+		instances: InstanceSet,
+		definition: Types.PresentationDefinition,
+		entry: Types.PresentationEntry,
+		revalidate: (() -> boolean)?
+	): Types.PresentationContext?
+		if count >= MAX_ACTIVE_INSTANCES then
+			Instances.Report(definition.id, entry, "ActiveInstanceLimit")
+
+			return nil
+		end
+
+		local context: Types.PresentationContext
+
+		context = Instances.New(definition, entry, environment, function()
+			instances[context] = nil
+			count -= 1
+		end, revalidate)
+
+		instances[context] = true
+		count += 1
+
+		return context
+	end
 
 	local function deliver(
 		descriptor: Types.PresentationEventDescriptor,
@@ -72,7 +127,7 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 		end
 
 		-- Source adapters only connect and deliver configured descriptors.
-		local definitions: { Types.PresentationDefinition }? = catalog[descriptor][id]
+		local definitions: { Types.PresentationDefinition }? = catalog.events[descriptor][id]
 
 		if definitions == nil then
 			return
@@ -92,49 +147,68 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 		end
 
 		for _, definition in definitions do
-			if count >= MAX_ACTIVE_INSTANCES then
-				Instances.Report(definition.id, entry, "ActiveInstanceLimit")
-			else
-				local context: Types.PresentationContext
-
-				context = Instances.New(definition, entry, environment, function()
-					instances[context] = nil
-					count -= 1
-				end)
-
-				instances[context] = true
-				count += 1
-			end
+			start(instances, definition, entry)
 		end
 	end
 
 	local function attach(actor: ActorTypes.ActorView): ()
-		if active and actors[actor] == nil and isEligible(actor) then
-			local entries: ActorEntries = { instances = {}, connections = {} }
+		if not active or actors[actor] ~= nil or not isEligible(actor) then
+			return
+		end
 
-			actors[actor] = entries
+		local entries: ActorEntries = { instances = {}, connections = {}, states = nil }
 
-			for descriptor: Types.PresentationEventDescriptor in catalog do
-				if descriptor.source ~= "Hint" then
-					table.insert(
-						entries.connections,
-						Sources.Connect(descriptor, actor, function(id, entry)
-							deliver(descriptor, id, entry)
-						end)
-					)
+		actors[actor] = entries
+
+		for descriptor: Types.PresentationEventDescriptor in catalog.events do
+			if descriptor.source ~= "Hint" then
+				table.insert(
+					entries.connections,
+					Sources.Connect(descriptor, actor, function(id, entry)
+						deliver(descriptor, id, entry)
+					end)
+				)
+			end
+		end
+
+		if next(catalog.states) ~= nil then
+			local states: StateEntries.StateEntries = StateEntries.new(actor, catalog.states, {
+				IsReady = function(): boolean
+					return actors[actor] == entries and isStateReady(actor)
+				end,
+				Start = function(
+					definition: Types.PresentationDefinition,
+					entry: Types.PresentationStateEntry,
+					revalidate: () -> boolean
+				): Types.PresentationContext?
+					return start(entries.instances, definition, entry, revalidate)
+				end,
+			})
+
+			entries.states = states
+
+			for descriptor: Types.PresentationStateEntryDescriptor in catalog.states do
+				for _, connection: SignalTypes.Connection in
+					StateSources.Connect(descriptor.source, actor, states.Schedule)
+				do
+					table.insert(entries.connections, connection)
 				end
 			end
+
+			states.Schedule()
 		end
 	end
 
 	local function detach(actor: ActorTypes.ActorView): ()
-		local listeners: { [() -> ()]: boolean }? = observed[actor]
+		local listeners: ListenerSet? = observed[actor]
 
 		if listeners ~= nil then
 			for disconnect: () -> () in listeners do
 				disconnect()
 			end
 		end
+
+		readinessListeners[actor] = nil
 
 		local entries: ActorEntries? = actors[actor]
 
@@ -145,7 +219,31 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 				connection:Disconnect()
 			end
 
+			if entries.states ~= nil then
+				entries.states.Destroy()
+			end
+
 			retire(entries.instances)
+		end
+	end
+
+	local function onReadiness(actor: ActorTypes.ActorView, state: NetworkingTypes.ActorViewStateReadiness): ()
+		local entries: ActorEntries? = actors[actor]
+
+		if not active or entries == nil or state ~= "Ready" then
+			return
+		end
+
+		if entries.states ~= nil then
+			entries.states.Schedule()
+		end
+
+		local listeners: ListenerSet? = readinessListeners[actor]
+
+		if listeners ~= nil then
+			for listener: () -> () in table.clone(listeners) do
+				listener()
+			end
 		end
 	end
 
@@ -155,6 +253,10 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 		end
 
 		active = false
+
+		if stopReadiness ~= nil then
+			stopReadiness()
+		end
 
 		if stopAdded ~= nil then
 			stopAdded()
@@ -176,11 +278,15 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 		installed = false
 	end
 
-	if next(catalog) == nil then
+	if next(catalog.events) == nil and next(catalog.states) == nil then
 		return shutdown, nil
 	end
 
 	local success: boolean = pcall(function()
+		if readiness ~= nil then
+			stopReadiness = readiness:ObserveStateReadiness(onReadiness)
+		end
+
 		-- Install framework listeners before public Added callbacks can trigger a
 		-- live event. Existing views use the same identity-indexed attach path.
 		stopAdded = Actors.ObserveInstallation(attach)
@@ -190,7 +296,7 @@ function PresentationRuntime.Install(catalog: Types.PresentationCatalog): ((() -
 			attach(actor)
 		end
 
-		for descriptor: Types.PresentationEventDescriptor in catalog do
+		for descriptor: Types.PresentationEventDescriptor in catalog.events do
 			if descriptor.source == "Hint" then
 				table.insert(
 					hints,
