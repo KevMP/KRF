@@ -1,7 +1,7 @@
 [package]
 name = "kevmp/krf"
 description = "Server-authoritative Luau gameplay framework with Actors, Tags, Properties, Resources, Actions and schema-defined replication."
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT"
 authors = ["KevMP"]
 registry = "https://github.com/UpliftGames/wally-index"

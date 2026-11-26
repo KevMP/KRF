@@ -12,7 +12,7 @@ Add KRF to `wally.toml` and run `wally install`.
 
 ```toml
 [dependencies]
-KRF = "kevmp/krf@0.2.0"
+KRF = "kevmp/krf@0.2.1"
 ```
 
 Mount Wally's `Packages` folder at `ReplicatedStorage.Packages` in the Rojo project. The examples below import KRF from there. For a project with the package and startup scripts already wired, follow the [Tutorial](/tutorial/).
