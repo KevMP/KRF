@@ -53,6 +53,7 @@ These references describe KRF <%= runtime.version %>. Check the `KRF` entry in t
 
 ## Rules that always apply
 
+- Require KRF from `ReplicatedStorage.Packages.KRF`. On the client, wait for it with `ReplicatedStorage:WaitForChild("Packages"):WaitForChild("KRF")`.
 - The server decides gameplay. Clients send requests and read views; they never change Tags, Resources, Properties or Actions directly.
 - Anything a client sends, such as aim, a target or a position, is a claim. Schemas check its shape; the server checks whether it makes sense.
 - State belongs to an Actor. Register a character's Model as an Actor before it gains Tags, Resources or Actions.

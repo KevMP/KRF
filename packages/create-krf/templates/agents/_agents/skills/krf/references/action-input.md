@@ -22,6 +22,8 @@ The generator writes up to three files. Read its result for the exact paths:
 - the request entry in `src/shared/ActionRequests`;
 - for held, toggle or Actions with a payload, the input policy in `src/client/ActionInputPolicies`.
 
+`src/shared/ActionRequests` and `src/client/ActionInputPolicies` each merge every module in them into one map keyed by Action ID. Startup fails if two modules declare the same ID.
+
 It doesn't bind a key. See [Bind a key](#bind-a-key).
 
 ## Choose how the input drives the Action
