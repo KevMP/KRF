@@ -23,10 +23,10 @@ Studio, `npm run dev -- --place dungeon` to work on the dungeon instead, or `npm
 
 Requires Node.js 22.12 or newer. The project's npm scripts call the Roblox tools pinned in its
 `rokit.toml`: Rojo, Wally, StyLua, Selene and luau-lsp. Its `npm install` installs Rokit when it
-is missing, then those tools and the Wally packages. Its only npm dependency is `krf-tools`, which runs
+is missing, then those tools and the Wally packages. Its only npm dependency is `@kevmp/krf-tools`, whose `krf-tools` command runs
 [`npm run dev`, `npm test` and `npm run test:studio`](https://kevmp.github.io/KRF/reference/getting-started/project-tools#work-on-the-game), `npm run world:syncback` (see [World](https://kevmp.github.io/KRF/reference/getting-started/world)), and the
 [definition generators](https://kevmp.github.io/KRF/reference/getting-started/project-tools#generate-a-definition) such as `npm run createAction`. It is pinned to the exact release this creator ships with; when the
-creator itself was installed from a local `krf-tools` tarball, the project depends on that same
+creator itself was installed from a local `@kevmp/krf-tools` tarball, the project depends on that same
 tarball instead, so `npm install` works before the packages are published.
 
 ## Options
@@ -78,11 +78,11 @@ To try an unpublished build by hand, pack both packages and run the creator from
 any folder:
 
 ```bash
-npm pack --pack-destination build/tarballs --workspace krf-tools --workspace create-krf
+npm pack --pack-destination build/tarballs --workspace @kevmp/krf-tools --workspace create-krf
 ```
 
 ```bash
-npx --yes --package <repo>/build/tarballs/krf-tools-0.1.0.tgz --package <repo>/build/tarballs/create-krf-0.1.0.tgz create-krf
+npx --yes --package <repo>/build/tarballs/kevmp-krf-tools-0.1.0.tgz --package <repo>/build/tarballs/create-krf-0.1.0.tgz create-krf
 ```
 
 The configuration test creates a project from the packed tarballs for every combination of options
@@ -90,7 +90,7 @@ the creator accepts, then installs, builds and checks each one. It reads the opt
 schema, so a new option fails it until `FLAGS` in `tests/configurations/configurations.test.js` covers
 it. [RELEASING.md](../../RELEASING.md#npm-packages) explains how the packages are published.
 
-The integration test creates both modes from packed tarballs, installs the packed `krf-tools` and
+The integration test creates both modes from packed tarballs, installs the packed `@kevmp/krf-tools` and
 the published KRF, runs every definition generator through the project's npm scripts, checks,
 builds and inspects each place, and reads Hybrid's live-sync ownership from `rojo serve`. The world test
 saves the scene in `tests/integration/fixtures/Arena.rbxmx` into a place, captures it with `npm run world:syncback`

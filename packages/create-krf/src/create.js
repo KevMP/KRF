@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { KRF_RUNTIME, KrfToolError, renderTemplates, writeNewDirectory } from "krf-tools";
+import { KRF_RUNTIME, KrfToolError, renderTemplates, writeNewDirectory } from "@kevmp/krf-tools";
 
 import { CREATOR_VERSION, ROKIT_VERSION } from "./compatibility.js";
 import { ROJO_PROJECT_FILE, generatedManifests } from "./manifests.js";

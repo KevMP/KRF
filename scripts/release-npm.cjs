@@ -9,16 +9,17 @@ const { pathToFileURL } = require("node:url");
 const { ReleaseError, REPO_ROOT, parseOptions, run, runChecked, setOutput, writeSummary } = require("./release/cli.cjs");
 const { checkNpmVersion, checkReleaseVersions, classifyRegistryLookup, decidePublish } = require("./release/npm.cjs");
 
-const TOOLING = "krf-tools";
+const TOOLING = "@kevmp/krf-tools";
 const CREATOR = "create-krf";
 const PUBLISH_ORDER = [TOOLING, CREATOR];
+const PACKAGE_DIRECTORIES = { [TOOLING]: "krf-tools", [CREATOR]: "create-krf" };
 const TARBALL_LIST = "tarballs.json";
 const SMOKE_PROJECT = "smoke";
 const REGISTRY_ATTEMPTS = 20;
 const REGISTRY_DELAY_MS = 15000;
 
 function readManifest(name) {
-	return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "packages", name, "package.json"), "utf8"));
+	return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "packages", PACKAGE_DIRECTORIES[name], "package.json"), "utf8"));
 }
 
 function lookupVersion(name, version) {
@@ -50,7 +51,7 @@ async function preflight() {
 	const passed = JSON.parse(runChecked("gh", ["run", "list", "--workflow", "ci.yml", "--commit", commit, "--status", "success", "--json", "databaseId"]));
 	if (passed.length === 0) throw new ReleaseError(`CI has not passed for ${commit}. Wait for it, then run the npm release again.`);
 
-	const { KRF_RUNTIME } = await import(pathToFileURL(path.join(REPO_ROOT, "packages", TOOLING, "src", "compatibility.js")).href);
+	const { KRF_RUNTIME } = await import(pathToFileURL(path.join(REPO_ROOT, "packages", PACKAGE_DIRECTORIES[TOOLING], "src", "compatibility.js")).href);
 	if (run("gh", ["release", "view", `v${KRF_RUNTIME.version}`]).exitCode !== 0) {
 		throw new ReleaseError(`${CREATOR} targets KRF ${KRF_RUNTIME.version}, which has no verified GitHub Release.`);
 	}

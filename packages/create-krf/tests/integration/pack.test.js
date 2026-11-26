@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME } from "krf-tools";
+import { KRF_RUNTIME } from "@kevmp/krf-tools";
 
 import { PACKAGES, createProject, generateDefinitions, installPackedCreator, readTree, run } from "./Utils/packedCreator.js";
 import { child, inspectBuild, serveTree, shape, walk } from "./Utils/place.js";
@@ -32,7 +32,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 	assert.ok(!packed.tooling.files.some((file) => file.startsWith("tests/")), "tests must not ship");
 	assert.ok(packed.tooling.files.includes("bin/krf-tools.js"), "the generator executable must ship");
 	assert.ok(packed.tooling.files.includes("templates/definitions/action.luau.ejs"), "definition templates must ship");
-	assert.equal(fs.lstatSync(path.join(packed.installRoot, "node_modules", "krf-tools")).isSymbolicLink(), false);
+	assert.equal(fs.lstatSync(path.join(packed.installRoot, "node_modules", "@kevmp", "krf-tools")).isSymbolicLink(), false);
 
 	for (const variant of VARIANTS) {
 		await t.test(variant.mode, async () => {
@@ -40,7 +40,7 @@ test("packed create-krf projects install the published KRF, check and build in e
 			const project = createProject(packed, path.join(root, "work"), name, ["--mode", variant.mode, "--no-git", ...variant.flags]);
 			const generated = readTree(project);
 			const manifest = JSON.parse(generated["package.json"]);
-			assert.deepEqual(manifest.devDependencies, { "krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` }, "the project installs the krf-tools tarball the creator came from");
+			assert.deepEqual(manifest.devDependencies, { "@kevmp/krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` }, "the project installs the krf-tools tarball the creator came from");
 			assert.equal(fs.existsSync(path.join(project, "node_modules")), false);
 			assert.equal("AGENTS.md" in generated, variant.agents);
 			assert.equal(".agents/skills/krf/references/docs/actions/guide.md" in generated, variant.agents);

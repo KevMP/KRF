@@ -29,12 +29,12 @@ export function packTarballs(destination) {
 }
 
 export function tarballsIn(directory) {
-	const find = (name) => {
-		const matches = fs.readdirSync(directory).filter((file) => file.startsWith(`${name}-`) && file.endsWith(".tgz"));
-		assert.equal(matches.length, 1, `${directory} must hold exactly one ${name} tarball, found ${JSON.stringify(matches)}`);
+	const find = (prefix) => {
+		const matches = fs.readdirSync(directory).filter((file) => file.startsWith(prefix) && file.endsWith(".tgz"));
+		assert.equal(matches.length, 1, `${directory} must hold exactly one ${prefix}*.tgz tarball, found ${JSON.stringify(matches)}`);
 		return { file: path.resolve(directory, matches[0]) };
 	};
-	return { tooling: find("krf-tools"), creator: find("create-krf") };
+	return { tooling: find("kevmp-krf-tools-"), creator: find("create-krf-") };
 }
 
 export function installPackedCreator(root, tarballs = packTarballs(path.join(root, "tarballs"))) {

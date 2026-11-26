@@ -127,7 +127,7 @@ test("every supported configuration generates from the packed creator, installs,
 
 			const manifest = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf8"));
 			assert.deepEqual(manifest.scripts, JSON.parse(expected.get("package.json").toString("utf8")).scripts);
-			assert.deepEqual(manifest.devDependencies, { "krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` });
+			assert.deepEqual(manifest.devDependencies, { "@kevmp/krf-tools": `file:${packed.tooling.file.split(path.sep).join("/")}` });
 
 			run("npm", ["install"], project);
 			run("npm", ["run", "build"], project);

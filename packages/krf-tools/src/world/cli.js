@@ -1,6 +1,6 @@
 import { Command, CommanderError } from "commander";
 
-import { TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
+import { TOOLS_COMMAND, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { projectForPlace, readLocalProject } from "../workflow/project.js";
 import { SYSTEM } from "../workflow/tools.js";
@@ -13,7 +13,7 @@ export const WORLD_SCRIPTS = Object.freeze({
 });
 
 function buildProgram(io, onSelect) {
-	const program = new Command(TOOLS_PACKAGE)
+	const program = new Command(TOOLS_COMMAND)
 		.version(TOOLS_VERSION, "-v, --version")
 		.exitOverride()
 		.configureOutput({ writeOut: io.stdout, writeErr: io.stderr });

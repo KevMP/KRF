@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { KRF_RUNTIME } from "krf-tools";
+import { KRF_RUNTIME } from "@kevmp/krf-tools";
 
 import { copySkillDocs, rewriteDocument, rewriteLink } from "../scripts/skill-docs.js";
 import { buildProjectFiles } from "../src/create.js";

@@ -1,4 +1,4 @@
-# krf-tools
+# @kevmp/krf-tools
 
 Project tooling for KRF games. It renders the templates behind
 [`create-krf`](https://www.npmjs.com/package/create-krf), and its `krf-tools` executable runs the

@@ -53,8 +53,8 @@ measurements, analyzers, and interpretation limits.
 
 ## Starter project
 
-`npm run test:integration:starter` packs `create-krf` and `krf-tools`, generates
-projects through the packed creator, installs the packed `krf-tools` and the
+`npm run test:integration:starter` packs `create-krf` and `@kevmp/krf-tools`, generates
+projects through the packed creator, installs the packed `@kevmp/krf-tools` and the
 published KRF release with `npm install`, creates one definition of every kind
 through the project's `npm run create*` scripts, builds with `npm run build`, and
 plays each project in Studio with one server and two clients. The `starter`

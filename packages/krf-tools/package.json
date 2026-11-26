@@ -1,5 +1,5 @@
 {
-  "name": "krf-tools",
+  "name": "@kevmp/krf-tools",
   "version": "0.1.0",
   "description": "Project tools for KRF games: the create-krf template engine and the definition generators behind a project's npm run create* scripts.",
   "type": "module",
