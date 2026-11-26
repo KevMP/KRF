@@ -17,6 +17,8 @@ local view: KRF.ActorView? = KRF.ActorViewRegistry.GetActorViewByModel(model)
 
 A Model existing on the client doesn't mean its view has arrived, and a view can exist before its Model streams in. Handle `nil` either way.
 
+A view's Model is `view:GetModel()`, which can return `nil`; follow `view.OnModelChanged` when you need it to arrive. A view has no `.model` field: that's the server's Actor.
+
 ## Follow every character
 
 For something every character needs, such as nameplates or health bars, connect to `OnActorViewAdded` first, then go through `GetAllActorViews()` for the views that already exist:
