@@ -13,6 +13,8 @@ local MEMBER_PATHS: { [string]: { string } } = {
 	Server = { "server" },
 	Client = { "client" },
 	Schema = { "shared", "Networking", "Schema" },
+	Signal = { "shared", "Signal", "SignalModule" },
+	OwnedSignals = { "shared", "Signal", "OwnedSignals" },
 	ActorRuntime = { "server", "Actor", "ActorRuntime" },
 	ActorRegistry = { "server", "Actor", "ActorRegistry" },
 	ControllerRegistry = { "server", "Controller", "ControllerRegistry" },
@@ -112,4 +114,100 @@ it("types definitions authored through the root module", function()
 
 	expect(tag.id).toBe("Status.Example")
 	expect(resource.id).toBe("Resource.Example")
+end)
+
+it("types input sources with gestures, sequences and recognizers through the root module", function()
+	local state: { [string]: KRF.RecognitionScalar } = {}
+
+	local context: KRF.RecognizerContext = {
+		GetState = function(_self: KRF.RecognizerContext, key: string): KRF.RecognitionScalar?
+			return state[key]
+		end,
+		SetState = function(
+			_self: KRF.RecognizerContext,
+			key: string,
+			value: KRF.RecognitionScalar?
+		): (boolean, string?)
+			state[key] = value
+
+			return true, nil
+		end,
+		Now = function(_self: KRF.RecognizerContext): number
+			return 0
+		end,
+		ScheduleAfter = function(_self: KRF.RecognizerContext, _seconds: number): (boolean, string?)
+			return true, nil
+		end,
+		ClearDeadline = function(_self: KRF.RecognizerContext): () end,
+	}
+
+	local mash: KRF.RecognizerDefinition = {
+		inputs = { "Attack" },
+		maxWindowSeconds = 1,
+		onEvent = function(ctx: KRF.RecognizerContext, event: KRF.RecognizerEvent): KRF.CustomMatch?
+			if event.kind ~= "Pressed" then
+				return nil
+			end
+
+			local presses: number = ((ctx:GetState("presses") :: number?) or 0) + 1
+			ctx:SetState("presses", if presses >= 2 then 0 else presses)
+
+			return if presses >= 2 then {} else nil
+		end,
+	}
+
+	local source: KRF.InputSourceDefinition = {
+		gestures = { Attack = { Tap = { maxDurationSeconds = 0.2 } } },
+		sequences = {
+			Uppercut = { steps = { "Down", "Attack" }, maxGapSeconds = 0.3, maxTotalSeconds = 0.8 },
+		},
+		recognizers = { Mash = mash },
+	}
+
+	local press: KRF.SemanticInputEvent = {
+		kind = "Pressed",
+		value = true,
+		inputId = "Attack",
+		contextId = "Gameplay",
+		inputType = Enum.InputActionType.Bool,
+		timestamp = 0,
+		ordinal = 1,
+	}
+
+	local first: KRF.CustomMatch? = mash.onEvent(context, press)
+	local second: KRF.CustomMatch? = mash.onEvent(context, press)
+
+	expect(first).toBeNil()
+	expect(second).toEqual({})
+	expect(source.recognizers).toBeDefined()
+end)
+
+it("lets game code own Signals and expose read-only Events through the root module", function()
+	local rankChanged: KRF.Signal<number> = KRF.Signal.new()
+	local ownedSignals: KRF.OwnedSignals = KRF.OwnedSignals.new({ rankChanged })
+	local onRankChanged: KRF.Event<number> = KRF.Signal.wrapEvent(rankChanged)
+	local received: { number } = {}
+
+	local connection: KRF.Connection = onRankChanged:Connect(function(rank: number): ()
+		table.insert(received, rank)
+	end)
+
+	ownedSignals:WithDeferredDestroy(function(): ()
+		rankChanged:Fire(2)
+	end)
+
+	connection:Disconnect()
+	ownedSignals:Destroy()
+
+	local fireExposed: boolean = pcall(function(): ()
+		local _: any = (onRankChanged :: any).Fire
+	end)
+
+	local connectedAfterDestroy: boolean = pcall(function(): ()
+		onRankChanged:Connect(function(): () end)
+	end)
+
+	expect(received).toEqual({ 2 })
+	expect(fireExposed).toBe(false)
+	expect(connectedAfterDestroy).toBe(false)
 end)

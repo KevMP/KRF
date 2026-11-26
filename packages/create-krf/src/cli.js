@@ -27,6 +27,8 @@ function buildProgram(io) {
 		.option("--places <names>", "Full mode: comma-separated place names, starting with the start place")
 		.option("--ci", "add a GitHub Actions workflow that checks and builds (default)")
 		.option("--no-ci", "do not add a GitHub Actions workflow")
+		.option("--agents", "add AGENTS.md and the KRF skill for coding agents (default)")
+		.option("--no-agents", "do not add agent instructions or the KRF skill")
 		.option("--no-git", "do not initialize a Git repository")
 		.option("-y, --yes", "use defaults for every value not given; never prompt")
 		.version(CREATOR_VERSION, "-v, --version")
@@ -48,6 +50,7 @@ function inputFromFlags(projectPath, flags, program) {
 		mode: flags.mode,
 		places: flags.places,
 		ci: given("ci") ? flags.ci : undefined,
+		agents: given("agents") ? flags.agents : undefined,
 		git: given("git") ? flags.git : undefined,
 	};
 }

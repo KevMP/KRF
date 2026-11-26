@@ -19,11 +19,14 @@ local ViewTypes = require(script.client.Actor.types)
 local ClientActionTypes = require(script.client.Action.types)
 local ClientNetworkingTypes = require(script.client.Networking.types)
 local ControlTypes = require(script.client.Controls.types)
+local InputTypes = require(script.client.Input.types)
 local SignalTypes = require(script.shared.Signal.types)
 
 -- Signals
 export type Event<T...> = SignalTypes.Event<T...>
 export type Connection = SignalTypes.Connection
+export type Signal<T...> = SignalTypes.Signal<T...>
+export type OwnedSignals = SignalTypes.OwnedSignals
 
 -- Server startup and authoring
 export type ServerStartConfig = ServerTypes.ServerStartConfig
@@ -123,6 +126,36 @@ export type ProfileSourceSnapshot = ClientActionTypes.ProfileSourceSnapshot
 export type ClientActionRuntime = ClientActionTypes.ClientActionRuntime
 export type ClientControls = ControlTypes.ClientControls
 export type ControlChangeSet = ControlTypes.ControlChangeSet
+export type InputRuntime = InputTypes.InputRuntime
+export type InputSourceDefinition = InputTypes.InputSourceDefinition
+export type InputDefinition = InputTypes.InputDefinition
+export type BindingDefinition = InputTypes.BindingDefinition
+export type ContextDefinition = InputTypes.ContextDefinition
+export type InputSnapshot = InputTypes.InputSnapshot
+export type ContextSnapshot = InputTypes.ContextSnapshot
+export type BindingSnapshot = InputTypes.BindingSnapshot
+export type SemanticInputEvent = InputTypes.SemanticInputEvent
+export type GestureKind = InputTypes.GestureKind
+export type GestureDefinitions = InputTypes.GestureDefinitions
+export type TapDefinition = InputTypes.TapDefinition
+export type HoldDefinition = InputTypes.HoldDefinition
+export type DoubleTapDefinition = InputTypes.DoubleTapDefinition
+export type DoubleTapArbitration = InputTypes.DoubleTapArbitration
+export type GestureSnapshot = InputTypes.GestureSnapshot
+export type GestureEvent = InputTypes.GestureEvent
+export type SequenceDefinition = InputTypes.SequenceDefinition
+export type SequenceStep = InputTypes.SequenceStep
+export type WatchedToken = InputTypes.WatchedToken
+export type SequenceGroupDefinition = InputTypes.SequenceGroupDefinition
+export type SequenceSnapshot = InputTypes.SequenceSnapshot
+export type SequenceMatchEvent = InputTypes.SequenceMatchEvent
+export type RecognizerDefinition = InputTypes.RecognizerDefinition
+export type RecognizerContext = InputTypes.RecognizerContext
+export type RecognizerEvent = InputTypes.RecognizerEvent
+export type RecognitionScalar = InputTypes.RecognitionScalar
+export type CustomMatch = InputTypes.CustomMatch
+export type RecognizerSnapshot = InputTypes.RecognizerSnapshot
+export type CustomRecognitionEvent = InputTypes.CustomRecognitionEvent
 export type CommandRuntime = ClientNetworkingTypes.CommandRuntime
 export type CommandResult = ClientNetworkingTypes.CommandResult
 export type HintReceived = ClientNetworkingTypes.HintReceived
@@ -131,6 +164,8 @@ type KRF = {
 	read Server: typeof(require(script.server)),
 	read Client: typeof(require(script.client)),
 	read Schema: typeof(require(script.shared.Networking.Schema)),
+	read Signal: typeof(require(script.shared.Signal.SignalModule)),
+	read OwnedSignals: typeof(require(script.shared.Signal.OwnedSignals)),
 
 	read ActorRuntime: typeof(require(script.server.Actor.ActorRuntime)),
 	read ActorRegistry: typeof(require(script.server.Actor.ActorRegistry)),
@@ -158,6 +193,8 @@ local MEMBERS: { [string]: ModuleScript } = {
 	Server = script.server,
 	Client = script.client,
 	Schema = script.shared.Networking.Schema,
+	Signal = script.shared.Signal.SignalModule,
+	OwnedSignals = script.shared.Signal.OwnedSignals,
 
 	ActorRuntime = script.server.Actor.ActorRuntime,
 	ActorRegistry = script.server.Actor.ActorRegistry,

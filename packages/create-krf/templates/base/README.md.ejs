@@ -28,6 +28,10 @@ For a [game with named places](https://kevmp.github.io/KRF/reference/getting-sta
 
 This is a Hybrid project: Rojo syncs `src` and `Packages`, and `<%= name %>.rbxl` owns the world. Save your world in it; `npm run dev` creates it once and never rebuilds it. To keep part of the world in Git, [opt a folder in](https://kevmp.github.io/KRF/reference/getting-started/world#hybrid-projects).
 <% } -%>
+<% if (options.agents) { -%>
+
+`AGENTS.md`, `CLAUDE.md` and the KRF skill tell coding agents how to build this game with KRF. The skill is in `.agents/skills/krf/` for Codex and `.claude/skills/krf/` for Claude Code; keep both copies the same.
+<% } -%>
 
 ## Cloud deployment
 
