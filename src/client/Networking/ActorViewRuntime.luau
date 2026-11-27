@@ -8,6 +8,7 @@ local RegistryOwner = require(script.Parent.Parent.Actor.utils.ActorViewRegistry
 local Publication = require(script.Parent.utils.ActorViewPublication)
 local Recovery = require(script.Parent.utils.ActorViewRecovery)
 local Constants = require(script.Parent.Parent.Parent.shared.Networking.utils.ActorProtocolConstants)
+local Observers = require(script.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 
 local ActorViewRuntime = {}
 
@@ -35,8 +36,24 @@ function ActorViewRuntime.new(
 	-- The Actor stream runtime owns handle retirement. Weak record tombstones additionally protect
 	-- retained private callbacks without duplicating its lifetime-growing handle set.
 	local retired: { [Types.ActorStreamRecord]: boolean } = setmetatable({}, { __mode = "k" })
+	local views: { [PublicTypes.ActorView]: State } = {}
 	local destroyed: boolean = false
 	local admit: () -> boolean = Recovery.Admission(options.Now)
+
+	local readinessObservers: Observers.Registry<Types.ActorViewStateReadinessObserver> = Observers.new(
+		64,
+		"ActorReadinessObserverLimitExceeded"
+	) :: Observers.Registry<
+		Types.ActorViewStateReadinessObserver
+	>
+
+	local function publishReadiness(view: PublicTypes.ActorView, readiness: Types.ActorViewStateReadiness): ()
+		for _, entry in readinessObservers.Snapshot() do
+			if entry.active then
+				Observers.Run(entry.callback, view, readiness)
+			end
+		end
+	end
 
 	local function report(actor: Types.ActorStreamRecord, reason: string, terminal: boolean?): ()
 		pcall(options.ReportFault, { actorId = actor.actorId, reason = reason }, terminal)
@@ -119,7 +136,14 @@ function ActorViewRuntime.new(
 	end
 
 	local function recover(state: State, reason: string): ()
+		local wasLive: boolean = state.status == "Live"
+
 		state.status = "AwaitingBaseline"
+
+		if wasLive then
+			publishReadiness(assert(state.owner, "Live ActorView state has an owner").view, "Stale")
+		end
+
 		report(state.actor, reason)
 		state.recovery.Start()
 	end
@@ -142,6 +166,7 @@ function ActorViewRuntime.new(
 		local owner: PublicTypes.ActorViewOwner? = state.owner
 
 		if owner ~= nil then
+			views[owner.view] = nil
 			RegistryOwner.Invalidate(owner.view, "ActorRemoved")
 			RegistryOwner.Removing:Fire(owner.view)
 			RegistryOwner.Remove(owner.view)
@@ -238,16 +263,19 @@ function ActorViewRuntime.new(
 					end
 
 					state.owner = owner
+					views[owner.view] = state
 					state.domains = stage.domains
 					state.revision = revision
 					state.status = "Live"
 					state.recovery.Cancel(true)
+					publishReadiness(owner.view, "Ready")
 					RegistryOwner.Added:Fire(owner.view)
 
 					return
 				end
 
 				local previous: { [string]: PublicTypes.DomainViewOwner } = state.domains
+				local recovered: boolean = state.status == "AwaitingBaseline"
 
 				for _, changed: Publication.Change in stage.changes do
 					changed.owner:InstallState(changed.change.current)
@@ -264,6 +292,10 @@ function ActorViewRuntime.new(
 					if stage.domains[id] == nil then
 						domain:Destroy()
 					end
+				end
+
+				if recovered then
+					publishReadiness(owner.view, "Ready")
 				end
 
 				if membership ~= nil then
@@ -342,6 +374,28 @@ function ActorViewRuntime.new(
 				end
 			end,
 		},
+		IsStateReady = function(_self: Types.ActorViewRuntime, actor: PublicTypes.ActorView): boolean
+			local state: State? = views[actor]
+
+			return not destroyed
+				and state ~= nil
+				and states[state.actor.handle] == state
+				and state.status == "Live"
+				and state.owner ~= nil
+				and state.owner.view == actor
+				and RegistryOwner.IsCurrent(actor)
+				and not RegistryOwner.IsInvalidating(actor)
+		end,
+		ObserveStateReadiness = function(
+			_self: Types.ActorViewRuntime,
+			callback: Types.ActorViewStateReadinessObserver
+		): () -> ()
+			if destroyed then
+				return function(): () end
+			end
+
+			return readinessObservers.Add(callback)
+		end,
 		_InspectForTests = function(_self: Types.ActorViewRuntime, handle: number): Types.ActorViewDiagnostics?
 			local state: State? = states[handle]
 
@@ -355,12 +409,14 @@ function ActorViewRuntime.new(
 			end
 
 			destroyed = true
+			readinessObservers.Destroy()
 
 			for _, state: State in table.clone(states) do
 				remove(state.actor)
 			end
 
 			table.clear(states)
+			table.clear(views)
 			table.clear(retired)
 		end,
 	}

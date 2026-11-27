@@ -84,7 +84,11 @@ const sidebars: SidebarsConfig = {
       label: 'ClientControls',
       items: ['controls/guide', 'controls/api'],
     },
-    'presentation/guide',
+    {
+      type: 'category',
+      label: 'Presentation',
+      items: ['presentation/guide', 'presentation/api'],
+    },
     {
       type: 'category',
       label: 'Networking',

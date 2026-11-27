@@ -156,7 +156,7 @@ it(
 
 		install(function(context: Types.PresentationContext)
 			table.insert(contexts, context)
-			local entry: Types.PresentationEntryEvent = context.entry
+			local entry: Types.PresentationEntry = context.entry
 			assert(entry.source == "Hint", "Expected Hint origin")
 			local label: string = entry.payload
 

@@ -13,7 +13,7 @@ per-file coverage gates. Use `npm run test:unit` for focused test work. Specs li
 under `tests/server`, `tests/client`, and `tests/shared`; injected integration
 specs exercise cross-system contracts without replacing native fixtures.
 
-`npm run typecheck` also compiles the Presentation `On` fixtures under
+`npm run typecheck` also compiles the Presentation `On` and `Watch` fixtures under
 `tests/typecheck`. Positive fixtures exercise the supported call forms; negative
 fixtures must produce errors at each `-- expect-error` marker and nowhere else.
 They use the same pinned LuauSolverV2 checker and Roblox definitions as source

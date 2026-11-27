@@ -1,0 +1,40 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local States = require(KRF.client.Presentation.PresentationStates)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
+
+local _wrongEntry: Types.PresentationDefinition = {
+	id = "Wrong",
+	entry = { state = States.Tag.Active, id = 7 }, -- expect-error
+	create = function(_ctx: Types.PresentationContext) end,
+}
+
+local _watchOnlyEntry: Types.PresentationDefinition = {
+	id = "WatchOnly",
+	entry = { state = States.Resource.Current, id = "Mana" }, -- expect-error
+	create = function(_ctx: Types.PresentationContext) end,
+}
+
+return function(ctx: Types.PresentationContext): ()
+	ctx:Watch(States.Tag.Active, function(_tag: ActorTypes.ActiveTagSnapshot?) end) -- expect-error
+	ctx:Watch(States.Action.Active, "Charge", function(_action: ActorTypes.ActionSnapshot?) end) -- expect-error
+	ctx:Watch(States.Resource.Current, "Mana", function(_tag: ActorTypes.ActiveTagSnapshot?) end) -- expect-error
+	ctx:Watch(States.Actor.Model, function(_model: Part?) end) -- expect-error
+	ctx:Watch(States.Tag.Active, 7, function(_tag: ActorTypes.ActiveTagSnapshot?) end) -- expect-error
+	ctx:Watch(Events.Tag.Added, "Burning", function(_tag: ActorTypes.ActiveTagSnapshot?) end) -- expect-error
+	ctx:Watch(States.Tag.Active, "Burning") -- expect-error
+	ctx:Watch(States.Actor.Model, function(_model: Model?) end, "extra") -- expect-error
+	ctx:Watch(States.Tag.Active, "Burning", function(tag: ActorTypes.ActiveTagSnapshot?)
+		local wrong: string = if tag ~= nil then tag.stackCount else "" -- expect-error
+		assert(wrong ~= nil)
+	end)
+	local entry: Types.PresentationEntry = ctx.entry
+
+	if entry.source == "State" and entry.kind == "Tag" then
+		local wrong: number = entry.tagId -- expect-error
+		assert(wrong > 0)
+	end
+end

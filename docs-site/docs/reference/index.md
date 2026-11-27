@@ -44,7 +44,7 @@ Clients read published state through [ActorViews](./actors/client-views). Visibl
 
 Current state lets a client rebuild its display after joining or recovering. Events describe occurrences such as an ability starting. For disposable presentation samples that can be missed or replaced, use [Hints](./hints/guide).
 
-Use [Presentation](./presentation/guide) to run client visuals when a delivered Action, Tag, Resource or Hint matches a game definition. Each instance can own its visual objects and clean them up when it finishes or its Actor retires.
+Use [Presentation](./presentation/guide) to run client visuals when a delivered Action, Tag, Resource or Hint matches a game definition, or while an Actor has an active Tag or Action. Each instance can own its visual objects and clean them up when it finishes or its Actor retires.
 
 ## Start building
 

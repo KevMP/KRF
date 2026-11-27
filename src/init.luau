@@ -103,10 +103,19 @@ export type ClientInitConfig = ClientTypes.ClientInitConfig
 export type ClientStartupFailure = ClientTypes.StartupFailure
 export type PresentationDefinition = PresentationTypes.PresentationDefinition
 export type PresentationEntryBinding = PresentationTypes.PresentationEntryBinding
+export type PresentationStateEntryBinding = PresentationTypes.PresentationStateEntryBinding
+export type PresentationDefinitionEntry = PresentationTypes.PresentationDefinitionEntry
+export type PresentationEntry = PresentationTypes.PresentationEntry
 export type PresentationEntryEvent = PresentationTypes.PresentationEntryEvent
+export type PresentationStateEntry = PresentationTypes.PresentationStateEntry
 export type PresentationEventDescriptor = PresentationTypes.PresentationEventDescriptor
+export type PresentationStateDescriptor = PresentationTypes.PresentationStateDescriptor
+export type PresentationStateEntryDescriptor = PresentationTypes.PresentationStateEntryDescriptor
 export type PresentationContext = PresentationTypes.PresentationContext
 export type PresentationOn = PresentationTypes.PresentationOn
+export type PresentationWatch = PresentationTypes.PresentationWatch
+export type TagStateEntry = PresentationTypes.TagStateEntry
+export type ActionStateEntry = PresentationTypes.ActionStateEntry
 export type ActionEntryEvent = PresentationTypes.ActionEntryEvent
 export type TagEntryEvent = PresentationTypes.TagEntryEvent
 export type ResourceEntryEvent = PresentationTypes.ResourceEntryEvent
@@ -193,6 +202,7 @@ type KRF = {
 	read ServerHintRuntime: typeof(require(script.server.Networking.HintRuntime)),
 
 	read PresentationEvents: typeof(require(script.client.Presentation.PresentationEvents)),
+	read PresentationStates: typeof(require(script.client.Presentation.PresentationStates)),
 	read ActorViewRegistry: typeof(require(script.client.Actor.ActorViewRegistry)),
 	read ClientActionRuntime: typeof(require(script.client.Action.ClientActionRuntime)),
 	read ClientControls: typeof(require(script.client.Controls.ClientControls)),
@@ -223,6 +233,7 @@ local MEMBERS: { [string]: ModuleScript } = {
 	ServerHintRuntime = script.server.Networking.HintRuntime,
 
 	PresentationEvents = script.client.Presentation.PresentationEvents,
+	PresentationStates = script.client.Presentation.PresentationStates,
 	ActorViewRegistry = script.client.Actor.ActorViewRegistry,
 	ClientActionRuntime = script.client.Action.ClientActionRuntime,
 	ClientControls = script.client.Controls.ClientControls,

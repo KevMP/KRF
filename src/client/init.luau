@@ -141,6 +141,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 
 	local protocol: SharedNetworkingTypes.ClientProtocol? = nil
 	local receiveActors: ((any) -> ())? = nil
+	local readiness: ClientTypes.ActorViewStateReadinessSource? = nil
 
 	local function cancelTimer(): ()
 		local cancel: (() -> ())? = cancelTimeout
@@ -162,6 +163,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 		cleanupInput = nil
 		dispose(stopInput)
 		receiveActors = nil
+		readiness = nil
 		cancelTimer()
 		local listener: (() -> ())? = disconnect
 		disconnect = nil
@@ -288,7 +290,7 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					-- All other installation steps and the handshake have succeeded.
 					if presentations ~= nil then
 						local stopPresentation: (() -> ())?, presentationReason: string? =
-							PresentationRuntime.Install(presentations)
+							PresentationRuntime.Install(presentations, readiness)
 
 						if stopPresentation == nil then
 							finish(false, presentationReason, "Presentation")
@@ -337,7 +339,10 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 					if transport.SendUnreliable ~= nil
 						then SendMetrics.Wrap(diagnosticOwner, false, transport.SendUnreliable)
 						else nil,
-					transport.ConnectUnreliable
+					transport.ConnectUnreliable,
+					function(source: ClientTypes.ActorViewStateReadinessSource): ()
+						readiness = source
+					end
 				)
 
 				if coroutine.status(installer) ~= "dead" then

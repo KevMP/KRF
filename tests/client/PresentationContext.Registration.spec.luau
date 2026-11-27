@@ -26,6 +26,12 @@ local environment: Types.PresentationSubscriptionEnvironment = {
 	TrackActor = function(): () -> ()
 		return function(): () end
 	end,
+	IsStateReady = function(): boolean
+		return false
+	end,
+	ObserveReadiness = function(): () -> ()
+		return function(): () end
+	end,
 }
 
 afterEach(function()
@@ -43,7 +49,7 @@ afterEach(function()
 	table.clear(owners)
 end)
 
-local function contextFor(entry: Types.PresentationEntryEvent): Types.PresentationContext
+local function contextFor(entry: Types.PresentationEntry): Types.PresentationContext
 	local context: Types.PresentationContext = Instances.New({
 		id = "Registration",
 		entry = { event = Events.Hint.Received, id = "Origin" },
@@ -164,7 +170,7 @@ it("reads the private Action association on delivery independently of entry fami
 	local context: Types.PresentationContext = contextFor(origin)
 	local received: { number } = {}
 
-	local on, stop = Subscriptions.New("Association", origin, {
+	local on, _watch, stop = Subscriptions.New("Association", origin, {
 		IsActive = function(): boolean
 			return context:IsActive()
 		end,

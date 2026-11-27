@@ -74,6 +74,7 @@ end
 local initialized, failure = Server.Init({
 	tags = {
 		{ id = "Charging", duplicateBehavior = "Ignore", visibility = "ClientVisible" },
+		{ id = "Burning", duplicateBehavior = "Ignore", visibility = "ClientVisible" },
 		{ id = "Private.Hidden", duplicateBehavior = "Ignore", visibility = "ServerOnly" },
 	},
 	resources = {
@@ -113,6 +114,8 @@ local actor: ActorTypes.Actor?, reason: string? = ActorRuntime.RegisterActor(mod
 assert(actor ~= nil, reason)
 local controller: ActionTypes.ActionController = actor:GetController("ActionController") :: ActionTypes.ActionController
 assert(controller:RequestAction("Sword.Swing").accepted, "Expected pre-baseline Action")
+local tags: TagTypes.TagController = actor:GetController("TagController") :: TagTypes.TagController
+assert(tags:AddTag("Burning"), "Expected pre-baseline Tag")
 
 local phase: string = "Ready"
 local invalidPassed: boolean = false
@@ -180,8 +183,6 @@ control.OnServerEvent:Connect(function(player: Player, report: string, clientFai
 					end
 				end)
 			elseif phase == "Live" then
-				local tags: TagTypes.TagController = actor:GetController("TagController") :: TagTypes.TagController
-
 				local resources: ResourceTypes.ResourceController =
 					actor:GetController("ResourceController") :: ResourceTypes.ResourceController
 
@@ -203,6 +204,7 @@ control.OnServerEvent:Connect(function(player: Player, report: string, clientFai
 				end)
 			elseif phase == "Followups" then
 				assert(controller:EndAction(2))
+				assert(tags:RemoveTag("Burning"), "Expected live Tag removal")
 				send(player, "EndedFirst")
 			elseif phase == "EndedFirst" then
 				assert(controller:InterruptAction(3, "NativePresentationTest"))

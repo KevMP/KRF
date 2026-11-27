@@ -61,36 +61,46 @@ function analyze(sourcemap, inputs, expectedErrors) {
 	}
 	if (unexpected || actual.size !== expectedErrors.lines.size || [...actual].some((line) => !expectedErrors.lines.has(line))) {
 		console.error(output);
-		console.error(`Presentation negative fixture: expected errors on lines ${[...expectedErrors.lines]}, got ${[...actual]}`);
+		console.error(`${expectedErrors.file}: expected errors on lines ${[...expectedErrors.lines]}, got ${[...actual]}`);
 		return 1;
 	}
-	console.log(`Presentation overloads: rejected ${actual.size} invalid calls/payloads with LuauSolverV2`);
+	console.log(`${expectedErrors.file}: rejected ${actual.size} invalid calls/payloads with LuauSolverV2`);
 	return 0;
 }
 
 function analyzePresentationTypes() {
 	const directory = path.join(TEMP_DIR, "presentation");
 	fs.mkdirSync(directory, { recursive: true });
-	const fixtures = ["positive", "negative"];
-	for (const fixture of fixtures) {
-		fs.copyFileSync(path.join("tests/typecheck", `PresentationOn.${fixture}.luau.txt`), path.join(directory, `${fixture}.luau`));
+	const families = ["PresentationOn", "PresentationWatch"];
+	const fixtures = {};
+	for (const family of families) {
+		for (const kind of ["positive", "negative"]) {
+			const name = `${family}.${kind}`;
+			fs.copyFileSync(path.join("tests/typecheck", `${name}.luau.txt`), path.join(directory, `${name}.luau`));
+			fixtures[name] = { $path: `${name}.luau` };
+		}
 	}
 	const project = path.join(directory, "presentation.project.json");
 	const sourcemap = path.join(directory, "sourcemap.json");
 	fs.writeFileSync(project, JSON.stringify({ name: "PresentationTypes", tree: {
 		$className: "DataModel", ReplicatedStorage: {
 			$className: "ReplicatedStorage", Packages: { $className: "Folder", KRF: { $path: path.resolve("src") } },
-			Positive: { $path: "positive.luau" }, Negative: { $path: "negative.luau" },
+			...fixtures,
 		},
 	} }));
 	fs.writeFileSync(path.join(directory, ".luaurc"), JSON.stringify({ languageMode: "strict", lint: { "*": false } }));
 	let status = runTool("rojo", ["sourcemap", "--absolute", project, "--output", sourcemap]);
 	if (status !== 0) return status;
-	status = analyze(sourcemap, [path.join(directory, "positive.luau")]);
-	if (status !== 0) return status;
-	const lines = new Set(fs.readFileSync(path.join(directory, "negative.luau"), "utf8").split(/\r?\n/)
-		.flatMap((line, index) => line.includes("-- expect-error") ? [index + 1] : []));
-	return analyze(sourcemap, [path.join(directory, "negative.luau")], { file: "negative.luau", lines });
+	for (const family of families) {
+		status = analyze(sourcemap, [path.join(directory, `${family}.positive.luau`)]);
+		if (status !== 0) return status;
+		const file = `${family}.negative.luau`;
+		const lines = new Set(fs.readFileSync(path.join(directory, file), "utf8").split(/\r?\n/)
+			.flatMap((line, index) => line.includes("-- expect-error") ? [index + 1] : []));
+		status = analyze(sourcemap, [path.join(directory, file)], { file, lines });
+		if (status !== 0) return status;
+	}
+	return 0;
 }
 
 function analyzeSkillExamples() {

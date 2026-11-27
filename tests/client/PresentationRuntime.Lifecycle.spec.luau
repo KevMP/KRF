@@ -54,7 +54,7 @@ it("owns source selectors and creates one independent context per matching defin
 	local payloads: { number } = {}
 
 	for _, context in contexts do
-		local entry: Types.PresentationEntryEvent = context.entry
+		local entry: Types.PresentationEntry = context.entry
 		assert(entry.source == "Hint", "Expected Hint entry")
 		expect(entry.hintId).toBe("Impact")
 		expect(table.isfrozen(entry)).toBe(true)
@@ -247,7 +247,7 @@ it("ignores a queued source callback from a retired installation after a new sta
 	HintState.Notify({ hintId = "Impact", payload = "New" })
 	task.wait()
 	expect(#contexts).toBe(1)
-	local entry: Types.PresentationEntryEvent = contexts[1].entry
+	local entry: Types.PresentationEntry = contexts[1].entry
 	assert(entry.source == "Hint", "Expected current Hint receipt")
 	expect(entry.payload).toBe("New")
 end)

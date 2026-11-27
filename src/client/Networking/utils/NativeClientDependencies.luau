@@ -92,7 +92,8 @@ dependencies = {
 		isReady: (() -> boolean)?,
 		onTerminalFailure: (() -> ())?,
 		sendUnreliable: ((buffer) -> ())?,
-		connectUnreliable: ClientTypes.ClientUnreliableObserver?
+		connectUnreliable: ClientTypes.ClientUnreliableObserver?,
+		installReadiness: ((ClientTypes.ActorViewStateReadinessSource) -> ())?
 	): (boolean, string?, (() -> ())?)
 		return Installation.Install(protocol, manifest, {
 			Now = dependencies.Now,
@@ -104,6 +105,7 @@ dependencies = {
 			onTerminalFailure = onTerminalFailure,
 			sendUnreliable = sendUnreliable,
 			connectUnreliable = connectUnreliable,
+			installReadiness = installReadiness,
 		})
 	end,
 }

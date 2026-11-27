@@ -2,6 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Sources = require(script.Parent.PresentationSources)
 local Scope = require(script.Parent.PresentationSubscriptionScope)
+local Watch = require(script.Parent.PresentationWatch)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 
@@ -9,35 +10,37 @@ local MAX_SUBSCRIPTIONS: number = 64
 
 local Subscriptions = {}
 
+local function inert(): SignalTypes.Connection
+	return { Disconnect = function(): () end }
+end
+
 function Subscriptions.New(
 	definitionId: string,
-	entry: Types.PresentationEntryEvent,
+	entry: Types.PresentationEntry,
 	host: Types.PresentationSubscriptionHost,
 	environment: Types.PresentationSubscriptionEnvironment
-): (Types.PresentationOn, () -> ())
+): (Types.PresentationOn, Types.PresentationWatch, () -> ())
 	local connections: { [() -> ()]: boolean } = {}
 	local count: number = 0
 
-	local function misuse(reason: string): never
-		error(("[Presentation] id=%s On: %s"):format(definitionId, reason), 3)
+	local function admit(method: string): ()
+		if count >= MAX_SUBSCRIPTIONS then
+			error(
+				("[Presentation] id=%s %s: SubscriptionLimit: at most 64 active subscriptions per instance"):format(
+					definitionId,
+					method
+				),
+				3
+			)
+		end
 	end
 
-	local function on(_self: Types.PresentationContext, descriptor: any, ...: any): SignalTypes.Connection
-		if not host.IsActive() then
-			return { Disconnect = function(): () end }
-		end
-
-		local scope: Scope.Scope, callback =
-			Scope.Resolve(definitionId, entry, host.GetActionAssociation(), environment.IsEligible, descriptor, ...)
-
-		local actor: ActorTypes.ActorView? = scope.actor
-
-		if count >= MAX_SUBSCRIPTIONS then
-			misuse("SubscriptionLimit: at most 64 active subscriptions per instance")
-		end
-
+	local function own(
+		actor: ActorTypes.ActorView?,
+		sources: { SignalTypes.Connection },
+		release: () -> ()
+	): SignalTypes.Connection
 		local connected: boolean = true
-		local source: SignalTypes.Connection? = nil
 		local untrack: (() -> ())? = nil
 
 		local function disconnect(): ()
@@ -48,19 +51,42 @@ function Subscriptions.New(
 			connected = false
 			connections[disconnect] = nil
 			count -= 1
-			callback = nil
+			release()
 
-			if source ~= nil then
+			for _, source: SignalTypes.Connection in sources do
 				source:Disconnect()
-				source = nil
 			end
+
+			table.clear(sources)
 
 			if untrack ~= nil then
-				local release: () -> () = untrack
+				local stop: () -> () = untrack
 				untrack = nil
-				release()
+				stop()
 			end
 		end
+
+		connections[disconnect] = true
+		count += 1
+
+		if actor ~= nil then
+			untrack = environment.TrackActor(actor, disconnect)
+		end
+
+		return { Disconnect = disconnect }
+	end
+
+	local function on(_self: Types.PresentationContext, descriptor: any, ...: any): SignalTypes.Connection
+		if not host.IsActive() then
+			return inert()
+		end
+
+		local scope: Scope.Scope, callback =
+			Scope.Resolve(definitionId, entry, host.GetActionAssociation(), environment.IsEligible, descriptor, ...)
+
+		local actor: ActorTypes.ActorView? = scope.actor
+		admit("On")
+		local connected: boolean = true
 
 		local function matches(sourceId: string, observation: Types.PresentationEntryEvent): boolean
 			if not connected or not host.IsActive() then
@@ -87,7 +113,7 @@ function Subscriptions.New(
 			return sourceId == scope.id
 		end
 
-		source = Sources.Connect(
+		local source: SignalTypes.Connection = Sources.Connect(
 			scope.descriptor,
 			actor,
 			function(sourceId: string, observation: Types.PresentationEntryEvent)
@@ -112,14 +138,26 @@ function Subscriptions.New(
 			end
 		)
 
-		connections[disconnect] = true
-		count += 1
+		return own(actor, { source }, function(): ()
+			connected = false
+			callback = nil
+		end)
+	end
 
-		if actor ~= nil then
-			untrack = environment.TrackActor(actor, disconnect)
+	local function watch(_self: Types.PresentationContext, descriptor: any, ...: any): SignalTypes.Connection
+		if not host.IsActive() then
+			return inert()
 		end
 
-		return { Disconnect = disconnect }
+		local plan: Watch.WatchPlan, callback: (any) -> () =
+			Watch.Resolve(definitionId, entry, host.GetActionAssociation(), environment.IsEligible, descriptor, ...)
+
+		admit("Watch")
+
+		local sources: { SignalTypes.Connection }, release: () -> () =
+			Watch.Start(plan, callback, entry, host, environment)
+
+		return own(plan.actor, sources, release)
 	end
 
 	local function disconnectAll(): ()
@@ -128,7 +166,7 @@ function Subscriptions.New(
 		end
 	end
 
-	return on :: Types.PresentationOn, disconnectAll
+	return on :: Types.PresentationOn, watch :: Types.PresentationWatch, disconnectAll
 end
 
 return table.freeze(Subscriptions)

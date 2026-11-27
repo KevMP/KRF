@@ -1,0 +1,60 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local States = require(KRF.client.Presentation.PresentationStates)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
+local SignalTypes = require(KRF.shared.Signal.types)
+
+local aura: Types.PresentationDefinition = {
+	id = "Status.Burning.Aura",
+	entry = { state = States.Tag.Active, id = "Burning" },
+	create = function(ctx: Types.PresentationContext)
+		local entry: Types.PresentationEntry = ctx.entry
+
+		if entry.source == "State" and entry.kind == "Tag" then
+			local tag: ActorTypes.ActiveTagSnapshot = entry.tag
+			local tagId: string = entry.tagId
+			assert(tag.stackCount > 0 and tagId ~= "")
+		elseif entry.source == "State" and entry.kind == "Action" then
+			local sequenceId: number = entry.action.sequenceId
+			assert(sequenceId > 0)
+		end
+	end,
+}
+
+local loop: Types.PresentationDefinition = {
+	id = "Sword.Charge.Loop",
+	entry = { state = States.Action.Active, id = "Sword.Charge" },
+	create = function(_ctx: Types.PresentationContext) end,
+}
+
+local burst: Types.PresentationDefinition = {
+	id = "Status.Burning.Burst",
+	entry = { event = Events.Tag.Added, id = "Burning" },
+	create = function(_ctx: Types.PresentationContext) end,
+}
+
+return function(ctx: Types.PresentationContext): { SignalTypes.Connection }
+	assert(aura.id ~= loop.id and burst.id ~= "")
+
+	return {
+		ctx:Watch(States.Tag.Active, "Burning", function(tag: ActorTypes.ActiveTagSnapshot?)
+			local stacks: number? = if tag ~= nil then tag.stackCount else nil
+			assert(stacks ~= 0)
+		end),
+		ctx:Watch(States.Action.Active, function(action: ActorTypes.ActionSnapshot?)
+			local id: string? = if action ~= nil then action.actionId else nil
+			assert(id ~= "")
+		end),
+		ctx:Watch(States.Resource.Current, "Mana", function(resource: ActorTypes.ResourceSnapshot?)
+			local current: number? = if resource ~= nil then resource.current else nil
+			assert(current ~= -1)
+		end),
+		ctx:Watch(States.Actor.Model, function(model: Model?)
+			local name: string? = if model ~= nil then model.Name else nil
+			assert(name ~= "")
+		end),
+	}
+end

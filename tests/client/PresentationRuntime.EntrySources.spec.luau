@@ -128,7 +128,8 @@ it("delivers all nine typed sources with exact selectors and excludes resource b
 		local contexts: { Types.PresentationContext } = received[id] or {}
 		expect(#contexts).toBe(1)
 		local context: Types.PresentationContext = contexts[1]
-		local entry: Types.PresentationEntryEvent = context.entry
+		local entry: Types.PresentationEntry = context.entry
+		assert(entry.source ~= "State", "Expected a live event entry")
 		expect(entry.source).toBe(descriptor.source)
 		expect(entry.event).toBe(descriptor.event)
 		expect(context.actor).toBe(actor)

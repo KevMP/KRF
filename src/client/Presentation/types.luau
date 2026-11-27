@@ -47,6 +47,35 @@ export type HintEntryEvent = {
 
 export type PresentationEntryEvent = ActionEntryEvent | TagEntryEvent | ResourceEntryEvent | HintEntryEvent
 
+export type TagActiveDescriptor = { read source: "Tag", read state: "Active" }
+export type ActionActiveDescriptor = { read source: "Action", read state: "Active" }
+export type ResourceCurrentDescriptor = { read source: "Resource", read state: "Current" }
+export type ActorModelDescriptor = { read source: "Actor", read state: "Model" }
+export type PresentationStateEntryDescriptor = TagActiveDescriptor | ActionActiveDescriptor
+
+export type PresentationStateDescriptor =
+	PresentationStateEntryDescriptor
+	| ResourceCurrentDescriptor
+	| ActorModelDescriptor
+
+export type TagStateEntry = {
+	read source: "State",
+	read kind: "Tag",
+	read actor: ActorTypes.ActorView,
+	read tagId: string,
+	read tag: ActorTypes.ActiveTagSnapshot,
+}
+
+export type ActionStateEntry = {
+	read source: "State",
+	read kind: "Action",
+	read actor: ActorTypes.ActorView,
+	read action: ActorTypes.ActionSnapshot,
+}
+
+export type PresentationStateEntry = TagStateEntry | ActionStateEntry
+export type PresentationEntry = PresentationEntryEvent | PresentationStateEntry
+
 export type ActorScopedId = { read id: string, read actor: ActorTypes.ActorView }
 export type AnyHintId = { read id: string, read scope: "Any" }
 export type ActionListener = (ActionEntryEvent) -> ()
@@ -69,13 +98,25 @@ export type PresentationOn =
 		HintListener
 	) -> SignalTypes.Connection)
 
+export type TagWatchCallback = (ActorTypes.ActiveTagSnapshot?) -> ()
+export type ActionWatchCallback = (ActorTypes.ActionSnapshot?) -> ()
+export type ResourceWatchCallback = (ActorTypes.ResourceSnapshot?) -> ()
+export type ModelWatchCallback = (Model?) -> ()
+
+export type PresentationWatch =
+	((PresentationContext, TagActiveDescriptor, string, TagWatchCallback) -> SignalTypes.Connection)
+	& ((PresentationContext, ActionActiveDescriptor, ActionWatchCallback) -> SignalTypes.Connection)
+	& ((PresentationContext, ResourceCurrentDescriptor, string, ResourceWatchCallback) -> SignalTypes.Connection)
+	& ((PresentationContext, ActorModelDescriptor, ModelWatchCallback) -> SignalTypes.Connection)
+
 export type PresentationContext = {
-	read entry: PresentationEntryEvent,
+	read entry: PresentationEntry,
 	read actor: ActorTypes.ActorView?,
 	read Own: (self: PresentationContext, cleanup: () -> ()) -> (),
 	read Finish: (self: PresentationContext) -> (),
 	read IsActive: (self: PresentationContext) -> boolean,
 	read On: PresentationOn,
+	read Watch: PresentationWatch,
 }
 
 export type PresentationEntryBinding = {
@@ -83,13 +124,29 @@ export type PresentationEntryBinding = {
 	read id: string,
 }
 
+export type PresentationStateEntryBinding = {
+	read state: PresentationStateEntryDescriptor,
+	read id: string,
+}
+
+export type PresentationDefinitionEntry = PresentationEntryBinding | PresentationStateEntryBinding
+
 export type PresentationDefinition = {
 	read id: string,
-	read entry: PresentationEntryBinding,
+	read entry: PresentationDefinitionEntry,
 	read create: (PresentationContext) -> (),
 }
 
-export type PresentationCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
+export type PresentationEventCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
+
+export type PresentationStateCatalog = {
+	[PresentationStateEntryDescriptor]: { [string]: { PresentationDefinition } },
+}
+
+export type PresentationCatalog = {
+	read events: PresentationEventCatalog,
+	read states: PresentationStateCatalog,
+}
 
 export type PresentationActionAssociation = {
 	read actor: ActorTypes.ActorView,
@@ -100,12 +157,14 @@ export type PresentationActionAssociation = {
 export type PresentationSubscriptionEnvironment = {
 	read IsEligible: (ActorTypes.ActorView) -> boolean,
 	read TrackActor: (ActorTypes.ActorView, () -> ()) -> () -> (),
+	read IsStateReady: (ActorTypes.ActorView) -> boolean,
+	read ObserveReadiness: (ActorTypes.ActorView, () -> ()) -> () -> (),
 }
 
 export type PresentationSubscriptionHost = {
 	read IsActive: () -> boolean,
 	read GetActionAssociation: () -> PresentationActionAssociation?,
-	read Fail: (PresentationEntryEvent, string) -> (),
+	read Fail: (PresentationEntry, string) -> (),
 }
 
 return {}
