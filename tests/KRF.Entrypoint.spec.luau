@@ -27,6 +27,7 @@ local MEMBER_PATHS: { [string]: { string } } = {
 	HintRegistry = { "server", "Networking", "HintRegistry" },
 	HintAuthorization = { "server", "Networking", "HintAuthorization" },
 	ServerHintRuntime = { "server", "Networking", "HintRuntime" },
+	Animations = { "client", "Presentation", "Animations" },
 	ActorViewRegistry = { "client", "Actor", "ActorViewRegistry" },
 	ClientActionRuntime = { "client", "Action", "ClientActionRuntime" },
 	ClientControls = { "client", "Controls", "ClientControls" },

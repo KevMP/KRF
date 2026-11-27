@@ -289,6 +289,56 @@ export type PresentationSubscriptionEnvironment = {
 	read ObserveReadiness: (ActorTypes.ActorView, () -> ()) -> () -> (),
 }
 
+export type AnimationPlayOptions = {
+	fadeTime: number?,
+	weight: number?,
+	speed: number?,
+	priority: Enum.AnimationPriority?,
+	looped: boolean?,
+}
+
+export type AnimationPlayback = {
+	read Stop: (self: AnimationPlayback, fadeTime: number?) -> (),
+	read Destroy: (self: AnimationPlayback) -> (),
+	read AdjustSpeed: (self: AnimationPlayback, speed: number) -> (),
+	read AdjustWeight: (self: AnimationPlayback, weight: number, fadeTime: number?) -> (),
+	read GetTrack: (self: AnimationPlayback) -> AnimationTrack?,
+}
+
+export type AnimationsModule = {
+	read Play: (model: Model, animationId: string, options: AnimationPlayOptions?) -> (AnimationPlayback?, string?),
+}
+
+export type CompiledAnimationPlayOptions = {
+	read fadeTime: number,
+	read weight: number,
+	read speed: number,
+	read priority: Enum.AnimationPriority,
+	read looped: boolean,
+}
+
+export type AnimationRig = {
+	read model: Model,
+	read controller: Instance,
+	read animator: Animator,
+}
+
+export type AnimationTrackPort = {
+	read Load: (animator: Animator, animation: Animation) -> AnimationTrack,
+	read GetPlayingTracks: (animator: Animator) -> { AnimationTrack },
+}
+
+export type AnimationTrackCache = {
+	read Play: (
+		self: AnimationTrackCache,
+		rig: AnimationRig,
+		animationId: string,
+		options: CompiledAnimationPlayOptions
+	) -> (AnimationPlayback?, string?),
+	read Holds: (self: AnimationTrackCache, animator: Animator) -> boolean,
+	read _CountForTests: (self: AnimationTrackCache) -> (number, number),
+}
+
 export type PresentationSubscriptionHost = {
 	read IsActive: () -> boolean,
 	read GetActionAssociation: () -> PresentationActionAssociation?,

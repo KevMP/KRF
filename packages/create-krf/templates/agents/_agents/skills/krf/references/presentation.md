@@ -1,6 +1,6 @@
 # Presentation
 
-Presentation is how a client shows gameplay: a cast flash, a hit spark, a burning aura, a sound. A Presentation definition starts your visual code when an Action, Tag, Resource or Hint event reaches the client, or while a Tag or Action is active, and KRF runs the cleanup the visual registers. It runs only on clients and never changes gameplay.
+Presentation is how a client shows gameplay: a cast flash, a hit spark, a burning aura, a sound, a character animation. A Presentation definition starts your visual code when an Action, Tag, Resource or Hint event reaches the client, or while a Tag or Action is active, and KRF runs the cleanup the visual registers. It runs only on clients and never changes gameplay.
 
 ## Check whether it should be a Presentation
 
@@ -9,6 +9,7 @@ Presentation is how a client shows gameplay: a cast flash, a hit spark, a burnin
 | Plays once when something happens, such as a cast flash or a burst when a stun lands | A Presentation with an event entry |
 | Lasts while a state is true, such as a burning aura or a channel loop, and must also appear for players who join later | A Presentation with a [state entry](#keep-a-visual-while-a-state-is-true) |
 | Is the caster's own cast, which should start the moment they press | A predicted Presentation. See [Predict every Action players start](#predict-every-action-players-start) |
+| Plays a character animation, on its own or as part of another visual | `KRF.Animations.Play`, inside a Presentation or any LocalScript. See [Play animations with KRF.Animations](#play-animations-with-krfanimations) |
 | Is UI that draws current values, such as a Mana bar or a nameplate | The ActorView directly. See [client-views.md](client-views.md) |
 | Depends on something only the server knows, such as where a hit landed | A [Hint](hints.md), shown by a Presentation on `Hint.Received` |
 
@@ -106,6 +107,55 @@ Inside `create`, `ctx:On(event, id?, callback)` listens for later events and `ct
 
 `On` never replays events from before you subscribed, so use `Watch` or a state entry when the visual needs to start from what's true now. Annotate each callback's parameter with its type, such as `KRF.TagEntryEvent` or `KRF.ResourceSnapshot?`. The Luau checker doesn't infer them.
 
+## Play animations with KRF.Animations
+
+`KRF.Animations.Play(model, animationId, options?)` plays an animation on any rig Model: a player character, an NPC or a dummy. It finds the Model's Humanoid or AnimationController and its Animator, loads the animation once, and reuses that track on every later call. It works inside a Presentation or in any LocalScript, with or without `KRF.Client.Init`. Use it instead of calling `LoadAnimation` yourself:
+
+```lua
+local FireballCastAnimation: KRF.PresentationDefinition = {
+	id = "Fireball.Cast.Animation",
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Fireball" },
+	create = function(ctx: KRF.PresentationContext): ()
+		local actor: KRF.ActorView? = ctx.actor
+		local model: Model? = if actor ~= nil then actor:GetModel() else nil
+
+		if model == nil then
+			ctx:Finish()
+			return
+		end
+
+		local playback: KRF.AnimationPlayback?, reason: string? =
+			KRF.Animations.Play(model, "rbxassetid://123456", { priority = Enum.AnimationPriority.Action })
+
+		if playback == nil then
+			warn(reason)
+			ctx:Finish()
+			return
+		end
+
+		ctx:Own(function(): ()
+			playback:Destroy()
+		end)
+
+		ctx:Watch(KRF.PresentationStates.Action.Active, function(action: KRF.ActionSnapshot?): ()
+			if action == nil then
+				ctx:Finish()
+			end
+		end)
+	end,
+}
+```
+
+- Register `playback:Destroy()` with `ctx:Own`. The animation ending by itself doesn't finish the instance, so finish it from the state or event that ends the visual.
+- There is one cached track per Animator and animation ID. Each `Play` restarts it from the beginning and makes every earlier handle inert, so an older cast's cleanup can't stop a newer cast. For two copies of one animation on the same rig at once, call `Animator:LoadAnimation` for the second.
+- Every `Play` applies its options fresh. Left-out fields take the defaults: `fadeTime = 0.1`, `weight = 1`, `speed = 1`, `priority = Enum.AnimationPriority.Action`, `looped = false`. Pass `looped = true` for a loop.
+- The Model must be in Workspace, or in a WorldModel for a ViewportFrame preview, and have a direct child Humanoid or AnimationController. `Play` creates only a missing Animator, never a rig, and returns `nil` and a reason when it can't start. A returned handle doesn't prove the asset animates: an unusable or unloaded asset, or a rig with no joints, plays without moving anything.
+- Use `playback:GetTrack()` only to read the track or connect `GetMarkerReachedSignal`. Calling `Play` or `Stop` on the track, or setting its properties, bypasses the handle.
+- KRF picks no assets and adds no replication. Roblox replicates a client's animations on its own character only. Gameplay, such as hit timing, never depends on an animation or its markers.
+- Sounds, particles, beams and camera effects are plain Roblox code released with `ctx:Own`. KRF has no helpers for them; don't invent any.
+
+See [Play a character animation](docs/presentation/guide.md#play-a-character-animation) and the [Animations API](docs/presentation/api.md#animations) for every option, failure reason and limit.
+
 ## Predict every Action players start
 
 When a player presses Fireball, the request travels to the server, the server starts the Action, and only then does `Action.Started` come back. At 150 ms of ping the delay is obvious. A predicted Presentation starts the cast on the caster's own client as soon as the request is sent, and KRF reconciles it with the server's answer. Other players and NPCs still see the normal entry, and the same definition serves both.
@@ -202,8 +252,8 @@ To show a predicted cast's hits on its target before the server's Hint arrives, 
 
 ## Exact APIs
 
-- [Presentation guide](docs/presentation/guide.md): entries, ownership, `On`, `Watch`, prediction and predicted hits in depth.
-- [Presentation API](docs/presentation/api.md): definition fields, entry records, every Watch form, prediction policies, `PredictHint` results, limits and startup failures.
+- [Presentation guide](docs/presentation/guide.md): entries, ownership, animations, `On`, `Watch`, prediction and predicted hits in depth.
+- [Presentation API](docs/presentation/api.md): definition fields, entry records, every Watch form, prediction policies, `PredictHint` results, `Animations` options and failure reasons, limits and startup failures.
 
 ## Related references
 
