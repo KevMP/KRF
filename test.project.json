@@ -15,6 +15,11 @@
       "ActionInputSchemas": { "$path": "tests/integration/ActionInput/Schemas.luau" },
       "ControlSchemas": { "$path": "tests/integration/Controls/Schemas.luau" },
       "ObservationSchemas": { "$path": "tests/integration/ActionObservations/Schemas.luau" },
+      "PredictionShared": {
+        "$className": "Folder",
+        "FireballRequirements": { "$path": "tests/integration/PresentationPrediction/FireballRequirements.luau" },
+        "Schemas": { "$path": "tests/integration/PresentationPrediction/Schemas.luau" }
+      },
       "InputRecognitionWorkload": { "$path": "tests/benchmarks/InputRecognition/Workload.luau" },
       "InputSequences": {
         "$path": "tests/examples/InputSequences.luau"

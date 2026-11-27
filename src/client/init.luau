@@ -13,6 +13,7 @@ local ControlInstallation = require(script.Controls.utils.ControlInstallation)
 local InputInstallation = require(script.Input.utils.InputInstallation)
 local ActionInstallation = require(script.Action.utils.ClientActionInstallation)
 local ActionRequestTypes = require(script.Parent.shared.ActionRequest.types)
+local ActionRequestRuntimeTypes = require(script.ActionRequest.types)
 local ActionRequestCatalog = require(script.Parent.shared.ActionRequest.ActionRequestCatalog)
 local ActionTypes = require(script.Action.types)
 local PolicyValidator = require(script.Action.ActionInputPolicyValidator)
@@ -22,6 +23,9 @@ local ObservationInstallation = require(script.Action.utils.ActionObservationIns
 local PresentationTypes = require(script.Presentation.types)
 local PresentationRegistry = require(script.Presentation.PresentationRegistry)
 local PresentationRuntime = require(script.Presentation.PresentationRuntime)
+local PredictionPolicyValidator = require(script.Presentation.ActionPredictionPolicyValidator)
+local ActionRuntimeState = require(script.Action.utils.ClientActionRuntimeState)
+local ActionRequestState = require(script.ActionRequest.utils.ClientActionRequestState)
 
 export type StartupFailure = ClientTypes.StartupFailure
 
@@ -33,7 +37,7 @@ local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
 
 local CONFIG_FIELDS: { [string]: boolean } =
-	{ actionRequestSchemas = true, actionInputPolicies = true, presentations = true }
+	{ actionRequestSchemas = true, actionInputPolicies = true, actionPredictionPolicies = true, presentations = true }
 
 table.freeze(CONFIG_FIELDS)
 
@@ -76,12 +80,19 @@ local function prepare(config: any): (
 		return nil, nil, nil, { system = "ActionInput", reason = policyReason :: string }
 	end
 
+	local predictions: PresentationTypes.ActionPredictionPolicyCatalog?, predictionReason: string? =
+		PredictionPolicyValidator.Compile(rawget(config, "actionPredictionPolicies"), catalog)
+
+	if predictions == nil then
+		return nil, nil, nil, { system = "Presentation", reason = predictionReason :: string }
+	end
+
 	local presentations: PresentationTypes.PresentationCatalog? = nil
 	local rawPresentations: any = rawget(config, "presentations")
 
 	if rawPresentations ~= nil then
 		local reason: string?
-		presentations, reason = PresentationRegistry.Prepare(rawPresentations)
+		presentations, reason = PresentationRegistry.Prepare(rawPresentations, predictions)
 
 		if presentations == nil then
 			return nil, nil, nil, { system = "Presentation", reason = reason :: string }
@@ -289,8 +300,24 @@ function Client.Init(config: ClientTypes.ClientInitConfig?): (boolean, StartupFa
 				else
 					-- All other installation steps and the handshake have succeeded.
 					if presentations ~= nil then
+						local requests: ActionRequestRuntimeTypes.ClientActionRequestRuntime? = ActionRequestState.Get()
+						local prediction: PresentationTypes.PresentationPredictionPort? = nil
+
+						if requests ~= nil then
+							local owner: ActionRequestRuntimeTypes.ClientActionRequestRuntime = requests
+
+							prediction = {
+								ObserveActionRequest = ActionRuntimeState.ObserveActionRequest,
+								ObserveStartPayloads = function(observer: (
+									ActionRequestRuntimeTypes.ActionStartPayload
+								) -> ()): () -> ()
+									return owner:ObserveStartPayloads(observer)
+								end,
+							}
+						end
+
 						local stopPresentation: (() -> ())?, presentationReason: string? =
-							PresentationRuntime.Install(presentations, readiness)
+							PresentationRuntime.Install(presentations, readiness, prediction)
 
 						if stopPresentation == nil then
 							finish(false, presentationReason, "Presentation")

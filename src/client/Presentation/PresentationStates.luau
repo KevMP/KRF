@@ -6,6 +6,9 @@ local tagActive: Types.TagActiveDescriptor = table.freeze({ source = "Tag" :: "T
 local actionActive: Types.ActionActiveDescriptor =
 	table.freeze({ source = "Action" :: "Action", state = "Active" :: "Active" })
 
+local localPrediction: Types.LocalPredictionDescriptor =
+	table.freeze({ source = "Action" :: "Action", state = "LocalPrediction" :: "LocalPrediction" })
+
 local resourceCurrent: Types.ResourceCurrentDescriptor =
 	table.freeze({ source = "Resource" :: "Resource", state = "Current" :: "Current" })
 
@@ -13,7 +16,7 @@ local actorModel: Types.ActorModelDescriptor = table.freeze({ source = "Actor" :
 
 return table.freeze({
 	Tag = table.freeze({ Active = tagActive }),
-	Action = table.freeze({ Active = actionActive }),
+	Action = table.freeze({ Active = actionActive, LocalPrediction = localPrediction }),
 	Resource = table.freeze({ Current = resourceCurrent }),
 	Actor = table.freeze({ Model = actorModel }),
 })

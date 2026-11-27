@@ -188,13 +188,16 @@ end
 function Utils.ready(
 	fixture: Fixture,
 	policies: Types.ActionInputPolicies?,
-	schemas: RequestTypes.ActionRequestSchemas?
+	schemas: RequestTypes.ActionRequestSchemas?,
+	config: ClientTypes.ClientInitConfig?
 ): ()
 	fixture.schemas = schemas or fixture.schemas
 
 	Commands.ready(fixture.commands, {
 		actionRequestSchemas = fixture.schemas,
 		actionInputPolicies = policies,
+		actionPredictionPolicies = if config ~= nil then config.actionPredictionPolicies else nil,
+		presentations = if config ~= nil then config.presentations else nil,
 	}, Requests.manifestCommands())
 
 	fixture.restore()

@@ -143,7 +143,7 @@ it("delivers all nine typed sources with exact selectors and excludes resource b
 		elseif entry.source == "Resource" then
 			expect(entry.change.source).toBe("Commit")
 			expect(entry.change.resourceId).toBe("Match")
-		else
+		elseif entry.source == "Hint" then
 			expect(entry.hintId).toBe("Match")
 			expect(entry.payload).toBe(32)
 		end

@@ -481,6 +481,9 @@ it("samples the current private Action association so a later adoption changes t
 		GetActionAssociation = function(): Types.PresentationActionAssociation?
 			return association
 		end,
+		GetPrediction = function(): Types.PresentationPredictionLink?
+			return nil
+		end,
 		Fail = function(): ()
 			error("Unexpected Watch failure")
 		end,

@@ -177,6 +177,9 @@ it("reads the private Action association on delivery independently of entry fami
 		GetActionAssociation = function(): Types.PresentationActionAssociation?
 			return association
 		end,
+		GetPrediction = function(): Types.PresentationPredictionLink?
+			return nil
+		end,
 		Fail = function(): ()
 			error("Unexpected callback failure")
 		end,

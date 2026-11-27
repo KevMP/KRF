@@ -1,5 +1,7 @@
 --!strict
 local ActorTypes = require(script.Parent.Parent.Actor.types)
+local ActionTypes = require(script.Parent.Parent.Action.types)
+local RequestTypes = require(script.Parent.Parent.ActionRequest.types)
 local SignalTypes = require(script.Parent.Parent.Parent.shared.Signal.types)
 
 export type ActionEventKind = "Started" | "Ended" | "Interrupted"
@@ -47,16 +49,27 @@ export type HintEntryEvent = {
 
 export type PresentationEntryEvent = ActionEntryEvent | TagEntryEvent | ResourceEntryEvent | HintEntryEvent
 
+export type PredictedActionEntry = {
+	read source: "ActionPrediction",
+	read event: "RequestAdmitted",
+	read actor: ActorTypes.ActorView,
+	read actionId: string,
+	read originalStartKey: string,
+	read parameters: any?,
+}
+
 export type TagActiveDescriptor = { read source: "Tag", read state: "Active" }
 export type ActionActiveDescriptor = { read source: "Action", read state: "Active" }
 export type ResourceCurrentDescriptor = { read source: "Resource", read state: "Current" }
 export type ActorModelDescriptor = { read source: "Actor", read state: "Model" }
+export type LocalPredictionDescriptor = { read source: "Action", read state: "LocalPrediction" }
 export type PresentationStateEntryDescriptor = TagActiveDescriptor | ActionActiveDescriptor
 
 export type PresentationStateDescriptor =
 	PresentationStateEntryDescriptor
 	| ResourceCurrentDescriptor
 	| ActorModelDescriptor
+	| LocalPredictionDescriptor
 
 export type TagStateEntry = {
 	read source: "State",
@@ -74,7 +87,30 @@ export type ActionStateEntry = {
 }
 
 export type PresentationStateEntry = TagStateEntry | ActionStateEntry
-export type PresentationEntry = PresentationEntryEvent | PresentationStateEntry
+export type PresentationEntry = PresentationEntryEvent | PresentationStateEntry | PredictedActionEntry
+
+export type LocalPredictionStatus = "Admitted" | "Accepted" | "Rejected" | "Unknown"
+
+export type LocalPredictionFollowUp = {
+	read requestKey: string,
+	read status: LocalPredictionStatus,
+	read reason: string?,
+}
+
+export type LocalPredictionInputDecision = {
+	read transition: ActionTypes.LocalInputTransition,
+	read reason: string?,
+	read eventOrdinal: number,
+}
+
+export type LocalPredictionSnapshot = {
+	read startStatus: LocalPredictionStatus,
+	read startReason: string?,
+	read sequenceId: number?,
+	read inputTransitions: { LocalPredictionInputDecision },
+	read lastStop: LocalPredictionFollowUp?,
+	read lastInterrupt: LocalPredictionFollowUp?,
+}
 
 export type ActorScopedId = { read id: string, read actor: ActorTypes.ActorView }
 export type AnyHintId = { read id: string, read scope: "Any" }
@@ -102,12 +138,14 @@ export type TagWatchCallback = (ActorTypes.ActiveTagSnapshot?) -> ()
 export type ActionWatchCallback = (ActorTypes.ActionSnapshot?) -> ()
 export type ResourceWatchCallback = (ActorTypes.ResourceSnapshot?) -> ()
 export type ModelWatchCallback = (Model?) -> ()
+export type LocalPredictionWatchCallback = (LocalPredictionSnapshot) -> ()
 
 export type PresentationWatch =
 	((PresentationContext, TagActiveDescriptor, string, TagWatchCallback) -> SignalTypes.Connection)
 	& ((PresentationContext, ActionActiveDescriptor, ActionWatchCallback) -> SignalTypes.Connection)
 	& ((PresentationContext, ResourceCurrentDescriptor, string, ResourceWatchCallback) -> SignalTypes.Connection)
 	& ((PresentationContext, ActorModelDescriptor, ModelWatchCallback) -> SignalTypes.Connection)
+	& ((PresentationContext, LocalPredictionDescriptor, LocalPredictionWatchCallback) -> SignalTypes.Connection)
 
 export type PresentationContext = {
 	read entry: PresentationEntry,
@@ -134,8 +172,53 @@ export type PresentationDefinitionEntry = PresentationEntryBinding | Presentatio
 export type PresentationDefinition = {
 	read id: string,
 	read entry: PresentationDefinitionEntry,
+	read predict: boolean?,
 	read create: (PresentationContext) -> (),
 }
+
+export type ActionPredictionResourceRequirement = {
+	read min: number?,
+	read max: number?,
+	read minPercent: number?,
+	read maxPercent: number?,
+}
+
+export type ActionPredictionResourceCost = {
+	read amount: number?,
+	read percent: number?,
+	read multiplierProperty: string?,
+}
+
+export type ActionPredictionCheckContext = {
+	read actor: ActorTypes.ActorView,
+	read actionId: string,
+	read originalStartKey: string,
+	read parameters: any?,
+}
+
+export type ActionPredictionPolicy = {
+	read requiredTags: { string }?,
+	read blockedTags: { string }?,
+	read resourceRequirements: { [string]: ActionPredictionResourceRequirement }?,
+	read costs: { [string]: number | ActionPredictionResourceCost }?,
+	read canPredictStart: ((ActionPredictionCheckContext) -> boolean?)?,
+}
+
+export type ActionPredictionPolicies = { [string]: ActionPredictionPolicy }
+
+export type CompiledActionPredictionPolicy = {
+	read actionId: string,
+	read requiredTags: { string },
+	read blockedTags: { string },
+	read resourceIds: { string },
+	read resourceRequirements: { [string]: ActionPredictionResourceRequirement },
+	read costs: { [string]: ActionPredictionResourceCost },
+	read canPredictStart: ((ActionPredictionCheckContext) -> boolean?)?,
+}
+
+export type ActionPredictionPolicyCatalog = { [string]: CompiledActionPredictionPolicy }
+
+export type ActionPredictionEstimate = "LikelyAllowed" | "LikelyBlocked" | "Unknown"
 
 export type PresentationEventCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
 
@@ -143,15 +226,34 @@ export type PresentationStateCatalog = {
 	[PresentationStateEntryDescriptor]: { [string]: { PresentationDefinition } },
 }
 
+export type PresentationPredictionCatalog = {
+	read policies: ActionPredictionPolicyCatalog,
+	read definitions: { [string]: { PresentationDefinition } },
+}
+
 export type PresentationCatalog = {
 	read events: PresentationEventCatalog,
 	read states: PresentationStateCatalog,
+	read predictions: PresentationPredictionCatalog,
 }
 
 export type PresentationActionAssociation = {
 	read actor: ActorTypes.ActorView,
 	read actionId: string,
 	read sequenceId: number?,
+}
+
+export type PresentationPredictionLink = {
+	read GetAssociation: () -> PresentationActionAssociation,
+	read GetSnapshot: () -> (LocalPredictionSnapshot, number),
+	read Observe: (() -> ()) -> () -> (),
+}
+
+export type PresentationPredictionPort = {
+	read ObserveActionRequest: ((ActionTypes.ActionRequestEvent) -> ()) -> () -> (),
+	read ObserveStartPayloads: ((RequestTypes.ActionStartPayload) -> ()) -> () -> (),
+	read Delay: ((number, () -> ()) -> () -> ())?,
+	read Measure: (() -> number)?,
 }
 
 export type PresentationSubscriptionEnvironment = {
@@ -164,6 +266,7 @@ export type PresentationSubscriptionEnvironment = {
 export type PresentationSubscriptionHost = {
 	read IsActive: () -> boolean,
 	read GetActionAssociation: () -> PresentationActionAssociation?,
+	read GetPrediction: () -> PresentationPredictionLink?,
 	read Fail: (PresentationEntry, string) -> (),
 }
 

@@ -14,6 +14,7 @@ export type StartupFailure = { system: string, reason: string }
 export type ClientInitConfig = {
 	actionRequestSchemas: ActionRequestTypes.ActionRequestSchemas?,
 	actionInputPolicies: ActionTypes.ActionInputPolicies?,
+	actionPredictionPolicies: PresentationTypes.ActionPredictionPolicies?,
 	presentations: { PresentationTypes.PresentationDefinition }?,
 }
 

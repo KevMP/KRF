@@ -95,7 +95,10 @@ function ClientActionRequestRuntime.Start(
 		end,
 		function(requestId: number): ()
 			self.correlation.RemoveStart(requestId)
-		end
+		end,
+		nil,
+		compiled.start,
+		payload
 	)
 end
 
@@ -250,6 +253,13 @@ function ClientActionRequestRuntime.ObserveOutcomes(
 	observer: (Types.ActionRequestOutcome) -> ()
 ): () -> ()
 	return self.facts.ObserveOutcomes(observer)
+end
+
+function ClientActionRequestRuntime.ObserveStartPayloads(
+	self: Runtime,
+	observer: (Types.ActionStartPayload) -> ()
+): () -> ()
+	return self.facts.ObservePayloads(observer)
 end
 
 function ClientActionRequestRuntime.StageDecision(

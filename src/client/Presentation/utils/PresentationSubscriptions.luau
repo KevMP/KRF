@@ -149,8 +149,15 @@ function Subscriptions.New(
 			return inert()
 		end
 
-		local plan: Watch.WatchPlan, callback: (any) -> () =
-			Watch.Resolve(definitionId, entry, host.GetActionAssociation(), environment.IsEligible, descriptor, ...)
+		local plan: Watch.WatchPlan, callback: (any) -> () = Watch.Resolve(
+			definitionId,
+			entry,
+			host.GetActionAssociation(),
+			host.GetPrediction(),
+			environment.IsEligible,
+			descriptor,
+			...
+		)
 
 		admit("Watch")
 

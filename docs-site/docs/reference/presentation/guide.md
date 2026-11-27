@@ -238,7 +238,7 @@ return Charge
 
 The last check covers an Action that ended before `create` subscribed. A short Action can start and end in the same update, and `ctx:On` never replays that earlier end, so the example looks the activation up once its listeners are in place.
 
-The no-ID Action listeners match the associated activation, so another concurrent `Sword.Charge` activation cannot finish this instance. Games do not supply a sequence ID. The runtime reads a private instance-owned association separately from the original entry; later predicted adoption can update that association without rewriting `ctx.entry` or replacing authored subscriptions. Prediction and adoption are not implemented by these subscriptions.
+The no-ID Action listeners match the associated activation, so another concurrent `Sword.Charge` activation cannot finish this instance. Games do not supply a sequence ID. The runtime keeps a private association for each instance, separate from `ctx.entry`. For a [predicted cast](#start-a-cast-before-the-server-answers), that association gains the server's sequence ID when the Start is accepted, and the same listeners start matching it without being registered again.
 
 The Tag is aggregate Actor state, and a targeted Hint only identifies its Actor and Hint ID. Neither proves which Action activation produced it. Add correlation fields to your game Hint schema when overlapping effects need that distinction. Hints remain lossy and have no total ordering with reliable Actor state.
 
@@ -252,7 +252,7 @@ Queued callbacks check connection and instance state immediately before invocati
 
 `ctx:On` only hears about changes after you subscribe. When your effect needs to start from what is true now, use `ctx:Watch`. It calls back once with the current state, then again whenever that state meaningfully changes. Like `On`, it never synthesizes a past event.
 
-Watch has four forms: a Tag or Resource by ID, the instance's own Action activation, and the Actor's Model. Each callback receives the current value, or `nil` while it is absent. See [Watch](./api#watch).
+Watch has five forms: a Tag or Resource by ID, the instance's own Action activation, the Actor's Model and, for a [predicted cast](#watch-the-requests-local-status), its local request status. Each callback receives the current value, or `nil` while it is absent. See [Watch](./api#watch).
 
 For example, a charge visual can brighten as its Actor's Mana fills:
 
@@ -264,7 +264,7 @@ ctx:Watch(KRF.PresentationStates.Resource.Current, "Mana", function(mana: KRF.Re
 end)
 ```
 
-Watch always observes the original ActorView. It works on any instance that has one, including live event entries, but not on an Actor-less Hint instance. The Action form needs the instance's own activation, so it works only for Action entries. `On` and `Watch` share the instance's subscription slots.
+Watch always observes the original ActorView. It works on any instance that has one, including live event entries, but not on an Actor-less Hint instance. The Action form needs the instance's own activation, so it works only for Action entries and predicted casts. `On` and `Watch` share the instance's subscription slots.
 
 Callbacks run after the change publishes and may yield. KRF reads the state again right before each callback, so several quick changes can collapse into one callback with the latest value. Watch is not an event log. A newer callback can start while an earlier one is still yielding, so check `ctx:IsActive()` before continuing asynchronous work. A callback error retires the instance.
 
@@ -273,3 +273,144 @@ KRF compares the replicated fields, not values that move with the clock. A Tag's
 While an Actor is waiting for a replacement baseline, Tag, Action and Resource Watches pause. An existing Watch keeps the last value it delivered, and a Watch registered during the gap waits for the first callback until fresh state is installed. Both then catch up from that state. The Model Watch keeps following real Model changes throughout.
 
 The instance owns each Watch. It disconnects on `:Disconnect()`, Finish, Actor retirement and runtime teardown. A state entry can retire as soon as its state disappears, so its own Watch may never deliver that final `nil`. Use `ctx:Own` for cleanup that must run.
+
+## Start a cast before the server answers
+
+A player presses Fireball and waits a full round trip before anything happens: the request travels to the server, the server starts the Action, and only then does `Action.Started` come back. At 150 ms of ping that wait is obvious. Prediction lets the caster's own client start the real Presentation instance as soon as the request leaves, then reconcile that instance with the server's answer. It is optional and client-only. Without it nothing changes, and other players and NPCs always get the ordinary authoritative entry.
+
+Prediction needs two things. A policy for the Action says which checks the client can make itself, and a definition opts in with `predict = true`:
+
+```luau
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local FireballRequirements = require(ReplicatedStorage.Shared.FireballRequirements)
+
+local ok, failure = KRF.Client.Init({
+	actionRequestSchemas = require(ReplicatedStorage.Shared.ActionRequestSchemas),
+	actionPredictionPolicies = {
+		Fireball = {
+			requiredTags = FireballRequirements.requiredTags,
+			blockedTags = FireballRequirements.blockedTags,
+			resourceRequirements = FireballRequirements.resourceRequirements,
+			costs = FireballRequirements.costs,
+			canPredictStart = function(ctx: KRF.ActionPredictionCheckContext): boolean?
+				local model = ctx.actor:GetModel()
+				local target = if ctx.parameters ~= nil then ctx.parameters.target else nil
+
+				if model == nil or target == nil then
+					return nil
+				end
+
+				return (target - model:GetPivot().Position).Magnitude <= 60
+			end,
+		},
+	},
+	presentations = Presentations,
+})
+```
+
+The policy's Action ID must be in your `actionRequestSchemas`, because only a request the client can send can be predicted. The tables come from an ordinary game ModuleScript that the server's Fireball factory also uses for its `ActionDefinition`, so both sides read the same numbers:
+
+```luau
+--!strict
+-- ReplicatedStorage/Shared/FireballRequirements.luau
+return {
+	requiredTags = { "Status.Grounded" },
+	blockedTags = { "Status.Stunned" },
+	resourceRequirements = { Mana = { min = 30 } },
+	costs = { Mana = 20 },
+}
+```
+
+Sharing the module is a convenience, not a requirement. A client policy can declare fewer checks than the server, or approximate one in `canPredictStart`. KRF copies the policy at startup, so changing the shared tables later does not change the installed policy.
+
+### What the client checks
+
+When the client's Action request runtime admits a Fireball Start and sends it, KRF evaluates the policy once, right after the packet leaves. It checks only what you declared, against the original ActorView that made the request. Tags are read with `TagsView:HasTag`. Resource requirements and fixed or percentage costs are read with `ResourcesView:GetResource`, using the same inclusive bounds as the server, and cooldown or charge Resources work like any other Resource. The client never spends anything. Last, `canPredictStart(ctx)` receives the original ActorView, the Action ID, the request's `originalStartKey` and its `parameters`, decoded from the exact bytes that were sent.
+
+The result is one of three estimates. If every declared check passes, the Start is likely allowed and the cast begins now. If a declared check fails, it is likely blocked. If a check needs data the client does not have, the estimate is unknown. That happens while the ActorView waits for a replacement baseline, when a declared Resource is not replicated, when a cost names a `multiplierProperty` (the client has no Property values to resolve it), and when the callback returns `nil`, errors, yields, returns something other than a boolean or runs longer than 5 ms. Blocked and unknown both skip the early visual. The request is sent either way: prediction never decides whether a request goes out, and the server alone decides whether it runs.
+
+These are estimates of your declared checks, not of the server's whole decision. Grants, locks, the server's `onCanStart` and anything else you did not declare stay on the server, and a passing policy says nothing about them. Declare only Tags and Resources the client can see. `HasTag` returns `false` both for an absent Tag and for a `ServerOnly` Tag the client never receives, so a hidden blocked Tag can never block a prediction, and KRF cannot detect that mistake for you.
+
+### One instance, from press to server answer
+
+A predicted definition starts the same kind of instance as any other, with `create(ctx)` called once. Its `ctx.entry` has `source == "ActionPrediction"` and `event == "RequestAdmitted"`, plus `actor`, `actionId`, `originalStartKey` and its own copy of the decoded `parameters`. Two predicted definitions for one Action each get their own instance and their own parameter table, and the policy still runs only once.
+
+```luau
+local Cast: KRF.PresentationDefinition = {
+	id = "Fireball.Cast",
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Fireball" },
+	predict = true,
+	create = function(ctx)
+		local model = if ctx.actor ~= nil then ctx.actor:GetModel() else nil
+		if model == nil then
+			ctx:Finish()
+			return
+		end
+
+		local glow = Instance.new("Highlight")
+		glow.Adornee = model
+		glow.Parent = model
+		ctx:Own(function()
+			glow:Destroy()
+		end)
+
+		local predicted = ctx.entry.source == "ActionPrediction"
+		local accepted = not predicted
+
+		local function fade()
+			glow.FillColor = Color3.fromRGB(120, 120, 120)
+			task.delay(0.2, function()
+				ctx:Finish()
+			end)
+		end
+
+		if predicted then
+			ctx:Watch(KRF.PresentationStates.Action.LocalPrediction, function(status: KRF.LocalPredictionSnapshot)
+				if status.startStatus == "Accepted" then
+					accepted = true
+				elseif status.startStatus == "Rejected" then
+					fade()
+				elseif status.startStatus == "Unknown" then
+					task.delay(1, function()
+						if not accepted and ctx:IsActive() then
+							fade()
+						end
+					end)
+				end
+			end)
+		end
+
+		ctx:Watch(KRF.PresentationStates.Action.Active, function(action: KRF.ActionSnapshot?)
+			if action == nil and accepted then
+				ctx:Finish()
+			end
+		end)
+	end,
+}
+```
+
+When the server accepts the Start, KRF attaches the real sequence ID to this instance. It does not call `create` again, and when the replicated `Action.Started` for that exact activation arrives, KRF does not start a second instance of this definition. `Watch(States.Action.Active)` and no-ID Action listeners such as `ctx:On(Events.Action.Ended, ...)` begin matching that activation. Until then they match nothing, and they never widen to other Fireballs on the same Actor. `ctx.entry` itself never changes. Definitions without `predict` are unaffected and still start from the replicated `Action.Started`.
+
+The example ends the cast with the Action.Active Watch rather than an `Action.Ended` listener, and that choice matters here. A short Fireball can start and end on the server before its reply reaches the client. The replicated Ended then arrives before this instance knows its sequence ID, and `ctx:On` never replays it. The Watch reports `nil` until the Start is accepted and reports it again once the activation is known, so a cast that already ended still finishes. The example also fades a cast whose reply is `"Unknown"` and stays unanswered for a second, since that request may never resolve.
+
+If the estimate was blocked or unknown, no early instance exists, and the predicted definition starts normally from the replicated `Action.Started`, like any other definition. Branch on `ctx.entry.source` when the two paths need different code, as the example does for its rejection fade.
+
+### Watch the request's local status
+
+`ctx:Watch(States.Action.LocalPrediction, callback)` works only on an instance created by a prediction. Its first callback carries everything already known, including facts that arrived before `create` ran, because a quick press and release can both happen before the instance exists. Later callbacks can collapse several changes into one.
+
+The snapshot's `startStatus` is `"Admitted"` until the server answers, then `"Accepted"` with a `sequenceId`, or `"Rejected"` with a `startReason`. `"Unknown"` means the reply did not arrive in time. The server may still have run the Action, and a late `"Accepted"` or `"Rejected"` can follow. `inputTransitions` lists the original press's local input decisions in order, such as `"GenuineRelease"` or `"InvalidatedKeep"`. `lastStop` and `lastInterrupt` track the latest Stop and Interrupt requests, each with its own `requestKey` and status.
+
+None of these statuses means the Action has ended. An accepted Start proves the server started it, not that it is still running, and an accepted Stop is a request the server took, not an end. Use `Watch(States.Action.Active)` or `ctx:On(Events.Action.Ended, ...)` for the server's actual Action state. KRF never finishes a rejected cast for you or rewinds an animation: you choose whether to fade it, cut it or let a short burst finish.
+
+### When the replicated Start arrives first
+
+Usually the server's reply reaches the client before or with the replicated `Action.Started`, and KRF matches them exactly. The replicated Start carries no request key, though. If it arrives first while one of your casts of the same Action on the same ActorView is still waiting for its reply, KRF cannot yet tell whether the two are the same activation. It holds back the predicted definitions' entry for that one Start for at most 0.5 seconds. A matching reply adopts it, and a reply proving it is a different activation, or a rejection, releases it at once. Nothing else waits: networking, input and definitions without `predict` carry on as usual.
+
+If nothing settles it within the window, for example because the reply came back `"Unknown"`, KRF starts the authoritative instance anyway, and you can see one extra copy of the visual. That is deliberate. KRF never merges two activations it cannot prove are the same, and never hides a genuine Start indefinitely. A reply that arrives later still updates the predicted instance's status, but cannot undo a visual that already started. A held Start can also begin after its activation has already ended, so give predicted definitions an Action.Active Watch, as the example does, rather than relying on a live `Action.Ended` alone.
+
+A request whose reply never arrives stops counting as a candidate 20 seconds after it was sent, which is when the client gives up on a late reply. After that, its predicted instance stays active until you finish it, but it no longer holds back other Starts.
+
+An instance that finishes before its replicated Start arrives leaves a small correlation record behind, so that Start is still recognized and not replayed. Those records, pending requests and held entries all have fixed limits, listed in [Limits](./api#limits). When a limit is reached KRF warns and falls back to ordinary authoritative creation.

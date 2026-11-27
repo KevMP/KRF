@@ -19,7 +19,8 @@ function PresentationInstance.New(
 	entry: Types.PresentationEntry,
 	environment: Types.PresentationSubscriptionEnvironment,
 	release: () -> (),
-	revalidate: (() -> boolean)?
+	revalidate: (() -> boolean)?,
+	prediction: Types.PresentationPredictionLink?
 ): Types.PresentationContext
 	local active: boolean = true
 	local onFinished: (() -> ())? = release
@@ -43,7 +44,10 @@ function PresentationInstance.New(
 			return active
 		end,
 		GetActionAssociation = function(): Types.PresentationActionAssociation?
-			return association
+			return if prediction ~= nil then prediction.GetAssociation() else association
+		end,
+		GetPrediction = function(): Types.PresentationPredictionLink?
+			return prediction
 		end,
 		Fail = function(observation: Types.PresentationEntry, reason: string): ()
 			context:Finish()

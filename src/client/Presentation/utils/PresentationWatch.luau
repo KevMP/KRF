@@ -16,6 +16,7 @@ function Watch.Resolve(
 	definitionId: string,
 	entry: Types.PresentationEntry,
 	association: Types.PresentationActionAssociation?,
+	prediction: Types.PresentationPredictionLink?,
 	isEligible: (ActorTypes.ActorView) -> boolean,
 	descriptor: any,
 	...: any
@@ -28,7 +29,7 @@ function Watch.Resolve(
 		misuse("UnknownStateDescriptor: use PresentationStates constants")
 	end
 
-	local family: StateSources.StateFamily = descriptor.source
+	local family: StateSources.StateFamily = StateSources.Family(descriptor)
 	local keyed: boolean = family == "Tag" or family == "Resource"
 
 	if select("#", ...) ~= (if keyed then 2 else 1) then
@@ -56,9 +57,12 @@ function Watch.Resolve(
 	elseif not isEligible(actor) then
 		misuse("ActorUnavailable: origin must be a current available ActorView")
 	elseif
-		family == "Action" and (association == nil or association.actor ~= actor or association.sequenceId == nil)
+		family == "Action"
+		and (association == nil or association.actor ~= actor or (association.sequenceId == nil and prediction == nil))
 	then
 		misuse("OriginActionMissing: Action.Active requires an originating Action activation")
+	elseif family == "LocalPrediction" and prediction == nil then
+		misuse("OriginPredictionMissing: Action.LocalPrediction requires a locally predicted Action entry")
 	end
 
 	return { family = family, actor = assert(actor, "Watch origin was validated"), id = id }, callback
@@ -72,7 +76,8 @@ function Watch.Start(
 	environment: Types.PresentationSubscriptionEnvironment
 ): ({ SignalTypes.Connection }, () -> ())
 	local actor: ActorTypes.ActorView = plan.actor
-	local replicated: boolean = plan.family ~= "Actor"
+	local replicated: boolean = plan.family ~= "Actor" and plan.family ~= "LocalPrediction"
+	local prediction: Types.PresentationPredictionLink? = host.GetPrediction()
 	local connected: boolean = true
 	local pending: boolean = false
 	local delivered: boolean = false
@@ -85,6 +90,11 @@ function Watch.Start(
 			return StateSources.SampleResource(actor, plan.id :: string)
 		elseif plan.family == "Action" then
 			return StateSources.SampleAction(host.GetActionAssociation())
+		elseif plan.family == "LocalPrediction" then
+			local snapshot: Types.LocalPredictionSnapshot, revision: number =
+				assert(prediction, "LocalPrediction Watch requires a prediction link").GetSnapshot()
+
+			return snapshot, { revision }
 		end
 
 		return StateSources.SampleModel(actor)
@@ -122,6 +132,16 @@ function Watch.Start(
 	end
 
 	local sources: { SignalTypes.Connection } = StateSources.Connect(plan.family, actor, schedule)
+
+	if prediction ~= nil and (plan.family == "Action" or plan.family == "LocalPrediction") then
+		local stopPrediction: () -> () = prediction.Observe(schedule)
+
+		table.insert(sources, {
+			Disconnect = function(): ()
+				stopPrediction()
+			end,
+		})
+	end
 
 	if replicated then
 		local stopReadiness: () -> () = environment.ObserveReadiness(actor, schedule)
