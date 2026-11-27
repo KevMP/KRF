@@ -58,6 +58,27 @@ end)
 
 For an `Actor` target, pass the Actor to `SendTo` and read `receipt.actorView` on the client. A Hint for an Actor the client can't see yet is dropped.
 
+## Let the attacker show the hit early
+
+A Hint for a hit, such as a spark on whatever a Fireball struck, reaches the attacker a full round trip after they cast. If the cast is predicted with Presentation, the attacker's client can show the hit itself and skip the server's copy. For that, the Hint must say which activation caused it. Give it the attacker's Actor ID and the Action's `sequenceId`, and target the Actor that was hit:
+
+```bash
+npm run createHint -- --name FireballImpact --payload-field "attackerId:String(64)" --payload-field "sequenceId:U32" --yes --json
+```
+
+Send it from the Action once the server's hit check succeeds:
+
+```lua
+for _, player: Player in Players:GetPlayers() do
+	KRF.ServerHintRuntime.SendTo(player, "FireballImpact", target, {
+		attackerId = ctx.actor:GetId(),
+		sequenceId = ctx.sequenceId,
+	})
+end
+```
+
+The client side is a `hintPredictionPolicies` entry naming those two fields, a `predict = true` Presentation definition on the Hint, and a `ctx:PredictHint` call from the predicted cast. The [Presentation guide](docs/presentation/guide.md#show-the-hit-before-the-server-confirms-it) walks through all three. Every other player still sees the hit from the server's Hint, and the server alone decides what was hit.
+
 ## Send samples from the client
 
 A client-to-server Hint needs `authorize` and `receive`. This one lets a player share where they're aiming so the server can show it to everyone else:

@@ -6,4 +6,4 @@ local RunService = game:GetService("RunService")
 
 local LocalCharacter = require(script.Parent.LocalCharacter)
 
---@example 4
+--@example 5

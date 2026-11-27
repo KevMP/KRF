@@ -13,7 +13,7 @@ local AimSample: KRF.HintDefinition = {
 		Direction = KRF.Schema.Array(KRF.Schema.F32, 3),
 	}),
 	authorize = KRF.HintAuthorization.OwnerActor,
-	--@example 3
+	--@example 4
 }
 
 return AimSample
