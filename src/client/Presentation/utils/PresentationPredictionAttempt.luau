@@ -21,6 +21,7 @@ export type Attempt = {
 	claims: { [Types.PresentationDefinition]: boolean },
 	authoritative: { [Types.PresentationDefinition]: boolean },
 	matched: boolean,
+	startObserved: boolean,
 	live: number,
 	retired: boolean,
 	stale: boolean,
@@ -32,27 +33,36 @@ export type Attempt = {
 	link: Types.PresentationPredictionLink,
 }
 
+export type HintPredictor = (Attempt, string, ActorTypes.ActorView?, any?) -> (boolean, string?)
+
 local Attempt = {}
 
 local function associate(attempt: Attempt): ()
-	attempt.association =
-		table.freeze({ actor = attempt.actor, actionId = attempt.actionId, sequenceId = attempt.sequenceId })
+	attempt.association = table.freeze({
+		actor = attempt.actor,
+		actionId = attempt.actionId,
+		sequenceId = attempt.sequenceId,
+		awaitingStart = attempt.sequenceId ~= nil and not attempt.startObserved,
+	})
+end
+
+local function wake(attempt: Attempt): ()
+	for observer: () -> () in table.clone(attempt.observers) do
+		observer()
+	end
 end
 
 local function notify(attempt: Attempt): ()
 	attempt.revision += 1
 	attempt.snapshot = nil
-
-	for observer: () -> () in table.clone(attempt.observers) do
-		observer()
-	end
+	wake(attempt)
 end
 
 local function settled(status: Types.LocalPredictionStatus): boolean
 	return status == "Accepted" or status == "Rejected"
 end
 
-function Attempt.new(fact: ActionTypes.ActionRequestAdmitted): Attempt
+function Attempt.new(fact: ActionTypes.ActionRequestAdmitted, predictHint: HintPredictor): Attempt
 	local current: Attempt? = nil
 
 	local function owner(): Attempt
@@ -76,6 +86,9 @@ function Attempt.new(fact: ActionTypes.ActionRequestAdmitted): Attempt
 				attempt.observers[observer] = nil
 			end
 		end,
+		PredictHint = function(hintId: string, target: ActorTypes.ActorView?, payload: any?): (boolean, string?)
+			return predictHint(owner(), hintId, target, payload)
+		end,
 	})
 
 	local attempt: Attempt = {
@@ -93,6 +106,7 @@ function Attempt.new(fact: ActionTypes.ActionRequestAdmitted): Attempt
 		claims = {},
 		authoritative = {},
 		matched = false,
+		startObserved = false,
 		live = 0,
 		retired = false,
 		stale = false,
@@ -192,6 +206,16 @@ function Attempt.Apply(attempt: Attempt, fact: ActionTypes.ActionRequestEvent): 
 	notify(attempt)
 
 	return true, nil
+end
+
+function Attempt.ObserveStart(attempt: Attempt): ()
+	if attempt.startObserved then
+		return
+	end
+
+	attempt.startObserved = true
+	associate(attempt)
+	wake(attempt)
 end
 
 function Attempt.IsCandidate(attempt: Attempt, actionId: string): boolean

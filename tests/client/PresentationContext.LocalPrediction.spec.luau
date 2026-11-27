@@ -352,6 +352,111 @@ it("re-delivers an absent activation after adoption when Started and Ended both 
 	expect(#contexts).toBe(1)
 end)
 
+it("waits for the replicated Start before reporting an accepted activation as ended", function()
+	local actor: StateUtils.Actor = StateUtils.actor("Caster")
+
+	local readiness: StateUtils.Readiness = StateUtils.readiness()
+	readiness.ready[actor.view] = true
+
+	local port: PredictionUtils.Port = PredictionUtils.port()
+	local states: { number } = {}
+	local contexts: { Types.PresentationContext } = {}
+
+	StateUtils.install({
+		{
+			id = "Cast",
+			entry = { event = Events.Action.Started, id = "Charge" },
+			predict = true,
+			create = function(context: Types.PresentationContext)
+				table.insert(contexts, context)
+
+				context:Watch(States.Action.Active, function(snapshot: ActorTypes.ActionSnapshot?)
+					table.insert(states, if snapshot ~= nil then snapshot.sequenceId else 0)
+				end)
+			end,
+		},
+	}, readiness, PredictionUtils.policies({ Charge = {} }), port.port)
+
+	local start: PredictionUtils.Start = PredictionUtils.admit(port, actor.view, "Charge", { aim = 1 })
+	task.wait()
+	PredictionUtils.outcome(port, actor.view, "Charge", start, "Accepted", 6)
+	task.wait()
+	expect(states).toEqual({ 0 })
+	StateUtils.commit(actor.actions, { [6] = "Charge" })
+	PredictionUtils.started(actor.actions, "Charge", 6)
+	task.wait()
+	expect(states).toEqual({ 0, 6 })
+	StateUtils.commit(actor.actions, {})
+	actor.actions:FireEvent("Ended", table.freeze({ actionId = "Charge", sequenceId = 6 }))
+	task.wait()
+	expect(states).toEqual({ 0, 6, 0 })
+	expect(#contexts).toBe(1)
+end)
+
+it("stops waiting for an accepted activation's replicated Start once the reply horizon passes", function()
+	local actor: StateUtils.Actor = StateUtils.actor("Caster")
+
+	local readiness: StateUtils.Readiness = StateUtils.readiness()
+	readiness.ready[actor.view] = true
+
+	local port: PredictionUtils.Port = PredictionUtils.port()
+	local states: { number } = {}
+
+	StateUtils.install({
+		{
+			id = "Cast",
+			entry = { event = Events.Action.Started, id = "Charge" },
+			predict = true,
+			create = function(context: Types.PresentationContext)
+				context:Watch(States.Action.Active, function(snapshot: ActorTypes.ActionSnapshot?)
+					table.insert(states, if snapshot ~= nil then snapshot.sequenceId else 0)
+				end)
+			end,
+		},
+	}, readiness, PredictionUtils.policies({ Charge = {} }), port.port)
+
+	local start: PredictionUtils.Start = PredictionUtils.admit(port, actor.view, "Charge", { aim = 1 })
+	task.wait()
+	PredictionUtils.outcome(port, actor.view, "Charge", start, "Accepted", 6)
+	task.wait()
+	expect(states).toEqual({ 0 })
+	PredictionUtils.advance(port, 20)
+	task.wait()
+	expect(states).toEqual({ 0, 0 })
+end)
+
+it("stops waiting for an accepted activation's replicated Start when a replacement baseline lacks it", function()
+	local actor: StateUtils.Actor = StateUtils.actor("Caster")
+
+	local readiness: StateUtils.Readiness = StateUtils.readiness()
+	readiness.ready[actor.view] = true
+
+	local port: PredictionUtils.Port = PredictionUtils.port()
+	local states: { number } = {}
+
+	StateUtils.install({
+		{
+			id = "Cast",
+			entry = { event = Events.Action.Started, id = "Charge" },
+			predict = true,
+			create = function(context: Types.PresentationContext)
+				context:Watch(States.Action.Active, function(snapshot: ActorTypes.ActionSnapshot?)
+					table.insert(states, if snapshot ~= nil then snapshot.sequenceId else 0)
+				end)
+			end,
+		},
+	}, readiness, PredictionUtils.policies({ Charge = {} }), port.port)
+
+	local start: PredictionUtils.Start = PredictionUtils.admit(port, actor.view, "Charge", { aim = 1 })
+	task.wait()
+	PredictionUtils.outcome(port, actor.view, "Charge", start, "Accepted", 6)
+	task.wait()
+	StateUtils.setReady(readiness, actor.view, false)
+	StateUtils.setReady(readiness, actor.view, true)
+	task.wait()
+	expect(states).toEqual({ 0, 0 })
+end)
+
 it("ignores a repeated identical follow-up outcome", function()
 	local actor: StateUtils.Actor = StateUtils.actor("Caster")
 	local port: PredictionUtils.Port, watched: Watched = install()

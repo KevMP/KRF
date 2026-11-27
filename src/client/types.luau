@@ -15,6 +15,7 @@ export type ClientInitConfig = {
 	actionRequestSchemas: ActionRequestTypes.ActionRequestSchemas?,
 	actionInputPolicies: ActionTypes.ActionInputPolicies?,
 	actionPredictionPolicies: PresentationTypes.ActionPredictionPolicies?,
+	hintPredictionPolicies: PresentationTypes.HintPredictionPolicies?,
 	presentations: { PresentationTypes.PresentationDefinition }?,
 }
 

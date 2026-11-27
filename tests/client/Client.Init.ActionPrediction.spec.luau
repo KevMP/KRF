@@ -76,11 +76,10 @@ it("fails startup when an opted-in definition has no policy for its Action", fun
 	})
 end)
 
-it("rejects predict on any entry other than a live Action.Started event", function()
+it("rejects predict on any entry other than a live Action.Started or Hint.Received event", function()
 	local entries: { any } = {
 		{ event = Events.Action.Ended, id = "Fireball" },
 		{ event = Events.Tag.Added, id = "Fireball" },
-		{ event = Events.Hint.Received, id = "Fireball" },
 		{ state = States.Action.Active, id = "Fireball" },
 	}
 
@@ -131,4 +130,46 @@ it("rolls back the whole configuration when a policy is malformed alongside vali
 	})
 
 	expect(calls).toBe(0)
+end)
+
+it("starts with a predicted Hint definition that has a Hint prediction policy", function()
+	local fixture: ClientUtils.Fixture = ClientUtils.new()
+
+	ClientUtils.start(fixture, {
+		actionRequestSchemas = PredictionUtils.schemas,
+		actionPredictionPolicies = { Fireball = {} },
+		hintPredictionPolicies = {
+			["Fireball.Impact"] = { actorIdField = "attackerId", sequenceIdField = "sequenceId" },
+		},
+		presentations = {
+			definition(fireball, true),
+			{
+				id = "Impact",
+				entry = { event = Events.Hint.Received, id = "Fireball.Impact" },
+				predict = true,
+				create = function() end,
+			},
+		},
+	})
+
+	expect(fixture.result).toBeNil()
+end)
+
+it("fails startup when a predicted Hint definition has no Hint prediction policy", function()
+	expect(failure({
+		actionRequestSchemas = PredictionUtils.schemas,
+		actionPredictionPolicies = { Fireball = {} },
+		hintPredictionPolicies = { Other = { actorIdField = "attackerId", sequenceIdField = "sequenceId" } },
+		presentations = { definition({ event = Events.Hint.Received, id = "Fireball.Impact" }, true) },
+	})).toEqual({
+		success = false,
+		failure = { system = "Presentation", reason = "PresentationPredictionPolicyMissing" },
+	})
+end)
+
+it("rejects malformed Hint prediction policies before contacting the transport", function()
+	expect(failure({ hintPredictionPolicies = { Impact = { actorIdField = "attackerId" } } })).toEqual({
+		success = false,
+		failure = { system = "Presentation", reason = "HintPredictionPolicySourceInvalid" },
+	})
 end)

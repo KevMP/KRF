@@ -123,9 +123,10 @@ function TestUtils.install(
 	definitions: { any },
 	readiness: Readiness?,
 	policies: Types.ActionPredictionPolicyCatalog?,
-	prediction: Types.PresentationPredictionPort?
+	prediction: Types.PresentationPredictionPort?,
+	hintPolicies: Types.HintPredictionPolicyCatalog?
 ): ()
-	local catalog: Types.PresentationCatalog = assert(Registry.Prepare(definitions, policies))
+	local catalog: Types.PresentationCatalog = assert(Registry.Prepare(definitions, policies, hintPolicies))
 	shutdown = assert(Runtime.Install(catalog, if readiness ~= nil then readiness.source else nil, prediction))
 end
 

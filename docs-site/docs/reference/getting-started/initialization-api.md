@@ -54,6 +54,7 @@ Discovers server transport, reconstructs its schema metadata, installs client co
 | `actionRequestSchemas` | `KRF.ActionRequestSchemas` | No client Action requests |
 | `actionInputPolicies` | `KRF.ActionInputPolicies` | Default policy for each declared Action, where permitted |
 | `actionPredictionPolicies` | `KRF.ActionPredictionPolicies` | No local [Presentation prediction](../presentation/api#actionpredictionpolicy) |
+| `hintPredictionPolicies` | `KRF.HintPredictionPolicies` | No [predicted hits](../presentation/api#hintpredictionpolicy) |
 | `presentations` | `{ KRF.PresentationDefinition }` | No Presentation instances |
 
 Configuration is validated before transport discovery. Unknown config fields are rejected. Invalid client policies fail under `ActionInput`; a release-required Action needs an explicit `WhileDown` policy.

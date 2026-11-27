@@ -23,7 +23,15 @@ local _wrongPredict: Types.PresentationDefinition = {
 	create = function(_ctx: Types.PresentationContext) end,
 }
 
+local _wrongHintPolicy: Types.HintPredictionPolicy = {
+	actorIdField = 1, -- expect-error
+	sequenceIdField = "sequenceId",
+}
+
 return function(ctx: Types.PresentationContext): ()
+	ctx:PredictHint(1) -- expect-error
+	ctx:PredictHint("Fireball.Impact", "Dummy") -- expect-error
+	local _wrongResult: string = ctx:PredictHint("Fireball.Impact") -- expect-error
 	ctx:Watch(States.Action.LocalPrediction, "Fireball", function(_snapshot: Types.LocalPredictionSnapshot) end) -- expect-error
 	ctx:Watch(States.Action.LocalPrediction, function(_snapshot: ActorTypes.ActionSnapshot?) end) -- expect-error
 	ctx:Watch(States.Action.LocalPrediction, function(snapshot: Types.LocalPredictionSnapshot)

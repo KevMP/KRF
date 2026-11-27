@@ -39,13 +39,35 @@ local cast: Types.PresentationDefinition = {
 	end,
 }
 
+local hintPolicy: Types.HintPredictionPolicy = { actorIdField = "attackerId", sequenceIdField = "sequenceId" }
+
+local spark: Types.PresentationDefinition = {
+	id = "Fireball.Spark",
+	entry = { event = Events.Hint.Received, id = "Fireball.Impact" },
+	predict = true,
+	create = function(ctx: Types.PresentationContext)
+		local entry: Types.PresentationEntry = ctx.entry
+
+		if entry.source == "HintPrediction" then
+			local hintId: string = entry.hintId
+			local event: "Received" = entry.event
+			assert(hintId ~= "" and event == "Received" and entry.payload ~= nil)
+		end
+	end,
+}
+
 local config: ClientTypes.ClientInitConfig = {
 	actionPredictionPolicies = { Fireball = policy },
-	presentations = { cast },
+	hintPredictionPolicies = { ["Fireball.Impact"] = hintPolicy },
+	presentations = { cast, spark },
 }
 
 return function(ctx: Types.PresentationContext): { SignalTypes.Connection }
 	assert(config.presentations ~= nil)
+
+	local predicted: boolean, reason: string? = ctx:PredictHint("Fireball.Impact", ctx.actor, { strength = 3 })
+	local world: boolean = ctx:PredictHint("Fireball.Splash")
+	assert(predicted or reason ~= nil or world)
 
 	return {
 		ctx:Watch(States.Action.LocalPrediction, function(snapshot: Types.LocalPredictionSnapshot)

@@ -58,6 +58,14 @@ export type PredictedActionEntry = {
 	read parameters: any?,
 }
 
+export type PredictedHintEntry = {
+	read source: "HintPrediction",
+	read event: "Received",
+	read actor: ActorTypes.ActorView?,
+	read hintId: string,
+	read payload: any?,
+}
+
 export type TagActiveDescriptor = { read source: "Tag", read state: "Active" }
 export type ActionActiveDescriptor = { read source: "Action", read state: "Active" }
 export type ResourceCurrentDescriptor = { read source: "Resource", read state: "Current" }
@@ -87,7 +95,7 @@ export type ActionStateEntry = {
 }
 
 export type PresentationStateEntry = TagStateEntry | ActionStateEntry
-export type PresentationEntry = PresentationEntryEvent | PresentationStateEntry | PredictedActionEntry
+export type PresentationEntry = PresentationEntryEvent | PresentationStateEntry | PredictedActionEntry | PredictedHintEntry
 
 export type LocalPredictionStatus = "Admitted" | "Accepted" | "Rejected" | "Unknown"
 
@@ -155,6 +163,12 @@ export type PresentationContext = {
 	read IsActive: (self: PresentationContext) -> boolean,
 	read On: PresentationOn,
 	read Watch: PresentationWatch,
+	read PredictHint: (
+		self: PresentationContext,
+		hintId: string,
+		target: ActorTypes.ActorView?,
+		payload: any?
+	) -> (boolean, string?),
 }
 
 export type PresentationEntryBinding = {
@@ -218,6 +232,14 @@ export type CompiledActionPredictionPolicy = {
 
 export type ActionPredictionPolicyCatalog = { [string]: CompiledActionPredictionPolicy }
 
+export type HintPredictionPolicy = {
+	read actorIdField: string,
+	read sequenceIdField: string,
+}
+
+export type HintPredictionPolicies = { [string]: HintPredictionPolicy }
+export type HintPredictionPolicyCatalog = { [string]: HintPredictionPolicy }
+
 export type ActionPredictionEstimate = "LikelyAllowed" | "LikelyBlocked" | "Unknown"
 
 export type PresentationEventCatalog = { [PresentationEventDescriptor]: { [string]: { PresentationDefinition } } }
@@ -229,6 +251,8 @@ export type PresentationStateCatalog = {
 export type PresentationPredictionCatalog = {
 	read policies: ActionPredictionPolicyCatalog,
 	read definitions: { [string]: { PresentationDefinition } },
+	read hintPolicies: HintPredictionPolicyCatalog,
+	read hintDefinitions: { [string]: { PresentationDefinition } },
 }
 
 export type PresentationCatalog = {
@@ -241,12 +265,14 @@ export type PresentationActionAssociation = {
 	read actor: ActorTypes.ActorView,
 	read actionId: string,
 	read sequenceId: number?,
+	read awaitingStart: boolean?,
 }
 
 export type PresentationPredictionLink = {
 	read GetAssociation: () -> PresentationActionAssociation,
 	read GetSnapshot: () -> (LocalPredictionSnapshot, number),
 	read Observe: (() -> ()) -> () -> (),
+	read PredictHint: (string, ActorTypes.ActorView?, any?) -> (boolean, string?),
 }
 
 export type PresentationPredictionPort = {

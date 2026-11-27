@@ -393,7 +393,7 @@ local Cast: KRF.PresentationDefinition = {
 
 When the server accepts the Start, KRF attaches the real sequence ID to this instance. It does not call `create` again, and when the replicated `Action.Started` for that exact activation arrives, KRF does not start a second instance of this definition. `Watch(States.Action.Active)` and no-ID Action listeners such as `ctx:On(Events.Action.Ended, ...)` begin matching that activation. Until then they match nothing, and they never widen to other Fireballs on the same Actor. `ctx.entry` itself never changes. Definitions without `predict` are unaffected and still start from the replicated `Action.Started`.
 
-The example ends the cast with the Action.Active Watch rather than an `Action.Ended` listener, and that choice matters here. A short Fireball can start and end on the server before its reply reaches the client. The replicated Ended then arrives before this instance knows its sequence ID, and `ctx:On` never replays it. The Watch reports `nil` until the Start is accepted and reports it again once the activation is known, so a cast that already ended still finishes. The example also fades a cast whose reply is `"Unknown"` and stays unanswered for a second, since that request may never resolve.
+The example ends the cast with the Action.Active Watch rather than an `Action.Ended` listener, and that choice matters here. A short Fireball can start and end on the server before its reply reaches the client. The replicated Ended then arrives before this instance knows its sequence ID, and `ctx:On` never replays it. The Watch reports `nil` until the Start is accepted. After that it reports the activation once its replicated Start has arrived, and `nil` again when it ends, so a cast that already ended still finishes and an accept that arrives a moment before the replicated Start does not end the cast early. The example also fades a cast whose reply is `"Unknown"` and stays unanswered for a second, since that request may never resolve.
 
 If the estimate was blocked or unknown, no early instance exists, and the predicted definition starts normally from the replicated `Action.Started`, like any other definition. Branch on `ctx.entry.source` when the two paths need different code, as the example does for its rejection fade.
 
@@ -414,3 +414,91 @@ If nothing settles it within the window, for example because the reply came back
 A request whose reply never arrives stops counting as a candidate 20 seconds after it was sent, which is when the client gives up on a late reply. After that, its predicted instance stays active until you finish it, but it no longer holds back other Starts.
 
 An instance that finishes before its replicated Start arrives leaves a small correlation record behind, so that Start is still recognized and not replayed. Those records, pending requests and held entries all have fixed limits, listed in [Limits](./api#limits). When a limit is reached KRF warns and falls back to ordinary authoritative creation.
+
+### Show the hit before the server confirms it
+
+The cast now starts the moment the player presses, but the spark where the Fireball lands still waits. Your server decides what the Fireball hit and tells clients with a Hint, and that Hint is a full round trip behind the cast on the caster's screen. The caster's client already knows when its own Fireball should land and what it aimed at, so it can show the impact now and skip the server's copy when it arrives. Other players still see the impact from the server's Hint, as before.
+
+Start on the server. The impact Hint needs to say which activation caused it, so the client can match it to its own cast. Add the attacker's Actor ID and the activation's `sequenceId` to the Hint's payload, and send it from the Action once your hit check succeeds:
+
+```luau
+-- In Server.Init's hints:
+{
+	id = "Fireball.Impact",
+	direction = "ServerToClient",
+	target = "Actor",
+	mode = "Pulse",
+	payload = KRF.Schema.Struct({
+		attackerId = KRF.Schema.String(64),
+		sequenceId = KRF.Schema.U32,
+	}),
+}
+
+-- In the Fireball Action, where the server's hit check succeeds:
+for _, player in Players:GetPlayers() do
+	KRF.ServerHintRuntime.SendTo(player, "Fireball.Impact", target, {
+		attackerId = ctx.actor:GetId(),
+		sequenceId = ctx.sequenceId,
+	})
+end
+```
+
+On the client, tell KRF which payload fields carry that identity, and mark the impact definition `predict = true`:
+
+```luau
+KRF.Client.Init({
+	actionRequestSchemas = require(ReplicatedStorage.Shared.ActionRequestSchemas),
+	actionPredictionPolicies = { Fireball = FireballPolicy },
+	hintPredictionPolicies = {
+		["Fireball.Impact"] = { actorIdField = "attackerId", sequenceIdField = "sequenceId" },
+	},
+	presentations = Presentations,
+})
+
+local Spark: KRF.PresentationDefinition = {
+	id = "Fireball.Spark",
+	entry = { event = KRF.PresentationEvents.Hint.Received, id = "Fireball.Impact" },
+	predict = true,
+	create = function(ctx)
+		local model = if ctx.actor ~= nil then ctx.actor:GetModel() else nil
+		if model == nil then
+			ctx:Finish()
+			return
+		end
+
+		local burst = ReplicatedStorage.Effects.Spark:Clone()
+		burst.Parent = model.PrimaryPart
+		burst:Emit(20)
+		ctx:Own(function()
+			burst:Destroy()
+		end)
+
+		task.delay(0.5, function()
+			ctx:Finish()
+		end)
+	end,
+}
+```
+
+Last, the predicted cast predicts its own hit. When the Fireball would land on the client, it calls `ctx:PredictHint` with the Hint ID and the target it hit:
+
+```luau
+-- Inside Fireball.Cast's create, after the cast starts:
+task.delay(FLIGHT_SECONDS, function()
+	local target = Aim.FindTarget(ctx.entry)
+	if target ~= nil and ctx:IsActive() then
+		ctx:PredictHint("Fireball.Impact", target)
+	end
+end)
+```
+
+`Spark.create` runs right away with `ctx.actor` set to the target and `ctx.entry.source == "HintPrediction"`. When the server's `Fireball.Impact` arrives from the same activation for the same target, Spark skips it. Definitions for that Hint without `predict`, such as damage numbers you only want from the server, still run from it. A cast that hits the same target several times can call `PredictHint` once per hit, and each server Hint consumes one predicted hit in order.
+
+`PredictHint` only works on an instance created by a prediction. On the authoritative Fireball instances, including other players' casts, it returns `false, "PredictionUnavailable"` and changes nothing, so the same `create` works for both: those instances simply get the spark from the server's Hint. The [PredictHint reference](./api#predicthint) lists every result.
+
+The server stays in charge of the hit. Nothing here tells the server what the client thinks it hit, and a predicted hit is a guess about one cosmetic Hint:
+
+- If the server rejects the cast, the predicted spark has already played. Watch `States.Action.LocalPrediction` on the spark instance, the same status its cast sees, if you want to cut it short.
+- If the server decides the Fireball missed, it never sends the Hint, and Hints can be lost anyway, so nothing tells the client. The predicted hit stops waiting after 3 seconds. Keep predicted hits to short bursts, such as sparks, flashes, sounds and flinches, and leave damage numbers, knockback and ragdolls to the server's Hint.
+- If the server's Hint arrives before the cast's reply, KRF holds it for at most 0.5 seconds while it matches them, the same way it holds an early replicated Start.
+- If the server's Hint arrives before your `PredictHint` call, the Hint plays normally. When the call comes within 3 seconds and KRF already knows the Hint came from this cast, it returns `false, "HintAlreadyReceived"` without starting a second spark. If the call comes before the cast's reply proves that, the spark can play twice.

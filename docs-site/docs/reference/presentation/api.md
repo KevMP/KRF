@@ -5,7 +5,7 @@ sidebar_label: API
 
 # Presentation API
 
-Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional [prediction policies](#actionpredictionpolicy) through `actionPredictionPolicies`. Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. The [Presentation guide](./guide) shows how these pieces fit together.
+Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional prediction policies through [`actionPredictionPolicies`](#actionpredictionpolicy) and [`hintPredictionPolicies`](#hintpredictionpolicy). Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. The [Presentation guide](./guide) shows how these pieces fit together.
 
 ## PresentationDefinition
 
@@ -13,7 +13,7 @@ Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations
 | --- | --- | --- |
 | `id` | `string` | Required unique nonempty definition ID |
 | `entry` | `KRF.PresentationDefinitionEntry` | Required event or state binding |
-| `predict` | `boolean?` | Optional. `true` starts this definition early for the local player's own admitted Start. Only valid with `entry.event == PresentationEvents.Action.Started`, and the Action needs a [prediction policy](#actionpredictionpolicy). |
+| `predict` | `boolean?` | Optional. On `PresentationEvents.Action.Started`, `true` starts this definition early for the local player's own admitted Start, and the Action needs an [Action prediction policy](#actionpredictionpolicy). On `PresentationEvents.Hint.Received`, `true` lets a predicted cast start this definition early with [`ctx:PredictHint`](#predicthint), and the Hint needs a [Hint prediction policy](#hintpredictionpolicy). Not valid on any other entry. |
 | `create` | `(ctx: KRF.PresentationContext) -> ()` | Required; runs once per accepted entry and may yield. The return value is ignored. |
 
 `KRF.PresentationDefinitionEntry` is one of two bindings:
@@ -77,15 +77,18 @@ A `Tag.Active` instance exists while `ActorView:GetTags():GetTag(id)` returns a 
 | `KRF.TagStateEntry` | `source = "State"`, `kind = "Tag"`, `actor: ActorView`, `tagId: string`, `tag: ActiveTagSnapshot` |
 | `KRF.ActionStateEntry` | `source = "State"`, `kind = "Action"`, `actor: ActorView`, `action: ActionSnapshot` |
 
-`KRF.PresentationStateEntry` is the union of the two. `KRF.PresentationEntry`, the type of `ctx.entry`, is `PresentationEntryEvent | PresentationStateEntry | PredictedActionEntry`. Narrow by `source`, then by `kind`.
+`KRF.PresentationStateEntry` is the union of the two. `KRF.PresentationEntry`, the type of `ctx.entry`, is `PresentationEntryEvent | PresentationStateEntry | PredictedActionEntry | PredictedHintEntry`. Narrow by `source`, then by `kind`.
 
 ### Predicted entry record
 
 | Type | Fields |
 | --- | --- |
 | `KRF.PredictedActionEntry` | `source = "ActionPrediction"`, `event = "RequestAdmitted"`, `actor: ActorView`, `actionId: string`, `originalStartKey: string`, `parameters: any?` |
+| `KRF.PredictedHintEntry` | `source = "HintPrediction"`, `event = "Received"`, `actor: ActorView?`, `hintId: string`, `payload: any?` |
 
 `actor` is the ActorView that made the request, and `originalStartKey` is the request's original Start key from `ClientActionRuntime.OnActionRequest`. `parameters` is decoded from the exact Start bytes that were sent, and each definition gets its own copy. The record has no `ActionSnapshot` and never changes. The server's `sequenceId` reaches the instance through `Watch(States.Action.LocalPrediction)` and the instance's Action listeners, not through `ctx.entry`.
+
+A `PredictedHintEntry` comes from [`ctx:PredictHint`](#predicthint). `actor` is the target passed to it, or `nil` for an Actor-less Hint, and `payload` is a frozen shallow copy of the value passed. KRF does not check the payload against the Hint's schema, because the server's copy carries fields the client does not know yet. The instance shares its cast's local status: on a predicted hit with a target, `Watch(States.Action.LocalPrediction)` works, while `Watch(States.Action.Active)` and no-ID Action listeners do not, because it has no activation of its own. An Actor-less predicted hit has no ActorView, so every Watch on it raises `ActorMissing`.
 
 ## PresentationContext
 
@@ -98,6 +101,7 @@ A `Tag.Active` instance exists while `ActorView:GetTags():GetTag(id)` returns a 
 | `IsActive()` | `(self) -> boolean`; true from acceptance until Finish, an authored failure, origin Actor retirement, runtime shutdown or, for a state entry, the state becoming absent |
 | `On(event, [id or scope,] callback)` | `KRF.PresentationOn`; see [On](#on) |
 | `Watch(state, [id,] callback)` | `KRF.PresentationWatch`; see [Watch](#watch) |
+| `PredictHint(hintId, target?, payload?)` | `(self, string, ActorView?, any?) -> (boolean, string?)`; see [PredictHint](#predicthint) |
 
 On retirement, KRF marks the context inactive and disconnects its subscriptions, then runs owned cleanups in reverse registration order. A failing or yielding cleanup is diagnosed and the remaining cleanups still run. Losing the Model alone never retires an instance.
 
@@ -134,14 +138,35 @@ ctx:Watch(States.Action.LocalPrediction, callback: (LocalPredictionSnapshot) -> 
 | Form | Callback receives |
 | --- | --- |
 | `Tag.Active` | The Tag's snapshot on the original ActorView, or `nil` while it is absent |
-| `Action.Active` | The instance's own activation, or `nil` once it is inactive. Requires an Action event, an Action state entry or a predicted entry. A predicted instance receives `nil` until its Start is accepted. |
+| `Action.Active` | The instance's own activation, or `nil` once it is inactive. Requires an Action event, an Action state entry or a predicted Action entry. A predicted instance receives `nil` until its Start is accepted, and does not report the activation absent until the client has also seen that activation's replicated Start, so an accept that arrives first never reads as an end. If that Start is never seen, the wait ends when the Actor installs a replacement baseline, or 20 seconds after the request was sent. |
 | `Resource.Current` | The Resource's snapshot on the original ActorView, or `nil` while it is absent |
 | `Actor.Model` | The original ActorView's Model, or `nil` while unbound |
-| `Action.LocalPrediction` | The instance's [local request status](#localpredictionsnapshot). Requires a predicted entry and is never `nil`. |
+| `Action.LocalPrediction` | The instance's [local request status](#localpredictionsnapshot). Requires a predicted Action or Hint entry and is never `nil`. |
 
 Watch subscribes first, then schedules one callback with the current value. Later callbacks follow meaningful changes. KRF samples again right before each callback and skips it when the value equals the last one delivered, so quick changes can collapse into one callback. Tag changes compare `stackCount` and expiry. Resource changes compare the stored replicated value, not the projected `current`, so regeneration and `remainingDuration` move without a callback. Callbacks may yield, and a newer callback can start while an older one is still running. A callback error retires the instance.
 
 While the Actor is waiting for a replacement baseline, `Tag.Active`, `Action.Active` and `Resource.Current` callbacks pause and resume from the installed baseline. `Actor.Model` and `Action.LocalPrediction` keep delivering.
+
+### PredictHint {#predicthint}
+
+```lua
+ctx:PredictHint(hintId: string, target: ActorView?, payload: any?) -> (boolean, string?)
+```
+
+Starts every `predict = true` definition for `hintId` now, on `target`, as if the server's Hint had arrived. Only an instance whose entry is a `PredictedActionEntry` can call it; a predicted hit cannot predict further hits. The call never sends anything to the server. Each predicted hit then waits for the server's matching Hint, the first one from the same activation for the same Hint ID and target. Predicted definitions skip that Hint, and definitions without `predict` still start from it.
+
+| Result | Meaning |
+| --- | --- |
+| `true, nil` | At least one predicted definition started |
+| `false, "InstanceInactive"` | The calling instance has finished |
+| `false, "PredictionUnavailable"` | The calling instance's entry is not a `PredictedActionEntry` |
+| `false, "PredictionExpired"` | The cast's prediction has ended: its reply horizon passed 20 seconds after the request, its Actor retired, or the runtime shut down |
+| `false, "PredictionRejected"` | The server rejected the cast |
+| `false, "HintNotPredicted"` | No definition for `hintId` sets `predict = true` |
+| `false, "ActorUnavailable"` | `target` is not a current, available ActorView |
+| `false, "HintAlreadyReceived"` | The server's Hint for this activation and target arrived within the last 3 seconds and played. Nothing starts. |
+| `false, "PredictedHintLimit"` | The cast already has 16 predicted hits waiting |
+| `false, "PredictionNotStarted"` | Every definition was refused, for example at the active-instance limit |
 
 ### LocalPredictionSnapshot
 
@@ -179,6 +204,27 @@ Startup copies every policy and never calls `canPredictStart` during validation.
 
 A failed known check wins over an unknown one. Undeclared server checks, such as grants, locks and `onCanStart`, are never assumed to pass or fail. The request is sent whatever the estimate, and a Start that the client's request runtime refused locally is never predicted.
 
+## HintPredictionPolicy
+
+`hintPredictionPolicies` maps a Hint ID to the payload fields that say which activation caused it. A predicted Hint definition needs one for its Hint ID.
+
+| Field | Type | Contract |
+| --- | --- | --- |
+| `actorIdField` | `string` | Payload field holding the Actor ID of the Actor whose Action caused the Hint, as `ActorView:GetId()` returns it |
+| `sequenceIdField` | `string` | Payload field holding that Action activation's `sequenceId`. Must differ from `actorIdField`. |
+
+The server fills both fields when it sends the Hint, usually from `ctx.actor:GetId()` and `ctx.sequenceId` in the Action's execution context. Startup copies the policy. It cannot check the fields against the server's Hint schema, because the Hint catalog arrives after the configuration is validated. A received Hint whose payload lacks a string `actorIdField` or a number `sequenceIdField` plays normally and is diagnosed with `PredictionHintSourceInvalid`.
+
+When a server Hint arrives, KRF compares its activation with this client's predicted casts:
+
+| Situation | Effect |
+| --- | --- |
+| A predicted hit waits for this activation, Hint ID and target | That hit is consumed. Predicted definitions skip the Hint, and the others start. |
+| The activation is this client's accepted cast, with no predicted hit waiting | Every definition starts. KRF remembers the Hint for 3 seconds, so a later `PredictHint` for it returns `HintAlreadyReceived`. |
+| The attacker is a cast of this client still waiting for its reply, with a predicted hit waiting | The predicted definitions' entry is held for at most 0.5 seconds. A matching reply consumes the hit. Anything else releases the Hint, and the visual can play twice. Retiring the attacker releases it too. |
+| The attacker is a cast of this client still waiting for its reply, with no predicted hit waiting | Every definition starts. KRF remembers the Hint for 3 seconds, and the reply that proves it came from that cast makes a later `PredictHint` return `HintAlreadyReceived`. |
+| Any other attacker or activation | Every definition starts normally |
+
 ### Connection
 
 `On` and `Watch` return a [`KRF.Connection`](../getting-started/events) with idempotent `:Disconnect()`. The instance owns it, so you never pass it to `Own`. Finish, origin Actor retirement and runtime teardown disconnect every Connection. On an inactive context, both methods return an inert Connection without validating arguments.
@@ -193,10 +239,14 @@ A failed known check wins over an unknown one. Undeclared server checks, such as
 | Held authoritative Starts per client | 32, each for at most 0.5 seconds | Further ambiguous Starts start immediately and are diagnosed with `PredictionDeferredLimit` |
 | Correlation record for a predicted Start | Until its replicated Start is matched or the Start is rejected, and at most 20 seconds after the request was sent | After 20 seconds the Start no longer holds back other Starts. Once its instances finish, the record is dropped and a later replicated Start of that activation starts normally. |
 | Input decisions per predicted Start | 8 | Later decisions are dropped and diagnosed with `PredictionTransitionLimit` |
+| Predicted hits waiting per predicted Start | 16 | `PredictHint` returns `false, "PredictedHintLimit"` |
+| Wait for a predicted hit's server Hint | 3 seconds | The hit stops waiting, and a later matching Hint plays normally |
+| Remembered server Hints per predicted Start | 8, each for 3 seconds | Further Hints still play but are not remembered for `HintAlreadyReceived` |
+| Remembered server Hints that arrive before their cast's reply | 8 per attacking Actor, each for 3 seconds | Further Hints still play but are not remembered |
 
 ## Misuse errors
 
-A malformed `On` or `Watch` call on an active context raises an error at the caller, formatted as `[Presentation] id=<definition> On: <Reason>: <detail>` or `... Watch: ...`. A misuse never subscribes and never widens to all Actors.
+A malformed `On`, `Watch` or `PredictHint` call raises an error at the caller, formatted as `[Presentation] id=<definition> On: <Reason>: <detail>`, `... Watch: ...` or `... PredictHint: ...`. `On` and `Watch` check their arguments only on an active context. A misuse never subscribes, never starts an instance and never widens to all Actors.
 
 | Reason | Method | Cause |
 | --- | --- | --- |
@@ -204,7 +254,8 @@ A malformed `On` or `Watch` call on an active context raises an error at the cal
 | `UnknownStateDescriptor` | Watch | The descriptor is not a `PresentationStates` constant |
 | `InvalidArguments` | Both | Wrong argument count or shape for the descriptor |
 | `CallbackInvalid` | Both | The callback is not a function |
-| `IdInvalid` | Both | The ID is empty or not a string |
+| `IdInvalid` | All | The ID or Hint ID is empty or not a string |
+| `TargetInvalid` | PredictHint | `target` is neither `nil` nor an ActorView |
 | `FilterInvalid`, `ScopeFieldUnknown`, `ScopeInvalid` | On | The scope record is malformed, has extra fields or names no usable ActorView |
 | `OriginIdMissing` | On | A no-ID listener whose origin is a different source family |
 | `OriginActionMissing` | Both | A no-ID Action listener or Action Watch without an origin activation |
@@ -235,6 +286,13 @@ Prediction warns with `[Presentation] action=<id> actor=<id> reason=<reason>`. N
 | `PredictionCallbackFailed:<message>`, `PredictionCallbackYielded`, `PredictionCallbackReturnInvalid`, `PredictionCallbackOverBudget` | `canPredictStart` failed, so the estimate is unknown |
 | `PredictionAttemptLimit`, `PredictionDeferredLimit`, `PredictionTransitionLimit` | A [prediction limit](#limits) was reached |
 
+Predicted hits warn with `[Presentation] hint=<id> reason=<reason>`.
+
+| Reason | Cause |
+| --- | --- |
+| `PredictionHintSourceInvalid` | A received Hint's payload lacks the fields its [Hint prediction policy](#hintpredictionpolicy) names. It plays normally. |
+| `PredictionDeferredLimit` | The held-entry limit was reached, so an ambiguous Hint started immediately |
+
 ## Startup failures
 
 `KRF.Client.Init` reports these under `system = "Presentation"`:
@@ -253,14 +311,17 @@ Prediction warns with `[Presentation] action=<id> actor=<id> reason=<reason>`. N
 | `PresentationEntryStateInvalid` | `state` is not `Tag.Active` or `Action.Active` |
 | `PresentationEntryIdInvalid` | The source ID is empty or not a string |
 | `PresentationPredictInvalid` | `predict` is not a boolean |
-| `PresentationPredictEntryInvalid` | `predict = true` on an entry other than `PresentationEvents.Action.Started` |
-| `PresentationPredictionPolicyMissing` | `predict = true` without a policy for that Action ID |
+| `PresentationPredictEntryInvalid` | `predict = true` on an entry other than `PresentationEvents.Action.Started` or `PresentationEvents.Hint.Received` |
+| `PresentationPredictionPolicyMissing` | `predict = true` without an Action prediction policy for that Action ID, or without a Hint prediction policy for that Hint ID |
 | `ActionPredictionPoliciesInvalid` | `actionPredictionPolicies` is not a plain table |
 | `ActionPredictionPolicyIdInvalid`, `ActionPredictionPolicyActionUnknown` | An empty or non-string key, or an Action missing from `actionRequestSchemas` |
 | `ActionPredictionPolicyInvalid`, `ActionPredictionPolicyFieldUnknown`, `ActionPredictionPolicyCallbackInvalid` | A policy is not a plain table, has an unknown field, or `canPredictStart` is not a function |
 | `ActionPredictionPolicyTagsInvalid`, `ActionPredictionPolicyTagDuplicate` | A Tag list is not a dense array of nonempty strings, or a Tag repeats |
 | `ActionPredictionPolicyRequirementsInvalid`, `ActionPredictionPolicyRequirementInvalid` | A Resource requirement is malformed |
 | `ActionPredictionPolicyCostsInvalid`, `ActionPredictionPolicyCostInvalid` | A cost is malformed |
+| `HintPredictionPoliciesInvalid`, `HintPredictionPolicyIdInvalid` | `hintPredictionPolicies` is not a plain table, or a key is empty or not a string |
+| `HintPredictionPolicyInvalid`, `HintPredictionPolicyFieldUnknown` | A policy is not a plain table or has a field other than `actorIdField` and `sequenceIdField` |
+| `HintPredictionPolicySourceInvalid` | `actorIdField` or `sequenceIdField` is missing or empty, or both name the same field |
 | `PresentationInstallationFailed` | Presentation could not attach its source listeners |
 
 See the [initialization API](../getting-started/initialization-api#clientinit) for the rest of `Client.Init`.

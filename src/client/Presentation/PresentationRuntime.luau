@@ -166,27 +166,44 @@ function PresentationRuntime.Install(
 			instances = (entries :: ActorEntries).instances
 		end
 
-		local action: Types.ActionEntryEvent? = if predictor ~= nil and entry.source == "Action" then entry else nil
 		local routed: { Types.PresentationDefinition } = {}
 
 		for _, definition in definitions do
-			if action ~= nil and definition.predict == true then
+			if predictor ~= nil and definition.predict == true then
 				table.insert(routed, definition)
 			else
 				start(instances, definition, entry)
 			end
 		end
 
-		if action ~= nil and predictor ~= nil and #routed > 0 then
-			local origin: ActorTypes.ActorView = action.actor
+		if predictor == nil or #routed == 0 then
+			return
+		end
 
-			predictor.Route(action, routed, function(definition: Types.PresentationDefinition): ()
-				local current: ActorEntries? = actors[origin]
+		local function release(definition: Types.PresentationDefinition): ()
+			if not active then
+				return
+			end
 
-				if active and current ~= nil and current == entries and isEligible(origin) then
-					start(current.instances, definition, entry)
-				end
-			end)
+			local target: ActorTypes.ActorView? = actor
+
+			if target == nil then
+				start(actorless, definition, entry)
+
+				return
+			end
+
+			local current: ActorEntries? = actors[target]
+
+			if current ~= nil and current == entries and isEligible(target) then
+				start(current.instances, definition, entry)
+			end
+		end
+
+		if entry.source == "Action" then
+			predictor.Route(entry, routed, release)
+		elseif entry.source == "Hint" then
+			predictor.RouteHint(entry, routed, release)
 		end
 	end
 
@@ -281,6 +298,10 @@ function PresentationRuntime.Install(
 			entries.states.Schedule()
 		end
 
+		if predictor ~= nil then
+			predictor.ObserveBaseline(actor)
+		end
+
 		local listeners: ListenerSet? = readinessListeners[actor]
 
 		if listeners ~= nil then
@@ -349,9 +370,15 @@ function PresentationRuntime.Install(
 				end,
 				IsStateReady = isStateReady,
 				Start = function(actor, definition, entry, link, revalidate, retired): Types.PresentationContext?
+					if not active then
+						return nil
+					elseif actor == nil then
+						return start(actorless, definition, entry, revalidate, link, retired)
+					end
+
 					local entries: ActorEntries? = actors[actor]
 
-					if not active or entries == nil or not isEligible(actor) then
+					if entries == nil or not isEligible(actor) then
 						return nil
 					end
 
@@ -359,6 +386,9 @@ function PresentationRuntime.Install(
 				end,
 				Report = function(actionId: string, actorId: string, reason: string): ()
 					warn(("[Presentation] action=%s actor=%s reason=%s"):format(actionId, actorId, reason))
+				end,
+				ReportHint = function(hintId: string, reason: string): ()
+					warn(("[Presentation] hint=%s reason=%s"):format(hintId, reason))
 				end,
 			}, {
 				Delay = prediction.Delay or delay,

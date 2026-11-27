@@ -9,18 +9,23 @@ local ActorTypes = require(KRF.server.Actor.types)
 local ActionTypes = require(KRF.server.Action.types)
 local TagTypes = require(KRF.server.Tags.types)
 local Networking = require(KRF.server.Networking.ServerNetworking)
+local Hints = require(KRF.server.Networking.HintRuntime)
+local NetworkingTypes = require(KRF.shared.Networking.types)
+local Schema: NetworkingTypes.Schema = require(KRF.shared.Networking.Schema)
 local FireballRequirements = require(ReplicatedStorage.PredictionShared.FireballRequirements)
 local schemas = require(ReplicatedStorage.PredictionShared.Schemas)
 local report: RemoteEvent = ReplicatedStorage:WaitForChild("PredictionReport") :: RemoteEvent
 local probe: RemoteFunction = ReplicatedStorage:WaitForChild("PredictionProbe") :: RemoteFunction
 
 local FIREBALL_SECONDS: number = 0.15
+local IMPACT_SECONDS: number = 0.05
 local owners: { [ActorTypes.Actor]: Player } = {}
 local actorsByPlayer: { [Player]: ActorTypes.Actor } = {}
 local models: { Model } = {}
 local results: { [string]: any } = {}
 local reported: number = 0
 local finished: boolean = false
+local npc: ActorTypes.Actor? = nil
 
 Players.CharacterAutoLoads = false
 
@@ -64,6 +69,26 @@ local initialized: boolean, failure = Server.Init({
 				resourceRequirements = FireballRequirements.resourceRequirements,
 				costs = FireballRequirements.costs,
 				onStart = function(context: ActionTypes.ActionExecutionContext): ()
+					local attackerId: string = context.actor:GetId()
+					local sequenceId: number = context.sequenceId
+
+					task.delay(IMPACT_SECONDS, function(): ()
+						local target: ActorTypes.Actor? = npc
+
+						if target == nil or finished then
+							return
+						end
+
+						for _, player: Player in Players:GetPlayers() do
+							Hints.SendTo(
+								player,
+								"Fireball.Impact",
+								target,
+								{ attackerId = attackerId, sequenceId = sequenceId }
+							)
+						end
+					end)
+
 					task.delay(FIREBALL_SECONDS, function(): ()
 						if context:IsActive() then
 							context:End()
@@ -82,6 +107,15 @@ local initialized: boolean, failure = Server.Init({
 				end,
 			}
 		end,
+	},
+	hints = {
+		{
+			id = "Fireball.Impact",
+			direction = "ServerToClient",
+			target = "Actor",
+			mode = "Pulse",
+			payload = Schema.Struct({ attackerId = Schema.String(64), sequenceId = Schema.U32 }),
+		},
 	},
 	actionRequestSchemas = schemas,
 	actionControlAuthority = function(player: Player, actor: ActorTypes.Actor): boolean
@@ -111,8 +145,9 @@ local function spawn(name: string): ActorTypes.Actor
 	return actor
 end
 
-local npc: ActorTypes.Actor = spawn("PredictionNPC")
-ReplicatedStorage:SetAttribute("PredictionNPCId", npc:GetId())
+local dummy: ActorTypes.Actor = spawn("PredictionNPC")
+npc = dummy
+ReplicatedStorage:SetAttribute("PredictionNPCId", dummy:GetId())
 
 local function admit(player: Player): ()
 	local actor: ActorTypes.Actor = spawn(player.Name .. ".Caster")
@@ -133,7 +168,7 @@ probe.OnServerInvoke = function(player: Player, operation: unknown): boolean
 		return (tags:RemoveTag("Status.Stunned"))
 	elseif operation == "NPC" then
 		local controller: ActionTypes.ActionController =
-			npc:GetController("ActionController") :: ActionTypes.ActionController
+			dummy:GetController("ActionController") :: ActionTypes.ActionController
 
 		return controller:RequestAction("Fireball", { aim = 0 }).accepted
 	end

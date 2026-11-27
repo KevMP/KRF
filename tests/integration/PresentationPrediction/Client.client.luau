@@ -21,6 +21,7 @@ local probe: RemoteFunction = ReplicatedStorage:WaitForChild("PredictionProbe") 
 local ROUND_TRIPS_MS: { number } = { 0, 50, 100, 200, 300 }
 local FIREBALL_SAMPLES: number = 12
 local WARD_SAMPLES: number = 4
+local IMPACT_SECONDS: number = 0.04
 
 type Cast = {
 	actionId: string,
@@ -34,6 +35,7 @@ type Cast = {
 	rejected: number?,
 	ended: number?,
 	parameters: any?,
+	predictedImpact: number?,
 }
 
 type Queued = { due: number, deliver: () -> () }
@@ -45,6 +47,12 @@ local mine: ActorTypes.ActorView? = nil
 local predictedInstances: number = 0
 local fallbacks: { [ActorTypes.ActorView]: number } = {}
 local outcomes: { ActionTypes.ActionRequestOutcome } = {}
+local dummy: ActorTypes.ActorView? = nil
+local serverImpacts: { [number]: number } = {}
+local predictedImpacts: number = 0
+local duplicateImpacts: number = 0
+local bystanderImpacts: number = 0
+local impactRefusal: string? = nil
 
 local function channel(): (() -> ()) -> ()
 	local queue: { Queued } = {}
@@ -83,6 +91,8 @@ Native.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransp
 	local real: ClientTypes.ClientTransport = transport
 	local outbound: (() -> ()) -> () = channel()
 	local inbound: (() -> ()) -> () = channel()
+	local unreliableInbound: (() -> ()) -> () = channel()
+	local connectUnreliable: ClientTypes.ClientUnreliableObserver? = real.ConnectUnreliable
 
 	return {
 		SendReliable = function(payload: buffer): ()
@@ -100,7 +110,17 @@ Native.DiscoverTransport = function(deadline: number): (ClientTypes.ClientTransp
 			end)
 		end,
 		SendUnreliable = real.SendUnreliable,
-		ConnectUnreliable = real.ConnectUnreliable,
+		ConnectUnreliable = if connectUnreliable ~= nil
+			then function(callback: (any, ...any) -> ()): () -> ()
+				return connectUnreliable(function(payload: any, ...: any): ()
+					local extra = table.pack(...)
+
+					unreliableInbound(function(): ()
+						callback(payload, table.unpack(extra, 1, extra.n))
+					end)
+				end)
+			end
+			else nil,
 	},
 		nil
 end
@@ -167,6 +187,69 @@ local predictedFireball: Types.PresentationDefinition = {
 				context:Finish()
 			end
 		end)
+
+		task.delay(IMPACT_SECONDS, function(): ()
+			local target: ActorTypes.ActorView? = dummy
+
+			if target ~= nil and context:IsActive() then
+				local predicted: boolean, reason: string? = context:PredictHint("Fireball.Impact", target)
+
+				if not predicted then
+					impactRefusal = reason
+				end
+			end
+		end)
+	end,
+}
+
+local function attacker(entry: Types.PresentationEntry): (string?, number?)
+	if entry.source ~= "Hint" or type(entry.payload) ~= "table" then
+		return nil, nil
+	end
+
+	return entry.payload.attackerId, entry.payload.sequenceId
+end
+
+local predictedImpact: Types.PresentationDefinition = {
+	id = "Impact.Predicted",
+	entry = { event = Events.Hint.Received, id = "Fireball.Impact" },
+	predict = true,
+	create = function(context: Types.PresentationContext)
+		local entry: Types.PresentationEntry = context.entry
+		assert(context.actor == dummy, "Impact played on the wrong target")
+
+		if entry.source == "HintPrediction" then
+			predictedImpacts += 1
+			local cast: Cast? = current
+
+			if cast ~= nil and cast.predictedImpact == nil then
+				cast.predictedImpact = os.clock()
+			end
+		else
+			local attackerId: string? = attacker(entry)
+
+			if attackerId == assert(mine, "Expected the local caster"):GetId() then
+				duplicateImpacts += 1
+			else
+				bystanderImpacts += 1
+			end
+		end
+
+		context:Finish()
+	end,
+}
+
+local authoritativeImpact: Types.PresentationDefinition = {
+	id = "Impact.Authoritative",
+	entry = { event = Events.Hint.Received, id = "Fireball.Impact" },
+	create = function(context: Types.PresentationContext)
+		local attackerId: string?, sequenceId: number? = attacker(context.entry)
+
+		if mine ~= nil and attackerId == mine:GetId() and sequenceId ~= nil then
+			serverImpacts[sequenceId] = os.clock()
+		end
+
+		context:Finish()
 	end,
 }
 
@@ -232,14 +315,28 @@ end
 local function settleFireball(record: Cast): ()
 	local deadline: number = os.clock() + 8
 
-	while record.predicted == nil or record.authoritative == nil or record.accepted == nil or record.ended == nil do
+	local function impacted(): boolean
+		return record.predictedImpact ~= nil
+			and record.sequenceId ~= nil
+			and serverImpacts[record.sequenceId :: number] ~= nil
+	end
+
+	while
+		record.predicted == nil
+		or record.authoritative == nil
+		or record.accepted == nil
+		or record.ended == nil
+		or not impacted()
+	do
 		assert(
 			os.clock() < deadline,
-			("PredictionWait:FireballSettled predicted=%s authoritative=%s accepted=%s ended=%s"):format(
+			("PredictionWait:FireballSettled predicted=%s authoritative=%s accepted=%s ended=%s impacted=%s refusal=%s"):format(
 				tostring(record.predicted ~= nil),
 				tostring(record.authoritative ~= nil),
 				tostring(record.accepted ~= nil),
-				tostring(record.ended ~= nil)
+				tostring(record.ended ~= nil),
+				tostring(impacted()),
+				tostring(impactRefusal)
 			)
 		)
 
@@ -292,6 +389,14 @@ local function verify(): ()
 	assert(first.parameters ~= nil and first.parameters.aim == 1, "Predicted entry lost the original parameters")
 	assert(predictedInstances == 1 and (fallbacks[actor] or 0) == 0, "Authoritative Start replayed the prediction")
 
+	assert(
+		(first.predictedImpact :: number) < serverImpacts[first.sequenceId :: number],
+		"Predicted impact did not precede the server's impact Hint"
+	)
+
+	task.wait(0.1)
+	assert(predictedImpacts == 1 and duplicateImpacts == 0, "Server impact Hint replayed the predicted impact")
+
 	local ward: Cast = cast("Ward")
 	settleWard(ward)
 
@@ -329,10 +434,11 @@ local function verify(): ()
 	assert(probe:InvokeServer("NPC"), "Expected NPC Fireball")
 
 	waitFor("NPCAuthoritative", function(): boolean?
-		return if (fallbacks[npc] or 0) > 0 then true else nil
+		return if (fallbacks[npc] or 0) > 0 and bystanderImpacts > 0 then true else nil
 	end)
 
 	assert(predictedInstances == before, "A bystander Start created a local prediction")
+	assert(duplicateImpacts == 0, "A bystander impact was treated as a local duplicate")
 end
 
 local function measure(): { [string]: any }
@@ -347,6 +453,8 @@ local function measure(): { [string]: any }
 		local accepted: { number } = {}
 		local wardPredicted: { number } = {}
 		local wardRejected: { number } = {}
+		local impactPredicted: { number } = {}
+		local impactAuthoritative: { number } = {}
 
 		for _ = 1, FIREBALL_SAMPLES do
 			local record: Cast = cast("Fireball")
@@ -354,6 +462,8 @@ local function measure(): { [string]: any }
 			table.insert(predicted, ((record.predicted :: number) - record.started) * 1000)
 			table.insert(authoritative, ((record.authoritative :: number) - record.started) * 1000)
 			table.insert(accepted, ((record.accepted :: number) - record.started) * 1000)
+			table.insert(impactPredicted, ((record.predictedImpact :: number) - record.started) * 1000)
+			table.insert(impactAuthoritative, (serverImpacts[record.sequenceId :: number] - record.started) * 1000)
 		end
 
 		for _ = 1, WARD_SAMPLES do
@@ -369,6 +479,8 @@ local function measure(): { [string]: any }
 			fireballAccepted = summarize(accepted),
 			wardPredicted = summarize(wardPredicted),
 			wardRejected = summarize(wardRejected),
+			impactPredicted = summarize(impactPredicted),
+			impactAuthoritative = summarize(impactAuthoritative),
 		}
 
 		if roundTrip >= 100 then
@@ -376,12 +488,18 @@ local function measure(): { [string]: any }
 				summary.fireballPredicted.p90 < summary.fireballAuthoritative.median,
 				"Prediction did not beat the authoritative round trip at " .. roundTrip .. " ms"
 			)
+
+			assert(
+				summary.impactPredicted.p90 < summary.impactAuthoritative.median,
+				"Predicted impact did not beat the server's impact Hint at " .. roundTrip .. " ms"
+			)
 		end
 
 		scenarios["rtt" .. roundTrip] = summary
 	end
 
 	oneWaySeconds = 0
+	assert(duplicateImpacts == 0, "A server impact Hint replayed a predicted impact while measuring")
 
 	return scenarios
 end
@@ -401,7 +519,16 @@ local function run(): { [string]: any }
 			},
 			Ward = {},
 		},
-		presentations = { predictedFireball, authoritativeFireball, predictedWard },
+		hintPredictionPolicies = {
+			["Fireball.Impact"] = { actorIdField = "attackerId", sequenceIdField = "sequenceId" },
+		},
+		presentations = {
+			predictedFireball,
+			authoritativeFireball,
+			predictedWard,
+			predictedImpact,
+			authoritativeImpact,
+		},
 	})
 
 	assert(initialized, if failure ~= nil then failure.reason else "ClientInitFailed")
@@ -417,6 +544,12 @@ local function run(): { [string]: any }
 		local view: ActorTypes.ActorView? = if type(id) == "string" then Registry.GetActorViewById(id) else nil
 
 		return if view ~= nil and view:GetTags():HasTag("Status.Grounded") then view else nil
+	end)
+
+	dummy = waitFor("DummyView", function(): ActorTypes.ActorView?
+		local id: unknown = ReplicatedStorage:GetAttribute("PredictionNPCId")
+
+		return if type(id) == "string" then Registry.GetActorViewById(id) else nil
 	end)
 
 	waitFor("ManaReplicated", function(): boolean?

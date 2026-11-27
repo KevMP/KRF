@@ -24,6 +24,7 @@ local PresentationTypes = require(script.Presentation.types)
 local PresentationRegistry = require(script.Presentation.PresentationRegistry)
 local PresentationRuntime = require(script.Presentation.PresentationRuntime)
 local PredictionPolicyValidator = require(script.Presentation.ActionPredictionPolicyValidator)
+local HintPolicyValidator = require(script.Presentation.HintPredictionPolicyValidator)
 local ActionRuntimeState = require(script.Action.utils.ClientActionRuntimeState)
 local ActionRequestState = require(script.ActionRequest.utils.ClientActionRequestState)
 
@@ -36,8 +37,13 @@ local readyProtocol: SharedNetworkingTypes.ClientProtocol? = nil
 local injectedDependencies: ClientTypes.Dependencies? = nil
 local shutdown: (() -> ())? = nil
 
-local CONFIG_FIELDS: { [string]: boolean } =
-	{ actionRequestSchemas = true, actionInputPolicies = true, actionPredictionPolicies = true, presentations = true }
+local CONFIG_FIELDS: { [string]: boolean } = {
+	actionRequestSchemas = true,
+	actionInputPolicies = true,
+	actionPredictionPolicies = true,
+	hintPredictionPolicies = true,
+	presentations = true,
+}
 
 table.freeze(CONFIG_FIELDS)
 
@@ -87,12 +93,19 @@ local function prepare(config: any): (
 		return nil, nil, nil, { system = "Presentation", reason = predictionReason :: string }
 	end
 
+	local hintPredictions: PresentationTypes.HintPredictionPolicyCatalog?, hintReason: string? =
+		HintPolicyValidator.Compile(rawget(config, "hintPredictionPolicies"))
+
+	if hintPredictions == nil then
+		return nil, nil, nil, { system = "Presentation", reason = hintReason :: string }
+	end
+
 	local presentations: PresentationTypes.PresentationCatalog? = nil
 	local rawPresentations: any = rawget(config, "presentations")
 
 	if rawPresentations ~= nil then
 		local reason: string?
-		presentations, reason = PresentationRegistry.Prepare(rawPresentations, predictions)
+		presentations, reason = PresentationRegistry.Prepare(rawPresentations, predictions, hintPredictions)
 
 		if presentations == nil then
 			return nil, nil, nil, { system = "Presentation", reason = reason :: string }

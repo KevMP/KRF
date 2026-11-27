@@ -5,26 +5,24 @@ local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 type Definition = Types.PresentationDefinition
 
 export type DeferralMatch = "Adopt" | "Hold" | "Release"
+export type DeferralAdoption = ({ Definition }, (Definition) -> ()) -> ()
+export type DeferralClassifier = () -> (DeferralMatch, DeferralAdoption?)
 
 export type DeferralOptions = {
 	read Delay: (number, () -> ()) -> () -> (),
 	read WindowSeconds: number,
 	read Capacity: number,
-	read Classify: (
-		ActorTypes.ActorView,
-		ActorTypes.ActionSnapshot
-	) -> (DeferralMatch, (({ Definition }, (Definition) -> ()) -> ())?),
 }
 
 export type Deferrals = {
-	read Hold: (Types.ActionEntryEvent, { Definition }, (Definition) -> ()) -> boolean,
+	read Hold: (ActorTypes.ActorView, DeferralClassifier, { Definition }, (Definition) -> ()) -> boolean,
 	read Resolve: (ActorTypes.ActorView) -> (),
 	read Drop: (ActorTypes.ActorView) -> (),
 	read Destroy: () -> (),
 }
 
 type Held = {
-	entry: Types.ActionEntryEvent,
+	classify: DeferralClassifier,
 	definitions: { Definition },
 	deliver: (Definition) -> (),
 	cancel: (() -> ())?,
@@ -38,11 +36,11 @@ function Deferrals.new(options: DeferralOptions): Deferrals
 	local count: number = 0
 
 	local function close(actor: ActorTypes.ActorView, held: Held): ()
-		local records: { Held } = assert(byActor[actor], "Held Start must be indexed by its Actor")
+		local records: { Held } = assert(byActor[actor], "Held entry must be indexed by its Actor")
 
 		held.open = false
 		count -= 1
-		table.remove(records, assert(table.find(records, held), "Held Start must be indexed"))
+		table.remove(records, assert(table.find(records, held), "Held entry must be indexed"))
 
 		if #records == 0 then
 			byActor[actor] = nil
@@ -65,15 +63,18 @@ function Deferrals.new(options: DeferralOptions): Deferrals
 		end
 	end
 
+	local function adopt(actor: ActorTypes.ActorView, held: Held, adoption: DeferralAdoption?): ()
+		close(actor, held)
+		assert(adoption, "Adopt requires an adoption")(held.definitions, held.deliver)
+	end
+
 	local function resolve(actor: ActorTypes.ActorView): ()
 		for _, held: Held in table.clone(byActor[actor] or {}) do
 			if held.open then
-				local match: DeferralMatch, adopt: (({ Definition }, (Definition) -> ()) -> ())? =
-					options.Classify(actor, held.entry.action)
+				local match: DeferralMatch, adoption: DeferralAdoption? = held.classify()
 
 				if match == "Adopt" then
-					close(actor, held)
-					assert(adopt, "Adopt requires an adoption")(held.definitions, held.deliver)
+					adopt(actor, held, adoption)
 				elseif match == "Release" then
 					release(actor, held)
 				end
@@ -89,7 +90,8 @@ function Deferrals.new(options: DeferralOptions): Deferrals
 
 	return table.freeze({
 		Hold = function(
-			entry: Types.ActionEntryEvent,
+			actor: ActorTypes.ActorView,
+			classify: DeferralClassifier,
 			definitions: { Definition },
 			deliver: (Definition) -> ()
 		): boolean
@@ -97,10 +99,8 @@ function Deferrals.new(options: DeferralOptions): Deferrals
 				return false
 			end
 
-			local actor: ActorTypes.ActorView = entry.actor
-
 			local held: Held =
-				{ entry = entry, definitions = definitions, deliver = deliver, cancel = nil, open = true }
+				{ classify = classify, definitions = definitions, deliver = deliver, cancel = nil, open = true }
 
 			local records: { Held } = byActor[actor] or {}
 
@@ -111,12 +111,10 @@ function Deferrals.new(options: DeferralOptions): Deferrals
 			held.cancel = options.Delay(options.WindowSeconds, function(): ()
 				held.cancel = nil
 
-				local match: DeferralMatch, adopt: (({ Definition }, (Definition) -> ()) -> ())? =
-					options.Classify(actor, entry.action)
+				local match: DeferralMatch, adoption: DeferralAdoption? = classify()
 
 				if match == "Adopt" then
-					close(actor, held)
-					assert(adopt, "Adopt requires an adoption")(definitions, deliver)
+					adopt(actor, held, adoption)
 				else
 					release(actor, held)
 				end

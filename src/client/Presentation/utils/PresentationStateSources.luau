@@ -90,6 +90,10 @@ function StateSources.SampleAction(
 	local snapshot: ActorTypes.ActionSnapshot? = association.actor:GetActions():GetAction(sequenceId)
 
 	if snapshot == nil or snapshot.actionId ~= association.actionId then
+		if association.awaitingStart == true then
+			return nil, {}
+		end
+
 		return nil, { sequenceId, false }
 	end
 
