@@ -2,6 +2,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+<% for (const line of requires) { -%>
+<%- line %>
+<% } -%>
 
 local <%- name %>: KRF.<%- type %> = {
 <% for (const line of entry) { -%>

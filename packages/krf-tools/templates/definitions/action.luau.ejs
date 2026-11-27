@@ -2,6 +2,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+<% if (requirements) { -%>
+local <%- requirements.variable %> = require(<%- requirements.path %>)
+<% } -%>
 <% if (options.recipe === "channel") { -%>
 
 local DURATION: number = <%- luaNumber(options.duration) %>

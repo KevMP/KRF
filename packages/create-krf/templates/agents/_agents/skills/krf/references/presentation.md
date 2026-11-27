@@ -110,40 +110,17 @@ Inside `create`, `ctx:On(event, id?, callback)` listens for later events and `ct
 
 When a player presses Fireball, the request travels to the server, the server starts the Action, and only then does `Action.Started` come back. At 150 ms of ping the delay is obvious. A predicted Presentation starts the cast on the caster's own client as soon as the request is sent, and KRF reconciles it with the server's answer. Other players and NPCs still see the normal entry, and the same definition serves both.
 
-Aim to predict every Action a player requests. Leave one unpredicted only when its visual must not appear before the server agrees, and say so when you report the work. Prediction needs three things.
+Aim to predict every Action a player requests. Leave one unpredicted only when its visual must not appear before the server agrees, and say so when you report the work. The generators set up everything except the visual:
 
-First, keep the Action's start rules in a shared module, as [actions.md](actions.md#keep-start-rules-in-one-shared-module) describes, so the client checks the same Tags and costs the server does.
+| Generator | Writes |
+| --- | --- |
+| `createAction --requestable` | The Action's start rules in `src/shared/ActionRequirements/<Name>.luau`, read by the server definition. See [actions.md](actions.md#keep-start-rules-in-one-shared-module) |
+| `createAction --requestable` | Its prediction policy in `src/client/ActionPredictionPolicies/<Name>.luau`, which passes that same module to the client. The first one also adds the folder's loader and passes it to `KRF.Client.Init` as `actionPredictionPolicies` |
+| `createPresentation` with `Action.Started` | `predict = true`, when the source Action has a prediction policy. Pass `--no-predict` only for a visual that must wait for the server |
 
-Second, pass that module as the Action's prediction policy. Add a folder that merges one module per Action, the same way `src/client/ActionInputPolicies` does. `src/client/ActionPredictionPolicies/init.luau` requires `ReplicatedStorage.Shared.MergeDescendants` as `mergeDescendants`:
+So the client checks the same Tags and costs the server does, without a second copy. Never write a prediction policy's Tags or costs by hand.
 
-```lua
-local policies: KRF.ActionPredictionPolicies = mergeDescendants(script)
-
-return policies
-```
-
-Then `src/client/ActionPredictionPolicies/Fireball.luau` requires `ReplicatedStorage.Shared.ActionRequirements.Fireball` as `FireballRequirements` and returns it as the policy:
-
-```lua
-local Fireball: KRF.ActionPredictionPolicies = {
-	Fireball = FireballRequirements,
-}
-
-return Fireball
-```
-
-Require the folder in `Startup.client.luau` as `ActionPredictionPolicies` and pass it to `KRF.Client.Init`:
-
-```lua
-local started: boolean, failure: KRF.ClientStartupFailure? = KRF.Client.Init({
-	actionRequestSchemas = ActionRequests,
-	actionInputPolicies = ActionInputPolicies,
-	actionPredictionPolicies = ActionPredictionPolicies,
-	presentations = Presentations,
-})
-```
-
-When the client can approximate a check the server makes in `onCanStart`, such as range to the target, add `canPredictStart` in the client module, next to the shared fields rather than in place of them. Here `CombatLimits` is a shared game module the server's `onCanStart` also reads:
+When the client can approximate a check the server makes in `onCanStart`, such as range to the target, add `canPredictStart` to the generated policy module, next to the shared fields rather than in place of them. Here `FireballRequirements` is the module the generated policy already requires, and `CombatLimits` is a shared game module the server's `onCanStart` also reads:
 
 ```lua
 local Fireball: KRF.ActionPredictionPolicies = {
@@ -170,7 +147,7 @@ return Fireball
 
 Return `nil` when the client can't tell. Any number both checks use, such as that range, lives in one shared module that the server's `onCanStart` reads too, never in two constants.
 
-Third, mark the cast definition `predict = true`. A predicted instance starts with `ctx.entry.source == "ActionPrediction"`, and the replicated `Action.Started` for the same activation doesn't start a second one:
+Then fill in the generated cast definition. A predicted instance starts with `ctx.entry.source == "ActionPrediction"`, and the replicated `Action.Started` for the same activation doesn't start a second one:
 
 ```lua
 local PredictedCast: KRF.PresentationDefinition = {

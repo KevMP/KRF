@@ -4,7 +4,7 @@ import { TOOLS_COMMAND, TOOLS_VERSION } from "../compatibility.js";
 import { ExitCode, KrfToolError, formatError } from "../errors.js";
 import { applyProjectChanges } from "../files.js";
 import { CATALOGS, KINDS, PRESENTATION_EVENTS } from "./catalogs.js";
-import { assertPresentationSupport, createConsumer, findProjectRoot, readKrfDependency } from "./consumer.js";
+import { assertPresentationSupport, createConsumer, findProjectRoot, readKrfDependency, supportsActionPrediction } from "./consumer.js";
 import { planGeneration, projectCatalog } from "./plan.js";
 import { promptForMissing } from "./prompts.js";
 import { errorResult, exitCodeOf, formatResult, resultOf } from "./report.js";
@@ -78,6 +78,7 @@ const KIND_OPTIONS = {
 	presentation: [
 		{ flags: "--event <event>", description: `${PRESENTATION_EVENTS.join(", ")} (default: Action.Started)`, key: "event" },
 		{ flags: "--source-id <id>", description: "required exact Action, Tag, Resource or Hint ID to observe", key: "sourceId" },
+		{ flags: "--no-predict", description: "do not predict it when its Action has a prediction policy", key: "predict" },
 	],
 	domain: [
 		{ flags: "--audience <audience>", description: "Owner or All (default: Owner)", key: "audience" },
@@ -174,7 +175,7 @@ export async function runGenerator(argv, io) {
 
 		const request = normalizeRequest(kind, input);
 		if (kind === "presentation") assertPresentationSupport(consumer, krf.version);
-		const plan = planGeneration(consumer, request, krf.alias);
+		const plan = planGeneration(consumer, request, krf.alias, { prediction: supportsActionPrediction(consumer, krf.version) });
 		if (!flags.dryRun && plan.status !== "already-exists") applyProjectChanges(root, plan.changes);
 
 		const result = resultOf(plan, flags.dryRun === true);

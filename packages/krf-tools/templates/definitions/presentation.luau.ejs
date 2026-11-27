@@ -6,6 +6,9 @@ local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
 local <%- name %>: KRF.PresentationDefinition = {
 	id = <%- luaString(id) %>,
 	entry = { event = KRF.PresentationEvents.<%- options.event %>, id = <%- luaString(options.sourceId) %> },
+<% if (predict) { -%>
+	predict = true,
+<% } -%>
 	create = function(context: KRF.PresentationContext): ()
 		-- Replace this stub with the visual and register its cleanup with context:Own().
 		context:Finish()

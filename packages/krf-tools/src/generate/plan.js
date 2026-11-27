@@ -1,17 +1,31 @@
 import { ExitCode, KrfToolError } from "../errors.js";
 import {
 	ACTION_INPUT_POLICIES_FOLDER,
+	ACTION_PREDICTION_POLICIES_FOLDER,
 	ACTION_REQUESTS_FOLDER,
+	ACTION_REQUIREMENTS_FOLDER,
 	BUILT_IN_CONTROLLER_KEYS,
 	BUILT_IN_PROPERTY_IDS,
 	CATALOGS,
+	CLIENT_STARTUP,
 	KEYBINDS_FILE,
 	KINDS,
 	LOADOUT_FILE,
+	MERGE_DESCENDANTS_FILE,
 	REQUIRE_DESCENDANTS_FILE,
 } from "./catalogs.js";
 import { assertPathAvailable, definitionId, findDefinition } from "./consumer.js";
-import { actionPolicyEntry, actionRequestEntry, mapEntryLines, needsInputPolicy, renderDefinition, renderLoader, renderMapModule } from "./modules.js";
+import {
+	actionPolicyEntry,
+	actionRequestEntry,
+	mapEntryLines,
+	needsInputPolicy,
+	renderDefinition,
+	renderLoader,
+	renderMapLoader,
+	renderMapModule,
+	renderRequirements,
+} from "./modules.js";
 import { isIdentifier, luaKey, luaString } from "./luau.js";
 import { addCatalog, readStartup, startupLines, wiringOf } from "./startup.js";
 
@@ -104,13 +118,18 @@ function referenceWarnings(consumer, request, folders) {
 	return warnings;
 }
 
-function nextSteps(request, file) {
+function nextSteps(request, file, { requirements, predict }) {
 	const { id, options } = request;
 	switch (request.kind) {
 		case "action":
 			return [
 				...(options.requestable
 					? [`Put ${id} in an ability slot with Loadout.Equip("AbilitySlot1", "${id}") in ${LOADOUT_FILE}, or add a slot for it in ${KEYBINDS_FILE}.`]
+					: []),
+				...(requirements !== undefined
+					? [
+							`${id}'s Tag gates, Resource requirements and costs live in ${requirements.file}. Change them there: the server definition and the client's prediction policy both read that module.`,
+						]
 					: []),
 				...(options.requestable && (options.startFields.length > 0 || ((options.recipe === "held" || options.recipe === "toggle") && options.stopFields.length > 0))
 					? [`Return the parameters input sends from the producers in ${[ACTION_INPUT_POLICIES_FOLDER, ...request.namespace, `${request.name}.luau`].join("/")}.`]
@@ -137,7 +156,14 @@ function nextSteps(request, file) {
 				? [options.authorize === "deny" ? `${id} rejects every client send until you implement authorize and receive in ${file}.` : `Implement receive in ${file}.`]
 				: [];
 		case "presentation":
-			return [`Implement create in ${file} and register cleanup with context:Own().`];
+			return [
+				`Implement create in ${file} and register cleanup with context:Own().`,
+				...(predict
+					? [
+							`${id} is predicted, so create also runs on the caster's client before the server answers, with context.entry.source == "ActionPrediction". End it with context:Watch(KRF.PresentationStates.Action.Active, ...) and decide what a rejected request does.`,
+						]
+					: []),
+			];
 		case "domain":
 			return [
 				`Return the Actor's current state from snapshot in ${file}.`,
@@ -154,29 +180,83 @@ function findMapEntry(consumer, folder, key) {
 	return consumer.luauFiles(folder).find((file) => pattern.test(consumer.read(file) ?? ""));
 }
 
-function wireRequest(consumer, request, plan, alias) {
+function requirementsOf(request) {
+	const file = [ACTION_REQUIREMENTS_FOLDER, ...request.namespace, `${request.name}.luau`].join("/");
+	const variable = `${request.name}Requirements`;
+	const path = instancePath("ReplicatedStorage.Shared.ActionRequirements", ACTION_REQUIREMENTS_FOLDER, file);
+	return { file, variable, path, require: `local ${variable} = require(${path})` };
+}
+
+function assertNewModule(consumer, file, id) {
+	assertPathAvailable(consumer, file);
+	if (consumer.stat(file) !== undefined) {
+		throw new KrfToolError("NameConflict", `${file} already exists but does not declare ${id}.`, { hint: "Rename that module or choose another --name. Nothing was written." });
+	}
+}
+
+const PREDICTION_STARTUP = Object.freeze({ field: "actionPredictionPolicies", folder: "ActionPredictionPolicies", startup: CLIENT_STARTUP });
+
+const mapLoaderReady = (consumer, folder) => () => loaderState(consumer, folder, MAP_LOADER) === "recognized";
+
+function predictionFolderReady(consumer, plan, alias) {
+	const loader = loaderState(consumer, ACTION_PREDICTION_POLICIES_FOLDER, MAP_LOADER);
+	if (loader === "custom" || (loader === "missing" && !consumer.stat(MERGE_DESCENDANTS_FILE)?.isFile())) return false;
+
+	const source = consumer.read(CLIENT_STARTUP.file);
+	const startup = source === undefined ? undefined : readStartup(source, CLIENT_STARTUP);
+	const wired = wiringOf(startup, PREDICTION_STARTUP.field).state === "wired";
+	const edited = wired ? undefined : addCatalog(startup, PREDICTION_STARTUP);
+	if (!wired && edited === undefined) return false;
+
+	if (loader === "missing") {
+		plan.changes.push({ kind: "create", path: `${ACTION_PREDICTION_POLICIES_FOLDER}/init.luau`, contents: renderMapLoader("ActionPredictionPolicies", alias) });
+	}
+	if (edited !== undefined) plan.changes.push({ kind: "edit", path: CLIENT_STARTUP.file, before: startup.source, after: edited });
+	return true;
+}
+
+function wireRequest(consumer, request, plan, alias, requirements) {
 	const targets = [
-		{ folder: ACTION_REQUESTS_FOLDER, type: "ActionRequestSchemas", value: actionRequestEntry(request.options) },
-		...(needsInputPolicy(request.options) ? [{ folder: ACTION_INPUT_POLICIES_FOLDER, type: "ActionInputPolicies", value: actionPolicyEntry(request.options) }] : []),
+		{ folder: ACTION_REQUESTS_FOLDER, type: "ActionRequestSchemas", value: actionRequestEntry(request.options), requires: [], ready: mapLoaderReady(consumer, ACTION_REQUESTS_FOLDER) },
+		...(needsInputPolicy(request.options)
+			? [
+					{
+						folder: ACTION_INPUT_POLICIES_FOLDER,
+						type: "ActionInputPolicies",
+						value: actionPolicyEntry(request.options),
+						requires: [],
+						ready: mapLoaderReady(consumer, ACTION_INPUT_POLICIES_FOLDER),
+					},
+				]
+			: []),
+		...(requirements === undefined
+			? []
+			: [
+					{
+						folder: ACTION_PREDICTION_POLICIES_FOLDER,
+						type: "ActionPredictionPolicies",
+						value: requirements.variable,
+						requires: [requirements.require],
+						ready: () => predictionFolderReady(consumer, plan, alias),
+					},
+				]),
 	];
 
 	for (const target of targets) {
 		const file = [target.folder, ...request.namespace, `${request.name}.luau`].join("/");
 		const entry = mapEntryLines(request.id, target.value);
+		const lines = [...target.requires, ...entry];
 		const declared = findMapEntry(consumer, target.folder, request.id);
 
 		if (declared !== undefined) {
 			plan.warnings.push(`${declared} already declares ${request.id}; it was left unchanged.`);
 		} else if (plan.status !== "created") {
-			plan.manual.push({ file, instruction: `Once ${request.id} loads, create this module returning its ${target.type} entry.`, lines: entry });
-		} else if (loaderState(consumer, target.folder, MAP_LOADER) !== "recognized") {
-			plan.manual.push({ file: target.folder, instruction: `Add this entry to the ${target.type} your project passes to KRF.`, lines: entry });
+			plan.manual.push({ file, instruction: `Once ${request.id} loads, create this module returning its ${target.type} entry.`, lines });
+		} else if (!target.ready()) {
+			plan.manual.push({ file: target.folder, instruction: `Add this entry to the ${target.type} your project passes to KRF.`, lines });
 		} else {
-			assertPathAvailable(consumer, file);
-			if (consumer.stat(file) !== undefined) {
-				throw new KrfToolError("NameConflict", `${file} already exists but does not declare ${request.id}.`, { hint: "Rename that module or choose another --name. Nothing was written." });
-			}
-			plan.changes.push({ kind: "create", path: file, contents: renderMapModule(request.name, target.type, entry, alias) });
+			assertNewModule(consumer, file, request.id);
+			plan.changes.push({ kind: "create", path: file, contents: renderMapModule(request.name, target.type, entry, alias, target.requires) });
 		}
 	}
 }
@@ -247,7 +327,7 @@ function wireCatalog(consumer, request, own, alias, plan) {
 	}
 }
 
-export function planGeneration(consumer, request, alias) {
+export function planGeneration(consumer, request, alias, { prediction = false } = {}) {
 	const catalog = CATALOGS[request.kind];
 	const folders = catalogFolders(consumer);
 	const own = folders.get(request.kind);
@@ -277,7 +357,19 @@ export function planGeneration(consumer, request, alias) {
 		});
 	}
 
-	plan.changes.push({ kind: "create", path: file, contents: renderDefinition(request, alias) });
+	const requirements = prediction && request.kind === "action" && request.options.requestable ? requirementsOf(request) : undefined;
+	const predict =
+		prediction &&
+		request.kind === "presentation" &&
+		request.options.predict &&
+		request.options.event === "Action.Started" &&
+		findMapEntry(consumer, ACTION_PREDICTION_POLICIES_FOLDER, request.options.sourceId) !== undefined;
+
+	plan.changes.push({ kind: "create", path: file, contents: renderDefinition(request, alias, { requirements, predict }) });
+	if (requirements !== undefined) {
+		assertNewModule(consumer, requirements.file, request.id);
+		plan.changes.push({ kind: "create", path: requirements.file, contents: renderRequirements(requirements.variable, request.options, alias) });
+	}
 	plan.warnings.push(...referenceWarnings(consumer, request, folders));
 
 	if (isInside(file, own.folder)) {
@@ -289,10 +381,10 @@ export function planGeneration(consumer, request, alias) {
 	}
 
 	if (request.kind === "action" && request.options.requestable) {
-		wireRequest(consumer, request, plan, alias);
+		wireRequest(consumer, request, plan, alias, requirements);
 		if (plan.status === "created" && plan.manual.length > 0) plan.status = "manual-wiring-required";
 	}
 
-	plan.next.push(...nextSteps(request, file));
+	plan.next.push(...nextSteps(request, file, { requirements, predict }));
 	return plan;
 }

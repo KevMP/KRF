@@ -189,7 +189,7 @@ export const OPTION_DEFAULTS = Object.freeze({
 	command: Object.freeze({ target: "Actor", authorize: "deny" }),
 	hint: Object.freeze({ direction: "ServerToClient", target: "Actor", mode: "Pulse", authorize: "deny" }),
 	domain: Object.freeze({ audience: "Owner", observe: false }),
-	presentation: Object.freeze({ event: "Action.Started" }),
+	presentation: Object.freeze({ event: "Action.Started", predict: true }),
 });
 
 const visibility = z.enum(["ServerOnly", "ClientVisible"]);
@@ -260,6 +260,7 @@ const OPTION_SCHEMAS = {
 	presentation: z.strictObject({
 		event: z.enum(PRESENTATION_EVENTS).default(OPTION_DEFAULTS.presentation.event),
 		sourceId: z.string().refine((value) => value.trim() !== "" && !/[\u0000-\u001f]/.test(value), "enter an exact source ID without control characters"),
+		predict: z.boolean().default(OPTION_DEFAULTS.presentation.predict),
 	}),
 	domain: z.strictObject({
 		audience: z.enum(["Owner", "All"]).default(OPTION_DEFAULTS.domain.audience),
@@ -291,6 +292,7 @@ const FLAGS = {
 	autoGrant: "--auto-grant",
 	autoAssign: "--no-auto-assign",
 	autoAttach: "--no-auto-attach",
+	predict: "--no-predict",
 	duplicateBehavior: "--duplicate-behavior",
 	properties: "--property",
 	requestFields: "--request-field",

@@ -1,0 +1,16 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+
+<% if (lines.length === 0) { -%>
+local <%- variable %>: KRF.ActionPredictionPolicy = {}
+<% } else { -%>
+local <%- variable %>: KRF.ActionPredictionPolicy = {
+<% for (const line of lines) { -%>
+<%- line %>
+<% } -%>
+}
+<% } -%>
+
+return <%- variable %>

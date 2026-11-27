@@ -57,7 +57,7 @@ These references describe KRF <%= runtime.version %>. Check the `KRF` entry in t
 
 - Require KRF from `ReplicatedStorage.Packages.KRF`. On the client, wait for it with `ReplicatedStorage:WaitForChild("Packages"):WaitForChild("KRF")`.
 - The server decides gameplay. Clients send requests and read views; they never change Tags, Resources, Properties or Actions directly.
-- Write each rule once. An Action's Tag gates, Resource requirements and costs live in its shared module under `src/shared/ActionRequirements`, read by both the server definition and the client's prediction policy. Never copy them, or any number both sides check, into a second place.
+- Write each rule once. An Action's Tag gates, Resource requirements and costs live in the shared module `createAction` writes under `src/shared/ActionRequirements`, read by both the server definition and the client's prediction policy. Edit them only there, and never copy them, or any number both sides check, into a second place.
 - Predict every Action a player requests, so its cast starts on the caster's screen before the server answers. If one can't be predicted, say why when you report the work.
 - Anything a client sends, such as aim, a target or a position, is a claim. Schemas check its shape; the server checks whether it makes sense.
 - State belongs to an Actor. Register a character's Model as an Actor before it gains Tags, Resources or Actions.

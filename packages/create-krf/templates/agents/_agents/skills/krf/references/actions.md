@@ -80,7 +80,7 @@ Gates are checked only at the start. If the caster gets Stunned while channeling
 
 A player's client predicts their own casts, so it needs the same Tag gates, Resource requirements and costs the server checks. Write those four fields once, in a shared module named after the Action, and have both sides read it. Never type a cost or a Tag gate into the server definition and again into client code: the copies drift, and the client starts predicting casts the server rejects.
 
-The generator writes these fields inline. For every Action a player requests, move them into `src/shared/ActionRequirements/<Name>.luau`:
+`createAction --requestable` writes that module for you, at `src/shared/ActionRequirements/<Name>.luau`, from the `--required-tag`, `--blocked-tag`, `--requirement` and `--cost` flags:
 
 ```lua
 local FireballRequirements: KRF.ActionPredictionPolicy = {
@@ -93,7 +93,9 @@ local FireballRequirements: KRF.ActionPredictionPolicy = {
 return FireballRequirements
 ```
 
-Leave out fields the Action doesn't use. The server definition requires the module from `ReplicatedStorage.Shared.ActionRequirements` and reads all four fields, as the Fireball above does, so a field added later takes effect without touching the definition. The client passes the same module as the Action's prediction policy; see [presentation.md](presentation.md#predict-every-action-players-start).
+The generated server definition requires it from `ReplicatedStorage.Shared.ActionRequirements` and reads all four fields, as the Fireball above does, and the generated client prediction policy passes the same module. To change a gate or a price later, edit only this module; a field you add here takes effect on both sides without touching either. See [presentation.md](presentation.md#predict-every-action-players-start) for the client side.
+
+An Action only server code starts, without `--requestable`, has no client to predict for, so the generator keeps its fields inline. So does a game on a KRF version older than Action prediction.
 
 Only the start rules belong in the module. `activeTags`, `appliedTags`, locks and callbacks stay in the server definition.
 
