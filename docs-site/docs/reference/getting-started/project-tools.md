@@ -84,7 +84,7 @@ Without `--yes`, a terminal wizard asks for missing choices. Noninteractive and 
 npm run createPresentation -- --name SwingHighlight --event Action.Started --source-id Sword.Swing --yes
 ```
 
-Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--event` defaults to `Action.Started`. On first use the generator wires the Presentation catalog into client startup. Open the generated ModuleScript and replace its `create` stub with your visual code. The [Presentation guide](../presentation/guide) lists all entry events and shows how to own a visual's cleanup.
+Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--event` defaults to `Action.Started`. On first use the generator wires the Presentation catalog into client startup. Open the generated ModuleScript and replace its `create` stub with your visual code. The [Presentation guide](../presentation/guide) shows how to own a visual's cleanup, and the [Presentation API](../presentation/api#presentationevents) lists every entry event.
 
 ### Action recipes and client requests
 

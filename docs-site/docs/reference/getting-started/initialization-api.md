@@ -62,7 +62,7 @@ Configuration is validated before transport discovery. Unknown config fields are
 | `ClientInitAlreadyAttempted` / `Client` | Init was already called, successfully or otherwise |
 | `ClientConfigInvalid`, `ClientConfigFieldUnknown` / `Client` | Invalid config table or unknown field |
 | `ActionRequestCommandsUnavailable`, `ActionRequestCommandsIncompatible` / `ActionRequest` | Server lacks the required outer Action Command contracts |
-| `PresentationCatalogInvalid`, `PresentationDefinitionInvalid`, `PresentationDefinitionFieldUnknown`, `PresentationIdInvalid`, `PresentationIdDuplicate`, `PresentationCreateInvalid`, `PresentationEntryInvalid`, `PresentationEntryFieldUnknown`, `PresentationEntryEventInvalid`, `PresentationEntryStateInvalid`, `PresentationEntryAmbiguous`, `PresentationEntryIdInvalid` / `Presentation` | Invalid [Presentation catalog](../presentation/guide#register-definitions) |
+| `PresentationCatalogInvalid`, `PresentationDefinitionInvalid`, `PresentationDefinitionFieldUnknown`, `PresentationIdInvalid`, `PresentationIdDuplicate`, `PresentationCreateInvalid`, `PresentationEntryInvalid`, `PresentationEntryFieldUnknown`, `PresentationEntryEventInvalid`, `PresentationEntryStateInvalid`, `PresentationEntryAmbiguous`, `PresentationEntryIdInvalid` / `Presentation` | Invalid [Presentation catalog](../presentation/api#startup-failures) |
 | `PresentationInstallationFailed` / `Presentation` | Presentation could not attach its source listeners during startup |
 | `TransportUnavailable`, `HandshakeTimeout` / `Networking` | Discovery or readiness could not finish |
 | `ProtocolMismatch`, `UnsupportedSchema`, `BootstrapTooLarge`, `MalformedBootstrap`, `ReadyRejected` / `Networking` | Invalid or incompatible server handshake |

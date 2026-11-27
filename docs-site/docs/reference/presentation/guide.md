@@ -1,10 +1,11 @@
 ---
 title: Presentation
+sidebar_label: Guide
 ---
 
 # Presentation
 
-Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register.
+Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register. Every type, form and failure reason is listed in the [Presentation API](./api).
 
 ## Highlight an Actor when an Action starts
 
@@ -58,36 +59,17 @@ The effect can overlap with another swing, even on the same Actor. `Finish` reti
 
 The first generated Presentation adds `src/client/Presentations/init.luau` and wires that catalog into `Startup.client.luau`. The loader collects the definitions under `Presentations`, including namespaced subfolders. Add future definitions as ModuleScripts in that folder. If you maintain a custom startup, require the catalog and pass it as `presentations` in your existing `KRF.Client.Init` call.
 
-`KRF.Client.Init({ presentations = { ... } })` accepts a dense array of definition tables. An empty array and omitted configuration are valid. Each definition has a unique, nonempty string `id`, one `entry` binding and one `create(ctx)` function. The binding has two fields: either `event`, an exported `PresentationEvents` descriptor, or `state`, an exported `PresentationStates` entry descriptor, and the exact, nonempty game source `id`. A binding with both `event` and `state` fails with `PresentationEntryAmbiguous`. The two IDs serve different purposes. In the example, `Sword.Swing.Highlight` names the visual definition and `Sword.Swing` selects an Action.
+Each definition has a unique `id`, one `entry` binding and a `create(ctx)` function. The binding pairs a descriptor with the exact game source `id`, so the two IDs do different jobs. In the example, `Sword.Swing.Highlight` names the visual definition and `Sword.Swing` selects the Action that starts it. A binding uses either `event` or `state`, never both.
 
-Load the full catalog in the startup call. KRF validates the entire array before connecting to transport and attaches the entries only when client startup succeeds. Startup owns a copy of the IDs and binding and keeps the original function reference. It does not call `create` during validation. A malformed member fails startup under the `Presentation` system with a stable reason. See the [initialization API](../getting-started/initialization-api#clientinit).
+Pass the full catalog in the startup call. KRF validates the entire array before it connects to the transport and attaches the entries only when client startup succeeds. It never calls `create` during validation, so a malformed definition fails startup with a stable reason instead of failing later in play. See [PresentationDefinition](./api#presentationdefinition) and [Startup failures](./api#startup-failures).
 
 ## Pick an entry event
 
-Use these frozen values from `KRF.PresentationEvents` in `entry.event`. Every selector matches one existing source ID exactly.
+An event entry starts an instance each time a matching event reaches the client. `KRF.PresentationEvents` has a descriptor for every Action, Tag, Resource and Hint event an ActorView or the Hint runtime publishes, from `Action.Started` to `Hint.Received`. Each selector matches one source ID exactly. The [PresentationEvents](./api#presentationevents) table lists them with their source signals.
 
-| Descriptor | Source signal | Select by |
-| --- | --- | --- |
-| `Action.Started` | `ActorView:GetActions().OnActionStarted` | Action ID |
-| `Action.Ended` | `ActorView:GetActions().OnActionEnded` | Action ID |
-| `Action.Interrupted` | `ActorView:GetActions().OnActionInterrupted` | Action ID |
-| `Tag.Added` | `ActorView:GetTags().OnTagAdded` | Tag ID |
-| `Tag.Refreshed` | `ActorView:GetTags().OnTagRefreshed` | Tag ID |
-| `Tag.Removed` | `ActorView:GetTags().OnTagRemoved` | Tag ID |
-| `Tag.Expired` | `ActorView:GetTags().OnTagExpired` | Tag ID |
-| `Resource.Changed` | `ActorView:GetResources().OnResourceChanged` | Resource ID |
-| `Hint.Received` | `HintRuntime.OnHintReceived` | Hint ID |
+Narrow `ctx.entry` by its `source` to read the matching fields. The entry is a frozen record of the original observation: an Action entry carries the `ActionSnapshot` for that activation, a Tag entry its `tagId`, a Resource entry the `ResourceViewChange`, and a Hint entry its `hintId` and payload. A [state entry](#keep-an-aura-while-a-tag-is-active) has `source == "State"` instead. See [Entry event records](./api#entry-event-records).
 
-Narrow `ctx.entry` by its `source` to read the matching type. The entry is a frozen record of the original observation. A [state entry](#keep-an-aura-while-a-tag-is-active) has `source == "State"` instead.
-
-| `source` | `event` | Entry fields |
-| --- | --- | --- |
-| `Action` | `Started`, `Ended`, `Interrupted` | `actor: ActorView`, `action: ActionSnapshot` with `actionId` and `sequenceId` |
-| `Tag` | `Added`, `Refreshed`, `Removed`, `Expired` | `actor: ActorView`, `tagId: string` |
-| `Resource` | `Changed` | `actor: ActorView`, `change: ResourceViewChange` with `resourceId`, `previous`, `current` and `source` |
-| `Hint` | `Received` | `actor: ActorView?`, `hintId: string`, `payload: any?` from the declared Hint |
-
-Action observations carry the activation's sequence ID. Tags describe aggregate Actor state. Hint payloads keep the existing Hint contract and can contain game-defined data. A Hint creates an entry only if the client receives it. An Actor-targeted receipt requires the original ActorView to still be available. A world Hint has `ctx.actor == nil`. Hints can be lost and can arrive before or after related reliable state. See [Hints](../hints/guide).
+Tags describe aggregate Actor state. A Hint creates an entry only if the client receives it. An Actor-targeted receipt requires the original ActorView to still be available. A world Hint has `ctx.actor == nil`. Hints can be lost and can arrive before or after related reliable state. See [Hints](../hints/guide).
 
 KRF attaches to current and future ActorViews, including when a missing built-in domain appears in a later baseline. Baseline and recovery snapshots do not replay Action or Tag occurrences. `Resource.Changed` starts an instance only when `change.source == "Commit"`. Separate source callbacks do not guarantee a shared delivery order.
 
@@ -136,14 +118,7 @@ return BurningAura
 
 The aura moves with the Actor's Model through the Model Watch, and its one `Own` cleanup removes whatever Highlight is attached when the instance retires. You can still register a separate live `Tag.Added` definition for a one-off burst when the Tag first lands. Both run side by side, and the burst stays live-only.
 
-`KRF.PresentationStates` has two entry descriptors:
-
-| Descriptor | One instance per | Starts when | Retires when |
-| --- | --- | --- | --- |
-| `Tag.Active` | Definition, ActorView and Tag ID | `ActorView:GetTags():GetTag(id)` returns a snapshot | The Tag is no longer present |
-| `Action.Active` | Definition, ActorView and activation `sequenceId` | An activation with that Action ID is in `GetActiveActions()` | That activation is no longer active |
-
-A Tag is aggregate Actor state, so a stack or refresh keeps the same aura. Two simultaneous activations of the same Action are separate activations, so each gets its own instance. You never write a sequence ID yourself. `Resource.Current` and `Actor.Model` are [Watch](#watch-current-state)-only descriptors, and using one as an entry fails startup with `PresentationEntryStateInvalid`.
+`KRF.PresentationStates.Tag.Active` keeps one instance per definition, ActorView and Tag ID. A Tag is aggregate Actor state, so a stack or refresh keeps the same aura. `Action.Active` keeps one instance per activation instead, so two simultaneous activations of the same Action each get their own. You never write a sequence ID yourself. The other two descriptors, `Resource.Current` and `Actor.Model`, only work with [Watch](#watch-current-state). See [PresentationStates](./api#presentationstates).
 
 An Action state entry works the same way for each active activation. This loop runs for as long as each `Sword.Charge` activation is active, including one that was already running when the player joined:
 
@@ -174,12 +149,7 @@ local ChargeLoop: KRF.PresentationDefinition = {
 
 KRF retires each loop when its own activation ends or is interrupted, so the definition needs no `Action.Ended` listener. Another concurrent `Sword.Charge` activation gets a separate loop.
 
-A state entry describes a current fact, not a past notification. Its `ctx.entry` is one of these frozen records:
-
-| `kind` | Entry fields |
-| --- | --- |
-| `Tag` | `source = "State"`, `actor: ActorView`, `tagId: string`, `tag: ActiveTagSnapshot` |
-| `Action` | `source = "State"`, `actor: ActorView`, `action: ActionSnapshot` with `actionId` and `sequenceId` |
+A state entry describes a current fact, not a past notification. Its `ctx.entry` has `source == "State"` and a `kind` of `"Tag"` or `"Action"`. A Tag state entry carries the `ActiveTagSnapshot` that was present when the instance started, and an Action state entry carries its activation's `ActionSnapshot`. See [State entry records](./api#state-entry-records).
 
 An `ActionSnapshot` carries only the Action ID and sequence ID. KRF does not know an activation's phase, start time or elapsed playback, so a loop restored after a late join starts from the beginning of your visual. A Tag state entry's `ctx:On(Events.Tag.Removed, callback)` matches its own Tag ID, and an Action state entry's no-ID Action listeners and Action Watch match its own activation.
 
@@ -201,36 +171,21 @@ A Model change alone never retires a state instance, since the Tag or Action is 
 
 ## Own the visual's lifetime
 
-| Context member | Behavior |
-| --- | --- |
-| `ctx.entry` | The immutable entry: the initial live observation, or the current-state fact for a state entry |
-| `ctx.actor` | The original ActorView, if present. A later view with the same ID is a different origin. |
-| `ctx:Own(cleanup)` | Register a non-yielding cleanup function. Registration after retirement invokes the cleanup immediately. |
-| `ctx:Finish()` | Retire this instance once and schedule its registered cleanup. The underlying gameplay is unaffected. |
-| `ctx:IsActive()` | True from acceptance until explicit finish, Actor retirement, runtime shutdown or, for a state entry, the state becoming absent |
-| `ctx:On(event, [id or scope,] callback)` | Subscribe to future observations; this instance owns the returned Connection. |
-| `ctx:Watch(state, [id,] callback)` | Receive the current state now and its later changes; this instance owns the returned Connection. See [Watch current state](#watch-current-state). |
+Everything an instance owns hangs off its context. Register cleanup with `ctx:Own`, end the instance early with `ctx:Finish()`, and ask `ctx:IsActive()` whether it is still running. `ctx.actor` is the original ActorView, and a later view with the same Actor ID counts as a different origin. Finishing an instance retires only the visual, never the gameplay behind it. See [PresentationContext](./api#presentationcontext).
 
 Cleanup runs in reverse registration order after the context becomes inactive. A failing or yielding cleanup is diagnosed, and remaining cleanups still run. Losing the Model alone leaves the instance active. Actor-less instances stay active until they finish or the runtime shuts down.
 
 `create(ctx)` runs outside upstream Input and Networking callbacks and may yield. After a yield, check `IsActive()` before doing more asynchronous visual work. KRF owns the cleanup you register. Arrange cancellation for tasks you start separately and use `Own` for any visual objects you need to release. The return value of `create` is ignored.
 
-Startup requires no assets. If an effect needs an asset, its author code can handle missing or slow assets locally. Constructor errors retire only that instance. KRF caps active instances per client and diagnoses refused occurrences when the cap is reached.
+Startup requires no assets. If an effect needs an asset, its author code can handle missing or slow assets locally. Constructor errors retire only that instance. KRF caps active instances per client and diagnoses refused occurrences when the cap is reached. See [Limits](./api#limits) and [Runtime diagnostics](./api#runtime-diagnostics).
 
 ## Observe events during an instance
 
-Use `ctx:On` inside `create` to evolve an effect after its entry. All nine `PresentationEvents` descriptors work here. The returned KRF Connection supports idempotent `:Disconnect()`. You can disconnect early, or drop the handle and let the instance release it automatically. There is no need to register it with `Own`.
+Use `ctx:On` inside `create` to evolve an effect after its entry. All nine `PresentationEvents` descriptors work here. The instance owns the returned Connection, so you can disconnect it early or just let the instance release it.
 
-| Form | Matching scope |
-| --- | --- |
-| `ctx:On(event, callback)` | Original source identity. Action listeners use the instance's associated activation; Tag, Resource and Hint listeners require an entry from the same family. |
-| `ctx:On(event, "ExactId", callback)` | Exact source ID on the original ActorView. Action IDs match across activations. An Actor-less Hint origin matches Actor-less Hints. |
-| `ctx:On(event, { id = "ExactId", actor = otherView }, callback)` | Exact source ID on that ActorView identity. A different Actor never inherits the original activation. |
-| `ctx:On(Events.Hint.Received, { id = "ExactId", scope = "Any" }, callback)` | Matching Hints with any Actor association, including Actor-less receipts. Only Hints support this scope. |
+With no ID, a listener follows the origin itself. An Action listener matches the instance's own activation, and a Tag, Resource or Hint listener matches the entry's own source ID. Pass an exact ID to listen to another source on the same ActorView, or a scope record such as `{ id = "Burning", actor = otherView }` to listen on a different Actor. Hints also accept `{ id = "Sword.Impact", scope = "Any" }` for receipts with any Actor association. A call that cannot be scoped raises a Presentation misuse error and never falls back to all Actors. See [On](./api#on) and [Misuse errors](./api#misuse-errors).
 
-IDs are nonempty strings. Scope records require an explicit ID. An Actor-based listener needs an available original Actor or an explicit ActorView override. Missing origin identity and malformed calls raise a Presentation misuse error; they never select all Actors. `On` on an inactive context returns an inert Connection without validating or subscribing. Each instance allows up to 64 simultaneous subscriptions; disconnecting frees a slot. Exceeding the limit raises a Presentation error without evicting existing listeners.
-
-Each descriptor accepts a source-specific callback: `KRF.ActionEntryEvent`, `KRF.TagEntryEvent`, `KRF.ResourceEntryEvent` or `KRF.HintEntryEvent`, with the fields shown above. Annotate the callback parameter for reliable field checking and autocomplete. The pinned Luau checker does not infer callback parameters from overloaded methods, as tracked in [Luau #3045](https://github.com/luau-lang/luau/issues/3045). Incompatible annotated callbacks are rejected. The outer record is frozen. Hint payloads retain their existing game-authored semantics. Resource follow-ups preserve `change.source`, including real `Baseline` notifications, while Resource entries still admit only `Commit` changes.
+Annotate each callback parameter with its entry type, such as `KRF.TagEntryEvent`, for reliable field checking and autocomplete. The pinned Luau checker does not infer callback parameters from overloaded methods, as tracked in [Luau #3045](https://github.com/luau-lang/luau/issues/3045).
 
 For example, a charging visual can change color on an Actor's Tag, react to a targeted Hint, and finish on its own Action's end or interruption:
 
@@ -289,7 +244,7 @@ The Tag is aggregate Actor state, and a targeted Hint only identifies its Actor 
 
 Connections install synchronously in `On`. Events from before registration are not replayed, including events missed while `create` yielded. To start from what is true right now, use a [state entry](#keep-an-aura-while-a-tag-is-active) or [`ctx:Watch`](#watch-current-state). Authored callbacks run after source publication returns and may yield without holding up that publication. Cross-source ordering and callback completion order are not guaranteed.
 
-Finish, origin Actor retirement, runtime teardown and authored failures make the instance inactive and disconnect its subscriptions before owned cleanup runs. Retiring an explicitly observed other Actor disconnects only listeners scoped to that view. Losing a Model alone does not retire an Actor. An equal-ID replacement view never inherits the old subscriptions.
+Finish, origin Actor retirement, runtime teardown and authored failures make the instance inactive and disconnect its subscriptions before owned cleanup runs. An equal-ID replacement view never inherits the old subscriptions.
 
 Queued callbacks check connection and instance state immediately before invocation. A callback that has already started can continue after a yield, even if it was disconnected or the instance finished meanwhile. Check `ctx:IsActive()` before continuing asynchronous visual work, and own the resources you create. Callback errors retire the affected instance and diagnose its definition and event without interrupting other instances or core gameplay. This scheduling isolates publication paths; it does not limit the CPU that running game code can consume.
 
@@ -297,12 +252,7 @@ Queued callbacks check connection and instance state immediately before invocati
 
 `ctx:On` only hears about changes after you subscribe. When your effect needs to start from what is true now, use `ctx:Watch`. It calls back once with the current state, then again whenever that state meaningfully changes. Like `On`, it never synthesizes a past event.
 
-| Form | Callback receives |
-| --- | --- |
-| `ctx:Watch(States.Tag.Active, "Burning", callback)` | `ActiveTagSnapshot?`, `nil` while the Tag is absent |
-| `ctx:Watch(States.Action.Active, callback)` | `ActionSnapshot?` for the instance's own activation, `nil` once it is inactive |
-| `ctx:Watch(States.Resource.Current, "Mana", callback)` | `ResourceSnapshot?`, `nil` while the Resource is absent |
-| `ctx:Watch(States.Actor.Model, callback)` | `Model?` of the original ActorView, `nil` while unbound |
+Watch has four forms: a Tag or Resource by ID, the instance's own Action activation, and the Actor's Model. Each callback receives the current value, or `nil` while it is absent. See [Watch](./api#watch).
 
 For example, a charge visual can brighten as its Actor's Mana fills:
 
@@ -314,7 +264,7 @@ ctx:Watch(KRF.PresentationStates.Resource.Current, "Mana", function(mana: KRF.Re
 end)
 ```
 
-Watch always observes the original ActorView. It works on any instance that has one, including live event entries, and raises a Presentation misuse error on an Actor-less Hint instance. The Action form needs the instance's own activation, so it works only for Action entries. Malformed calls, unknown descriptors and empty IDs raise the same kind of error. As with `On`, an inactive context returns an inert Connection and the instance shares its 64 subscription slots between `On` and `Watch`.
+Watch always observes the original ActorView. It works on any instance that has one, including live event entries, but not on an Actor-less Hint instance. The Action form needs the instance's own activation, so it works only for Action entries. `On` and `Watch` share the instance's subscription slots.
 
 Callbacks run after the change publishes and may yield. KRF reads the state again right before each callback, so several quick changes can collapse into one callback with the latest value. Watch is not an event log. A newer callback can start while an earlier one is still yielding, so check `ctx:IsActive()` before continuing asynchronous work. A callback error retires the instance.
 
