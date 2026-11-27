@@ -1,6 +1,6 @@
 # Presentation
 
-Presentation is how a client shows gameplay: a cast flash, a hit spark, a burning aura, a sound, a character animation. A Presentation definition starts your visual code when an Action, Tag, Resource or Hint event reaches the client, or while a Tag or Action is active, and KRF runs the cleanup the visual registers. It runs only on clients and never changes gameplay.
+Presentation is how a client shows gameplay: a cast flash, a hit spark, a burning aura, a sound, a character animation, and the content those need fetched early. A Presentation definition starts your visual code when an Action, Tag, Resource or Hint event reaches the client, or while a Tag or Action is active, and KRF runs the cleanup the visual registers. It runs only on clients and never changes gameplay.
 
 ## Check whether it should be a Presentation
 
@@ -10,6 +10,7 @@ Presentation is how a client shows gameplay: a cast flash, a hit spark, a burnin
 | Lasts while a state is true, such as a burning aura or a channel loop, and must also appear for players who join later | A Presentation with a [state entry](#keep-a-visual-while-a-state-is-true) |
 | Is the caster's own cast, which should start the moment they press | A predicted Presentation. See [Predict every Action players start](#predict-every-action-players-start) |
 | Plays a character animation, on its own or as part of another visual | `KRF.Animations.Play`, inside a Presentation or any LocalScript. See [Play animations with KRF.Animations](#play-animations-with-krfanimations) |
+| Should look complete on its first use, so its animation, sound or textures should download beforehand | `KRF.Assets.Preload` when the player reaches the encounter. See [Fetch assets early with KRF.Assets](#fetch-assets-early-with-krfassets) |
 | Is UI that draws current values, such as a Mana bar or a nameplate | The ActorView directly. See [client-views.md](client-views.md) |
 | Depends on something only the server knows, such as where a hit landed | A [Hint](hints.md), shown by a Presentation on `Hint.Received` |
 
@@ -156,6 +157,44 @@ local FireballCastAnimation: KRF.PresentationDefinition = {
 
 See [Play a character animation](docs/presentation/guide.md#play-a-character-animation) and the [Animations API](docs/presentation/api.md#animations) for every option, failure reason and limit.
 
+## Fetch assets early with KRF.Assets
+
+The first cast of an effect can look bare while Roblox is still downloading its animation, sound or textures. `KRF.Assets.Preload(items, onComplete?)` asks Roblox's `ContentProvider:PreloadAsync` to fetch content the game picks, at a moment the game picks, such as entering an arena or equipping a staff. It works in any LocalScript or Presentation, with or without `KRF.Client.Init`, and nothing ever waits for it:
+
+```lua
+local function prepareFireball(effects: Folder): ()
+	local accepted: boolean, reason: string? = KRF.Assets.Preload({
+		{ kind = "Animation", assetId = "rbxassetid://123456" },
+		{ kind = "Sound", assetId = "rbxassetid://654321" },
+		effects,
+	}, function(report: KRF.PreloadReport): ()
+		if report.error ~= nil then
+			warn("Fireball preload stopped:", report.error)
+		end
+
+		for contentId: string, status: Enum.AssetFetchStatus in report.statuses do
+			if status ~= Enum.AssetFetchStatus.Success then
+				warn("Fireball content not fetched:", contentId, status.Name)
+			end
+		end
+	end)
+
+	if not accepted then
+		warn("Fireball preload refused:", reason)
+	end
+end
+```
+
+- Call it explicitly for a specific encounter, area or item. Never preload all of Workspace, ReplicatedStorage or every Presentation, and never preload every frame. A selection over 2048 Instances fetches nothing and reports `PreloadDescendantLimit`.
+- Pass Instances the effect uses, or a Folder or Model of effect templates. KRF walks each item and its descendants and passes only content classes: Animation, Sound, ParticleEmitter, Beam, Trail, Decal, Texture, MeshPart, SpecialMesh, ImageLabel, ImageButton and Sky. It never clones, moves, changes or destroys them, so keep them in place until `onComplete` runs. Pass a Folder itself rather than its `GetChildren()`, which can exceed the 64-item limit.
+- Use a `{ kind = "Animation" | "Sound", assetId = "rbxassetid://..." }` descriptor when there is only an ID. Never pass a bare ID string; it is refused. For a texture, put an Instance that uses it in the templates Folder.
+- `true` only means the request was accepted. Never make an Action, a Presentation, input or `KRF.Client.Init` wait for `onComplete`: it can arrive late, and never arrives if Roblox's call never returns. Visual code must still work when an asset hasn't loaded.
+- Read `report.statuses` per content ID. `Success` means Roblox fetched it then, not that it stays in memory or is the right asset type. `Failure` and `TimedOut` are separate, `None` and `Loading` count as not fetched, and an empty map doesn't mean anything loaded. `report.error` is set only when the request stopped early, never for an ordinary failed fetch. KRF never retries.
+- At most 8 requests run at once. A ninth returns `false, "PreloadBusy"` and is not queued; try again later or skip it.
+- SurfaceAppearance and MaterialVariant can't be preloaded and are skipped. Preloading an Animation doesn't load a track; `KRF.Animations.Play` still does that. KRF has no effect pool or pre-spawning; don't invent one.
+
+See [Fetch an encounter's assets early](docs/presentation/guide.md#fetch-an-encounters-assets-early) and the [Assets API](docs/presentation/api.md#assets) for every item form, status, refusal reason and limit.
+
 ## Predict every Action players start
 
 When a player presses Fireball, the request travels to the server, the server starts the Action, and only then does `Action.Started` come back. At 150 ms of ping the delay is obvious. A predicted Presentation starts the cast on the caster's own client as soon as the request is sent, and KRF reconciles it with the server's answer. Other players and NPCs still see the normal entry, and the same definition serves both.
@@ -252,8 +291,8 @@ To show a predicted cast's hits on its target before the server's Hint arrives, 
 
 ## Exact APIs
 
-- [Presentation guide](docs/presentation/guide.md): entries, ownership, animations, `On`, `Watch`, prediction and predicted hits in depth.
-- [Presentation API](docs/presentation/api.md): definition fields, entry records, every Watch form, prediction policies, `PredictHint` results, `Animations` options and failure reasons, limits and startup failures.
+- [Presentation guide](docs/presentation/guide.md): entries, ownership, animations, preloading, `On`, `Watch`, prediction and predicted hits in depth.
+- [Presentation API](docs/presentation/api.md): definition fields, entry records, every Watch form, prediction policies, `PredictHint` results, `Animations` options and failure reasons, `Assets` items, statuses and refusal reasons, limits and startup failures.
 
 ## Related references
 
