@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { KRF_RUNTIME, KRF_VERSIONS_BEFORE_PRESENTATION, SUPPORTED_KRF_VERSIONS, TOOLS_PACKAGE, TOOLS_VERSION } from "../compatibility.js";
+import {
+	KRF_RUNTIME,
+	KRF_VERSIONS_BEFORE_ACTION_PREDICTION,
+	KRF_VERSIONS_BEFORE_PRESENTATION,
+	SUPPORTED_KRF_VERSIONS,
+	TOOLS_PACKAGE,
+	TOOLS_VERSION,
+} from "../compatibility.js";
 import { KrfToolError } from "../errors.js";
 import { isIdentifier } from "./luau.js";
 
@@ -96,12 +103,19 @@ export function readKrfDependency(consumer) {
 	return { alias, version };
 }
 
-export function assertPresentationSupport(consumer, version) {
-	if (!KRF_VERSIONS_BEFORE_PRESENTATION.includes(version)) return;
+function runtimeIncludes(consumer, version, versionsBefore, file) {
+	if (!versionsBefore.includes(version)) return true;
 
 	// A checkout can be installed in Wally's package tree before its version is bumped.
-	const events = `Packages/_Index/kevmp_krf@${version}/krf/src/client/Presentation/PresentationEvents.luau`;
-	if (consumer.stat(events)?.isFile()) return;
+	return consumer.stat(`Packages/_Index/kevmp_krf@${version}/krf/${file}`)?.isFile() === true;
+}
+
+export function supportsActionPrediction(consumer, version) {
+	return runtimeIncludes(consumer, version, KRF_VERSIONS_BEFORE_ACTION_PREDICTION, "src/client/Presentation/ActionPredictionPolicyValidator.luau");
+}
+
+export function assertPresentationSupport(consumer, version) {
+	if (runtimeIncludes(consumer, version, KRF_VERSIONS_BEFORE_PRESENTATION, "src/client/Presentation/PresentationEvents.luau")) return;
 
 	throw new KrfToolError("PresentationRuntimeUnsupported", `KRF ${version} does not include Presentation.`, {
 		hint: "Install a KRF release with Presentation support and update wally.lock before running createPresentation.",

@@ -20,7 +20,7 @@ local function originId(entry: Types.PresentationEntry, family: string): string?
 		return entry.tagId
 	elseif entry.source == "Resource" and family == "Resource" then
 		return entry.change.resourceId
-	elseif entry.source == "Hint" and family == "Hint" then
+	elseif (entry.source == "Hint" or entry.source == "HintPrediction") and family == "Hint" then
 		return entry.hintId
 	end
 

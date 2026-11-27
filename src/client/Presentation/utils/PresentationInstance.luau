@@ -2,6 +2,7 @@
 local Types = require(script.Parent.Parent.types)
 local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.PrivateObservers)
 local Subscriptions = require(script.Parent.PresentationSubscriptions)
+local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 
 local PresentationInstance = {}
 
@@ -19,7 +20,8 @@ function PresentationInstance.New(
 	entry: Types.PresentationEntry,
 	environment: Types.PresentationSubscriptionEnvironment,
 	release: () -> (),
-	revalidate: (() -> boolean)?
+	revalidate: (() -> boolean)?,
+	prediction: Types.PresentationPredictionLink?
 ): Types.PresentationContext
 	local active: boolean = true
 	local onFinished: (() -> ())? = release
@@ -43,7 +45,14 @@ function PresentationInstance.New(
 			return active
 		end,
 		GetActionAssociation = function(): Types.PresentationActionAssociation?
-			return association
+			if entry.source == "HintPrediction" then
+				return nil
+			end
+
+			return if prediction ~= nil then prediction.GetAssociation() else association
+		end,
+		GetPrediction = function(): Types.PresentationPredictionLink?
+			return prediction
 		end,
 		Fail = function(observation: Types.PresentationEntry, reason: string): ()
 			context:Finish()
@@ -66,6 +75,36 @@ function PresentationInstance.New(
 		Watch = watch,
 		IsActive = function(_self: Types.PresentationContext): boolean
 			return active
+		end,
+		PredictHint = function(
+			_self: Types.PresentationContext,
+			hintId: string,
+			target: ActorTypes.ActorView?,
+			payload: any?
+		): (boolean, string?)
+			if type(hintId) ~= "string" or hintId == "" then
+				error(
+					("[Presentation] id=%s PredictHint: IdInvalid: expected a nonempty Hint id"):format(definition.id),
+					2
+				)
+			elseif target ~= nil and type(target) ~= "table" then
+				error(
+					("[Presentation] id=%s PredictHint: TargetInvalid: expected an ActorView or nil"):format(
+						definition.id
+					),
+					2
+				)
+			elseif not active then
+				return false, "InstanceInactive"
+			end
+
+			local link: Types.PresentationPredictionLink? = prediction
+
+			if link == nil or entry.source ~= "ActionPrediction" then
+				return false, "PredictionUnavailable"
+			end
+
+			return link.PredictHint(hintId, target, payload)
 		end,
 		Own = function(_self: Types.PresentationContext, cleanup: () -> ()): ()
 			assert(type(cleanup) == "function", "PresentationCleanupInvalid")

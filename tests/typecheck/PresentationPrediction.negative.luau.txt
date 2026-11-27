@@ -1,0 +1,47 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local States = require(KRF.client.Presentation.PresentationStates)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local ActorTypes = require(KRF.client.Actor.types)
+
+local _wrongTags: Types.ActionPredictionPolicy = {
+	requiredTags = "Status.Grounded", -- expect-error
+}
+
+local _wrongCallback: Types.ActionPredictionPolicy = {
+	canPredictStart = function(_ctx: Types.ActionPredictionCheckContext): string -- expect-error
+		return "yes"
+	end,
+}
+
+local _wrongPredict: Types.PresentationDefinition = {
+	id = "Cast",
+	entry = { event = Events.Action.Started, id = "Fireball" },
+	predict = "yes", -- expect-error
+	create = function(_ctx: Types.PresentationContext) end,
+}
+
+local _wrongHintPolicy: Types.HintPredictionPolicy = {
+	actorIdField = 1, -- expect-error
+	sequenceIdField = "sequenceId",
+}
+
+return function(ctx: Types.PresentationContext): ()
+	ctx:PredictHint(1) -- expect-error
+	ctx:PredictHint("Fireball.Impact", "Dummy") -- expect-error
+	local _wrongResult: string = ctx:PredictHint("Fireball.Impact") -- expect-error
+	ctx:Watch(States.Action.LocalPrediction, "Fireball", function(_snapshot: Types.LocalPredictionSnapshot) end) -- expect-error
+	ctx:Watch(States.Action.LocalPrediction, function(_snapshot: ActorTypes.ActionSnapshot?) end) -- expect-error
+	ctx:Watch(States.Action.LocalPrediction, function(snapshot: Types.LocalPredictionSnapshot)
+		local wrong: number = snapshot.startStatus -- expect-error
+		assert(wrong ~= nil)
+	end)
+	local entry: Types.PresentationEntry = ctx.entry
+
+	if entry.source == "ActionPrediction" then
+		local wrong: number = entry.originalStartKey -- expect-error
+		assert(wrong > 0)
+	end
+end

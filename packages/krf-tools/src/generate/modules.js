@@ -19,19 +19,27 @@ const tagApplications = (key, applications) =>
 		? []
 		: tableField(2, key, applications.map((entry) => (entry.duration === undefined ? luaString(entry.id) : `{ id = ${luaString(entry.id)}, duration = ${luaNumber(entry.duration)} }`)));
 
-function actionLines(options) {
+const START_RULES = Object.freeze(["requiredTags", "blockedTags", "resourceRequirements", "costs"]);
+
+function startRuleLines(depth, options) {
 	return [
-		...idField(2, "requiredTags", options.requiredTags),
-		...idField(2, "blockedTags", options.blockedTags),
-		...tagApplications("activeTags", options.activeTags),
-		...tagApplications("appliedTags", options.appliedTags),
-		...keyedField(2, "resourceRequirements", options.requirements.map((entry) => ({ key: entry.resource, value: entry.requirement })), (entry) => inline(entry.value)),
+		...idField(depth, "requiredTags", options.requiredTags),
+		...idField(depth, "blockedTags", options.blockedTags),
+		...keyedField(depth, "resourceRequirements", options.requirements.map((entry) => ({ key: entry.resource, value: entry.requirement })), (entry) => inline(entry.value)),
 		...keyedField(
-			2,
+			depth,
 			"costs",
 			options.costs.map((entry) => ({ key: entry.resource, value: entry.cost })),
 			(entry) => (Object.keys(entry.value).length === 1 && entry.value.amount !== undefined ? luaNumber(entry.value.amount) : inline(entry.value)),
 		),
+	];
+}
+
+function actionLines(options, requirements) {
+	return [
+		...(requirements === undefined ? startRuleLines(2, options) : START_RULES.map((field) => `		${field} = ${requirements.variable}.${field},`)),
+		...tagApplications("activeTags", options.activeTags),
+		...tagApplications("appliedTags", options.appliedTags),
 		...idField(2, "locks", options.locks),
 		...idField(2, "interruptibleBy", options.interruptibleBy),
 	];
@@ -39,11 +47,11 @@ function actionLines(options) {
 
 const numericSource = (source) => inline(source.value !== undefined ? { value: source.value } : { propertyName: source.propertyName });
 
-function listLines(request) {
+function listLines(request, requirements) {
 	const { options } = request;
 	switch (request.kind) {
 		case "action":
-			return actionLines(options);
+			return actionLines(options, requirements);
 		case "tag":
 			return keyedField(1, "properties", options.properties.map((entry) => ({ key: entry.property, value: entry.modifier })), (entry) => inline(entry.value));
 		case "controller":
@@ -75,11 +83,13 @@ function listLines(request) {
 	}
 }
 
-export function renderDefinition(request, alias) {
+export function renderDefinition(request, alias, { requirements, predict = false } = {}) {
 	return renderTemplate(`${TEMPLATES}${request.kind}.luau.ejs`, {
 		...request,
 		alias,
-		lists: listLines(request),
+		requirements,
+		predict,
+		lists: listLines(request, requirements),
 		snapshot: request.kind === "domain" ? defaultStateLines(2, request.options.stateFields) : [],
 		numericSource,
 		luaString,
@@ -96,8 +106,16 @@ export function mapEntryLines(key, value) {
 	return [`\t${luaKey(key)} = {`, ...value.map((line) => `\t\t${line}`), "\t},"];
 }
 
-export function renderMapModule(name, type, entry, alias) {
-	return renderTemplate(`${TEMPLATES}request.luau.ejs`, { name, type, entry, alias });
+export function renderMapModule(name, type, entry, alias, requires = []) {
+	return renderTemplate(`${TEMPLATES}request.luau.ejs`, { name, type, entry, alias, requires });
+}
+
+export function renderMapLoader(type, alias) {
+	return renderTemplate(`${TEMPLATES}map-loader.luau.ejs`, { type, alias });
+}
+
+export function renderRequirements(variable, options, alias) {
+	return renderTemplate(`${TEMPLATES}requirements.luau.ejs`, { variable, alias, lines: startRuleLines(1, options) });
 }
 
 const producerLines = (key, fields) => [

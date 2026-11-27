@@ -1,6 +1,9 @@
 export const REQUIRE_DESCENDANTS_FILE = "src/shared/RequireDescendants.luau";
 export const ACTION_REQUESTS_FOLDER = "src/shared/ActionRequests";
 export const ACTION_INPUT_POLICIES_FOLDER = "src/client/ActionInputPolicies";
+export const ACTION_REQUIREMENTS_FOLDER = "src/shared/ActionRequirements";
+export const ACTION_PREDICTION_POLICIES_FOLDER = "src/client/ActionPredictionPolicies";
+export const MERGE_DESCENDANTS_FILE = "src/shared/MergeDescendants.luau";
 export const LOADOUT_FILE = "src/client/Controls/Loadout.luau";
 export const KEYBINDS_FILE = "src/client/Controls/Keybinds.luau";
 
@@ -24,11 +27,11 @@ export const SERVER_STARTUP = Object.freeze({
 	fields: SERVER_START_FIELDS,
 });
 
-const CLIENT_STARTUP = Object.freeze({
+export const CLIENT_STARTUP = Object.freeze({
 	side: "Client",
 	source: "src/client",
 	file: "src/client/Startup.client.luau",
-	fields: Object.freeze(["actionRequestSchemas", "actionInputPolicies", "presentations"]),
+	fields: Object.freeze(["actionRequestSchemas", "actionInputPolicies", "actionPredictionPolicies", "presentations"]),
 });
 
 export const PRESENTATION_EVENTS = Object.freeze([

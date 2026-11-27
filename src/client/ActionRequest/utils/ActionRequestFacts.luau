@@ -5,6 +5,7 @@ local Observers = require(script.Parent.Parent.Parent.Parent.shared.Signal.Priva
 export type Fact = {
 	admission: Types.ActionRequestAdmission?,
 	outcome: Types.ActionRequestOutcome?,
+	payload: Types.ActionStartPayload?,
 	callback: (() -> ())?,
 	original: number,
 	ready: boolean,
@@ -18,6 +19,8 @@ export type Owner = {
 	AfterDrain: (() -> ()) -> (),
 	ObserveAdmissions: ((Types.ActionRequestAdmission) -> ()) -> () -> (),
 	ObserveOutcomes: ((Types.ActionRequestOutcome) -> ()) -> () -> (),
+	ObservePayloads: ((Types.ActionStartPayload) -> ()) -> () -> (),
+	HasPayloadObservers: () -> boolean,
 	Destroy: () -> (),
 }
 
@@ -29,6 +32,9 @@ function Facts.new(maximum: number?): Owner
 
 	local outcomes =
 		Observers.new(16, "ActionRequestObserverLimitExceeded") :: Observers.Registry<(Types.ActionRequestOutcome) -> ()>
+
+	local payloads =
+		Observers.new(16, "ActionRequestObserverLimitExceeded") :: Observers.Registry<(Types.ActionStartPayload) -> ()>
 
 	local queue: { Fact } = {}
 	local draining: boolean = false
@@ -55,6 +61,13 @@ function Facts.new(maximum: number?): Owner
 
 			if fact.admission ~= nil then
 				notify(admissions, fact.admission)
+
+				local payload: Types.ActionStartPayload? = fact.payload
+
+				if payload ~= nil then
+					fact.payload = nil
+					notify(payloads, payload)
+				end
 			elseif fact.outcome ~= nil then
 				notify(outcomes, fact.outcome)
 			else
@@ -117,12 +130,19 @@ function Facts.new(maximum: number?): Owner
 		ObserveOutcomes = function(observer): () -> ()
 			return if destroyed then function() end else outcomes.Add(observer)
 		end,
+		ObservePayloads = function(observer): () -> ()
+			return if destroyed then function() end else payloads.Add(observer)
+		end,
+		HasPayloadObservers = function(): boolean
+			return not destroyed and #payloads.Snapshot() > 0
+		end,
 		Destroy = function(): ()
 			destroyed = true
 			table.clear(queue)
 			table.clear(afterDrain)
 			admissions.Destroy()
 			outcomes.Destroy()
+			payloads.Destroy()
 		end,
 	}
 end

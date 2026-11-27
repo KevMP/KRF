@@ -1,0 +1,24 @@
+{
+  "name": "KRF-Presentation-Prediction-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "../../../src" } },
+      "PredictionShared": {
+        "$className": "Folder",
+        "FireballRequirements": { "$path": "../../integration/PresentationPrediction/FireballRequirements.luau" },
+        "Schemas": { "$path": "../../integration/PresentationPrediction/Schemas.luau" }
+      },
+      "PredictionReport": { "$className": "RemoteEvent" },
+      "PredictionProbe": { "$className": "RemoteFunction" }
+    },
+    "ServerScriptService": {
+      "PredictionServer": { "$path": "../../integration/PresentationPrediction/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "PredictionClient": { "$path": "../../integration/PresentationPrediction/Client.client.luau" }
+      }
+    }
+  }
+}

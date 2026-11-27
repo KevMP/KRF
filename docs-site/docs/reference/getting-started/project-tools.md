@@ -84,7 +84,7 @@ Without `--yes`, a terminal wizard asks for missing choices. Noninteractive and 
 npm run createPresentation -- --name SwingHighlight --event Action.Started --source-id Sword.Swing --yes
 ```
 
-Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--event` defaults to `Action.Started`. On first use the generator wires the Presentation catalog into client startup. Open the generated ModuleScript and replace its `create` stub with your visual code. The [Presentation guide](../presentation/guide) shows how to own a visual's cleanup, and the [Presentation API](../presentation/api#presentationevents) lists every entry event.
+Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--event` defaults to `Action.Started`. On first use the generator wires the Presentation catalog into client startup. An `Action.Started` entry whose Action was generated with `--requestable` gets `predict = true`, so it also starts on the caster's client before the server answers; pass `--no-predict` to leave it out. Open the generated ModuleScript and replace its `create` stub with your visual code. The [Presentation guide](../presentation/guide) shows how to own a visual's cleanup, and the [Presentation API](../presentation/api#presentationevents) lists every entry event.
 
 ### Action recipes and client requests
 
@@ -95,7 +95,7 @@ Pass `--source-id` to select the exact Action, Tag, Resource or Hint ID. `--even
 | `held` | Ends when `onStopRequested` runs; requestable form uses WhileDown |
 | `toggle` | Ends when `onStopRequested` runs; requestable form uses Toggle |
 
-Recipes generate callbacks, not runtime Action kinds. `--requestable` also creates a shared request entry and, where needed, a client input policy. `--start-field` and `--stop-field` declare payload fields with syntax such as `--start-field "Strength:F32"` or `--stop-field "Direction:Array(F32,3)"`. Generated parameter producers initially return schema-valid placeholder values; replace them with the player's intended data.
+Recipes generate callbacks, not runtime Action kinds. `--requestable` also creates a shared request entry, a client input policy where needed, and the Action's start rules in `src/shared/ActionRequirements/<Name>.luau`. The server definition reads its Tag gates, Resource requirements and costs from that module, and a generated client prediction policy in `src/client/ActionPredictionPolicies/<Name>.luau` passes the same module, so the two never disagree. The first such Action also adds that folder's loader to client startup. Edit gates and prices only there. On a KRF version older than Action prediction, the rules stay inline. `--start-field` and `--stop-field` declare payload fields with syntax such as `--start-field "Strength:F32"` or `--stop-field "Direction:Array(F32,3)"`. Generated parameter producers initially return schema-valid placeholder values; replace them with the player's intended data.
 
 `--client-stop`, `--allow-input-interrupt` and `--on-disconnect` customize the wire contract where the recipe allows it. Held requests require release and disconnect interruption. Requestable Actions default to ClientVisible, but visibility is independent of request permission and can remain ServerOnly.
 

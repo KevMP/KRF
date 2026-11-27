@@ -1,6 +1,7 @@
 --!strict
 local Types = require(script.Parent.Parent.types)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
+local ActionRequestTypes = require(script.Parent.Parent.Parent.Parent.shared.ActionRequest.types)
 local Facts = require(script.Parent.ActionRequestFacts)
 
 export type Owner = {
@@ -10,7 +11,9 @@ export type Owner = {
 		any,
 		(number) -> Types.ActionRequestAdmission,
 		(number) -> (),
-		((Types.ActionRequestAdmission) -> ())?
+		((Types.ActionRequestAdmission) -> ())?,
+		ActionRequestTypes.CompiledActionPayload?,
+		string?
 	) -> (number?, string?),
 	Stage: (Facts.Fact) -> (),
 	AfterObservations: (() -> ()) -> (),
@@ -35,7 +38,9 @@ function Dispatch.new(commands: Types.ActionRequestCommandPort, facts: Facts.Own
 		request: any,
 		admit: (number) -> Types.ActionRequestAdmission,
 		rollback: (number) -> (),
-		committed: ((Types.ActionRequestAdmission) -> ())?
+		committed: ((Types.ActionRequestAdmission) -> ())?,
+		payload: ActionRequestTypes.CompiledActionPayload?,
+		encoded: string?
 	): (number?, string?)
 		local admitted: Types.ActionRequestAdmission? = nil
 		local fact: Facts.Fact? = nil
@@ -49,6 +54,10 @@ function Dispatch.new(commands: Types.ActionRequestCommandPort, facts: Facts.Own
 
 				local staged: Facts.Fact =
 					{ admission = reserved, original = reserved.originalStartRequestId, ready = false }
+
+				if payload ~= nil and encoded ~= nil and facts.HasPayloadObservers() then
+					staged.payload = table.freeze({ admission = reserved, payload = payload, encoded = encoded })
+				end
 
 				admitted, fact = reserved, staged
 				facts.Stage(staged)

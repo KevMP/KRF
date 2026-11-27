@@ -13,6 +13,8 @@ const STARTUP = "src/server/Startup.server.luau";
 const CLIENT_STARTUP = "src/client/Startup.client.luau";
 const REQUESTS = "src/shared/ActionRequests";
 const POLICIES = "src/client/ActionInputPolicies";
+const REQUIREMENTS = "src/shared/ActionRequirements";
+const PREDICTIONS = "src/client/ActionPredictionPolicies";
 
 const EVERY_KIND = [
 	["tag", "--name", "Stunned", "--duration", "2"],
@@ -41,6 +43,12 @@ function installLocalPresentationRuntime(root) {
 	const folder = path.join(root, "Packages", "_Index", `kevmp_krf@${KRF_RUNTIME.version}`, "krf", "src", "client", "Presentation");
 	fs.mkdirSync(folder, { recursive: true });
 	fs.copyFileSync(new URL("../../../src/client/Presentation/PresentationEvents.luau", import.meta.url), path.join(folder, "PresentationEvents.luau"));
+}
+
+function installLocalPredictionRuntime(root) {
+	installLocalPresentationRuntime(root);
+	const folder = path.join(root, "Packages", "_Index", `kevmp_krf@${KRF_RUNTIME.version}`, "krf", "src", "client", "Presentation");
+	fs.copyFileSync(new URL("../../../src/client/Presentation/ActionPredictionPolicyValidator.luau", import.meta.url), path.join(folder, "ActionPredictionPolicyValidator.luau"));
 }
 
 function readTree(root) {
@@ -332,6 +340,169 @@ test("a toggle Action stops on the next press, without requiring a release", asy
 	assert.match(tree[`${REQUESTS}/Ward.luau`], /\t\t\},\n\t\tallowInputInterrupt = true,\n\t\tonDisconnect = "Interrupt",\n\t\},/);
 	assert.doesNotMatch(tree[`${REQUESTS}/Ward.luau`], /requiresClientRelease/);
 	assert.match(tree[`${POLICIES}/Ward.luau`], /\t\tactivation = "Toggle",\n\t\tstopParameters = function/);
+});
+
+test("--requestable keeps the start rules in one shared module that the definition and the client prediction policy both read", async (t) => {
+	const root = newProject(t);
+	installLocalPredictionRuntime(root);
+	const before = readTree(root);
+	const result = await generate(root, [
+		"action",
+		"--name",
+		"Fireball",
+		"--requestable",
+		"--blocked-tag",
+		"Stunned",
+		"--requirement",
+		"Energy:min=30",
+		"--cost",
+		"Energy=20",
+		"--active-tag",
+		"Focused",
+		"--yes",
+	]);
+	assert.equal(result.code, 0, result.stderr);
+
+	const tree = readTree(root);
+	assert.deepEqual(changedFiles(before, tree), [
+		`${PREDICTIONS}/Fireball.luau`,
+		`${PREDICTIONS}/init.luau`,
+		CLIENT_STARTUP,
+		"src/server/Actions/Fireball.luau",
+		`${REQUESTS}/Fireball.luau`,
+		`${REQUIREMENTS}/Fireball.luau`,
+	]);
+	assert.equal(
+		tree[`${REQUIREMENTS}/Fireball.luau`],
+		`--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.KRF)
+
+local FireballRequirements: KRF.ActionPredictionPolicy = {
+	blockedTags = { "Stunned" },
+	resourceRequirements = { Energy = { min = 30 } },
+	costs = { Energy = 20 },
+}
+
+return FireballRequirements
+`,
+	);
+	assert.equal(
+		tree["src/server/Actions/Fireball.luau"],
+		`--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local FireballRequirements = require(ReplicatedStorage.Shared.ActionRequirements.Fireball)
+
+function Fireball(): KRF.ActionDefinition
+	return {
+		id = "Fireball",
+		visibility = "ClientVisible",
+		requiredTags = FireballRequirements.requiredTags,
+		blockedTags = FireballRequirements.blockedTags,
+		resourceRequirements = FireballRequirements.resourceRequirements,
+		costs = FireballRequirements.costs,
+		activeTags = { "Focused" },
+		onStart = function(context: KRF.ActionExecutionContext): ()
+			context:End()
+		end,
+	}
+end
+
+return Fireball
+`,
+	);
+	assert.equal(
+		tree[`${PREDICTIONS}/Fireball.luau`],
+		`--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.KRF)
+local FireballRequirements = require(ReplicatedStorage.Shared.ActionRequirements.Fireball)
+
+local Fireball: KRF.ActionPredictionPolicies = {
+	Fireball = FireballRequirements,
+}
+
+return Fireball
+`,
+	);
+	assert.equal(tree[`${PREDICTIONS}/init.luau`], tree[`${POLICIES}/init.luau`].replace("policies: KRF.ActionInputPolicies", "entries: KRF.ActionPredictionPolicies").replace("return policies", "return entries"));
+	assert.match(tree[CLIENT_STARTUP], /^local ActionInputPolicies = require\(script\.Parent\.ActionInputPolicies\)\nlocal ActionPredictionPolicies = require\(script\.Parent\.ActionPredictionPolicies\)$/m);
+	assert.match(tree[CLIENT_STARTUP], /\tactionInputPolicies = ActionInputPolicies,\n\tactionPredictionPolicies = ActionPredictionPolicies,\n\}\)/);
+	assert.match(result.stdout, /Fireball's Tag gates, Resource requirements and costs live in src\/shared\/ActionRequirements\/Fireball\.luau\./);
+
+	const startupBefore = tree[CLIENT_STARTUP];
+	const second = await generate(root, ["action", "--name", "Blink", "--requestable", "--yes"]);
+	assert.equal(second.code, 0, second.stderr);
+	assert.deepEqual(changedFiles(tree, readTree(root)), [`${PREDICTIONS}/Blink.luau`, "src/server/Actions/Blink.luau", `${REQUESTS}/Blink.luau`, `${REQUIREMENTS}/Blink.luau`]);
+	assert.equal(readTree(root)[CLIENT_STARTUP], startupBefore);
+	assert.match(readTree(root)[`${REQUIREMENTS}/Blink.luau`], /^local BlinkRequirements: KRF\.ActionPredictionPolicy = \{\}$/m);
+
+	const serverOnly = await generate(root, ["action", "--name", "Meteor", "--cost", "Energy=50", "--yes"]);
+	assert.equal(serverOnly.code, 0, serverOnly.stderr);
+	assert.match(readTree(root)["src/server/Actions/Meteor.luau"], /\t\tcosts = \{ Energy = 50 \},/);
+	assert.equal(fs.existsSync(path.join(root, REQUIREMENTS, "Meteor.luau")), false);
+	assert.equal(fs.existsSync(path.join(root, PREDICTIONS, "Meteor.luau")), false);
+});
+
+test("a runtime without Action prediction keeps a requestable Action's start rules inline and writes no prediction policy", async (t) => {
+	const root = newProject(t);
+	const result = await generate(root, ["action", "--name", "Fireball", "--requestable", "--cost", "Energy=20", "--yes"]);
+	assert.equal(result.code, 0, result.stderr);
+
+	const tree = readTree(root);
+	assert.match(tree["src/server/Actions/Fireball.luau"], /\t\tcosts = \{ Energy = 20 \},/);
+	assert.doesNotMatch(tree["src/server/Actions/Fireball.luau"], /Requirements/);
+	assert.equal(Object.keys(tree).some((file) => file.startsWith(`${REQUIREMENTS}/`) || file.startsWith(`${PREDICTIONS}/`)), false);
+	assert.doesNotMatch(tree[CLIENT_STARTUP], /actionPredictionPolicies/);
+	assert.doesNotMatch(result.stdout, /ActionRequirements/);
+});
+
+test("a customized client startup gets the prediction policy entry as manual wiring instead of an edit", async (t) => {
+	const root = newProject(t);
+	installLocalPredictionRuntime(root);
+	const customized = readTree(root)[CLIENT_STARTUP].replace("KRF.Client.Init({", "KRF.Client.Init(table.freeze({").replace("\n})\n", "\n}))\n");
+	fs.writeFileSync(path.join(root, CLIENT_STARTUP), customized);
+
+	const result = await generate(root, ["action", "--name", "Fireball", "--requestable", "--yes", "--json"]);
+	assert.equal(result.code, 5);
+	assert.equal(result.json.status, "manual-wiring-required");
+	assert.equal(fs.readFileSync(path.join(root, CLIENT_STARTUP), "utf8"), customized);
+	assert.equal(fs.existsSync(path.join(root, PREDICTIONS)), false);
+	assert.deepEqual(result.json.manual, [
+		{
+			file: PREDICTIONS,
+			instruction: "Add this entry to the ActionPredictionPolicies your project passes to KRF.",
+			lines: ["local FireballRequirements = require(ReplicatedStorage.Shared.ActionRequirements.Fireball)", "\tFireball = FireballRequirements,"],
+		},
+	]);
+});
+
+test("createPresentation predicts an Action.Started entry when its Action has a prediction policy, unless --no-predict", async (t) => {
+	const root = newProject(t);
+	installLocalPredictionRuntime(root);
+	await generate(root, ["action", "--name", "Fireball", "--requestable", "--yes"]);
+	await generate(root, ["action", "--name", "Meteor", "--yes"]);
+
+	const predicted = await generate(root, ["presentation", "--name", "FireballCast", "--source-id", "Fireball", "--yes"]);
+	assert.equal(predicted.code, 0, predicted.stderr);
+	assert.match(predicted.stdout, /FireballCast is predicted, so create also runs on the caster's client/);
+
+	const ended = await generate(root, ["presentation", "--name", "FireballEnd", "--event", "Action.Ended", "--source-id", "Fireball", "--yes"]);
+	const optedOut = await generate(root, ["presentation", "--name", "FireballPlain", "--source-id", "Fireball", "--no-predict", "--yes"]);
+	const unpredicted = await generate(root, ["presentation", "--name", "MeteorCast", "--source-id", "Meteor", "--yes"]);
+	for (const result of [ended, optedOut, unpredicted]) assert.equal(result.code, 0, result.stderr);
+
+	const tree = readTree(root);
+	assert.match(tree["src/client/Presentations/FireballCast.luau"], /\tentry = \{ event = KRF\.PresentationEvents\.Action\.Started, id = "Fireball" \},\n\tpredict = true,\n\tcreate/);
+	for (const name of ["FireballEnd", "FireballPlain", "MeteorCast"]) {
+		assert.doesNotMatch(tree[`src/client/Presentations/${name}.luau`], /predict/, name);
+	}
+	assert.doesNotMatch(unpredicted.stdout, /is predicted/);
+	assert.match(tree[CLIENT_STARTUP], /\tactionPredictionPolicies = ActionPredictionPolicies,\n\tpresentations = Presentations,\n\}\)/);
 });
 
 test("an Action whose request another module already declares gets a warning instead of a second declaration", async (t) => {

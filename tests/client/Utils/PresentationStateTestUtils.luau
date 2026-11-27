@@ -119,9 +119,15 @@ function TestUtils.commit(domain: ActorTypes.DomainViewOwner, state: { [any]: an
 	domain:NotifyChanged(table.freeze({ previous = previous, current = current, source = "Commit" :: "Commit" }))
 end
 
-function TestUtils.install(definitions: { any }, readiness: Readiness?): ()
-	local catalog: Types.PresentationCatalog = assert(Registry.Prepare(definitions))
-	shutdown = assert(Runtime.Install(catalog, if readiness ~= nil then readiness.source else nil))
+function TestUtils.install(
+	definitions: { any },
+	readiness: Readiness?,
+	policies: Types.ActionPredictionPolicyCatalog?,
+	prediction: Types.PresentationPredictionPort?,
+	hintPolicies: Types.HintPredictionPolicyCatalog?
+): ()
+	local catalog: Types.PresentationCatalog = assert(Registry.Prepare(definitions, policies, hintPolicies))
+	shutdown = assert(Runtime.Install(catalog, if readiness ~= nil then readiness.source else nil, prediction))
 end
 
 function TestUtils.reset(): ()

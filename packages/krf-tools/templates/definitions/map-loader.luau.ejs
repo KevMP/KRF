@@ -1,0 +1,9 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local KRF = require(ReplicatedStorage.Packages.<%- alias %>)
+local mergeDescendants = require(ReplicatedStorage.Shared.MergeDescendants)
+
+local entries: KRF.<%- type %> = mergeDescendants(script)
+
+return entries

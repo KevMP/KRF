@@ -4,7 +4,7 @@ local States = require(script.Parent.Parent.PresentationStates)
 local ActorTypes = require(script.Parent.Parent.Parent.Actor.types)
 local SignalTypes = require(script.Parent.Parent.Parent.Parent.shared.Signal.types)
 
-export type StateFamily = "Tag" | "Action" | "Resource" | "Actor"
+export type StateFamily = "Tag" | "Action" | "Resource" | "Actor" | "LocalPrediction"
 export type Signature = { number | boolean | Instance }
 
 type TagState = { read stackCount: number, read expiresAt: number? }
@@ -25,6 +25,7 @@ local known: { [Types.PresentationStateDescriptor]: boolean } = table.freeze({
 	[States.Action.Active] = true,
 	[States.Resource.Current] = true,
 	[States.Actor.Model] = true,
+	[States.Action.LocalPrediction] = true,
 })
 
 local entries: { [Types.PresentationStateEntryDescriptor]: boolean } = table.freeze({
@@ -46,6 +47,10 @@ end
 
 function StateSources.IsEntry(descriptor: any): boolean
 	return type(descriptor) == "table" and entries[descriptor] == true
+end
+
+function StateSources.Family(descriptor: Types.PresentationStateDescriptor): StateFamily
+	return if descriptor == States.Action.LocalPrediction then "LocalPrediction" else descriptor.source
 end
 
 function StateSources.Same(first: Signature, second: Signature): boolean
@@ -85,7 +90,11 @@ function StateSources.SampleAction(
 	local snapshot: ActorTypes.ActionSnapshot? = association.actor:GetActions():GetAction(sequenceId)
 
 	if snapshot == nil or snapshot.actionId ~= association.actionId then
-		return nil, {}
+		if association.awaitingStart == true then
+			return nil, {}
+		end
+
+		return nil, { sequenceId, false }
 	end
 
 	return snapshot, { snapshot.sequenceId }
@@ -128,7 +137,9 @@ function StateSources.Connect(
 	actor: ActorTypes.ActorView,
 	notify: () -> ()
 ): { SignalTypes.Connection }
-	if family == "Actor" then
+	if family == "LocalPrediction" then
+		return {}
+	elseif family == "Actor" then
 		return {
 			actor.OnModelChanged:Connect(function(_previous: Model?, _current: Model?): ()
 				notify()

@@ -174,6 +174,8 @@ npm run createAction -- --name Fireball --recipe channel --duration 1.5 --cost M
 
 The generator never binds a key. Follow `next`, and see [action-input.md](action-input.md) for binding and payloads. Without `--auto-grant`, `next` also tells you to grant it.
 
+With `--requestable`, the gate and price flags go into `src/shared/ActionRequirements/<Name>.luau`, which the server definition reads, and the generator adds a client prediction policy in `src/client/ActionPredictionPolicies/<Name>.luau` that passes the same module. Edit gates and prices only in that shared module. See [actions.md](actions.md#keep-start-rules-in-one-shared-module). The first such Action also adds the policy folder's loader and passes it to `KRF.Client.Init` in `Startup.client.luau`. Without `--requestable`, or with a KRF version older than Action prediction, they stay inline in the definition.
+
 ## createDomain
 
 | Flag | Default | Meaning |
@@ -234,6 +236,6 @@ Generate the closest definition, then edit the module for the rest, such as a ne
 npm run createPresentation -- --name SwingHighlight --event Action.Started --source-id Sword.Swing --yes --json
 ```
 
-`--source-id` selects the exact game-defined ID. `--event` defaults to `Action.Started`. Other entries are `Action.Ended`, `Action.Interrupted`, `Tag.Added`, `Tag.Refreshed`, `Tag.Removed`, `Tag.Expired`, `Resource.Changed` and `Hint.Received`.
+`--source-id` selects the exact game-defined ID. `--no-predict` turns off prediction for an `Action.Started` entry. `--event` defaults to `Action.Started`. Other entries are `Action.Ended`, `Action.Interrupted`, `Tag.Added`, `Tag.Refreshed`, `Tag.Removed`, `Tag.Expired`, `Resource.Changed` and `Hint.Received`.
 
-The generator writes a `KRF.PresentationDefinition` under `src/client/Presentations`. On first use it adds the descendant loader and passes it to `KRF.Client.Init` through `presentations`. Edit `create(context)` in the module to add the visual. Register cleanup with `context:Own` and call `context:Finish()` when the visual is done.
+The generator writes a `KRF.PresentationDefinition` under `src/client/Presentations`. On first use it adds the descendant loader and passes it to `KRF.Client.Init` through `presentations`. Edit `create(context)` in the module to add the visual. Register cleanup with `context:Own` and call `context:Finish()` when the visual is done. An `Action.Started` entry whose Action has a prediction policy gets `predict = true`, so it also starts on the caster's client before the server answers; `next` says how to end it. `--no-predict` leaves it out. See [presentation.md](presentation.md#predict-every-action-players-start).

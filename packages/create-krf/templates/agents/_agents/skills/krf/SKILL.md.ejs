@@ -19,7 +19,7 @@ KRF is a Luau framework for server-authoritative gameplay in Roblox. Players and
 | Replication domains and schemas | Publishing game-owned state to the clients allowed to see it. | [replication.md](references/replication.md) |
 | Commands | Authorized client-to-server operations that aren't something a character does, such as buying an item or changing a setting. | [commands.md](references/commands.md) |
 | Hints | Missable cosmetic signals, such as hit sparks or camera shake. | [hints.md](references/hints.md) |
-| Presentation | Client visuals that start on Action, Tag, Resource or Hint events, or last while a Tag or Action is active. | [Presentation guide](references/docs/presentation/guide.md) and [API](references/docs/presentation/api.md) |
+| Presentation | Client visuals that start on Action, Tag, Resource or Hint events, or last while a Tag or Action is active, including the caster's predicted casts and hits. | [presentation.md](references/presentation.md) |
 
 [generators.md](references/generators.md) covers creating every kind of definition, with each generator's flags and how to read its result. [deployment.md](references/deployment.md) covers the Local, Dev, QA and Production environments and how the game is published to each.
 
@@ -35,8 +35,9 @@ Take "a Fireball that fires where the player aims when they press Q, costs Mana,
 | Costs Mana | Resource | [resources.md](references/resources.md) |
 | Fires on Q, aimed with the mouse | Action request and input route | [action-input.md](references/action-input.md) |
 | Sets what it hits Burning | Tag | [tags.md](references/tags.md) |
+| Shows the cast the moment the player presses | Predicted Presentation | [presentation.md](references/presentation.md) |
 
-Those four references are all this feature needs. Showing the player's Mana bar would add [client-views.md](references/client-views.md).
+Those five references are all this feature needs. Showing the player's Mana bar would add [client-views.md](references/client-views.md).
 
 When a feature seems to need a custom timer, stat table or remote, look again for a primitive that covers it. Write a custom Controller only for state that none of them describes, and publish it with a replication domain if clients need it. If a feature truly falls outside every primitive, it's ordinary game code: write it in the game, and use KRF only where it fits.
 
@@ -56,6 +57,8 @@ These references describe KRF <%= runtime.version %>. Check the `KRF` entry in t
 
 - Require KRF from `ReplicatedStorage.Packages.KRF`. On the client, wait for it with `ReplicatedStorage:WaitForChild("Packages"):WaitForChild("KRF")`.
 - The server decides gameplay. Clients send requests and read views; they never change Tags, Resources, Properties or Actions directly.
+- Write each rule once. An Action's Tag gates, Resource requirements and costs live in the shared module `createAction` writes under `src/shared/ActionRequirements`, read by both the server definition and the client's prediction policy. Edit them only there, and never copy them, or any number both sides check, into a second place.
+- Predict every Action a player requests, so its cast starts on the caster's screen before the server answers. If one can't be predicted, say why when you report the work.
 - Anything a client sends, such as aim, a target or a position, is a claim. Schemas check its shape; the server checks whether it makes sense.
 - State belongs to an Actor. Register a character's Model as an Actor before it gains Tags, Resources or Actions.
 - Definitions describe shared rules. Per-character values live in Controllers, never in definition tables.

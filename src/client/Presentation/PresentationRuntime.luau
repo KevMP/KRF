@@ -8,6 +8,7 @@ local Sources = require(script.Parent.utils.PresentationSources)
 local StateSources = require(script.Parent.utils.PresentationStateSources)
 local StateEntries = require(script.Parent.utils.PresentationStateEntries)
 local Instances = require(script.Parent.utils.PresentationInstance)
+local Prediction = require(script.Parent.utils.PresentationPrediction)
 
 type InstanceSet = { [Types.PresentationContext]: boolean }
 type ListenerSet = { [() -> ()]: boolean }
@@ -47,9 +48,18 @@ local function track(
 	end
 end
 
+local function delay(seconds: number, callback: () -> ()): () -> ()
+	local thread: thread = task.delay(seconds, callback)
+
+	return function(): ()
+		pcall(task.cancel, thread)
+	end
+end
+
 function PresentationRuntime.Install(
 	catalog: Types.PresentationCatalog,
-	readiness: NetworkingTypes.ActorViewStateReadinessSource?
+	readiness: NetworkingTypes.ActorViewStateReadinessSource?,
+	prediction: Types.PresentationPredictionPort?
 ): ((() -> ())?, string?)
 	if installed then
 		return nil, "PresentationAlreadyInstalled"
@@ -63,6 +73,9 @@ function PresentationRuntime.Install(
 	local stopAdded: (() -> ())? = nil
 	local stopInvalidation: (() -> ())? = nil
 	local stopReadiness: (() -> ())? = nil
+	local stopRequests: (() -> ())? = nil
+	local stopPayloads: (() -> ())? = nil
+	local predictor: Prediction.Prediction? = nil
 	local hints: { SignalTypes.Connection } = {}
 	local observed: { [ActorTypes.ActorView]: ListenerSet } = {}
 	local readinessListeners: { [ActorTypes.ActorView]: ListenerSet } = {}
@@ -92,7 +105,9 @@ function PresentationRuntime.Install(
 		instances: InstanceSet,
 		definition: Types.PresentationDefinition,
 		entry: Types.PresentationEntry,
-		revalidate: (() -> boolean)?
+		revalidate: (() -> boolean)?,
+		link: Types.PresentationPredictionLink?,
+		retired: (() -> ())?
 	): Types.PresentationContext?
 		if count >= MAX_ACTIVE_INSTANCES then
 			Instances.Report(definition.id, entry, "ActiveInstanceLimit")
@@ -105,7 +120,11 @@ function PresentationRuntime.Install(
 		context = Instances.New(definition, entry, environment, function()
 			instances[context] = nil
 			count -= 1
-		end, revalidate)
+
+			if retired ~= nil then
+				retired()
+			end
+		end, revalidate, link)
 
 		instances[context] = true
 		count += 1
@@ -135,19 +154,56 @@ function PresentationRuntime.Install(
 
 		local instances: InstanceSet = actorless
 		local actor: ActorTypes.ActorView? = entry.actor
+		local entries: ActorEntries? = nil
 
 		if actor ~= nil then
-			local entries: ActorEntries? = actors[actor]
+			entries = actors[actor]
 
 			if entries == nil or not isEligible(actor) then
 				return
 			end
 
-			instances = entries.instances
+			instances = (entries :: ActorEntries).instances
 		end
 
+		local routed: { Types.PresentationDefinition } = {}
+
 		for _, definition in definitions do
-			start(instances, definition, entry)
+			if predictor ~= nil and definition.predict == true then
+				table.insert(routed, definition)
+			else
+				start(instances, definition, entry)
+			end
+		end
+
+		if predictor == nil or #routed == 0 then
+			return
+		end
+
+		local function release(definition: Types.PresentationDefinition): ()
+			if not active then
+				return
+			end
+
+			local target: ActorTypes.ActorView? = actor
+
+			if target == nil then
+				start(actorless, definition, entry)
+
+				return
+			end
+
+			local current: ActorEntries? = actors[target]
+
+			if current ~= nil and current == entries and isEligible(target) then
+				start(current.instances, definition, entry)
+			end
+		end
+
+		if entry.source == "Action" then
+			predictor.Route(entry, routed, release)
+		elseif entry.source == "Hint" then
+			predictor.RouteHint(entry, routed, release)
 		end
 	end
 
@@ -200,6 +256,10 @@ function PresentationRuntime.Install(
 	end
 
 	local function detach(actor: ActorTypes.ActorView): ()
+		if predictor ~= nil then
+			predictor.RetireActor(actor)
+		end
+
 		local listeners: ListenerSet? = observed[actor]
 
 		if listeners ~= nil then
@@ -238,6 +298,10 @@ function PresentationRuntime.Install(
 			entries.states.Schedule()
 		end
 
+		if predictor ~= nil then
+			predictor.ObserveBaseline(actor)
+		end
+
 		local listeners: ListenerSet? = readinessListeners[actor]
 
 		if listeners ~= nil then
@@ -256,6 +320,18 @@ function PresentationRuntime.Install(
 
 		if stopReadiness ~= nil then
 			stopReadiness()
+		end
+
+		if stopRequests ~= nil then
+			stopRequests()
+		end
+
+		if stopPayloads ~= nil then
+			stopPayloads()
+		end
+
+		if predictor ~= nil then
+			predictor.Destroy()
 		end
 
 		if stopAdded ~= nil then
@@ -285,6 +361,43 @@ function PresentationRuntime.Install(
 	local success: boolean = pcall(function()
 		if readiness ~= nil then
 			stopReadiness = readiness:ObserveStateReadiness(onReadiness)
+		end
+
+		if prediction ~= nil and next(catalog.predictions.definitions) ~= nil then
+			local coordinator: Prediction.Prediction = Prediction.new(catalog.predictions, {
+				IsEligible = function(actor: ActorTypes.ActorView): boolean
+					return active and isEligible(actor)
+				end,
+				IsStateReady = isStateReady,
+				Start = function(actor, definition, entry, link, revalidate, retired): Types.PresentationContext?
+					if not active then
+						return nil
+					elseif actor == nil then
+						return start(actorless, definition, entry, revalidate, link, retired)
+					end
+
+					local entries: ActorEntries? = actors[actor]
+
+					if entries == nil or not isEligible(actor) then
+						return nil
+					end
+
+					return start(entries.instances, definition, entry, revalidate, link, retired)
+				end,
+				Report = function(actionId: string, actorId: string, reason: string): ()
+					warn(("[Presentation] action=%s actor=%s reason=%s"):format(actionId, actorId, reason))
+				end,
+				ReportHint = function(hintId: string, reason: string): ()
+					warn(("[Presentation] hint=%s reason=%s"):format(hintId, reason))
+				end,
+			}, {
+				Delay = prediction.Delay or delay,
+				Measure = prediction.Measure or os.clock,
+			})
+
+			predictor = coordinator
+			stopRequests = prediction.ObserveActionRequest(coordinator.Observe)
+			stopPayloads = prediction.ObserveStartPayloads(coordinator.AttachPayload)
 		end
 
 		-- Install framework listeners before public Added callbacks can trigger a

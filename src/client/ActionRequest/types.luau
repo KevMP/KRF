@@ -33,6 +33,12 @@ export type ActionRequestAdmission = {
 	read originalStartKey: string,
 }
 
+export type ActionStartPayload = {
+	read admission: ActionRequestAdmission,
+	read payload: ActionRequestTypes.CompiledActionPayload,
+	read encoded: string,
+}
+
 -- Accepted carries the real server sequenceId only for Start. Unknown means it may have executed.
 export type ActionRequestOutcome = {
 	read admission: ActionRequestAdmission,
@@ -94,6 +100,7 @@ export type ClientActionRequestRuntime = {
 	-- physically attempted and can never veto, delay or reorder egress.
 	ObserveAdmissions: (self: ClientActionRequestRuntime, observer: (ActionRequestAdmission) -> ()) -> () -> (),
 	ObserveOutcomes: (self: ClientActionRequestRuntime, observer: (ActionRequestOutcome) -> ()) -> () -> (),
+	ObserveStartPayloads: (self: ClientActionRequestRuntime, observer: (ActionStartPayload) -> ()) -> () -> (),
 	StageDecision: (self: ClientActionRequestRuntime, original: ActionRequestAdmission, callback: () -> ()) -> (),
 	AfterObservations: (self: ClientActionRequestRuntime, callback: () -> ()) -> (),
 	_GetRetainedCountForTests: (self: ClientActionRequestRuntime) -> number,

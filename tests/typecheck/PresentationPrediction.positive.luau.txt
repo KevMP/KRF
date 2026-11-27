@@ -1,0 +1,82 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local ClientTypes = require(KRF.client.types)
+local States = require(KRF.client.Presentation.PresentationStates)
+local Events = require(KRF.client.Presentation.PresentationEvents)
+local SignalTypes = require(KRF.shared.Signal.types)
+
+local policy: Types.ActionPredictionPolicy = {
+	requiredTags = { "Status.Grounded" },
+	blockedTags = { "Status.Stunned" },
+	resourceRequirements = { Mana = { min = 30 }, Stamina = { minPercent = 0.5 } },
+	costs = { Mana = 20, Stamina = { percent = 0.1 }, Focus = { amount = 1, multiplierProperty = "Haste" } },
+	canPredictStart = function(ctx: Types.ActionPredictionCheckContext): boolean?
+		local key: string = ctx.originalStartKey
+		local actionId: string = ctx.actionId
+		assert(key ~= actionId and ctx.actor ~= nil)
+
+		return if ctx.parameters == nil then nil else true
+	end,
+}
+
+local cast: Types.PresentationDefinition = {
+	id = "Fireball.Cast",
+	entry = { event = Events.Action.Started, id = "Fireball" },
+	predict = true,
+	create = function(ctx: Types.PresentationContext)
+		local entry: Types.PresentationEntry = ctx.entry
+
+		if entry.source == "ActionPrediction" then
+			local key: string = entry.originalStartKey
+			local event: "RequestAdmitted" = entry.event
+			assert(key ~= "" and event == "RequestAdmitted" and entry.actionId ~= "")
+		elseif entry.source == "Action" then
+			local sequenceId: number = entry.action.sequenceId
+			assert(sequenceId > 0)
+		end
+	end,
+}
+
+local hintPolicy: Types.HintPredictionPolicy = { actorIdField = "attackerId", sequenceIdField = "sequenceId" }
+
+local spark: Types.PresentationDefinition = {
+	id = "Fireball.Spark",
+	entry = { event = Events.Hint.Received, id = "Fireball.Impact" },
+	predict = true,
+	create = function(ctx: Types.PresentationContext)
+		local entry: Types.PresentationEntry = ctx.entry
+
+		if entry.source == "HintPrediction" then
+			local hintId: string = entry.hintId
+			local event: "Received" = entry.event
+			assert(hintId ~= "" and event == "Received" and entry.payload ~= nil)
+		end
+	end,
+}
+
+local config: ClientTypes.ClientInitConfig = {
+	actionPredictionPolicies = { Fireball = policy },
+	hintPredictionPolicies = { ["Fireball.Impact"] = hintPolicy },
+	presentations = { cast, spark },
+}
+
+return function(ctx: Types.PresentationContext): { SignalTypes.Connection }
+	assert(config.presentations ~= nil)
+
+	local predicted: boolean, reason: string? = ctx:PredictHint("Fireball.Impact", ctx.actor, { strength = 3 })
+	local world: boolean = ctx:PredictHint("Fireball.Splash")
+	assert(predicted or reason ~= nil or world)
+
+	return {
+		ctx:Watch(States.Action.LocalPrediction, function(snapshot: Types.LocalPredictionSnapshot)
+			local status: Types.LocalPredictionStatus = snapshot.startStatus
+			local sequenceId: number? = snapshot.sequenceId
+			local stop: Types.LocalPredictionFollowUp? = snapshot.lastStop
+			local first: Types.LocalPredictionInputDecision? = snapshot.inputTransitions[1]
+			local transition: string? = if first ~= nil then first.transition else nil
+			assert(status ~= "Rejected" or sequenceId == nil or stop ~= nil or transition ~= nil)
+		end),
+	}
+end

@@ -1,5 +1,6 @@
 --!strict
 local Types = require(script.Parent.types)
+local Events = require(script.Parent.PresentationEvents)
 local Sources = require(script.Parent.utils.PresentationSources)
 local StateSources = require(script.Parent.utils.PresentationStateSources)
 local Collections = require(script.Parent.Parent.Parent.shared.Networking.utils.SchemaCollectionUtils)
@@ -36,7 +37,11 @@ local function freeze<Descriptor>(index: Index<Descriptor>): Index<Descriptor>
 	return table.freeze(index)
 end
 
-function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, string?)
+function PresentationRegistry.Prepare(
+	value: any,
+	policies: Types.ActionPredictionPolicyCatalog?,
+	hintPolicies: Types.HintPredictionPolicyCatalog?
+): (Types.PresentationCatalog?, string?)
 	local length: number? = Collections.GetArrayLength(value)
 
 	if length == nil or getmetatable(value) ~= nil then
@@ -45,6 +50,10 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 
 	local events: Types.PresentationEventCatalog = {}
 	local states: Types.PresentationStateCatalog = {}
+	local predicted: { [string]: { Types.PresentationDefinition } } = {}
+	local predictedPolicies: Types.ActionPredictionPolicyCatalog = {}
+	local predictedHints: { [string]: { Types.PresentationDefinition } } = {}
+	local predictedHintPolicies: Types.HintPredictionPolicyCatalog = {}
 	local ids: { [string]: boolean } = {}
 
 	for index: number = 1, length do
@@ -55,7 +64,7 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 		end
 
 		for field: any in next, definition do
-			if field ~= "id" and field ~= "entry" and field ~= "create" then
+			if field ~= "id" and field ~= "entry" and field ~= "create" and field ~= "predict" then
 				return nil, "PresentationDefinitionFieldUnknown"
 			end
 		end
@@ -63,6 +72,7 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 		local id: any = definition.id
 		local binding: any = definition.entry
 		local create: any = definition.create
+		local predict: any = definition.predict
 
 		if type(id) ~= "string" or id == "" then
 			return nil, "PresentationIdInvalid"
@@ -92,6 +102,22 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 			return nil, "PresentationEntryEventInvalid"
 		elseif type(sourceId) ~= "string" or sourceId == "" then
 			return nil, "PresentationEntryIdInvalid"
+		elseif predict ~= nil and type(predict) ~= "boolean" then
+			return nil, "PresentationPredictInvalid"
+		elseif predict == true and event ~= Events.Action.Started and event ~= Events.Hint.Received then
+			return nil, "PresentationPredictEntryInvalid"
+		elseif
+			predict == true
+			and event == Events.Action.Started
+			and (policies == nil or policies[sourceId] == nil)
+		then
+			return nil, "PresentationPredictionPolicyMissing"
+		elseif
+			predict == true
+			and event == Events.Hint.Received
+			and (hintPolicies == nil or hintPolicies[sourceId] == nil)
+		then
+			return nil, "PresentationPredictionPolicyMissing"
 		end
 
 		ids[id] = true
@@ -101,11 +127,47 @@ function PresentationRegistry.Prepare(value: any): (Types.PresentationCatalog?, 
 			insert(states, state, sourceId, table.freeze({ id = id, entry = ownedBinding, create = create }))
 		else
 			local ownedBinding: Types.PresentationEntryBinding = table.freeze({ event = event, id = sourceId })
-			insert(events, event, sourceId, table.freeze({ id = id, entry = ownedBinding, create = create }))
+
+			local owned: Types.PresentationDefinition =
+				table.freeze({ id = id, entry = ownedBinding, create = create, predict = predict == true })
+
+			insert(events, event, sourceId, owned)
+
+			if predict == true and event == Events.Action.Started then
+				local definitions: { Types.PresentationDefinition } = predicted[sourceId] or {}
+
+				predicted[sourceId] = definitions
+				predictedPolicies[sourceId] = (policies :: Types.ActionPredictionPolicyCatalog)[sourceId]
+				table.insert(definitions, owned)
+			elseif predict == true then
+				local definitions: { Types.PresentationDefinition } = predictedHints[sourceId] or {}
+
+				predictedHints[sourceId] = definitions
+				predictedHintPolicies[sourceId] = (hintPolicies :: Types.HintPredictionPolicyCatalog)[sourceId]
+				table.insert(definitions, owned)
+			end
 		end
 	end
 
-	return table.freeze({ events = freeze(events), states = freeze(states) }), nil
+	for _, definitions in predicted do
+		table.freeze(definitions)
+	end
+
+	for _, definitions in predictedHints do
+		table.freeze(definitions)
+	end
+
+	return table.freeze({
+		events = freeze(events),
+		states = freeze(states),
+		predictions = table.freeze({
+			policies = table.freeze(predictedPolicies),
+			definitions = table.freeze(predicted),
+			hintPolicies = table.freeze(predictedHintPolicies),
+			hintDefinitions = table.freeze(predictedHints),
+		}),
+	}),
+		nil
 end
 
 return table.freeze(PresentationRegistry)

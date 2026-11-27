@@ -38,7 +38,10 @@ function Fireball(): KRF.ActionDefinition
 	return {
 		id = "Fireball",
 		visibility = "ClientVisible",
-		costs = { Mana = 20 },
+		requiredTags = FireballRequirements.requiredTags,
+		blockedTags = FireballRequirements.blockedTags,
+		resourceRequirements = FireballRequirements.resourceRequirements,
+		costs = FireballRequirements.costs,
 		onStart = function(context: KRF.ActionExecutionContext): ()
 			launchFireball(context.actor, context.parameters)
 			context:End()
@@ -47,6 +50,7 @@ function Fireball(): KRF.ActionDefinition
 end
 ```
 
+- The Tag gates, Resource requirements and costs come from a shared module, so the client can predict the cast from the same numbers. See [Keep start rules in one shared module](#keep-start-rules-in-one-shared-module).
 - `context.actor` is the caster, and `context.parameters` is the request payload. See [action-input.md](action-input.md) for validating it.
 - Returning from `onStart` doesn't end the Action. Call `context:End()` when it's done, or `context:Interrupt(reason)` to cancel it.
 - `onStopRequested` runs when a Stop is requested, such as when a held input is released. It decides whether to end; a Stop doesn't end the Action by itself.
@@ -71,6 +75,29 @@ KRF checks everything before the Action starts: grant, Tag gates, Resource requi
 Put prices in `costs`, never in a `Spend` call inside a callback. KRF doesn't undo changes your callbacks make when a later check rejects the start. Costs are paid once when the Action starts and are never refunded.
 
 Gates are checked only at the start. If the caster gets Stunned while channeling, the Action keeps running until something interrupts it. See [Interrupt an Action](#interrupt-an-action).
+
+## Keep start rules in one shared module
+
+A player's client predicts their own casts, so it needs the same Tag gates, Resource requirements and costs the server checks. Write those four fields once, in a shared module named after the Action, and have both sides read it. Never type a cost or a Tag gate into the server definition and again into client code: the copies drift, and the client starts predicting casts the server rejects.
+
+`createAction --requestable` writes that module for you, at `src/shared/ActionRequirements/<Name>.luau`, from the `--required-tag`, `--blocked-tag`, `--requirement` and `--cost` flags:
+
+```lua
+local FireballRequirements: KRF.ActionPredictionPolicy = {
+	requiredTags = { "Grounded" },
+	blockedTags = { "Stunned" },
+	resourceRequirements = { Mana = { min = 30 } },
+	costs = { Mana = 20 },
+}
+
+return FireballRequirements
+```
+
+The generated server definition requires it from `ReplicatedStorage.Shared.ActionRequirements` and reads all four fields, as the Fireball above does, and the generated client prediction policy passes the same module. To change a gate or a price later, edit only this module; a field you add here takes effect on both sides without touching either. See [presentation.md](presentation.md#predict-every-action-players-start) for the client side.
+
+An Action only server code starts, without `--requestable`, has no client to predict for, so the generator keeps its fields inline. So does a game on a KRF version older than Action prediction.
+
+Only the start rules belong in the module. `activeTags`, `appliedTags`, locks and callbacks stay in the server definition.
 
 ## Put Tags on the caster
 
@@ -117,7 +144,7 @@ function ChannelHeal(): KRF.ActionDefinition
 	return {
 		id = "ChannelHeal",
 		visibility = "ClientVisible",
-		blockedTags = { "Stunned" },
+		blockedTags = ChannelHealRequirements.blockedTags,
 		onStart = function(context: KRF.ActionExecutionContext): ()
 			local tags = context.actor:GetController("TagController") :: KRF.TagController
 
@@ -185,3 +212,4 @@ ActionController fires `OnActionStarted`, `OnActionEnded` and `OnActionInterrupt
 - [resources.md](resources.md) for costs, cooldowns and charges.
 - [tags.md](tags.md) for Tag gates and putting Tags on targets.
 - [client-views.md](client-views.md) for showing running Actions in the client UI.
+- [presentation.md](presentation.md) for cast visuals and predicting them.
