@@ -174,6 +174,8 @@ npm run createAction -- --name Fireball --recipe channel --duration 1.5 --cost M
 
 The generator never binds a key. Follow `next`, and see [action-input.md](action-input.md) for binding and payloads. Without `--auto-grant`, `next` also tells you to grant it.
 
+The gate and price flags are written inline into the server definition. For a `--requestable` Action, move them into its shared module and give it a prediction policy, as [actions.md](actions.md#keep-start-rules-in-one-shared-module) and [presentation.md](presentation.md#predict-every-action-players-start) describe.
+
 ## createDomain
 
 | Flag | Default | Meaning |
@@ -236,4 +238,4 @@ npm run createPresentation -- --name SwingHighlight --event Action.Started --sou
 
 `--source-id` selects the exact game-defined ID. `--event` defaults to `Action.Started`. Other entries are `Action.Ended`, `Action.Interrupted`, `Tag.Added`, `Tag.Refreshed`, `Tag.Removed`, `Tag.Expired`, `Resource.Changed` and `Hint.Received`.
 
-The generator writes a `KRF.PresentationDefinition` under `src/client/Presentations`. On first use it adds the descendant loader and passes it to `KRF.Client.Init` through `presentations`. Edit `create(context)` in the module to add the visual. Register cleanup with `context:Own` and call `context:Finish()` when the visual is done.
+The generator writes a `KRF.PresentationDefinition` under `src/client/Presentations`. On first use it adds the descendant loader and passes it to `KRF.Client.Init` through `presentations`. Edit `create(context)` in the module to add the visual. Register cleanup with `context:Own` and call `context:Finish()` when the visual is done. The module isn't predicted; for the cast of an Action players request, add `predict = true` and the Action's prediction policy. See [presentation.md](presentation.md#predict-every-action-players-start).

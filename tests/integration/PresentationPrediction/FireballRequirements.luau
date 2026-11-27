@@ -1,12 +1,8 @@
 --!strict
-export type FireballRequirements = {
-	requiredTags: { string },
-	blockedTags: { string },
-	resourceRequirements: { [string]: { min: number?, max: number?, minPercent: number?, maxPercent: number? } },
-	costs: { [string]: number | { amount: number?, percent: number?, multiplierProperty: string? } },
-}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PresentationTypes = require(ReplicatedStorage.Packages.KRF.client.Presentation.types)
 
-local requirements: FireballRequirements = {
+local requirements: PresentationTypes.ActionPredictionPolicy = {
 	requiredTags = { "Status.Grounded" },
 	blockedTags = { "Status.Stunned" },
 	resourceRequirements = { Mana = { min = 30 } },

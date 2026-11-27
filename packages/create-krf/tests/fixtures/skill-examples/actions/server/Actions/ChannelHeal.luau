@@ -2,7 +2,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local KRF = require(ReplicatedStorage.Packages.KRF)
+local ChannelHealRequirements = require(ReplicatedStorage.actions.ChannelHealRequirements)
 
---@example 3
+--@example 4
 
 return ChannelHeal

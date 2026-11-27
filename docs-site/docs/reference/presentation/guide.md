@@ -284,7 +284,7 @@ Prediction needs two things. A policy for the Action says which checks the clien
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KRF = require(ReplicatedStorage.Packages.KRF)
-local FireballRequirements = require(ReplicatedStorage.Shared.FireballRequirements)
+local FireballRequirements = require(ReplicatedStorage.Shared.ActionRequirements.Fireball)
 
 local ok, failure = KRF.Client.Init({
 	actionRequestSchemas = require(ReplicatedStorage.Shared.ActionRequestSchemas),
@@ -310,20 +310,38 @@ local ok, failure = KRF.Client.Init({
 })
 ```
 
-The policy's Action ID must be in your `actionRequestSchemas`, because only a request the client can send can be predicted. The tables come from an ordinary game ModuleScript that the server's Fireball factory also uses for its `ActionDefinition`, so both sides read the same numbers:
+The policy's Action ID must be in your `actionRequestSchemas`, because only a request the client can send can be predicted. The tables come from a shared game ModuleScript that the server's Fireball factory also reads for its `ActionDefinition`, so both sides check the same numbers. Typing it as `KRF.ActionPredictionPolicy` lets both the definition and the policy accept it:
 
 ```luau
 --!strict
--- ReplicatedStorage/Shared/FireballRequirements.luau
-return {
+-- ReplicatedStorage/Shared/ActionRequirements/Fireball.luau
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = require(ReplicatedStorage.Packages.KRF)
+
+local FireballRequirements: KRF.ActionPredictionPolicy = {
 	requiredTags = { "Status.Grounded" },
 	blockedTags = { "Status.Stunned" },
 	resourceRequirements = { Mana = { min = 30 } },
 	costs = { Mana = 20 },
 }
+
+return FireballRequirements
 ```
 
-Sharing the module is a convenience, not a requirement. A client policy can declare fewer checks than the server, or approximate one in `canPredictStart`. KRF copies the policy at startup, so changing the shared tables later does not change the installed policy.
+```luau
+-- In the server's Fireball factory:
+return {
+	id = "Fireball",
+	visibility = "ClientVisible",
+	requiredTags = FireballRequirements.requiredTags,
+	blockedTags = FireballRequirements.blockedTags,
+	resourceRequirements = FireballRequirements.resourceRequirements,
+	costs = FireballRequirements.costs,
+	onStart = launchFireball,
+}
+```
+
+Keep these rules in that one module rather than writing them into the definition and the policy separately, where they drift apart. A client policy can still declare fewer checks than the server, or approximate one in `canPredictStart`. KRF copies the policy at startup, so changing the shared tables later does not change the installed policy.
 
 ### What the client checks
 

@@ -191,16 +191,16 @@ export type PresentationDefinition = {
 }
 
 export type ActionPredictionResourceRequirement = {
-	read min: number?,
-	read max: number?,
-	read minPercent: number?,
-	read maxPercent: number?,
+	min: number?,
+	max: number?,
+	minPercent: number?,
+	maxPercent: number?,
 }
 
 export type ActionPredictionResourceCost = {
-	read amount: number?,
-	read percent: number?,
-	read multiplierProperty: string?,
+	amount: number?,
+	percent: number?,
+	multiplierProperty: string?,
 }
 
 export type ActionPredictionCheckContext = {
