@@ -5,7 +5,7 @@ sidebar_label: API
 
 # Presentation API
 
-Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional prediction policies through [`actionPredictionPolicies`](#actionpredictionpolicy) and [`hintPredictionPolicies`](#hintpredictionpolicy). Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. The [Presentation guide](./guide) shows how these pieces fit together.
+Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional prediction policies through [`actionPredictionPolicies`](#actionpredictionpolicy) and [`hintPredictionPolicies`](#hintpredictionpolicy). Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. [`KRF.Animations`](#animations) is a separate client utility that a definition, or any other client code, can use to play character animations. The [Presentation guide](./guide) shows how these pieces fit together.
 
 ## PresentationDefinition
 
@@ -229,6 +229,84 @@ When a server Hint arrives, KRF compares its activation with this client's predi
 
 `On` and `Watch` return a [`KRF.Connection`](../getting-started/events) with idempotent `:Disconnect()`. The instance owns it, so you never pass it to `Own`. Finish, origin Actor retirement and runtime teardown disconnect every Connection. On an inactive context, both methods return an inert Connection without validating arguments.
 
+## Animations
+
+`KRF.Animations` plays and caches animation tracks on a rig Model. It is independent of `KRF.Client.Init`, ActorViews and Presentation definitions. The [guide](./guide#play-a-character-animation) explains when each rule applies.
+
+```luau
+KRF.Animations.Play(model: Model, animationId: string, options: KRF.AnimationPlayOptions?): (KRF.AnimationPlayback?, string?)
+```
+
+`Play` resolves the rig on every call: the Model's direct child `Humanoid`, otherwise its direct child `AnimationController`, and that controller's `Animator`, which it creates only when missing. The Model must be a descendant of Workspace or of a WorldModel. The first `Play` for an Animator and animation ID loads one track; every later `Play` for the same pair restarts that track from the beginning and returns a new handle, which makes all earlier handles for it inert.
+
+`animationId` is a content ID such as `rbxassetid://123456`. Surrounding whitespace, the scheme's letter case, leading zeros and the `http(s)://www.roblox.com/asset/?id=123456` and `roblox.com` forms are accepted and normalized to `rbxassetid://123456`, so every spelling shares one track. Anything else, including a bare number, is rejected.
+
+### AnimationPlayOptions
+
+Each `Play` applies every field. A field you leave out takes its default, never the previous playback's value.
+
+| Field | Type | Default | Accepted values |
+| --- | --- | --- | --- |
+| `fadeTime` | `number?` | `0.1` | Finite and at least 0. Also the default fade for this playback's `Stop` and `Destroy`. |
+| `weight` | `number?` | `1` | Finite and at least 0 |
+| `speed` | `number?` | `1` | Any finite number. 0 pauses. A negative speed plays backwards from the end of the track, once its asset has loaded. |
+| `priority` | `Enum.AnimationPriority?` | `Enum.AnimationPriority.Action` | Any `Enum.AnimationPriority` item |
+| `looped` | `boolean?` | `false` | `true` or `false` |
+
+An options table with a metatable or a field not listed here is rejected.
+
+### AnimationPlayback
+
+A frozen handle for one playback. It is current until a newer `Play` of the same track replaces it, until you call `Stop` or `Destroy`, or until KRF releases the track. On a handle that isn't current, every method still checks its arguments but otherwise does nothing, and `GetTrack` returns `nil`.
+
+| Method | Effect while current |
+| --- | --- |
+| `Stop(fadeTime: number?)` | Fades the track out over `fadeTime`, or the playback's own `fadeTime`, and retires the handle. The track stays cached. |
+| `Destroy()` | `Stop()` with the playback's own fade. Use it with `ctx:Own`. |
+| `AdjustSpeed(speed: number)` | Calls `AnimationTrack:AdjustSpeed` while the track is playing |
+| `AdjustWeight(weight: number, fadeTime: number?)` | Calls `AnimationTrack:AdjustWeight` while the track is playing |
+| `GetTrack(): AnimationTrack?` | Returns the cached `AnimationTrack`, also after a non-looped playback has ended by itself |
+
+`Stop` and `Destroy` are idempotent. A handle never fires or listens to `Stopped` or `Ended`; a natural end leaves it current. The track returned by `GetTrack` remains KRF's. Calling `Play`, `Stop` or `Destroy` on it, or setting its properties, is outside the handle's guarantees, and KRF may destroy the track when it releases it.
+
+An invalid argument raises an error at the caller and leaves the track unchanged:
+
+| Error | Method |
+| --- | --- |
+| `AnimationFadeTimeInvalid` | `Stop`, `AdjustWeight` with a `fadeTime` that is not finite and at least 0 |
+| `AnimationSpeedInvalid` | `AdjustSpeed` with a speed that is not finite |
+| `AnimationWeightInvalid` | `AdjustWeight` with a weight that is not finite and at least 0 |
+
+### Animation failure reasons
+
+`Play` returns `nil` and one of these reasons. A failed `Play` leaves any running playback, its handle and the cache unchanged, except where noted.
+
+| Reason | Cause |
+| --- | --- |
+| `AnimationModelInvalid` | `model` is not a `Model` |
+| `AnimationIdInvalid` | `animationId` is not a content ID in one of the accepted forms |
+| `AnimationOptionsInvalid` | `options` is not a plain table |
+| `AnimationOptionUnknown` | `options` has a field that isn't an `AnimationPlayOptions` field |
+| `AnimationFadeTimeInvalid`, `AnimationWeightInvalid`, `AnimationSpeedInvalid`, `AnimationPriorityInvalid`, `AnimationLoopedInvalid` | That option is outside its accepted values |
+| `AnimationModelNotInWorld` | The Model is not a descendant of Workspace or of a WorldModel. It is not moved. |
+| `AnimationRigMissing` | The Model has no direct child `Humanoid` or `AnimationController` |
+| `AnimationCacheFull` | The Animator already has 32 cached tracks and every one is playing or fading |
+| `AnimationLoadFailed` | `Animator:LoadAnimation` raised an error. An Animator created by this call is removed again. |
+| `AnimationPlayFailed` | `AnimationTrack:Play` raised an error. A track that has played before stays cached, unchanged, and its current handle keeps control. A track loaded by this call is dropped, an Animator created by this call is removed again, and the next `Play` loads a new track. |
+
+A returned handle only means Roblox accepted the request. An asset the game can't use, one that hasn't loaded, an ID that isn't an animation, or a rig with no Motor6D or Bone joints can play without moving anything or advancing.
+
+### Track lifetime
+
+KRF destroys the tracks and `Animation` objects it created, and nothing else, when one of these happens:
+
+| Event | Effect |
+| --- | --- |
+| The Animator is destroyed, leaves its Humanoid or AnimationController, that controller leaves the Model, or the Model leaves the game | Every track cached for that Animator is released, and its handles go inert |
+| A new animation needs room on an Animator with 32 cached tracks | The least recently played track that is neither playing nor fading is released |
+
+Moving the Model within the game, such as into ReplicatedStorage, or streaming out its parts keeps the cache. Animators, Humanoids, AnimationControllers and tracks that KRF didn't create are never stopped or destroyed.
+
 ## Limits
 
 | Limit | Value | When exceeded |
@@ -243,6 +321,7 @@ When a server Hint arrives, KRF compares its activation with this client's predi
 | Wait for a predicted hit's server Hint | 3 seconds | The hit stops waiting, and a later matching Hint plays normally |
 | Remembered server Hints per predicted Start | 8, each for 3 seconds | Further Hints still play but are not remembered for `HintAlreadyReceived` |
 | Remembered server Hints that arrive before their cast's reply | 8 per attacking Actor, each for 3 seconds | Further Hints still play but are not remembered |
+| Cached animation tracks per Animator | 32 | The least recently played idle track is released. If every track is playing or fading, [`Animations.Play`](#animations) returns `AnimationCacheFull`. |
 
 ## Misuse errors
 

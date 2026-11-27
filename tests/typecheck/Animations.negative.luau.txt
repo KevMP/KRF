@@ -1,0 +1,26 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Animations = require(KRF.client.Presentation.Animations)
+
+local _wrongFade: Types.AnimationPlayOptions = { fadeTime = "0.1" } -- expect-error
+local _wrongPriority: Types.AnimationPlayOptions = { priority = Enum.KeyCode.Q } -- expect-error
+local _wrongLooped: Types.AnimationPlayOptions = { looped = 1 } -- expect-error
+
+return function(model: Model, part: Part): ()
+	Animations.Play(part, "rbxassetid://1") -- expect-error
+	Animations.Play(model, 123456) -- expect-error
+	Animations.Play(model, "rbxassetid://1", { speed = "fast" }) -- expect-error
+
+	local playback: Types.AnimationPlayback? = Animations.Play(model, "rbxassetid://1")
+
+	if playback ~= nil then
+		playback:AdjustSpeed("fast") -- expect-error
+		playback:AdjustWeight(0.5, "slow") -- expect-error
+		playback:Stop("now") -- expect-error
+
+		local wrong: Part? = playback:GetTrack() -- expect-error
+		assert(wrong == nil)
+	end
+end

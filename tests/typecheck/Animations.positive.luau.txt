@@ -1,0 +1,39 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Animations = require(KRF.client.Presentation.Animations)
+
+return function(model: Model, ctx: Types.PresentationContext): ()
+	local options: Types.AnimationPlayOptions = {
+		fadeTime = 0.15,
+		weight = 0.8,
+		speed = 1.2,
+		priority = Enum.AnimationPriority.Action2,
+		looped = true,
+	}
+
+	local playback: Types.AnimationPlayback?, reason: string? = Animations.Play(model, "rbxassetid://123456", options)
+	local plain: Types.AnimationPlayback? = Animations.Play(model, "rbxassetid://123456")
+
+	if playback == nil then
+		warn(reason)
+		return
+	end
+
+	ctx:Own(function(): ()
+		playback:Destroy()
+	end)
+
+	playback:AdjustSpeed(0.5)
+	playback:AdjustWeight(0.25)
+	playback:AdjustWeight(1, 0.2)
+	playback:Stop()
+	playback:Stop(0.3)
+
+	local track: AnimationTrack? = playback:GetTrack()
+
+	if track ~= nil and plain ~= nil then
+		track:GetMarkerReachedSignal("Impact"):Connect(function(): () end)
+	end
+end

@@ -5,7 +5,7 @@ sidebar_label: Guide
 
 # Presentation
 
-Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register. Every type, form and failure reason is listed in the [Presentation API](./api).
+Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register. For character animations, [`KRF.Animations`](#play-a-character-animation) plays and caches tracks on any rig, inside a Presentation or not. Every type, form and failure reason is listed in the [Presentation API](./api).
 
 ## Highlight an Actor when an Action starts
 
@@ -178,6 +178,128 @@ Cleanup runs in reverse registration order after the context becomes inactive. A
 `create(ctx)` runs outside upstream Input and Networking callbacks and may yield. After a yield, check `IsActive()` before doing more asynchronous visual work. KRF owns the cleanup you register. Arrange cancellation for tasks you start separately and use `Own` for any visual objects you need to release. The return value of `create` is ignored.
 
 Startup requires no assets. If an effect needs an asset, its author code can handle missing or slow assets locally. Constructor errors retire only that instance. KRF caps active instances per client and diagnoses refused occurrences when the cap is reached. See [Limits](./api#limits) and [Runtime diagnostics](./api#runtime-diagnostics).
+
+## Play a character animation
+
+`KRF.Animations.Play(model, animationId, options?)` plays an animation on any rig Model: the local character, another player's character, an NPC or a training dummy. It finds the rig's Animator, loads the animation the first time, and reuses that loaded track on later calls, so a cast doesn't build a new `Animation` or call `LoadAnimation` every time. It needs no ActorView, no Presentation and no `KRF.Client.Init`, so an ordinary LocalScript can use it:
+
+```luau
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local KRF = require(ReplicatedStorage:WaitForChild("Packages"):WaitForChild("KRF"))
+
+local dummy = Workspace:WaitForChild("TrainingDummy") :: Model
+
+local playback, reason = KRF.Animations.Play(dummy, "rbxassetid://123456", {
+	fadeTime = 0.15,
+	priority = Enum.AnimationPriority.Action,
+})
+
+if playback == nil then
+	warn(reason)
+	return
+end
+
+task.delay(2, function()
+	playback:Destroy()
+end)
+```
+
+`Play` returns a playback handle, or `nil` and a [reason](./api#animation-failure-reasons) when it can't start. The handle stops, adjusts or releases this one playback. KRF never decides which animation goes with which Action or Tag: your code picks the asset and the moment.
+
+Inside a Presentation, register the handle's cleanup with `ctx:Own` so the animation stops when the instance retires:
+
+```luau
+local FireballCast: KRF.PresentationDefinition = {
+	id = "Fireball.Cast",
+	entry = { event = KRF.PresentationEvents.Action.Started, id = "Fireball" },
+	create = function(ctx)
+		local actor = ctx.actor
+		local model = if actor ~= nil then actor:GetModel() else nil
+
+		if model == nil then
+			ctx:Finish()
+			return
+		end
+
+		local playback = KRF.Animations.Play(model, "rbxassetid://123456")
+
+		if playback ~= nil then
+			ctx:Own(function()
+				playback:Destroy()
+			end)
+		end
+	end,
+}
+```
+
+The animation ending on its own doesn't finish the instance. Finish it yourself when the visual is done, for example from a Watch on `Action.Active` as in [Start a cast before the server answers](#start-a-cast-before-the-server-answers).
+
+### Each Play restarts the cached track
+
+KRF caches loaded tracks, not playbacks. There is one track per Animator and animation ID, and every `Play` starts that track again from the beginning with the options you pass, even while it is still playing or fading out. Options you leave out go back to their [defaults](./api#animationplayoptions) instead of keeping the previous cast's speed, priority or looping.
+
+The new playback takes over the track, and every earlier handle for it goes inert: its `Stop`, `Destroy`, `AdjustSpeed` and `AdjustWeight` do nothing, and its `GetTrack` returns `nil`. That matters when two casts overlap. Cast A starts a Presentation that plays the swing, cast B plays the same swing a moment later, and then A's instance finishes. A's cleanup calls `Destroy` on A's handle, which no longer controls the track, so B's swing keeps playing. Only B's handle can stop it.
+
+If you need two independent copies of the same animation on one rig at once, load the second one yourself with `Animator:LoadAnimation`. `Animations` never hands out two tracks for one Animator and ID.
+
+### How the rig is found
+
+`Play` looks at the Model's direct children for a `Humanoid`, then for an `AnimationController`, and uses that controller's `Animator`. It reuses an Animator another script created, and creates one only when the controller has none. It never creates a Humanoid or AnimationController, and never destroys an Animator it didn't create. An Animator it created stays on the rig for later calls. If the very first load fails, it removes that new Animator again.
+
+The Model must be inside Workspace or a WorldModel, such as a character preview in a ViewportFrame, because an Animator only runs inside a world. `Play` returns `AnimationModelNotInWorld` instead of moving the Model. It looks the rig up again on every call, so after a respawn or a swapped Humanoid it uses the new Animator and never the old one's tracks.
+
+Tracks are released when their Animator is destroyed or leaves its Humanoid or AnimationController, when that controller leaves the Model, or when the Model leaves the game. Moving the Model elsewhere in the game, such as from Workspace into ReplicatedStorage, or having its parts streamed out, keeps the tracks. Each Animator keeps at most 32 tracks. When a new animation needs room, the least recently played idle track is dropped. A track that is playing or still fading out is never idle, and if every track is busy, `Play` fails with `AnimationCacheFull` and leaves the others alone.
+
+### When playback ends
+
+Roblox fires a track's `Stopped` when playback stops, which can be before its fade-out finishes, and `Ended` after the fade. Neither one says which playback it belonged to, so `Animations` doesn't use them to retire handles. A handle stays current until a newer `Play` replaces it or you call `Stop` or `Destroy`, even after a non-looped animation ends by itself. Calling `Play` while the track is still fading starts the same track again, and the earlier fade's `Ended` doesn't stop the new playback.
+
+`Stop` and `Destroy` on the current handle fade the track out and keep it cached for the next `Play`. Calling either one again does nothing.
+
+### Failures you can't see
+
+`Play` reports what fails right away: a bad Model, ID or option, a missing rig, a Model outside Workspace and every WorldModel, or a load that throws. It can't tell whether the asset will actually animate. An asset the game isn't allowed to use, one that is still loading, an ID that isn't an animation, or a rig with no joints for it to move can still produce a playing track that moves nothing. Check `GetTrack().Length` if you need to know, and keep gameplay independent of animations either way.
+
+### Use the track directly
+
+`GetTrack()` returns the underlying `AnimationTrack` while the handle is current, for things the handle doesn't cover, such as `GetMarkerReachedSignal`. Reading from it is fine. Calling `Play` or `Stop` on it, or changing its properties, bypasses the handle: KRF can no longer tell which playback is current. The track still belongs to KRF, which may destroy it when its Animator goes away.
+
+### Sounds, particles and other effects
+
+KRF has no helpers for sounds, particles, beams, trails or the camera. Create them with ordinary Roblox code and release them with `ctx:Own`:
+
+```luau
+create = function(ctx)
+	local model = if ctx.actor ~= nil then ctx.actor:GetModel() else nil
+	local root = if model ~= nil then model:FindFirstChild("HumanoidRootPart") else nil
+
+	if root == nil then
+		ctx:Finish()
+		return
+	end
+
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://654321"
+	sound.Parent = root
+	sound:Play()
+
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Rate = 40
+	sparks.Parent = root
+
+	ctx:Own(function()
+		sound:Destroy()
+		sparks:Destroy()
+	end)
+end,
+```
+
+A part can stream out and back in while its Model stays. If an effect is attached to a part, watch the Model with `ctx:Watch(KRF.PresentationStates.Actor.Model, ...)` or listen for `ChildAdded` and attach it again.
+
+Everything here runs on the client that calls it. KRF adds no replication: Roblox replicates an animation a client plays on its own character to other players, and anything played on another Model stays on that client. KRF also doesn't time hits from animations. Hits come from the server; show them with a [Hint](../hints/guide).
 
 ## Observe events during an instance
 
