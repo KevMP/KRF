@@ -71,7 +71,7 @@ function analyze(sourcemap, inputs, expectedErrors) {
 function analyzePresentationTypes() {
 	const directory = path.join(TEMP_DIR, "presentation");
 	fs.mkdirSync(directory, { recursive: true });
-	const families = ["PresentationOn", "PresentationWatch", "PresentationPrediction", "Animations"];
+	const families = ["PresentationOn", "PresentationWatch", "PresentationPrediction", "Animations", "Assets"];
 	const fixtures = {};
 	for (const family of families) {
 		for (const kind of ["positive", "negative"]) {

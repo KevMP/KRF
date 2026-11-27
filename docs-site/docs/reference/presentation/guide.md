@@ -5,7 +5,7 @@ sidebar_label: Guide
 
 # Presentation
 
-Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register. For character animations, [`KRF.Animations`](#play-a-character-animation) plays and caches tracks on any rig, inside a Presentation or not. Every type, form and failure reason is listed in the [Presentation API](./api).
+Register a client Presentation to start your own visual code when KRF delivers an Action, Tag, Resource or Hint event, or while an Actor is in an active Tag or Action state. Each matching event, and each active state occurrence, starts an independent instance for each definition. KRF finds the originating ActorView, scopes subscriptions to that view, and runs the cleanup you register. For character animations, [`KRF.Animations`](#play-a-character-animation) plays and caches tracks on any rig, inside a Presentation or not, and [`KRF.Assets`](#fetch-an-encounters-assets-early) fetches content before its first use. Every type, form and failure reason is listed in the [Presentation API](./api).
 
 ## Highlight an Actor when an Action starts
 
@@ -177,7 +177,7 @@ Cleanup runs in reverse registration order after the context becomes inactive. A
 
 `create(ctx)` runs outside upstream Input and Networking callbacks and may yield. After a yield, check `IsActive()` before doing more asynchronous visual work. KRF owns the cleanup you register. Arrange cancellation for tasks you start separately and use `Own` for any visual objects you need to release. The return value of `create` is ignored.
 
-Startup requires no assets. If an effect needs an asset, its author code can handle missing or slow assets locally. Constructor errors retire only that instance. KRF caps active instances per client and diagnoses refused occurrences when the cap is reached. See [Limits](./api#limits) and [Runtime diagnostics](./api#runtime-diagnostics).
+Startup requires no assets. If an effect needs an asset, its author code can handle missing or slow assets locally, and can [fetch them early](#fetch-an-encounters-assets-early) without making anything wait. Constructor errors retire only that instance. KRF caps active instances per client and diagnoses refused occurrences when the cap is reached. See [Limits](./api#limits) and [Runtime diagnostics](./api#runtime-diagnostics).
 
 ## Play a character animation
 
@@ -300,6 +300,89 @@ end,
 A part can stream out and back in while its Model stays. If an effect is attached to a part, watch the Model with `ctx:Watch(KRF.PresentationStates.Actor.Model, ...)` or listen for `ChildAdded` and attach it again.
 
 Everything here runs on the client that calls it. KRF adds no replication: Roblox replicates an animation a client plays on its own character to other players, and anything played on another Model stays on that client. KRF also doesn't time hits from animations. Hits come from the server; show them with a [Hint](../hints/guide).
+
+## Fetch an encounter's assets early
+
+The first time a client casts Fireball, Roblox may still be downloading its animation, its sound and its particle texture, so the first cast can look bare. `KRF.Assets.Preload` asks Roblox to fetch the content you pick ahead of time, for example when a player walks into a boss arena or equips a staff. You choose what to fetch and when. KRF never preloads anything on its own, and nothing in gameplay or Presentation ever waits for a preload.
+
+Here an ordinary LocalScript fetches a Fireball's content when the player enters the arena:
+
+```luau
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local KRF = require(ReplicatedStorage:WaitForChild("Packages"):WaitForChild("KRF"))
+
+local fireballEffects = ReplicatedStorage:WaitForChild("Effects"):WaitForChild("Fireball") :: Folder
+local arenaEntrance = Workspace:WaitForChild("ArenaEntrance") :: BasePart
+
+local prepared = false
+
+arenaEntrance.Touched:Connect(function()
+	if prepared then
+		return
+	end
+
+	local accepted, reason = KRF.Assets.Preload({
+		{ kind = "Animation", assetId = "rbxassetid://123456" },
+		{ kind = "Sound", assetId = "rbxassetid://654321" },
+		fireballEffects,
+	}, function(report)
+		if report.error ~= nil then
+			warn("Fireball preload stopped:", report.error)
+		end
+
+		for contentId, status in report.statuses do
+			if status ~= Enum.AssetFetchStatus.Success then
+				warn("Fireball content not fetched:", contentId, status.Name)
+			end
+		end
+	end)
+
+	if accepted then
+		prepared = true
+	else
+		warn("Fireball preload refused:", reason)
+	end
+end)
+```
+
+`Preload` returns right away. `true` means KRF accepted the request and will hand it to Roblox in the background. It doesn't mean anything has loaded yet. `false` comes with a [reason](./api#preload-refusal-reasons), such as a malformed item, and nothing is scheduled.
+
+The Fireball Presentation doesn't change at all. It plays when the Action starts, whether the fetch finished a minute ago, is still running or failed. If an asset is still downloading, the first cast looks the way it would have without preloading. If a fetch failed, the report tells you, and your visual code carries on with whatever it does when an asset is missing. Never make a cast, an Action or `KRF.Client.Init` wait for `onComplete`.
+
+### Choose what to pass
+
+Pass the Instances your effects actually use, or a Folder or Model that holds them. KRF walks each Instance you pass and everything inside it, and hands Roblox the ones that carry content: Animations, Sounds, ParticleEmitters, Beams, Trails, Decals and Textures, MeshParts, SpecialMeshes, image labels and buttons, and Skies. A Folder with more than 64 children still counts as one item, so pass the Folder rather than its `GetChildren()`. It skips everything else, such as Scripts, Values and Attachments. It never looks at the parent or the siblings of what you passed, so passing `Effects.Fireball` doesn't fetch `Effects.Lightning`. One request can visit up to 2048 Instances. If your selection is bigger than that, the request fetches nothing and its report says `PreloadDescendantLimit`, rather than quietly fetching part of it. In most games, passing all of Workspace hits this limit.
+
+When you only have an ID, pass a descriptor: `{ kind = "Animation", assetId = "rbxassetid://123456" }` or `{ kind = "Sound", assetId = ... }`. KRF builds a temporary Animation or Sound that it never parents, and destroys it when Roblox is done. For any other kind of content, such as a texture, put an Instance that uses it in your templates Folder and pass that. A bare ID string isn't accepted, because an ID alone doesn't tell Roblox whether it names an animation, a sound or an image.
+
+Your Instances stay yours. KRF doesn't clone, move, change or destroy them, and it reads them when the background work starts rather than when you call `Preload`, so keep them in place until `onComplete` runs.
+
+Some content can't be preloaded. `PreloadAsync` doesn't fetch the texture maps of a SurfaceAppearance or a MaterialVariant, so KRF skips them and they never appear in a report.
+
+### Read the report
+
+`report.statuses` maps each content ID that Roblox reported to an `Enum.AssetFetchStatus`. The keys are content IDs, not your items. A SpecialMesh can report a mesh and a texture, a Sky reports every face, and a Folder of Scripts reports nothing. A descriptor's content is keyed by its normalized ID, such as `rbxassetid://123456`.
+
+`Success` means Roblox fetched that content when you asked. It doesn't mean the content stays in memory, and it doesn't check the asset's type. In Studio, an ID that isn't a sound still reports `Success` when it is passed as a Sound. `Failure` means Roblox couldn't fetch it, for example because the ID is wrong or the game isn't allowed to use the asset. `TimedOut` is reported separately from `Failure`. `None` and `Loading` aren't finished fetches. They shouldn't normally appear, and you should treat them as not fetched.
+
+An empty `statuses` doesn't mean everything loaded. It can mean nothing you passed carried content. A failed fetch is not an error, so `report.error` stays `nil` even when every fetch failed. `error` is set only when the request stopped early: it was over a [limit](./api#limits), or `PreloadAsync` itself raised an error, in which case `statuses` still holds what Roblox reported before that. KRF never retries. Call `Preload` again if you want another try.
+
+### When onComplete runs
+
+`onComplete` runs once, on its own thread, after Roblox's call returns and KRF has cleaned up. It can yield, raise an error or start another preload without affecting anything else. If Roblox's call never returns, `onComplete` never runs. KRF can't cancel that call and doesn't put a timeout on it. This is one more reason nothing should wait for `onComplete`. A request keeps running if the script that called `Preload` is destroyed, for example by a respawn, and `onComplete` still runs.
+
+### When a preload is refused as busy
+
+At most 8 requests can be in flight on a client. A ninth gets `false, "PreloadBusy"` instead of joining a queue, and the slot frees up when a request settles. A request whose Roblox call never returns keeps its slot, so a stuck download can make later preloads refuse, but never makes gameplay wait. Preload at moments that matter, such as entering an area or equipping an item, rather than every frame.
+
+### Preloading doesn't load tracks or spawn effects
+
+Preloading an Animation only fetches its data. It doesn't load an `AnimationTrack` on any Animator. [`KRF.Animations.Play`](#play-a-character-animation) still loads and caches its track the first time it plays, and a preload only makes it more likely that the animation data has already downloaded by then. Roblox can still evict it, so the first play can hitch either way.
+
+KRF doesn't pool or pre-spawn effects either. If you clone effect templates ahead of time or keep a pool of them, that's your code or a pool library. A Presentation can return a borrowed effect to the pool through `ctx:Own`.
 
 ## Observe events during an instance
 

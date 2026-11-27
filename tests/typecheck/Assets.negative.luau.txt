@@ -1,0 +1,24 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Assets = require(KRF.client.Presentation.Assets)
+
+local _wrongKind: Types.PreloadDescriptor = { kind = "Mesh", assetId = "rbxassetid://1" } -- expect-error
+local _numericId: Types.PreloadDescriptor = { kind = "Sound", assetId = 1 } -- expect-error
+local _bareId: Types.PreloadItem = "rbxassetid://1" -- expect-error
+
+return function(emitter: ParticleEmitter): ()
+	Assets.Preload(emitter) -- expect-error
+	Assets.Preload({ emitter }, "done") -- expect-error
+	Assets.Preload({ emitter }, function(_report: string): () end) -- expect-error
+	Assets.Preload({ emitter }, function(report: Types.PreloadReport): ()
+		report.statuses["rbxassetid://1"] = Enum.AssetFetchStatus.Success -- expect-error
+		report.error = "changed" -- expect-error
+
+		local _wrongStatus: string? = report.statuses["rbxassetid://1"] -- expect-error
+		local _success: boolean = report.success -- expect-error
+	end)
+
+	local _loaded: Types.PreloadReport = Assets.Preload({ emitter }) -- expect-error
+end

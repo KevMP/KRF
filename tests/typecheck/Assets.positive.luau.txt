@@ -1,0 +1,49 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KRF = ReplicatedStorage.Packages.KRF
+local Types = require(KRF.client.Presentation.types)
+local Assets = require(KRF.client.Presentation.Assets)
+
+return function(emitter: ParticleEmitter, templates: Folder): ()
+	local descriptor: Types.PreloadDescriptor = { kind = "Sound", assetId = "rbxassetid://654321" }
+
+	local accepted: boolean, reason: string? = Assets.Preload({
+		{ kind = "Animation", assetId = "rbxassetid://123456" },
+		descriptor,
+		emitter,
+		templates,
+	}, function(report: Types.PreloadReport): ()
+		if report.error ~= nil then
+			warn(report.error)
+		end
+
+		for contentId: string, status: Enum.AssetFetchStatus in report.statuses do
+			if status == Enum.AssetFetchStatus.Failure or status == Enum.AssetFetchStatus.TimedOut then
+				warn(contentId, status.Name)
+			end
+		end
+
+		local fireball: Enum.AssetFetchStatus? = report.statuses["rbxassetid://123456"]
+
+		if fireball == Enum.AssetFetchStatus.Success then
+			print("fetched")
+		end
+	end)
+
+	if not accepted then
+		warn(reason)
+	end
+
+	local items: { Types.PreloadItem } = { emitter }
+	local idle: Types.PreloadDescriptor = { kind = "Animation", assetId = "rbxassetid://1" }
+
+	table.insert(items, idle)
+
+	local plain: boolean = Assets.Preload(items)
+
+	assert(plain)
+
+	local children: boolean = Assets.Preload(templates:GetChildren())
+
+	assert(children)
+end
