@@ -5,7 +5,7 @@ sidebar_label: API
 
 # Presentation API
 
-Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional prediction policies through [`actionPredictionPolicies`](#actionpredictionpolicy) and [`hintPredictionPolicies`](#hintpredictionpolicy). Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. [`KRF.Animations`](#animations) is a separate client utility that a definition, or any other client code, can use to play character animations. The [Presentation guide](./guide) shows how these pieces fit together.
+Register `{KRF.PresentationDefinition}` through `KRF.Client.Init({ presentations = definitions })`, and optional prediction policies through [`actionPredictionPolicies`](#actionpredictionpolicy) and [`hintPredictionPolicies`](#hintpredictionpolicy). Descriptors are frozen constants on `KRF.PresentationEvents` and `KRF.PresentationStates`. Each accepted entry gets one `PresentationContext`, which is the only runtime surface a definition uses. [`KRF.Animations`](#animations) and [`KRF.Assets`](#assets) are separate client utilities that a definition, or any other client code, can use to play character animations and to fetch content early. The [Presentation guide](./guide) shows how these pieces fit together.
 
 ## PresentationDefinition
 
@@ -307,6 +307,96 @@ KRF destroys the tracks and `Animation` objects it created, and nothing else, wh
 
 Moving the Model within the game, such as into ReplicatedStorage, or streaming out its parts keeps the cache. Animators, Humanoids, AnimationControllers and tracks that KRF didn't create are never stopped or destroyed.
 
+## Assets
+
+`KRF.Assets` asks Roblox's `ContentProvider:PreloadAsync` to fetch content you choose before it is first used. Like `Animations`, it works without `KRF.Client.Init`, ActorViews or Presentation definitions, and requiring it preloads nothing. It is also available as `require(ReplicatedStorage.Packages.KRF.client.Presentation.Assets)`. The [guide](./guide#fetch-an-encounters-assets-early) shows when to call it.
+
+```luau
+KRF.Assets.Preload(items: { KRF.PreloadItem }, onComplete: ((KRF.PreloadReport) -> ())?): (boolean, string?)
+```
+
+`Preload` never yields. It checks `items` and `onComplete`, takes one of the [in-flight slots](#limits) and returns `true`. That means the request was accepted for background work, not that anything has loaded. Otherwise it returns `false` and a [reason](#preload-refusal-reasons) and schedules nothing.
+
+An accepted request runs on a deferred thread. KRF collects its targets, builds any temporary Instances, makes at most one `PreloadAsync` call, destroys the temporary Instances, frees the slot, and only then schedules `onComplete`. A failed or timed-out fetch is never retried.
+
+### PreloadItem
+
+`items` is a dense, nonempty array of up to 64 items. Any array of Instances works, such as `{ sound, emitter }` or a short `GetChildren()` result. To fetch a Folder with more than 64 children, pass the Folder itself. Each item is one of these:
+
+| Item | What KRF passes to `PreloadAsync` |
+| --- | --- |
+| An Instance | Every Instance in it and its descendants, itself included, whose class is listed in [Content classes](#content-classes). Scripts, Values, Attachments, Parts, Folders and other classes are visited but not passed. |
+| `{ kind = "Animation", assetId = string }` | A new unparented `Animation` whose `AnimationId` is `assetId` |
+| `{ kind = "Sound", assetId = string }` | A new unparented `Sound` whose `SoundId` is `assetId` |
+
+The two descriptor forms have the type `KRF.PreloadDescriptor`. `assetId` takes the same content ID forms as [`Animations.Play`](#animations), such as `rbxassetid://123456`, and KRF normalizes it to `rbxassetid://123456`. The report keys that content by the normalized ID, not the spelling you passed. A descriptor with a metatable or any other field is refused. A bare content ID string is not an item: `PreloadAsync` takes a list of Instances, and an ID alone doesn't say what kind of content it names.
+
+Within one request, an Instance that is listed twice, or reached through two listed items, is passed once. Descriptors with the same `kind` and normalized `assetId` build one temporary Instance. Distinct Instances are always kept, even when they name the same content. Nothing is shared between requests.
+
+KRF reads your Instances when the request's worker runs, on the next resumption cycle, not when you call `Preload`. It never clones, reparents, changes or destroys them. Keep them in place until `onComplete` runs, because KRF doesn't restore an Instance your code changes or destroys while the fetch is pending. Temporary descriptor Instances are never parented, and KRF destroys them when `PreloadAsync` returns or raises an error.
+
+### Content classes
+
+| Classes | Content |
+| --- | --- |
+| `Animation` | `AnimationId` |
+| `Sound` | `SoundId` |
+| `ParticleEmitter`, `Beam`, `Trail` | `Texture` |
+| `Decal`, `Texture` | `Texture` |
+| `MeshPart` | `TextureID` and its mesh |
+| `SpecialMesh` | `MeshId`, `TextureId` |
+| `ImageLabel`, `ImageButton` | `Image` |
+| `Sky` | Every skybox face, including default faces you didn't set |
+
+KRF only decides which Instances to pass. Roblox decides which properties it fetches and reports. `SurfaceAppearance` and `MaterialVariant` are never passed, because `PreloadAsync` doesn't fetch their texture maps.
+
+### PreloadReport
+
+`onComplete` receives one frozen report after the request settles:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `statuses` | `{ [string]: Enum.AssetFetchStatus }`, frozen | The status Roblox reported for each content ID. A content ID reported more than once keeps its latest status. |
+| `error` | `string?` | Why the request stopped early. It is `nil` when `PreloadAsync` returned normally, even if every fetch failed. |
+
+The keys are the content IDs Roblox reports, not your items. One Instance can report several IDs, such as a SpecialMesh's mesh and texture or every face of a Sky, and an Instance with no supported content reports none. An empty `statuses` map doesn't mean anything loaded. The request may have had no content to pass, and then KRF makes no `PreloadAsync` call at all.
+
+| `Enum.AssetFetchStatus` | Meaning in a report |
+| --- | --- |
+| `Success` | Roblox fetched the content at the time of the request. It doesn't keep the content in memory, load an `AnimationTrack` or check the asset's type: an asset that isn't a sound still reports `Success` when it is passed as a Sound. |
+| `Failure` | Roblox couldn't fetch the content, for example because it doesn't exist or the game isn't allowed to use it |
+| `TimedOut` | The fetch took too long |
+| `None`, `Loading` | Not a finished fetch. KRF keeps them as Roblox reports them and never counts them as `Success`. |
+
+| `error` | Cause |
+| --- | --- |
+| `PreloadDescendantLimit` | The items and their descendants hold more than 2048 Instances. Nothing is fetched. |
+| `PreloadTargetLimit` | The request has more than 256 content Instances, temporary ones included. Nothing is fetched. |
+| `PreloadFailed:<message>` | `PreloadAsync` raised an error. `statuses` keeps what Roblox reported before that. A non-string error appears as `NonStringError`. |
+
+If `PreloadAsync` never returns, the request never settles. `onComplete` doesn't run, and the request keeps its slot. KRF can't cancel a pending `PreloadAsync` call and has no timeout of its own.
+
+Destroying the script that called `Preload` doesn't stop the request: it still settles and calls `onComplete`. If the request's thread is stopped some other way before it settles, `onComplete` doesn't run, and KRF frees its slot and destroys its temporary Instances the next time `Preload` finds every slot taken.
+
+### onComplete
+
+`onComplete` runs once per settled request, on its own deferred thread, after the request's slot is free. It may yield, raise an error or call `Preload` again. An error is diagnosed as `CompleteFailed:<message>` and affects nothing else.
+
+### Preload refusal reasons
+
+`Preload` returns `false` and one of these reasons. A refused request schedules nothing and takes no slot. KRF checks `items` first, then `onComplete`, then the slots.
+
+| Reason | Cause |
+| --- | --- |
+| `PreloadItemsInvalid` | `items` is not a plain table, or is not a dense array starting at 1 |
+| `PreloadItemsEmpty` | `items` is empty |
+| `PreloadItemLimit` | `items` has more than 64 entries |
+| `PreloadItemInvalid` | An item is neither an Instance nor a table with only `kind` and `assetId`. A bare content ID string is refused this way. |
+| `PreloadKindInvalid` | A descriptor's `kind` is not `"Animation"` or `"Sound"` |
+| `PreloadAssetIdInvalid` | A descriptor's `assetId` is not a content ID in an accepted form |
+| `PreloadCallbackInvalid` | `onComplete` is neither `nil` nor a function |
+| `PreloadBusy` | 8 accepted requests haven't settled yet |
+
 ## Limits
 
 | Limit | Value | When exceeded |
@@ -322,6 +412,10 @@ Moving the Model within the game, such as into ReplicatedStorage, or streaming o
 | Remembered server Hints per predicted Start | 8, each for 3 seconds | Further Hints still play but are not remembered for `HintAlreadyReceived` |
 | Remembered server Hints that arrive before their cast's reply | 8 per attacking Actor, each for 3 seconds | Further Hints still play but are not remembered |
 | Cached animation tracks per Animator | 32 | The least recently played idle track is released. If every track is playing or fading, [`Animations.Play`](#animations) returns `AnimationCacheFull`. |
+| Items per [`Assets.Preload`](#assets) call | 64 | `Preload` returns `false, "PreloadItemLimit"` |
+| Instances visited per preload request | 2048, items and their descendants together | The request settles with `PreloadDescendantLimit` and fetches nothing |
+| Content Instances per preload request | 256, temporary descriptor Instances included | The request settles with `PreloadTargetLimit` and fetches nothing |
+| Unsettled preload requests per client | 8 | `Preload` returns `false, "PreloadBusy"`. Requests are never queued. A request whose `PreloadAsync` call never returns keeps its slot. A request whose thread was stopped frees its slot when `Preload` next finds every slot taken. |
 
 ## Misuse errors
 
@@ -371,6 +465,13 @@ Predicted hits warn with `[Presentation] hint=<id> reason=<reason>`.
 | --- | --- |
 | `PredictionHintSourceInvalid` | A received Hint's payload lacks the fields its [Hint prediction policy](#hintpredictionpolicy) names. It plays normally. |
 | `PredictionDeferredLimit` | The held-entry limit was reached, so an ambiguous Hint started immediately |
+
+[`Assets`](#assets) warns with `[Assets] reason=<reason>` when a request settles with an `error` or its `onComplete` fails. A fetch that fails or times out is not diagnosed, because the report already carries it.
+
+| Reason | Cause |
+| --- | --- |
+| `PreloadDescendantLimit`, `PreloadTargetLimit`, `PreloadFailed:<message>` | The request settled with that [`error`](#preloadreport) |
+| `CompleteFailed:<message>` | `onComplete` raised an error. A non-string error appears as `NonStringError`. |
 
 ## Startup failures
 

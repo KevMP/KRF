@@ -1,0 +1,19 @@
+{
+  "name": "KRF-Presentation-Assets-Integration",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": { "$className": "Folder", "KRF": { "$path": "../../../src" } },
+      "AssetsControl": { "$className": "RemoteEvent" },
+      "AbandonedPreload": { "$path": "../../integration/PresentationAssets/Abandoned.client.luau" }
+    },
+    "ServerScriptService": {
+      "AssetsServer": { "$path": "../../integration/PresentationAssets/Server.server.luau" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "AssetsClient": { "$path": "../../integration/PresentationAssets/Client.client.luau" }
+      }
+    }
+  }
+}

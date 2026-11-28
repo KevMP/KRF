@@ -1,7 +1,6 @@
 --!strict
 local Types = require(script.Parent.types)
-
-local MAX_ASSET_ID: string = "9223372036854775807"
+local ContentId = require(script.Parent.utils.ContentId)
 
 local OPTION_FIELDS: { [string]: boolean } = {
 	fadeTime = true,
@@ -11,14 +10,7 @@ local OPTION_FIELDS: { [string]: boolean } = {
 	looped = true,
 }
 
-local ASSET_PATTERNS: { string } = {
-	"^rbxassetid://(%d+)$",
-	"^https?://www%.roblox%.com/asset/?%?id=(%d+)$",
-	"^https?://roblox%.com/asset/?%?id=(%d+)$",
-}
-
 table.freeze(OPTION_FIELDS)
-table.freeze(ASSET_PATTERNS)
 
 local DEFAULTS: Types.CompiledAnimationPlayOptions = table.freeze({
 	fadeTime = 0.1,
@@ -47,31 +39,13 @@ function Validator.IsSpeed(value: unknown): boolean
 end
 
 function Validator.AnimationId(value: unknown): (string?, string?)
-	if type(value) ~= "string" then
+	local normalized: string? = ContentId.Normalize(value)
+
+	if normalized == nil then
 		return nil, "AnimationIdInvalid"
 	end
 
-	local trimmed: string = string.lower(string.match(value, "^%s*(.-)%s*$") :: string)
-
-	for _, pattern: string in ASSET_PATTERNS do
-		local digits: string? = string.match(trimmed, pattern)
-
-		if digits ~= nil then
-			local canonical: string = string.gsub(digits, "^0+", "")
-
-			if
-				canonical == ""
-				or #canonical > #MAX_ASSET_ID
-				or #canonical == #MAX_ASSET_ID and canonical > MAX_ASSET_ID
-			then
-				return nil, "AnimationIdInvalid"
-			end
-
-			return "rbxassetid://" .. canonical, nil
-		end
-	end
-
-	return nil, "AnimationIdInvalid"
+	return normalized, nil
 end
 
 function Validator.Options(value: unknown): (Types.CompiledAnimationPlayOptions?, string?)

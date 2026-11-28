@@ -13,8 +13,8 @@ per-file coverage gates. Use `npm run test:unit` for focused test work. Specs li
 under `tests/server`, `tests/client`, and `tests/shared`; injected integration
 specs exercise cross-system contracts without replacing native fixtures.
 
-`npm run typecheck` also compiles the Presentation `On`, `Watch`, prediction and
-`Animations` fixtures under `tests/typecheck`. Positive fixtures exercise the
+`npm run typecheck` also compiles the Presentation `On`, `Watch`, prediction,
+`Animations` and `Assets` fixtures under `tests/typecheck`. Positive fixtures exercise the
 supported call forms; negative fixtures must produce errors at each
 `-- expect-error` marker and nowhere else.
 They use the same pinned LuauSolverV2 checker and Roblox definitions as source
@@ -40,6 +40,7 @@ These fixtures run real server/client sessions separately from `npm test`:
 | `npm run test:integration:n7` | Normal two-client startup, visible/private Resources, local regeneration without recurring packets, assignment and rate changes, replacement, removal, respawn, and reset |
 | `npm run test:integration:presentation` | Native catalog startup and rollback, late Actions domain membership, Highlight instances, activation-scoped end/interruption, Tag/Resource/Hint follow-ups, privacy, yielding callbacks, and teardown |
 | `npm run test:integration:presentation-animations` | Standalone `Animations` playback without `Client.Init` on both clients: the character's own Animator and Animate tracks left alone, one track per Animator reused and restarted, Stopped before Ended, fading tracks counted as busy, replay during a fade, natural ends, a created Animator on a dummy, a replaced Humanoid, an AnimationController rig whose Animator is replaced, the world requirement, a WorldModel preview in a ViewportFrame, and a non-animation asset that plays silently |
+| `npm run test:integration:presentation-assets` | Standalone `Assets.Preload` against the real ContentProvider on both clients: the caller never yields; real statuses for an animation, local sound, particle and Sky textures, failed Beam, Trail, Decal, MeshPart, SpecialMesh, ImageLabel and Sky content, and a wrong-type asset; a selected Folder that leaves itself and its siblings untouched; an oversized selection refused with `PreloadDescendantLimit`; a ninth request refused while eight are in flight; `Animations.Play` and `Client.Init` while all eight slots are taken, and a replicated Action Presentation beside the requests; and a request that still completes and frees its slot after the script that called `Preload` is destroyed |
 | `npm run test:integration:networking-baseline` | Two-client delivery, privacy, and teardown under representative gameplay workloads |
 | `npm run test:integration:n4-performance` | Native sustained publication load with two clients |
 | `npm run test:integration:tags-load` | Native Tags delivery at multiple Actor populations |

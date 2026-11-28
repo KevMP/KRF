@@ -136,6 +136,9 @@ export type LocalPredictionFollowUp = PresentationTypes.LocalPredictionFollowUp
 export type LocalPredictionInputDecision = PresentationTypes.LocalPredictionInputDecision
 export type AnimationPlayOptions = PresentationTypes.AnimationPlayOptions
 export type AnimationPlayback = PresentationTypes.AnimationPlayback
+export type PreloadDescriptor = PresentationTypes.PreloadDescriptor
+export type PreloadItem = PresentationTypes.PreloadItem
+export type PreloadReport = PresentationTypes.PreloadReport
 export type ActorView = ViewTypes.ActorView
 export type ActorViewRegistry = ViewTypes.ActorViewRegistry
 export type DomainView = ViewTypes.DomainView
@@ -220,6 +223,7 @@ type KRF = {
 	read PresentationEvents: typeof(require(script.client.Presentation.PresentationEvents)),
 	read PresentationStates: typeof(require(script.client.Presentation.PresentationStates)),
 	read Animations: typeof(require(script.client.Presentation.Animations)),
+	read Assets: typeof(require(script.client.Presentation.Assets)),
 	read ActorViewRegistry: typeof(require(script.client.Actor.ActorViewRegistry)),
 	read ClientActionRuntime: typeof(require(script.client.Action.ClientActionRuntime)),
 	read ClientControls: typeof(require(script.client.Controls.ClientControls)),
@@ -252,6 +256,7 @@ local MEMBERS: { [string]: ModuleScript } = {
 	PresentationEvents = script.client.Presentation.PresentationEvents,
 	PresentationStates = script.client.Presentation.PresentationStates,
 	Animations = script.client.Presentation.Animations,
+	Assets = script.client.Presentation.Assets,
 	ActorViewRegistry = script.client.Actor.ActorViewRegistry,
 	ClientActionRuntime = script.client.Action.ClientActionRuntime,
 	ClientControls = script.client.Controls.ClientControls,

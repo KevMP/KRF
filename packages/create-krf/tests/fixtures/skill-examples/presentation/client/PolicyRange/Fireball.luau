@@ -5,4 +5,4 @@ local KRF = require(ReplicatedStorage.Packages.KRF)
 local FireballRequirements = require(ReplicatedStorage.presentation.FireballRequirements)
 local CombatLimits = require(ReplicatedStorage.presentation.CombatLimits)
 
---@example 4
+--@example 5

@@ -26,6 +26,7 @@ $suites = @{
     presentation = @{ Project = 'presentation'; TestName = 'KRFPresentation'; Place = 'Presentation' }
     'presentation-prediction' = @{ Project = 'presentation-prediction'; TestName = 'KRFPresentationPrediction'; Place = 'PresentationPrediction' }
     'presentation-animations' = @{ Project = 'presentation-animations'; TestName = 'KRFPresentationAnimations'; Place = 'PresentationAnimations' }
+    'presentation-assets' = @{ Project = 'presentation-assets'; TestName = 'KRFPresentationAssets'; Place = 'PresentationAssets' }
     networking = @{ Project = 'networking'; TestName = 'KRFNetworking'; Place = 'Networking' }
 }
 

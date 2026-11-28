@@ -339,6 +339,38 @@ export type AnimationTrackCache = {
 	read _CountForTests: (self: AnimationTrackCache) -> (number, number),
 }
 
+export type PreloadDescriptor = {
+	read kind: "Animation" | "Sound",
+	read assetId: string,
+}
+
+export type PreloadItem = Instance | PreloadDescriptor
+
+export type PreloadReport = {
+	read statuses: { read [string]: Enum.AssetFetchStatus },
+	read error: string?,
+}
+
+export type AssetsModule = {
+	read Preload: (
+		items: { read [number]: PreloadItem },
+		onComplete: ((report: PreloadReport) -> ())?
+	) -> (boolean, string?),
+}
+
+export type CompiledPreloadRequest = {
+	read instances: { Instance },
+	read descriptors: { PreloadDescriptor },
+}
+
+export type ContentPreloadPort = {
+	read PreloadAsync: (
+		targets: { Instance },
+		record: (contentId: string, status: Enum.AssetFetchStatus) -> ()
+	) -> (),
+	read Report: (reason: string) -> (),
+}
+
 export type PresentationSubscriptionHost = {
 	read IsActive: () -> boolean,
 	read GetActionAssociation: () -> PresentationActionAssociation?,
